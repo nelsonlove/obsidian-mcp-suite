@@ -20,10 +20,7 @@ import { registerGovernanceRevisionTool, registerGovernanceRevisionsListTool } f
 import { registerLinkTools, obsidianLinkSource } from "./tools-links.js";
 import { registerConformanceDebtTools, registerConformanceDebtRenderTool } from "./tools-conformance-debt.js";
 import { obsidianDebtRenderSource } from "./obsidian-debt-source.js";
-import { obsidianProvenanceBackend } from "./tools-provenance.js";
 import { mountModules } from "./modules-mount.js";
-import { FILECLASS_PLUGIN_ID } from "./tools-fileclass.js";
-import { obsidianJdScaffoldSource } from "./obsidian-jd-scaffold-source.js";
 import { registerCodeModeTools, makeCaptureRegister, type CapturedRegistry } from "./tools-code-mode.js";
 import { makeGuarded, resolveGuardedPath, withKernelArgs } from "./guarded.js";
 import { reportCompletedWrite } from "./seam.js";
@@ -546,28 +543,14 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   const moduleRegistry = mountModules((name, def, handler) => (server as any).registerTool(name, def, handler), {
     getSettings: () => ctx.getSettings(),
     schemeNotes: () => app.vault.getMarkdownFiles().map((f) => f.path),
-    provenanceSource: obsidianProvenanceBackend(app),
-    // The fileclass module (#188) pins the CLI to THIS vault and gates on the
-    // Fileclass plugin being LOADED (the instance, not enabledPlugins — a
-    // configured-but-uninstalled plugin lingers there, per the plugin-gated-tools
-    // locked decision).
-    vaultName: ctx.vaultName,
-    fileclassPresent: () => !!(app as any).plugins?.plugins?.[FILECLASS_PLUGIN_ID],
-    // The vocab, health and bases adapters were wired HERE until the
-    // read-tier satellite extraction (suite split, S7). All three ship as
-    // their own plugins now (`vault-vocab`, `vault-health`, `vault-bases`) and
-    // build their own adapters; the bases hidden-leaf capture went with them
-    // whole, so this composition root no longer touches Obsidian's Bases API
-    // at all.
-    //
-    // The jd-scaffold module (Stage A + A2 + A3 of the jd-dashboard fold):
-    // standard-zeros creation, category-index self-heal, promote-to-folder,
-    // reindex-category, and template-driven note creation — reads via
-    // getAllLoadedFiles/getAbstractFileByPath, writes via vault.create/
-    // createFolder + fileManager.renameFile (link-healing). parseYaml feeds
-    // the template-creation tools' accept-forbidden content scan.
-    jdScaffoldSource: obsidianJdScaffoldSource(app),
-    jdScaffoldParseYaml: parseYaml,
+    // Nine module adapters were wired HERE until the suite split extracted
+    // them. Vocab, health and bases went at S7; fileclass, provenance and
+    // jd-scaffold followed as the mutating tier, taking the CLI/vault-name
+    // probe, the provenance backend, and the jd-scaffold source + its
+    // parseYaml injection with them. Every one of the nine builds its own
+    // adapter inside its own plugin now, so this composition root supplies
+    // exactly what the two remaining modules need: the settings thunk and the
+    // scheme module's note listing.
   });
   // Skip-and-report only reports if someone reads the report: every mount
   // defect (unknown module id in settings, a gate-refused tool, a config

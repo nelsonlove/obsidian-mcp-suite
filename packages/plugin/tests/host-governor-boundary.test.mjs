@@ -325,7 +325,14 @@ describe("boundary scan: the instrument itself", () => {
 
   test("the real tree is non-trivial — the scan reads actual sources", () => {
     const files = readSrc();
-    assert.ok(files.size > 200, `only ${files.size} source files found; the walker is broken`);
+    // A "the walker is broken" sanity floor, not a size budget. It was 200 while
+    // the host still carried the capability modules; the suite split keeps
+    // taking files out of this tree (the mutating tier removed 12 source files
+    // at once — provenance's kernel, jd-scaffold's kernel and adapter, and the
+    // three tool layers), so the floor moves down with it rather than pinning a
+    // count that only ever shrinks. Lower it again when a later extraction
+    // makes it fail; do not raise it into a budget.
+    assert.ok(files.size > 150, `only ${files.size} source files found; the walker is broken`);
     assert.ok(
       [...files.keys()].some((p) => p.startsWith(GOVERNOR_ROOT)),
       "no file under src/governor/ — the boundary subtree is missing"

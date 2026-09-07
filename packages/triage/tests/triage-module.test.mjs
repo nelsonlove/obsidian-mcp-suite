@@ -1121,13 +1121,16 @@ describe("publication: names, flags, and what the host's guard can scope", () =>
 
   test("dispose's path arguments are BOTH names the host's guard recognizes", () => {
     // The host's PATH_KEYS are ["path", "from", "to", "target_path",
-    // "template_path", "subdir", "file_path", "output_folder"]. `path` was
-    // always recognized; the destination folder was `target`, which is NOT,
+    // "template_path", "subdir", "file_path", "output_folder", "note_path"]
+    // (the last added 2026-09-07). `path` was always recognized; the
+    // destination folder was `target`, which is NOT,
     // and the module compensated with its own in-handler visibility check over
     // the computed destination. A satellite cannot reach the host's guard
     // settings, so the argument was renamed at this extraction to one the host
     // can see — the to_address / displace_to_address precedent.
-    const HOST_PATH_KEYS = ["path", "from", "to", "target_path", "template_path", "subdir", "file_path", "output_folder"];
+    // `note_path` joined the host's list on 2026-09-07 (mutating-tier round 1). No tool
+    // here names it, so these assertions decide exactly as they did.
+    const HOST_PATH_KEYS = ["path", "from", "to", "target_path", "template_path", "subdir", "file_path", "output_folder", "note_path"];
     const dispose = specs().find((t) => t.name === "dispose");
     const args = Object.keys(dispose.inputSchema);
     assert.ok(args.includes("path"), "the note path must stay `path`");
@@ -1140,7 +1143,9 @@ describe("publication: names, flags, and what the host's guard can scope", () =>
     // Stated as a pin rather than left implicit: `base`/`view`/`queue` are not
     // path keys, and the marker queue takes no path at all. That is fail-closed
     // and strictly stricter than the in-tool filter it replaces.
-    const HOST_PATH_KEYS = ["path", "from", "to", "target_path", "template_path", "subdir", "file_path", "output_folder"];
+    // `note_path` joined the host's list on 2026-09-07 (mutating-tier round 1). No tool
+    // here names it, so these assertions decide exactly as they did.
+    const HOST_PATH_KEYS = ["path", "from", "to", "target_path", "template_path", "subdir", "file_path", "output_folder", "note_path"];
     const queue = specs().find((t) => t.name === "queue");
     for (const key of Object.keys(queue.inputSchema)) {
       assert.ok(!HOST_PATH_KEYS.includes(key), `${key} would make the queue scopable — revisit the README's posture`);

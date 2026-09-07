@@ -241,3 +241,26 @@ export type { VocabInstance, VocabInstanceSettings, VocabProviderName } from "./
 // `obsidian` import and belongs here cleanly.
 export { executeQuickAddChoice } from "./quickadd-choice.js";
 export type { ChoiceOutcome } from "./quickadd-choice.js";
+
+// ── The subprocess primitives, published at the mutating tier's extraction ───
+//
+// `spawnEnv` / `findBinary` were the host's `src/claude-cli.ts`; `findObsidianBinary`
+// was `src/mcp/tools-cli.ts`. The `vault-fileclass` satellite spawns the
+// `fileclass` CLI and needs all three to behave EXACTLY as the host's do — the
+// same PATH augmentation, the same obsidian-binary probe — so they were
+// published rather than forked, on the `isVisible` / `executeQuickAddChoice` /
+// `resolveScope` precedent. The host imports them from here and re-exports
+// them, so no host call site moved.
+export { spawnEnv, findBinary, findObsidianBinary, EXTRA_BIN_DIRS } from "./spawn.js";
+
+// ── The accept-fence scan, published at the mutating tier's extraction ───────
+//
+// `scanForAcceptFence` came verbatim out of the host's `mcp/tools-cli.ts`. Its
+// two callers now live in different plugins — the host's `obsidian_cli`
+// template/content guard and the `vault-jd-scaffold` satellite's template
+// apply — which is the vocabulary kernel's shape at S7 and has the same
+// forbidden answer: two copies of an accept predicate is how one vault gets two
+// definitions of "accepted". Behaviour-preserving by construction: every symbol
+// it is defined over was already core's, reached by the host through
+// `mcp/write-notes-compose.ts`, itself a bare re-export of this accept-guard.
+export { scanForAcceptFence } from "./accept-scan.js";

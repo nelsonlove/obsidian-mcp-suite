@@ -346,17 +346,17 @@ Which current modules belong in the initial Community product rather than the pr
 - vocabulary validation (now ships as the separate `vault-vocab` satellite plugin — see [vocabulary-module.md](vocabulary-module.md) and `docs/suite-split-design.md` §6);
 - conformance reporting;
 - health and survey reports (the health scan now ships as the separate `vault-health` satellite plugin — see `docs/suite-split-design.md` §6; survey stays in this plugin);
-- Fileclass inspection and named representation proposals when a supported dependency exists;
-- provenance inspection and staleness reports, but not unconstrained regeneration.
+- Fileclass inspection and named representation proposals when a supported dependency exists (now ships as the separate `vault-fileclass` satellite plugin — see `packages/fileclass/README.md` and `docs/suite-split-design.md` §6);
+- provenance inspection and staleness reports, but not unconstrained regeneration (now ships as the separate `vault-provenance` satellite plugin — see [provenance.md](provenance.md) and `docs/suite-split-design.md` §6).
 
 ##### Private/operator in the first release
 
 - skills/policy compilation and export (now ships as the separate `vault-skills` satellite plugin — see [skills.md](skills.md) and `docs/suite-split-design.md` §6);
 - cross-session fleet coordination (now ships as the separate `vault-crosssession` satellite plugin — see [crosssession.md](crosssession.md) and `docs/suite-split-design.md` §6);
-- JD scaffolding;
+- JD scaffolding (now ships as the separate `vault-jd-scaffold` satellite plugin — see `packages/jd-scaffold/README.md` and `docs/suite-split-design.md` §6);
 - triage mutations (now ships as the separate `vault-triage` satellite plugin — see [triage.md](triage.md) and `docs/suite-split-design.md` §6);
 - QuickAdd execution bindings;
-- provenance regeneration with external outputs;
+- provenance regeneration with external outputs (one tool inside the separate `vault-provenance` satellite plugin);
 - opaque or pathless third-party mutations;
 - every advanced capability pack already excluded by the public contract.
 

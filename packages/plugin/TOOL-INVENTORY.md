@@ -20,13 +20,13 @@ CLI-conditional tool (`obsidian_cli`, default OFF)
 = **up to 79 total**.  The 3 Code Mode meta-tools are an alternative
 per-connection surface and are not counted (a session sees one surface or the
 other, never both).  Not counted here (outside the locked `obsidian_*` family):
-the always-on `governance_submit_revision` + `governance_revisions` (2 tools, see their section below)
-and the default-disabled `provenance` (`provenance_*`) and `fileclass`
-(`fileclass_*`, 8 tools, plugin+binary-gated) module surfaces — see Section 2c
-and their own module docs.  The `bases` module's `base_list` + `base_query`
-were listed here until the S7 satellite extraction; they are satellite tools
-now (`vault_bases_list` / `vault_bases_query`), and this inventory has never
-counted external tools.
+the always-on `governance_submit_revision` + `governance_revisions` (2 tools,
+see their section below).  Section 2c is now EMPTY — the `provenance`,
+`fileclass` and `jd-scaffold` module surfaces were the last default-disabled
+modules and left with the mutating tier, following `bases` at S7. All are
+satellite tools now (`vault_provenance_*`, `vault_fileclass_*`,
+`vault_jd_scaffold_*`, `vault_bases_*`), and this inventory has never counted
+external tools.
 
 Cross-check: the observed live set with Dataview + Templater + Metadata Menu
 loaded (but NOT Omnisearch, no CLI binary) reported 44 tools — an observation
@@ -38,7 +38,8 @@ the scheme write surface (`obsidian_assign_address`,
 `main` additions (in-Obsidian dev tool-runner, conformance debt register,
 the snippet tools);
 the same plugin set today registers 17 + 44 + 6 + 6 = **73** (the vocab
-module's four left the host at S7, along with health's two and bases' two).
+module's four left the host at S7, along with health's two and bases' two; the
+mutating tier's eighteen were default-disabled and never in this count).
 
 ---
 
@@ -276,109 +277,34 @@ above move. See `docs/vocabulary-module.md`, `docs/bases.md`,
 
 ---
 
-## Section 2c — module-mounted, default DISABLED (7)
+## Section 2c — module-mounted, default DISABLED (0)
 
-Registered through the module host like Section 2b, but these modules ship
-`enabled: false` — a human turns them on in the config tab, and the tools appear
-on the next session connect. `jd-scaffold` (7 tools, Stage A + A2 + A3 of the
-jd-dashboard fold) uses the locked `obsidian_*` naming, so it is documented
-here in full. (`health` was the other one until S7.) (The `provenance` and `fileclass` modules also ship disabled, but their tools
-are named `provenance_*` / `fileclass_*`, outside the `obsidian_*` family this
-inventory locks, so the first is documented in its own module doc and
-`fileclass` is documented just below, because it is also plugin-gated.)
+This section is EMPTY, and the heading stays so the shape of the surface is
+legible: the module host still supports default-disabled modules, and nothing
+ships as one today. Every module that used to be here left for its own plugin.
 
-The `skills` module used to be listed here. It is no longer a module of this
-plugin at all: the skills compiler became its own plugin at the suite split's S4
-(`packages/skills`, id `vault-skills`) and publishes its six `vault_skills_*`
-tools through the external-tool registry, like any third-party publisher. This
-inventory locks the `obsidian_*` family and has never counted external tools, so
-the totals are unchanged — see `docs/skills.md` and `packages/skills/README.md`.
+- `skills` at the suite split's S4 (`packages/skills`, id `vault-skills`), publishing six `vault_skills_*` tools through the external-tool registry like any third-party publisher.
+- `triage` at S5 (`packages/triage`, id `vault-triage`), on the wire as `vault_triage_queue` / `vault_triage_dispose`.
+- `crosssession` at S6 (`packages/crosssession`, id `vault-crosssession`), on the wire as `vault_crosssession_channels` / `_delta` / `_attest` / `_post`.
+- `health` at S7 (`packages/health`, id `vault-health`), on the wire as `vault_health_scan` / `vault_health_lint`.
+- `provenance`, `fileclass` and `jd-scaffold` with the mutating tier (`packages/provenance`, `packages/fileclass`, `packages/jd-scaffold`), on the wire as `vault_provenance_*` (3 tools), `vault_fileclass_*` (8 tools) and `vault_jd_scaffold_*` (7 tools).
 
-The `crosssession` module was listed here too, with its four tools documented in
-full below. Same story at S6: cross-session coordination became its own plugin
-(`packages/crosssession`, id `vault-crosssession`) and publishes through the
-external-tool registry, so it is out of this inventory. Its tool NAMES changed in
-the move — `crosssession_*` became `vault_crosssession_*`, because the plugin id
-is the tool namespace — see `docs/crosssession.md` and
-`packages/crosssession/README.md`.
+The `jd-scaffold` seven were the only ones documented here IN FULL, because they
+were the only default-disabled module tools inside the locked `obsidian_*`
+family. Their departure is also the only rename in the split that was FORCED
+rather than chosen: the host REFUSES any published external tool name in the
+reserved `obsidian_*` namespace (`external-tools.ts`'s F1 check), so all seven
+of the old `obsidian_jd_…` spellings were unpublishable under any plugin id.
+(They are not written out here even as prose: this file's lock scrapes
+backticked names and would read a retired one as a name the source ought to
+register. `packages/jd-scaffold/README.md` carries the full before/after
+table.)
 
-The `triage` module used to be listed here too. It is no longer a module of this
-plugin at all: it became its own plugin at the suite split's S5 (`packages/triage`,
-id `vault-triage`) and publishes through the external-tool registry, like any
-third-party publisher. Its tools are on the wire as `vault_triage_queue` /
-`vault_triage_dispose` because the plugin id is the tool namespace. This
-inventory locks the `obsidian_*` family and has never counted external tools, so
-the totals are unchanged — see `docs/triage.md` and `packages/triage/README.md`.
-
-### The `health` subsection was HERE (S7)
-
-The tiered read-only vault-health scanner left for its own plugin
-(`packages/health`, id `vault-health`) at the read-tier satellite extraction.
-Its tools are on the wire as `vault_health_scan` and `vault_health_lint`: the
-`obsidian_` spellings could not survive, because the host REFUSES any published
-external tool name in the reserved `obsidian_*` namespace
-(`external-tools.ts`'s F1 check). See `packages/health/README.md`.
-
-### `tools-jd-scaffold.ts` — `registerJdScaffoldTools` via the `jd-scaffold` module (7 tools)
-
-Stage A + Stage A2 + Stage A3 of the jd-dashboard fold — ported from the
-standalone `obsidian-jd-dashboard`'s `standard-zeros.ts`/`promote-to-folder.ts`/
-`category-index.ts`/`templates.ts`+`new-from-template.ts`. All seven are
-`readOnlyHint: false`; `dry_run` is mandatory (no default) on all seven,
-matching `tools-scheme-write.ts`'s convention. This module never SYNTHESIZES
-`jd-id:` frontmatter itself (standard-zeros' own notes carry none — Governor's
-scheme module is path-canonical, the filename already carries the address,
-same call already made for the jd-numbering fold); a template-created note's
-frontmatter is whatever the user's own template file contains, copied through
-substitution like any other placeholder.
-Takes an injected `JdScaffoldSource` (mirroring `vocabSource`/`provenanceSource`),
-not a raw `App` — the live adapter is `obsidian-jd-scaffold-source.ts`. The
-three template-creation tools take `templates_folder` as an explicit argument
-(no module-level config yet) and check it against the allowlist same as
-`path`/`folder_path` — a discovered template's OWN path is checked too, not
-just the input folder, so a hidden template's content can never reach a
-visible note via substitution.
-
-| Tool name | Description |
-|---|---|
-| `obsidian_jd_standard_zeros` | Create the fixed 10-note standard-zeros set (JDex, Inbox, Task & project management, Templates, Links, Conventions & policies, Knowledge base, Dashboard, Someday, Archive) inside a category folder. An already-existing target is SKIPPED, never overwritten |
-| `obsidian_jd_ensure_category_indexes` | Vault-wide: create a minimal `XX.00` JDex index for every depth-2 `XX <name>` category folder that lacks one (accepts `XX.00 Title.md` / `XX.00.md` / `XX.00+SUF Title.md` as already-present) |
-| `obsidian_jd_promote_to_folder` | Convert an `XX.YY` (or 5-digit expanded-area id) note into a same-named folder with the note moved inside as the folder's cover note, via link-healing rename. Refuses (`not_id_note` / `already_cover_note` / `folder_exists`) rather than guessing |
-| `obsidian_jd_reindex_category` | Rebuild an `XX.00` index file's `## Contents` section from vault truth (not `jd-index.yaml`), at the tier its own prefix dispatches to (ordinary per-category / area-management `X0` / system `00`). Descriptions written as `[[link]] *(note)*` are preserved across every regen at every tier; area-management and system tiers read every sibling `XX.00` file's current content to consolidate them, the ordinary tier reads only its own |
-| `obsidian_jd_new_standard_zero` | Create a single standard-zero note (e.g. the `06.01 Inbox` slot) from a template classified `jd-id: "{{category}}.NN"` in `templates_folder`. Refuses if the slot already exists or no matching template is found |
-| `obsidian_jd_new_generic_id` | Create an `XX.YY Title` note from a template classified `jd-id: "{{category}}.{{id}}"`. Title is sanitized (no path separators, leading dot, or Windows-forbidden characters) |
-| `obsidian_jd_new_stem` | Create an `XX.00+CODE Name` note from a template classified `jd-id: "XX.00+CODE"` |
-
-### `tools-fileclass.ts` — `registerFileclassTools` via the `fileclass` module (8 tools)
-
-Folded from the standalone `fileclass` CLI (github.com/mdelobelle/fileclass-cli —
-the terminal for the **Fileclass** typed-frontmatter plugin, successor to Metadata
-Menu). A **proxy** module: it shells out to the `fileclass` CLI binary via
-`execFile` (the `obsidian_cli` precedent), passing `--json` and pinning the vault
-with `--vault <name>`. **Doubly gated** — the tools register only when the module
-is enabled AND the Fileclass plugin is LOADED (`app.plugins.plugins.fileclass`)
-AND the `fileclass` CLI binary is found (config `binaryPath`, else the standard
-install paths); absent any of these, none register. Disabled while a path
-allowlist is active (the CLI runs over the whole vault through its engine, so its
-output cannot be path-scoped — the `obsidian_cli` / Dataview precedent).
-
-The two write tools (`fileclass_set` / `fileclass_set_where`) register
-`readOnlyHint: false`, so they ride the guard-patched registrar (read-only mode,
-path allowlist on the note path, serialized queue, journal, if_rev/idempotency)
-AND the accept-forbidden guard: a field-write can never introduce or change an
-`accepted` / `accepted-by` / `accepted-on` field, nor set `acceptance-status` to
-an accepted value (`Error [accept_forbidden]`, refused before the CLI runs).
-
-| Tool name | R/W | Description |
-|---|---|---|
-| `fileclass_list` | R | Every fileClass (name, extends, field count, has-Base) — CLI `fileclasses` |
-| `fileclass_schema` | R | A fileClass's options + resolved fields (with ancestry) — CLI `schema <name>` |
-| `fileclass_explain` | R | A note's fileClasses, ancestry, resolved field values — CLI `explain <path>` |
-| `fileclass_query` | R | Rows for a fileClass, `where`/`columns`/`limit` — CLI `list <class>` |
-| `fileclass_get` | R | One field's value on a note — CLI `get <path> <field>` |
-| `fileclass_validate` | R | Schema violations vault-wide or per fileClass; exit 1 (violations) is returned, not errored — CLI `validate` |
-| `fileclass_set` | W | Validated single-note field write; accept-guarded — CLI `set <path> <field> <value>` |
-| `fileclass_set_where` | W | Validated bulk write; **dry-run by default**, `apply: true` to commit; accept-guarded — CLI `set-where <class> <field> <value>` |
+This inventory locks the `obsidian_*` family and has never counted external
+tools, so no total below changes — what changed is that seven names left the
+locked family. Deep references: `docs/skills.md`, `docs/triage.md`,
+`docs/crosssession.md`, `docs/provenance.md`, and the `README.md` of each
+package.
 
 ---
 

@@ -1,0 +1,9 @@
+{
+  "id": "vault-provenance",
+  "name": "Vault Provenance",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Derived-content freshness for agents: check a generated note against its own `derived-from:` sources, reconcile installed Obsidian plugins against their notes, and regenerate the plugin-audit note (dry-run by default). Derivation metadata only — never acceptance. Published as MCP tools through the Governor host.",
+  "author": "Nelson Love",
+  "isDesktopOnly": true
+}

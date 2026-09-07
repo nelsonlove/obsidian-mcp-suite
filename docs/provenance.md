@@ -1,22 +1,45 @@
-# The provenance module — derived-content freshness
+# The provenance satellite — derived-content freshness
 
 > **Deep reference for the shipped implementation.** Canonical concepts and the target design live in the [documentation corpus](README.md); what is shipped versus target is owned by [status-and-compatibility.md](status-and-compatibility.md).
 
 
-`modules.provenance` (default **off**, mutating) is the fold of the standalone
-`obsidian-provenance` CLI. Three tools:
+The `vault-provenance` plugin (`packages/provenance`) is the fold of the standalone
+`obsidian-provenance` CLI. It was a capability module of the Governor host —
+`modules.provenance`, default off, declared mutating — until the suite split's
+mutating tier extracted it into its own Obsidian plugin, publishing its tools to
+the host through `vault-mcp-api`. Three tools:
 
 | Tool | What it does | Mutating? |
 | --- | --- | --- |
-| `provenance_check` | Is a derived note FRESH or STALE against its own `derived-from:` sources? | read-only |
-| `provenance_reconcile` | Installed vs enabled vs noted Obsidian plugins | read-only |
-| `provenance_regen` | Regenerate the plugin-audit note (dry-run by default) | mutating |
+| `vault_provenance_check` | Is a derived note FRESH or STALE against its own `derived-from:` sources? | read-only claim, distrusted by the host |
+| `vault_provenance_reconcile` | Installed vs enabled vs noted Obsidian plugins | read-only claim, distrusted by the host |
+| `vault_provenance_regen` | Regenerate the plugin-audit note (dry-run by default) | mutating |
 
-Source: `src/kernel/provenance/*` (pure, Obsidian-free over an injected
-`ProvenanceSource`) and `src/mcp/tools-provenance.ts` (the tool surface + the one
-Obsidian adapter). Derivation is **not** acceptance: the module stamps
+**The names changed at the extraction**, and so did one argument. The host
+publishes an external tool as `<sanitized publisher id>_<bare name>`, so the
+plugin id is the tool namespace, and the bare names shed the `provenance_`
+prefix so nothing publishes as `vault_provenance_provenance_check`. The three
+names shipped by the module were `provenance_check`, `provenance_reconcile` and
+`provenance_regen`; they are the three in the table above. `check`'s `path`
+argument is now **`note`** — it was `note_path` from the extraction until
+2026-09-07, when the host began recognizing `note_path` as a path key for the
+tier's MUTATING tools and this READ moved to a third spelling to stay out of
+that list. That last one is a scoping decision, not a
+spelling one: `path` is a key the host's guard recognizes, so keeping it would
+have let a session under a path allowlist run `check` scoped to the note it
+names — while the answer still lists every path that note's `derived-from`
+globs resolve to, including files the session cannot see. Named `note`, no
+tool in this plugin carries a recognized path key, so the host blocks all three
+outright while an allowlist is active. Fail-closed. The reversal is one word.
+`packages/provenance/README.md` and `packages/provenance/CLAUDE.md` own the
+detail.
+
+Source: `packages/provenance/src/kernel/*` (pure, Obsidian-free over an injected
+`ProvenanceSource`) and `packages/provenance/src/tools.ts` (the tool surface) with
+`packages/provenance/src/obsidian-source.ts` (the one Obsidian adapter).
+Derivation is **not** acceptance: the plugin stamps
 `derived-from` / `generated` / `generator` / `derivation-mode` /
-`derived-source-count`, and `provenance_regen`'s write routes through the shared
+`derived-source-count`, and `vault_provenance_regen`'s write routes through the shared
 accept-forbidden guard — see [acceptance-model.md](acceptance-model.md).
 
 ## The contract a derived note declares
@@ -33,7 +56,7 @@ derived-source-count: 48             # OPTIONAL witness — see tier 2 below
 
 A note with **no `derived-from` is an error**, not a "fresh" verdict — the check
 is opt-in by construction, and a note that never declared sources is not
-something `provenance_check` gets to have an opinion about.
+something `vault_provenance_check` gets to have an opinion about.
 
 ## What the check detects
 
@@ -66,7 +89,7 @@ witness below, and is invisible without one.
 ### Tier 2 — the `derived-source-count` witness (opt-in, per note)
 
 A generator may stamp how many source files the **whole** `derived-from` set
-resolved to at generation time — the length of the same list `provenance_check`
+resolved to at generation time — the length of the same list `vault_provenance_check`
 reports as `sources` — **including duplicates**, when two entries name the same
 file — so the witness and the check are the same arithmetic. A generator that
 counts a de-duplicated set over overlapping entries under-counts, and its note
@@ -119,11 +142,11 @@ non-numeric) is treated exactly like an absent one.
 
 ## Who stamps the witness
 
-Governor stamps it on **its own** generated note: `provenance_regen` resolves the
+Governor stamps it on **its own** generated note: `vault_provenance_regen` resolves the
 audit's own `derived-from` set (`auditDerivedFrom`, the single definition the
 rendered frontmatter list also comes from) and stamps
 `derived-source-count: <n>`. Delete a plugin note afterwards and
-`provenance_check` reports `sourcesRemoved`, with no mtime anywhere having moved.
+`vault_provenance_check` reports `sourcesRemoved`, with no mtime anywhere having moved.
 
 Three details of that note in particular:
 
@@ -147,7 +170,7 @@ Three details of that note in particular:
   the structural question instead.
 - **Consequence of self-inclusion where it applies (`flat`), pre-existing and not
   fixed here:** the audit note's own mtime moves when the regen writes it, which
-  is later than the `generated:` it just stamped, so `provenance_check` on the
+  is later than the `generated:` it just stamped, so `vault_provenance_check` on the
   audit reports itself in `changed` and reads STALE immediately after a regen.
   That is a wart of that particular `derived-from` list — a glob cannot say
   "everything here except me" — not of the deletion detection above. It does not
@@ -165,7 +188,7 @@ One other Governor generator was considered and deliberately **not** stamped:
 
 - the **conformance debt register** (`src/conformance/debt-register.ts`) stamps
   `generated` + `generator` but declares **no `derived-from`** — its inputs are a
-  findings run and a baseline, not a resolvable file set, so `provenance_check`
+  findings run and a baseline, not a resolvable file set, so `vault_provenance_check`
   cannot check it at all and a source count would witness nothing.
 
 (This list used to name a second generator, the **skills export**, which wrote a Claude Code plugin directory outside the vault rather than a derived *note* with frontmatter — it left this plugin's outside-vault footprint entirely with the S4 satellite extraction (`docs/suite-split-design.md` §6) and is no longer one of this plugin's generators to consider.)
@@ -175,7 +198,7 @@ not touched: the field is simply **readable** if they choose to stamp it.
 
 ## The verdict shape
 
-`provenance_check` returns, additively over the original shape. `changed`,
+`vault_provenance_check` returns, additively over the original shape. `changed`,
 `sources` and `generated` keep their names **and** their meaning. `fresh` keeps
 its name but is deliberately **stricter** than before — an empty `missing` and no
 `sourcesRemoved` are new conditions on it, which is exactly the change this
@@ -183,7 +206,7 @@ detection makes: a note whose plain-path source was deleted used to read fresh.
 
 | Key | Always present? | Meaning |
 | --- | --- | --- |
-| `path` | yes | the note that was checked (echoed back) |
+| `path` | yes | the note that was checked (echoed back — the RESULT key stayed `path` even though the ARGUMENT is now `note`; only the argument name decides how the host scopes a call) |
 | `fresh` | yes | no `changed`, no `missing`, no `sourcesRemoved` |
 | `changed` | yes | resolved source files with mtime > `generated` |
 | `sources` | yes | every file the `derived-from` set resolved to |
@@ -193,11 +216,13 @@ detection makes: a note whose plain-path source was deleted used to read fresh.
 | `expectedSourceCount` | only with a witness | the witness as read |
 | `sourcesRemoved` | only when the set shrank | `{expected, actual}` |
 
+`vault_provenance_regen`'s success object gained two keys at the extraction: `filesChanged` and `files` beside the unchanged `written`. That is the host's `reportedEffects` convention — the audit's destination is configuration rather than a call argument, so without them the journal record's `effects` field for this tool was empty and the record named no file at all. Additive; nothing was renamed or removed.
+
 ## What stays un-headless
 
 Nothing in the freshness engine. `checkFreshness` is pure over the injected
 `ProvenanceSource` (`noteFrontmatter` / `stat` / `glob` — this work added **no**
 new primitive to the seam), and the detection rules above are unit-tested against
-an in-memory backend in `tests/provenance-module.test.mjs`. The one part not covered
+an in-memory backend in `packages/provenance/tests/provenance-module.test.mjs`. The one part not covered
 headlessly is the same one as before: `obsidianProvenanceBackend`'s glob walk over
 the live vault adapter, which must be verified against a running Obsidian.
