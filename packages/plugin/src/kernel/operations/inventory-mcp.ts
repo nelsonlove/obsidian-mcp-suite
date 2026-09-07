@@ -47,13 +47,18 @@
 //                    JD scaffolding, QuickAdd execution bindings,
 //                    provenance regeneration, plugin lifecycle, opaque or
 //                    pathless third-party mutations
+//
+// Several of those capability names now live in satellite plugins rather than
+// here; the classes are unchanged, and this file declares only THIS plugin's
+// surface.
 //   excluded         capabilities whose effects cannot be bounded or
 //                    inspected before execution, and unrecoverable deletion
 //
-// Two rows depart from a literal reading of D07 and say so in place:
-// `obsidian_delete_note` and the `fileclass` module. Both depart in the
-// conservative direction, and the fileclass one is now Nelson's ruling rather
-// than a proposal — see its section.
+// One row departs from a literal reading of D07 and says so in place:
+// `obsidian_delete_note`, in the conservative direction. The `fileclass`
+// module was the other, on Nelson's ruling rather than a proposal; it left
+// with the mutating tier, and the note where its rows used to be keeps the
+// ruling.
 
 import type { Distribution } from "./action.js";
 import { NOTE_READ_V1 } from "./actions/note-read.js";
@@ -293,46 +298,32 @@ const CONFORMANCE: McpSurfaceRow[] = [
   { tool: "obsidian_conformance_debt_render", readOnly: false, module: "conformance-debt", distribution: "public-optional", discovered: "none", postcondition: "Materialize the debt report as a generated register note beside the baseline, refusing when its computed path is outside the allowlist." },
 ];
 
-// ── module: provenance ───────────────────────────────────────────────────────
-
-const PROVENANCE: McpSurfaceRow[] = [
-  { tool: "provenance_check", readOnly: true, module: "provenance", distribution: "public-optional", paths: ["path"], postcondition: "Report whether a note is fresh or stale against its own declared sources." },
-  { tool: "provenance_reconcile", readOnly: true, module: "provenance", distribution: "public-optional", postcondition: "Report installed versus enabled versus documented plugin state." },
-  // D07 admits provenance INSPECTION publicly and holds regeneration back.
-  { tool: "provenance_regen", readOnly: false, module: "provenance", distribution: "private", postcondition: "Regenerate the plugin-audit note; dry-run unless write is requested." },
-];
+// The three `provenance_*` rows were HERE until the mutating-tier satellite
+// extraction, for the same reason the read tier's rows left at S7: derived-
+// content freshness is now a separate plugin (`packages/provenance`, id
+// `vault-provenance`) publishing through the external-tool registry. Its tools
+// are on the wire as `vault_provenance_check` / `_reconcile` / `_regen` — the
+// plugin id IS the tool namespace — and, like every external tool, they are
+// outside this inventory by design.
 
 // ── module: survey ───────────────────────────────────────────────────────────
 
 const SURVEY: McpSurfaceRow[] = [
   { tool: "obsidian_survey_status", readOnly: true, module: "survey", distribution: "public-optional", paths: ["path"], postcondition: "Report whether a note's filesystem-mirror section is stale." },
-  // Regeneration with generated output, like provenance_regen.
+  // Regeneration with generated output, like the provenance satellite's regen.
   { tool: "obsidian_survey_slot", readOnly: false, module: "survey", distribution: "private", paths: ["path"], discovered: "none", postcondition: "Regenerate a note's Contents (Filesystem) section from a mirror root." },
 ];
 
-// ── module: fileclass ────────────────────────────────────────────────────────
-// PRIVATE — Nelson's ruling, 2026-08-21. Decided, not merely assumed.
-//
-// D07 names "Fileclass inspection and named representation proposals" as
-// public-optional, and this implementation proxies an external CLI binary
-// through execFile, which threat-model control #9 keeps out of the public
-// surface. Two adopted rules disagreed. The conservative reading was put to
-// Nelson with the tension stated, and private is what he chose.
-//
-// Promotion is therefore a decision to revisit, not an oversight to fix. It
-// needs one of: the CLI dependency replaced by the Fileclass plugin's own API,
-// or the execFile boundary separately reviewed for Community release.
-
-const FILECLASS: McpSurfaceRow[] = [
-  { tool: "fileclass_list", readOnly: true, module: "fileclass", distribution: "private", refusesUnderScope: true, postcondition: "List every fileClass.", gate: "Fileclass plugin loaded AND the fileclass CLI binary resolves" },
-  { tool: "fileclass_schema", readOnly: true, module: "fileclass", distribution: "private", refusesUnderScope: true, postcondition: "Return one fileClass's options and resolved fields with ancestry.", gate: "Fileclass plugin loaded AND CLI binary resolves" },
-  { tool: "fileclass_explain", readOnly: true, module: "fileclass", distribution: "private", paths: ["path"], refusesUnderScope: true, postcondition: "Return a note's fileClasses, ancestry and resolved field values.", gate: "Fileclass plugin loaded AND CLI binary resolves" },
-  { tool: "fileclass_query", readOnly: true, module: "fileclass", distribution: "private", refusesUnderScope: true, postcondition: "Return filtered rows for a fileClass.", gate: "Fileclass plugin loaded AND CLI binary resolves" },
-  { tool: "fileclass_get", readOnly: true, module: "fileclass", distribution: "private", paths: ["path"], refusesUnderScope: true, postcondition: "Return one field's value on a note.", gate: "Fileclass plugin loaded AND CLI binary resolves" },
-  { tool: "fileclass_validate", readOnly: true, module: "fileclass", distribution: "private", refusesUnderScope: true, postcondition: "Report schema violations across the vault or one fileClass.", gate: "Fileclass plugin loaded AND CLI binary resolves" },
-  { tool: "fileclass_set", readOnly: false, module: "fileclass", distribution: "private", paths: ["path"], discovered: "none", refusesUnderScope: true, postcondition: "Write one validated field on a note; cannot assert the accepted family.", gate: "Fileclass plugin loaded AND CLI binary resolves" },
-  { tool: "fileclass_set_where", readOnly: false, module: "fileclass", distribution: "private", refusesUnderScope: true, postcondition: "Bulk-set a field across a fileClass; dry-run unless apply is requested.", gate: "Fileclass plugin loaded AND CLI binary resolves" },
-];
+// The eight `fileclass_*` rows were HERE until the mutating-tier satellite
+// extraction, and their D07 story is worth keeping because it was a RULING
+// rather than a reading. D07 names "Fileclass inspection and named
+// representation proposals" as public-optional, while the implementation
+// proxies an external CLI binary through execFile — which threat-model control
+// #9 keeps out of the public surface. The tension was put to Nelson with both
+// readings stated and he chose PRIVATE (2026-08-21). That ruling stands and now
+// applies to a whole plugin rather than a module: `packages/fileclass`, id
+// `vault-fileclass`, publishing eight `vault_fileclass_*` tools through the
+// external-tool registry, outside this inventory like every external tool.
 
 // The six `vault_skills_*` rows were HERE until the S4 satellite extraction.
 // This inventory describes THIS PLUGIN's surface, and the skills compiler is
@@ -351,17 +342,13 @@ const FILECLASS: McpSurfaceRow[] = [
 // id IS the tool namespace — and, like every external tool, they are outside
 // this inventory by design.
 
-// ── module: jd-scaffold (private — vault-convention scaffolding) ─────────────
-
-const JD_SCAFFOLD: McpSurfaceRow[] = [
-  { tool: "obsidian_jd_standard_zeros", readOnly: false, module: "jd-scaffold", distribution: "private", paths: ["folder_path"], postcondition: "Create the fixed ten-note standard-zeros set in a folder." },
-  { tool: "obsidian_jd_ensure_category_indexes", readOnly: false, module: "jd-scaffold", distribution: "private", discovered: "unbounded", postcondition: "Create every missing category index note across the vault." },
-  { tool: "obsidian_jd_promote_to_folder", readOnly: false, module: "jd-scaffold", distribution: "private", paths: ["path"], postcondition: "Convert an id note into a same-named folder, healing links." },
-  { tool: "obsidian_jd_reindex_category", readOnly: false, module: "jd-scaffold", distribution: "private", paths: ["path"], discovered: "none", postcondition: "Rebuild a category index's Contents section from vault truth." },
-  { tool: "obsidian_jd_new_standard_zero", readOnly: false, module: "jd-scaffold", distribution: "private", paths: ["folder_path", "templates_folder"], discovered: "none", postcondition: "Create one standard-zero note from a template." },
-  { tool: "obsidian_jd_new_generic_id", readOnly: false, module: "jd-scaffold", distribution: "private", paths: ["folder_path", "templates_folder"], discovered: "none", postcondition: "Create an addressed note from a template." },
-  { tool: "obsidian_jd_new_stem", readOnly: false, module: "jd-scaffold", distribution: "private", paths: ["folder_path", "templates_folder"], discovered: "none", postcondition: "Create a stem note from a template." },
-];
+// The seven `obsidian_jd_*` rows were HERE until the mutating-tier satellite
+// extraction: JD scaffolding is now a separate plugin (`packages/jd-scaffold`,
+// id `vault-jd-scaffold`) publishing through the external-tool registry. Their
+// rename was the one in the whole split that was FORCED rather than chosen —
+// `external-tools.ts` refuses a published name beginning `obsidian_`, so the
+// seven are on the wire as `vault_jd_scaffold_*`. That is also why their
+// departure shrinks the `obsidian_*` family this inventory declares.
 
 // The two `triage_*` rows were HERE until the S5 satellite extraction, for the
 // same reason the six `vault_skills_*` rows left at S4: inbox triage is now a
@@ -382,10 +369,7 @@ export const MCP_SURFACE_INVENTORY: McpSurfaceRow[] = [
   ...CODE_MODE,
   ...SCHEME,
   ...CONFORMANCE,
-  ...PROVENANCE,
   ...SURVEY,
-  ...FILECLASS,
-  ...JD_SCAFFOLD,
 ];
 
 /**

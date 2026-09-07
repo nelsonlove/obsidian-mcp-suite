@@ -5,9 +5,11 @@
 // server.ts).
 //
 // Pure and headless-testable: no `obsidian` imports — the vault-facing
-// dependencies (note listings, the provenance backend) arrive injected via
-// MountDeps, exactly as tools-scheme already takes them; server.ts contributes
-// only the live adapters and the patched registerTool.
+// dependencies arrive injected via MountDeps, exactly as tools-scheme already
+// takes them; server.ts contributes only the live adapters and the patched
+// registerTool. MountDeps is down to two fields — the settings thunk and the
+// scheme module's note listing — because the nine modules that needed their
+// own adapters all left for their own plugins.
 //
 // ── The hard security gate this file answers (recorded by the orchestrator
 //    on the module-host merge; verified by test where testable) ─────────────
@@ -17,10 +19,15 @@
 //     — a read-only registration cannot reach the write queue, the write
 //     primitive, or the accept-guard's territory at all (the guard routes
 //     ONLY `readOnlyHint === false` calls to the kernel's mutation path).
-//     `mutating: true` is a real, deliberate escape hatch (three modules use
-//     it today: provenance, fileclass, jd-scaffold), not a bypass of this gate
-//     — a module that does NOT declare it still gets the
-//     original all-read-only enforcement. Pinned by test: the mount's
+//     `mutating: true` is a real, deliberate escape hatch, not a bypass of
+//     this gate — a module that does NOT declare it still gets the original
+//     all-read-only enforcement. NO module declares it today: provenance,
+//     fileclass and jd-scaffold were the three that did, and all three left
+//     as satellite plugins at the suite split's mutating tier. The flag, this
+//     gate's branch and their tests are kept rather than deleted — a
+//     documented module-host capability with three shipped users behind it,
+//     not perimeter surface that was never used — so a module needing it
+//     again declares it exactly as they did. Pinned by test: the mount's
 //     registerAll gate refuses a non-mutating module's tool whose
 //     annotations are not read-only (see `mountModules`), so a future module
 //     slipping a mutating handler in without the declaration fails loudly (a
@@ -54,11 +61,7 @@ import {
 import { makeRegistry, DEFAULT_SCHEMES, validateExcludedRoots, excludeRoots, type SchemeInstanceConfig } from "../kernel/scheme/registry.js";
 import { validateJdConfig, type JdConfig } from "../kernel/scheme/jd.js";
 import { registerSchemeTools } from "./tools-scheme.js";
-import { registerProvenanceTools, type ProvenanceToolsCtx } from "./tools-provenance.js";
-import { DEFAULT_PROVENANCE_CONFIG, validateProvenanceConfig, DEFAULT_NOTES_DIR, DEFAULT_AUDIT_NOTE, type ProvenanceBackend } from "../kernel/provenance/index.js";
-import { registerFileclassTools, type FileclassToolsCtx } from "./tools-fileclass.js";
 import { DEFAULT_GOVERNANCE_SETTINGS, DEFAULT_ACCEPTANCE_SETTINGS } from "../governor/kernel/settings.js";
-import { registerJdScaffoldTools, emptyJdScaffoldSource, type JdScaffoldSource, type JdScaffoldToolsCtx } from "./tools-jd-scaffold.js";
 
 // ── manifests (#81: config-host — see
 //    docs/superpowers/specs/2026-08-10-config-host-design.md) ──────────────
@@ -330,102 +333,30 @@ const schemeBinding: ConfigBinding = {
 //     debt-source, cli). See `packages/vocab/CLAUDE.md`, which records the
 //     same correction.
 //
-// ── provenance module manifest (the obsidian-provenance CLI fold) ──────────
+// ── the provenance module manifest USED TO LIVE HERE ───────────────────────
 //
-// The second mutating capability module (after skills, which left for its own
-// plugin at the S4 satellite extraction). Ported from the
-// standalone `obsidian-provenance` Python CLI. Its config is a NEW module (no
-// ConfigBinding): it lives at `modules.provenance.config`, so the manifest's
-// flat field keys map straight through. One field today — the plugin-notes
-// directory the reconcile/regen audit scans, defaulting to the Python
-// `DEFAULT_NOTES_DIR`. The directory documents all THREE tools: two read
-// (check / reconcile) and one mutating (regen).
+// Removed at the MUTATING-tier satellite extraction, with the fileclass and
+// jd-scaffold manifests below it. Derived-content provenance is now
+// `packages/provenance` (id `vault-provenance`), publishing
+// `vault_provenance_check` / `_reconcile` / `_regen` — the plugin id IS the
+// tool namespace, and the bare names shed the `provenance_` prefix so nothing
+// published as `vault_provenance_provenance_check`. Its three config fields
+// (`notesDir`, `notesSource`, `auditNote`) moved to that plugin's own settings
+// tab and are adopted once out of `modules.provenance.config`.
 //
-// DERIVATION ≠ ACCEPTANCE: the module stamps `derived-from` / `generated` /
-// `generator` / `derivation-mode` — plus the `derived-source-count` witness that
-// lets a later freshness check see DELETED sources — on the audit note it
-// regenerates: provenance metadata, orthogonal to acceptance. `provenance_regen`'s write routes through
-// the accept-forbidden guard like every write; it contributes no accept verb.
-const PROVENANCE_CONFIG_FIELDS: ConfigField[] = [
-  {
-    key: "notesDir",
-    label: "Plugin-notes root",
-    type: "text",
-    help:
-      "Vault-relative folder holding the per-plugin notes the audit reconciles against installed/enabled plugins. " +
-      `Blank ⇒ the default (${DEFAULT_NOTES_DIR}).`,
-  },
-  {
-    key: "notesSource",
-    label: "Notes layout",
-    type: "text",
-    help:
-      '"jd-slots" (default) — one JD slot per repo under the root, the folder note carrying `github-repo:`. ' +
-      '"flat" — one note per plugin directly in the root, each carrying `plugin.id`. ' +
-      "An explicit `plugin.id` is authoritative in both layouts; slot matching is deliberately strict and " +
-      "reports what it cannot place rather than guessing.",
-  },
-  {
-    key: "auditNote",
-    label: "Audit note path",
-    type: "text",
-    help:
-      "Vault-relative path of the audit note itself — a NOTE path including the .md filename, not a folder. " +
-      `Blank ⇒ ${DEFAULT_AUDIT_NOTE} in jd-slots mode; in FLAT mode blank derives the name from the notes root instead. ` +
-      "It is a path rather than a folder because naming a note " +
-      "after its folder is the JD folder-note convention: derived from a slot root it would resolve onto that " +
-      "folder's own note and rewrite it.",
-  },
-];
-
-const PROVENANCE_MANIFEST: ModuleManifest = {
-  summary:
-    "Derived-content provenance, ported from the obsidian-provenance CLI: check whether a note's `derived-from` " +
-    "sources changed after it was `generated` (freshness), audit installed vs enabled vs noted Obsidian plugins, and " +
-    "regenerate the plugin-audit note. Stamps DERIVATION metadata only (derived-from / generated / generator / " +
-    "derivation-mode / derived-source-count) — orthogonal to acceptance; regen's write can never set an acceptance field, routing through " +
-    "the accept-forbidden guard like every write.",
-  config: {
-    fields: PROVENANCE_CONFIG_FIELDS,
-    defaults: { ...DEFAULT_PROVENANCE_CONFIG } as Record<string, unknown>,
-    validate: validateProvenanceConfig,
-  },
-  directory: {
-    tools: [
-      {
-        name: "provenance_check",
-        purpose: "Report whether a derived note is FRESH or STALE against its own `derived-from:` sources.",
-        readOnly: true,
-        options: [{ name: "path", what: "vault-relative path of the derived note to check" }],
-        caveats: [
-          "A source file modified after the note's `generated:` timestamp marks it stale; a missing `derived-from` is an error.",
-          "Deletions: a NON-GLOB entry that no longer resolves is always reported (`missing`); deletions inside a GLOB " +
-            "entry are seen only when the note stamps the optional `derived-source-count:` witness (a lower count now ⇒ " +
-            "`sourcesRemoved`). Without it the result carries `globDeletionsUndetectable: true` rather than implying a clean check.",
-        ],
-      },
-      {
-        name: "provenance_reconcile",
-        purpose:
-          "Compare installed, enabled, and noted Obsidian plugins and report unnoted plugins and note-vs-manifest version drift.",
-        readOnly: true,
-        caveats: ["Reads .obsidian/plugins/*/manifest.json + .obsidian/community-plugins.json + the configured notes dir; runs over the whole notes dir (not allowlist-scoped)."],
-      },
-      {
-        name: "provenance_regen",
-        purpose: "Regenerate the plugin-audit note's text, preserving hand-written `<!-- human:start … -->` sections.",
-        readOnly: false,
-        options: [{ name: "write", what: "persist the regenerated audit note; omitted/false ⇒ dry-run (return text, write nothing)" }],
-        caveats: [
-          "DRY-RUN by default. The write routes through the accept-forbidden guard and the guard-patched registrar " +
-            "(queue, journal): it stamps DERIVATION metadata only and can never introduce or change an accepted / " +
-            "accepted-by / accepted-on field, nor set acceptance-status to an accepted value.",
-        ],
-      },
-    ],
-  },
-};
-
+// One argument changed with them, and it is a scoping decision rather than a
+// spelling one: `check`'s `path` became `note_path` at the extraction and is
+// now spelled `note` (round 2, 2026-09-07). `path` is a key this guard
+// recognizes, so keeping it would have let a session under a path allowlist run
+// the check scoped to the note it names — while the answer still listed every
+// path that note's `derived-from` globs resolve to. `note_path` is a key too
+// SINCE ROUND 1 (see guard.ts), which briefly re-opened exactly that; round 2
+// settled the rule — kernel visibility is a MUTATING concern, so a read that
+// can name out-of-allowlist paths goes pathless while a mutating tool that
+// names a note keeps `note_path`. `check` is a read, so it is `note`, and no
+// tool in that plugin carries a recognized path key: F3 blocks all three
+// outright under an allowlist. Fail-closed.
+//
 // ── the health module manifest USED TO LIVE HERE ────────────────────────────
 //
 // Removed at the read-tier satellite extraction (suite split, S7). The vault
@@ -444,142 +375,36 @@ const PROVENANCE_MANIFEST: ModuleManifest = {
 // down to `provenance_reconcile` and `obsidian_conformance_debt`, both still
 // here.
 //
-// ── fileclass module manifest (#188: the fileclass CLI fold) ───────────────
+// ── the fileclass module manifest USED TO LIVE HERE ────────────────────────
 //
-// A MUTATING capability module that proxies the standalone `fileclass` CLI
-// (github.com/mdelobelle/fileclass-cli — the terminal for the Fileclass
-// typed-frontmatter plugin). Unlike provenance, its tools mount ONLY when
-// the Fileclass plugin is LOADED and the CLI binary is present — the module's
-// registrar (registerFileclassTools) gates on both and registers nothing when
-// either is absent, so it degrades cleanly to absent (issue #188). It shells out
-// to the CLI via execFile, the obsidian_cli proxy precedent — see
-// tools-fileclass.ts's header for why proxy over engine-integration.
+// Removed at the MUTATING-tier satellite extraction. The fileclass CLI proxy is
+// now `packages/fileclass` (id `vault-fileclass`), publishing
+// `vault_fileclass_list` / `_schema` / `_explain` / `_query` / `_get` /
+// `_validate` / `_set` / `_set_where` — the bare names shed the `fileclass_`
+// prefix so nothing published as `vault_fileclass_fileclass_list`. Its one
+// config field (`binaryPath`) moved to that plugin's own settings tab and is
+// adopted once out of `modules.fileclass.config`.
 //
-// Six read tools (readOnlyHint: true) and two write tools (readOnlyHint: false):
-// fileclass_set / fileclass_set_where write typed frontmatter, so they route
-// through the accept-forbidden guard (a field-write can never assert acceptance)
-// and the guard-patched registrar (read-only mode, queue, journal, if_rev,
-// path allowlist). set-where is DRY-RUN by default. Default DISABLED (opt-in),
-// consistent with provenance/health — a newly-folded surface stays off
-// until a human turns it on in the config tab.
+// The DOUBLE GATE went with it and still holds: nothing is published unless the
+// Fileclass plugin is loaded AND the CLI binary resolves. Only its grain
+// changed — publish time rather than per connection build.
 //
-// One config field: an explicit `binaryPath` override for the `fileclass` CLI
-// (blank ⇒ auto-detect on the standard install paths). The vault is pinned to
-// THIS vault by the tool layer (`--vault <name>`), so there is deliberately no
-// vault-targeting config field — a session can never cross into another vault.
-const FILECLASS_CONFIG_FIELDS: ConfigField[] = [
-  {
-    key: "binaryPath",
-    label: "fileclass CLI path",
-    type: "text",
-    help:
-      "Absolute path to the `fileclass` CLI binary. Blank ⇒ auto-detect on the standard install paths " +
-      "(/usr/local/bin, /opt/homebrew/bin, ~/.local/bin, ~/.npm-global/bin, /usr/bin). The tools mount only when " +
-      "BOTH the Fileclass plugin is installed+enabled AND this binary is found.",
-  },
-];
-
-export const DEFAULT_FILECLASS_CONFIG: Record<string, unknown> = { binaryPath: "" };
-
-/** Validate the fileclass module config: `binaryPath`, when present, must be a
- * string. (An empty string is the documented "auto-detect" value.) */
-export function validateFileclassConfig(config: Record<string, unknown>): string[] {
-  const problems: string[] = [];
-  if (config.binaryPath !== undefined && typeof config.binaryPath !== "string") {
-    problems.push("binaryPath must be a string (an absolute path, or blank to auto-detect)");
-  }
-  return problems;
-}
-
-const FILECLASS_MANIFEST: ModuleManifest = {
-  summary:
-    "Typed-frontmatter (fileClass) reads and validated writes, proxied from the standalone `fileclass` CLI (the " +
-    "terminal for the Fileclass plugin). Read tools list fileClasses, dump a schema, explain a note's fields, query " +
-    "rows, get a value, and validate schema violations; the two write tools set a validated field on one note or " +
-    "bulk-set across a fileClass (DRY-RUN by default, apply: true to commit). MOUNTS ONLY when the Fileclass plugin " +
-    "is installed+enabled and the `fileclass` CLI binary is present — absent either, the tools do not register. " +
-    "Writes route through the accept-forbidden guard: a field-write can never introduce or change an accepted / " +
-    "accepted-by / accepted-on field, nor set acceptance-status to an accepted value.",
-  config: {
-    fields: FILECLASS_CONFIG_FIELDS,
-    defaults: { ...DEFAULT_FILECLASS_CONFIG },
-    validate: validateFileclassConfig,
-  },
-  directory: {
-    tools: [
-      { name: "fileclass_list", purpose: "List every fileClass (name, extends, field count, has-Base).", readOnly: true },
-      {
-        name: "fileclass_schema",
-        purpose: "A fileClass's options and resolved fields, with ancestry from extends.",
-        readOnly: true,
-        options: [{ name: "fileclass", what: "the fileClass name, e.g. 'Book'" }],
-      },
-      {
-        name: "fileclass_explain",
-        purpose: "A note's fileClasses, ancestry, and resolved field values.",
-        readOnly: true,
-        options: [{ name: "path", what: "vault-relative note path" }],
-      },
-      {
-        name: "fileclass_query",
-        purpose: "Rows for a fileClass, optionally filtered / columned / limited.",
-        readOnly: true,
-        options: [
-          { name: "fileclass", what: "the fileClass name" },
-          { name: "where", what: "a filter expression, e.g. 'status is unread'" },
-          { name: "columns", what: "comma-separated columns, e.g. 'title,author'" },
-          { name: "limit", what: "maximum rows to return" },
-        ],
-      },
-      {
-        name: "fileclass_get",
-        purpose: "One field's value on a note.",
-        readOnly: true,
-        options: [
-          { name: "path", what: "vault-relative note path" },
-          { name: "field", what: "the field name" },
-        ],
-      },
-      {
-        name: "fileclass_validate",
-        purpose: "Report schema violations across the vault or one fileClass (exit 1 = violations, returned not errored).",
-        readOnly: true,
-        options: [{ name: "fileclass", what: "restrict validation to one fileClass" }],
-      },
-      {
-        name: "fileclass_set",
-        purpose: "Write one validated field value on a note (the engine validates before writing).",
-        readOnly: false,
-        options: [
-          { name: "path", what: "vault-relative note path" },
-          { name: "field", what: "the field name" },
-          { name: "value", what: "the value to set" },
-        ],
-        caveats: [
-          "Routes through the accept-forbidden write guard: it can never introduce or change an accepted / " +
-            "accepted-by / accepted-on field, nor set acceptance-status to an accepted value.",
-        ],
-      },
-      {
-        name: "fileclass_set_where",
-        purpose: "Bulk-set a validated field on every matching note of a fileClass. DRY-RUN by default.",
-        readOnly: false,
-        options: [
-          { name: "fileclass", what: "the fileClass name" },
-          { name: "field", what: "the field name" },
-          { name: "value", what: "the value to set" },
-          { name: "where", what: "a filter expression, e.g. 'status isEmpty'" },
-          { name: "apply", what: "commit the change; omit/false ⇒ dry-run (report only, write nothing)" },
-        ],
-        caveats: [
-          "DRY-RUN by default — writes nothing until apply: true.",
-          "Routes through the accept-forbidden write guard like fileclass_set.",
-        ],
-      },
-    ],
-  },
-};
-
+// Its whole-surface allowlist refusal is the reason the mutating tier renamed
+// its note arguments away from `path`. The module refused every one of its
+// eight tools while an allowlist was active, because the CLI runs its engine
+// over the whole vault and its output cannot be attributed to paths; a
+// satellite cannot make that check, so the host's F3 gate had to do it instead.
+// After round 2 (2026-09-07) that reproduction is SEVEN of the eight: the two
+// reads that name a note spell it `note` and are refused with the five pathless
+// ones, while `set` spells it `note_path` — a key — so the host scopes that one
+// write per-path and the kernel's record guard sees the note it rewrites. The
+// asymmetry is deliberate: a read gains nothing from kernel visibility, a write
+// does.
+//
+// NOT related, and easy to confuse: `obsidian_fileclass_schema` /
+// `obsidian_fileclass_insert_fields` in tools-integrations.ts are for the
+// metadata-menu plugin. They stay here and were untouched by the extraction.
+//
 // ── acceptance module manifest (#83, cycle 2: the accept gesture + pane) ─────────────
 //
 // Module id `acceptance` since 0.12.0 (historically `governance` — the source dirs
@@ -724,108 +549,34 @@ const ACCEPTANCE_MANIFEST: ModuleManifest = {
 // copied — the mirror-image risk (a host copy racing the satellite's) is
 // exactly why it had to be a move.
 //
-// jd-scaffold, Stage A + Stage A2 + Stage A3 of the jd-dashboard fold
-// (docs/superpowers/specs/2026-08-19-jd-dashboard-fold-design.md): seven
-// mutating tools ported from obsidian-jd-dashboard's standard-zeros.ts,
-// promote-to-folder.ts, category-index.ts, and templates.ts/
-// new-from-template.ts. No config fields yet — templates_folder is an
-// explicit argument on each of the three template-creation tools instead of
-// a module-level setting (agents pass it per call; a human UI would want a
-// setting, but nothing here needs one yet), so jd-scaffold still has no
-// per-vault knobs at the MODULE level (unlike scheme's prefix/area config).
-const JD_SCAFFOLD_MANIFEST: ModuleManifest = {
-  summary:
-    "Johnny Decimal category scaffolding, ported from obsidian-jd-dashboard: create the fixed standard-zeros set " +
-    "(XX.00-XX.09) in a category, self-heal a vault-wide missing XX.00, promote a leaf id note into a " +
-    "same-named folder, rebuild an XX.00 index file's Contents section from vault truth, and create standard-" +
-    "zero/generic-id/stem notes from templates classified by their own jd-id frontmatter. This module never " +
-    "SYNTHESIZES jd-id: frontmatter itself (standard-zeros' own notes carry none — vault-mcp's scheme module is " +
-    "path-canonical, the filename already carries the address, same call already made for the jd-numbering " +
-    "fold); a template-created note's frontmatter is whatever the user's own template file contains, copied " +
-    "through substitution like every other placeholder in the file.",
-  directory: {
-    tools: [
-      {
-        name: "obsidian_jd_standard_zeros",
-        purpose:
-          "Create the fixed 10-note standard-zeros set (JDex, Inbox, Task & project management, Templates, " +
-          "Links, Conventions & policies, Knowledge base, Dashboard, Someday, Archive) inside a category folder.",
-        readOnly: false,
-        options: [
-          { name: "folder_path", what: "vault path of the category folder" },
-          { name: "prefix", what: "the category's two-digit prefix" },
-        ],
-        caveats: ["An already-existing target is SKIPPED, never overwritten — safe to re-run."],
-      },
-      {
-        name: "obsidian_jd_ensure_category_indexes",
-        purpose:
-          "Vault-wide: walk every depth-2 `XX <name>` category folder and create a minimal `XX.00` JDex index for " +
-          "any that lack one.",
-        readOnly: false,
-        caveats: ["Accepts `XX.00 Title.md`, `XX.00.md`, or `XX.00+SUF Title.md` as already-present."],
-      },
-      {
-        name: "obsidian_jd_promote_to_folder",
-        purpose:
-          "Convert an XX.YY (or 5-digit expanded-area id) note into a same-named folder with the note moved " +
-          "inside as the folder's cover note, via link-healing rename.",
-        readOnly: false,
-        options: [{ name: "path", what: "vault path of the note to promote" }],
-        caveats: ["Refuses (not_id_note / already_cover_note / folder_exists) rather than guessing."],
-      },
-      {
-        name: "obsidian_jd_reindex_category",
-        purpose:
-          "Rebuild an XX.00 index file's `## Contents` section from vault truth (not jd-index.yaml), at whichever " +
-          "of the three tiers its own prefix dispatches to (ordinary per-category / area-management / system).",
-        readOnly: false,
-        options: [{ name: "path", what: "vault path of the XX.00 index file to reindex" }],
-        caveats: [
-          "Descriptions written as `[[link]] *(note)*` are preserved across every regen, at every tier.",
-          "Area-management and system tiers read every sibling XX.00 file's current content to consolidate them; " +
-            "the ordinary tier reads only the target's own content.",
-        ],
-      },
-      {
-        name: "obsidian_jd_new_standard_zero",
-        purpose: "Create a single standard-zero note (e.g. the `06.01 Inbox` slot) from a template classified `jd-id: \"{{category}}.NN\"`.",
-        readOnly: false,
-        options: [
-          { name: "folder_path", what: "vault path of the category folder" },
-          { name: "prefix", what: "the category's two-digit prefix" },
-          { name: "zero_id", what: "which standard-zero slot to create" },
-          { name: "templates_folder", what: "vault path of the folder containing template notes" },
-        ],
-        caveats: ["Refuses if the slot already exists or no matching template is found."],
-      },
-      {
-        name: "obsidian_jd_new_generic_id",
-        purpose: "Create an `XX.YY Title` note from a template classified `jd-id: \"{{category}}.{{id}}\"`.",
-        readOnly: false,
-        options: [
-          { name: "folder_path", what: "vault path of the category folder" },
-          { name: "prefix", what: "the category's two-digit prefix" },
-          { name: "id", what: "two-digit id for the new note" },
-          { name: "title", what: "title for the new note — sanitized before use" },
-          { name: "templates_folder", what: "vault path of the folder containing template notes" },
-        ],
-      },
-      {
-        name: "obsidian_jd_new_stem",
-        purpose: "Create an `XX.00+CODE Name` note from a template classified `jd-id: \"XX.00+CODE\"`.",
-        readOnly: false,
-        options: [
-          { name: "folder_path", what: "vault path of the category folder" },
-          { name: "prefix", what: "the category's two-digit prefix" },
-          { name: "stem_code", what: "the stem code (e.g. DRAFT)" },
-          { name: "name", what: "name for the new note — sanitized before use" },
-          { name: "templates_folder", what: "vault path of the folder containing template notes" },
-        ],
-      },
-    ],
-  },
-};
+// ── the jd-scaffold module manifest USED TO LIVE HERE ──────────────────────
+//
+// Removed at the MUTATING-tier satellite extraction. Johnny Decimal scaffolding
+// is now `packages/jd-scaffold` (id `vault-jd-scaffold`), publishing
+// `vault_jd_scaffold_standard_zeros` / `_ensure_category_indexes` /
+// `_promote_to_folder` / `_reindex_category` / `_new_standard_zero` /
+// `_new_generic_id` / `_new_stem`.
+//
+// Its seven names are the one rename in the whole split that was FORCED rather
+// than chosen: `external-tools.ts` refuses a published tool name beginning
+// `obsidian_`, so no plugin id could have reproduced the `obsidian_jd_*`
+// spellings. It declared NO config block, so unlike provenance and fileclass
+// that plugin has nothing to adopt, and says so rather than shipping an empty
+// migration.
+//
+// Two of its tools named a `path` argument; both are now `note_path`, which
+// THIS host recognizes as a path key since round 1 (2026-09-07). So under an
+// allowlist those two are scoped per-path and the kernel's record guard, lock
+// consult and journal target all see the note they rewrite; the other five name
+// no note and F3 refuses them wholesale. Two residuals are documented rather
+// than glossed, both in `packages/jd-scaffold`: promote-to-folder writes to
+// destinations the plan COMPUTES and no argument names (the obsidian_repoint_link
+// boundary — reported back as `filesChanged`/`files` so the journal's `effects`
+// names them), and reindex READS every sibling index file vault-wide at the area
+// and system tiers, which the argument-derived guard cannot scope. The module
+// bounded both itself with `visiblePaths`; a satellite cannot, and the reindex
+// case was ratified as an accepted residual rather than closed.
+//
 
 /** What the mount needs from the live plugin (server.ts supplies the Obsidian
  * adapters; tests supply fakes). The same per-call freshness discipline as
@@ -841,36 +592,6 @@ export interface MountDeps {
   };
   /** Vault markdown paths, for the scheme module's placement/membership answers. */
   schemeNotes: () => string[];
-  /** The provenance module's injected backend (obsidianProvenanceBackend live)
-   * — the freshness/reconcile read seam plus the regen write primitive. */
-  provenanceSource: ProvenanceBackend;
-  /** This vault's name — pinned into every fileclass CLI call via `--vault`.
-   * Optional so the settings-UI's stand-in deps and pre-fileclass callers still
-   * satisfy MountDeps (the fileclass module only reads it when it registers). */
-  vaultName?: string;
-  /** Whether the Fileclass plugin is LOADED (`app.plugins.plugins.fileclass`).
-   * Absent ⇒ treated as not present, so the fileclass module registers nothing
-   * (the settings UI passes no probe and never calls register()). */
-  fileclassPresent?: () => boolean;
-  /** Injected exec for the fileclass CLI (tests). Absent ⇒ the production execFile. */
-  fileclassExec?: FileclassToolsCtx["exec"];
-  /** Injected fileclass CLI binary (tests / explicit override). Absent ⇒ the
-   * registrar resolves from config.binaryPath, else probes the filesystem. */
-  fileclassBinary?: string | null;
-  /** The jd-scaffold module's injected vault reader/writer
-   *  (obsidianJdScaffoldSource live — standard-zeros creation, category-index
-   *  self-heal, promote-to-folder). Absent ⇒ emptyJdScaffoldSource(): reads
-   *  answer empty, writes refuse with a clear error rather than a silent
-   *  no-op — the "registers, degrades cleanly" shape the bases module used
-   *  before it left for the `vault-bases` satellite at S7. */
-  jdScaffoldSource?: JdScaffoldSource;
-  /** Feeds jd-scaffold's template-creation tools' accept-forbidden content
-   *  scan (same `{parseYaml}` shape `registerCliTools` already takes) —
-   *  without it, a template-created note's frontmatter fence can never be
-   *  verified and every such call refuses. Absent ⇒ every fence-carrying
-   *  template refuses (fails closed, not open — matches the guard's own
-   *  documented "unverifiable = refuse" contract). */
-  jdScaffoldParseYaml?: (yaml: string) => unknown;
 }
 
 /** The ModuleHostCtx modules receive — deliberately minimal (gate point 2).
@@ -927,51 +648,27 @@ export function builtinModules(deps: MountDeps): VaultModule[] {
     // `modules.skills.config` once, on its own first load, without writing
     // anything here.
     //
-    // The provenance module (the obsidian-provenance CLI fold): the second
-    // mutating capability module. Like skills was, it declares `mutating: true`,
-    // which the mount gate honors to let its one write tool (regen) register
-    // with `readOnlyHint: false` — still through the guard-patched registrar
-    // (read-only mode, allowlist, queue, journal) and the accept-forbidden
-    // write guard. Default DISABLED: a newly-folded mutating surface stays off
-    // until a human turns it on in the config tab. Config lives at
-    // `modules.provenance.config` (a new module, no ConfigBinding), so `config`
-    // here is that record merged over the manifest defaults.
-    moduleFromRegistrar(
-      { id: "provenance", capabilities: ["freshness", "reconcile", "regen"], enabled: false, mutating: true, manifest: PROVENANCE_MANIFEST },
-      (server: any, ctx: ProvenanceToolsCtx) => registerProvenanceTools(server, deps.provenanceSource, ctx),
-      (_host, config) => ({ config, getSettings: deps.getSettings }),
-    ),
+    // THE PROVENANCE MODULE IS GONE FROM HERE (mutating tier). Derived-content
+    // freshness ships as `packages/provenance` (plugin id `vault-provenance`),
+    // publishing `vault_provenance_check` / `_reconcile` / `_regen`. It took
+    // its whole kernel (`src/kernel/provenance/`) with it — nothing else in
+    // this plugin imported it — and its config left with it, so a stale
+    // `modules.provenance` row in an existing data.json is simply an unknown
+    // module id now.
+    //
     // THE HEALTH MODULE IS GONE FROM HERE (suite split, S7). The tiered vault
     // health scan ships as `packages/health` (plugin id `vault-health`),
     // publishing `vault_health_scan` and `vault_health_lint`. It took its
     // whole kernel (`src/kernel/health/`) with it — nothing else in this
     // plugin imported it.
     //
-    // The fileclass module (#188: the fileclass CLI fold): a MUTATING capability
-    // module that PROXIES the standalone `fileclass` CLI (execFile, the
-    // obsidian_cli precedent). Like provenance it declares `mutating:
-    // true`, so its two write tools (set / set_where) register with
-    // `readOnlyHint: false` — through the guard-patched registrar (read-only
-    // mode, path allowlist, queue, journal, if_rev) and the accept-forbidden
-    // guard applied in the tool layer. UNIQUELY among the modules, its registrar
-    // ALSO gates on the Fileclass plugin being LOADED and the CLI binary being
-    // present: `present()`/`binary` absent ⇒ it registers zero tools (degrades
-    // cleanly to absent), so an enabled module with the plugin uninstalled is a
-    // no-op rather than a broken surface. Default DISABLED (opt-in). Config lives
-    // at `modules.fileclass.config` (a new module, no ConfigBinding), so `config`
-    // here is that record merged over the manifest defaults.
-    moduleFromRegistrar(
-      { id: "fileclass", capabilities: ["fileclass"], enabled: false, mutating: true, manifest: FILECLASS_MANIFEST },
-      (server: any, ctx: FileclassToolsCtx) => registerFileclassTools(server, ctx),
-      (_host, config) => ({
-        config,
-        getSettings: deps.getSettings,
-        vaultName: deps.vaultName ?? "",
-        present: deps.fileclassPresent ?? (() => false),
-        ...(deps.fileclassExec ? { exec: deps.fileclassExec } : {}),
-        ...(deps.fileclassBinary !== undefined ? { binary: deps.fileclassBinary } : {}),
-      }),
-    ),
+    // THE FILECLASS MODULE IS GONE FROM HERE (mutating tier). The fileclass
+    // CLI proxy ships as `packages/fileclass` (plugin id `vault-fileclass`),
+    // publishing eight `vault_fileclass_*` tools. It had no kernel to take —
+    // the engine is the CLI's — and its `binaryPath` config left with it. Its
+    // double gate (Fileclass plugin loaded AND CLI binary found) went too, and
+    // is now evaluated at publish time rather than per connection build.
+    //
     // The acceptance module (#83, cycle 2; id `acceptance` since 0.12.0, historically
     // `governance`): the accept pane's toggle. It
     // contributes ZERO MCP tools — its registrar is a NO-OP on the transport. Its
@@ -995,25 +692,12 @@ export function builtinModules(deps: MountDeps): VaultModule[] {
     // seam and its module-scoped serializer moved WITH it, as one piece and
     // with no copy left behind — see the note where the manifest used to be.
     //
-    // jd-scaffold (Stage A + A2 + A3 of the jd-dashboard fold): another
-    // MUTATING capability module (skills' own reasoning applies here too) —
-    // it declares `mutating: true` so its seven write tools (standard_zeros,
-    // ensure_category_indexes, promote_to_folder, reindex_category,
-    // new_standard_zero, new_generic_id, new_stem) register with
-    // `readOnlyHint: false`, still through the guard-patched registrar
-    // (queue, journal, allowlist, read-only mode). Default DISABLED, matching
-    // the skills module's own precedent ("a newly-folded mutating surface
-    // stays off until a human turns it on"). No MODULE-level config yet (see
-    // JD_SCAFFOLD_MANIFEST's own comment). ctxOf DOES carry parseYaml
-    // (deps.jdScaffoldParseYaml) alongside getSettings — the template-
-    // creation tools' accept-forbidden scan needs it to verify a
-    // frontmatter fence at all; without it every such call fails closed.
-    moduleFromRegistrar(
-      { id: "jd-scaffold", capabilities: ["scaffolding"], enabled: false, mutating: true, manifest: JD_SCAFFOLD_MANIFEST },
-      (server: any, ctx: JdScaffoldToolsCtx) =>
-        registerJdScaffoldTools(server, deps.jdScaffoldSource ?? emptyJdScaffoldSource(), ctx),
-      () => ({ getSettings: deps.getSettings, parseYaml: deps.jdScaffoldParseYaml }),
-    ),
+    // THE JD-SCAFFOLD MODULE IS GONE FROM HERE (mutating tier). Johnny Decimal
+    // scaffolding ships as `packages/jd-scaffold` (plugin id
+    // `vault-jd-scaffold`), publishing seven `vault_jd_scaffold_*` tools. It
+    // took its whole kernel (`src/kernel/jd-scaffold/`) and its Obsidian
+    // adapter with it, and it declared no config at all, so there is not even a
+    // stale settings row to leave behind.
   ];
 }
 
@@ -1037,12 +721,16 @@ export function builtinModules(deps: MountDeps): VaultModule[] {
 export function mountModules(registerTool: ToolRegistrar, deps: MountDeps): ModuleRegistry {
   const modules = builtinModules(deps);
   const registry = new ModuleRegistry(modules, deps.getSettings().modules ?? {});
-  // The modules that have EARNED the right to contribute mutating tools
-  // (provenance, fileclass and jd-scaffold today; skills, triage and
-  // cross-session each set the precedent before leaving for their own
-  // plugins), by declaring `mutating` — see VaultModule.mutating.
-  // Every other module is still held to read-only, so a mutating handler
-  // cannot drift into a read-only module unreviewed.
+  // The modules that have EARNED the right to contribute mutating tools, by
+  // declaring `mutating` — see VaultModule.mutating. This set is EMPTY today:
+  // provenance, fileclass and jd-scaffold were the last three to declare it and
+  // all three left for their own plugins at the mutating tier of the suite
+  // split (skills, triage and cross-session set the precedent before them). So
+  // the gate below currently reduces to its original rule — every module tool
+  // must be read-only. The machinery stays anyway: it is a documented
+  // module-host capability with six shipped users behind it, not perimeter
+  // surface that was never used, and a module needing it again declares it the
+  // same way they did.
   const mutatingModules = new Set(modules.filter((m) => m.mutating).map((m) => m.id));
   registry.registerAll(registerTool, mountHost(deps), {
     // The read-only-only rule rides registerAll's gate so a refused tool is

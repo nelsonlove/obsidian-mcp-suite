@@ -23,18 +23,22 @@ Absent, disabled, incompatible, unavailable, unhealthy, and empty are different 
 |---|---|---|---|---|
 | **Scheme** | Resolve, validate, allocate, and place notes under configured addressing systems | Reads by default; placement and renumbering are preview-first structural work | Enabled for resolution; mutating actions separately authorized | An open address is computed, not reserved; exclusions bound the scheme, not vault access |
 | **Vocabulary** (satellite `vault-vocab` since S7) | Resolve controlled values and validate their scoped use in configured properties, tags, or designated fields | Report-first; repairs are separate representation or content proposals | Enabled when configured | It does not police arbitrary prose; unseeded or unavailable vocabulary is not a clean bill of health |
-| **Provenance** | Inspect source relationships, freshness, reconcile generated artifacts, and regenerate them | Reports are read-only; regeneration is representation/content work | Disabled | Provenance is not acceptance; stale source must not be reported as current output |
+| **Provenance** (satellite `vault-provenance` since the mutating-tier extraction) | Inspect source relationships, freshness, reconcile generated artifacts, and regenerate them | Reports are read-only; regeneration is representation/content work | Disabled | Provenance is not acceptance; stale source must not be reported as current output |
 | **Health** (satellite `vault-health` since S7) | Run whole-vault or scoped health and lint reports | Read/report | Disabled opt-in for potentially expensive scans | Findings are evidence, not automatic repair instructions |
-| **Fileclass** | Inspect and apply note-class schemas | Reads may be enabled; writes are representation/content work | Disabled | Depends on supported Fileclass surface; missing dependency is unavailable, not empty |
+| **Fileclass** (satellite `vault-fileclass` since the mutating-tier extraction) | Inspect and apply note-class schemas | Reads may be enabled; writes are representation/content work | Disabled | Depends on supported Fileclass surface; missing dependency is unavailable, not empty |
 | **Acceptance** | Human review, mandate, cohort, verification, admission, revision, and history | Human-facing authority surface; contributes no agent accept verb | Enabled for the coherent public product | Agents may read scoped state and submit proposals; acceptance remains a human act |
 | **Bases** (satellite `vault-bases` since S7) | Evaluate Obsidian Base views and return scoped rows | Read-only | Enabled when supported API exists | Base is presentation, not authority; evaluated rows come from Obsidian's engine |
-| **JD scaffolding** | Create and maintain configured Johnny Decimal structures and identifiers | Structural and representation work | Disabled | Exact templates and scopes required; allocation and placement remain distinct |
+| **JD scaffolding** (satellite `vault-jd-scaffold` since the mutating-tier extraction) | Create and maintain configured Johnny Decimal structures and identifiers | Structural and representation work | Disabled | Exact templates and scopes required; allocation and placement remain distinct |
 
 Skills — compile, export, release, and author agent-facing skills and policies from vault sources — is no longer a built-in module of this table: it was extracted to its own satellite plugin, `vault-skills`, per `docs/suite-split-design.md` §6. See [skills.md](skills.md) for its deep reference.
 
 Triage — expose bounded queues and apply declared dispositions — is no longer a built-in module of this table either: it was extracted to its own satellite plugin, `vault-triage`, per `docs/suite-split-design.md` §6. See [triage.md](triage.md) for its deep reference.
 
 Cross-session — discover channels, read deltas, attest read position, and post guarded updates — is no longer a built-in module of this table either: it was extracted to its own satellite plugin, `vault-crosssession`, per `docs/suite-split-design.md` §6. Its boundary is unchanged by the move: handles are cooperative labels, not authenticated identities, and the unread-entry guard is coordination rather than authentication. See [crosssession.md](crosssession.md) for its deep reference.
+
+Provenance, Fileclass and JD scaffolding are no longer built-in modules of this table either: the three of them left together as the mutating tier of the same split, as `vault-provenance` ([provenance.md](provenance.md)), `vault-fileclass` and `vault-jd-scaffold`, per `docs/suite-split-design.md` §6. Their rows stay above because what each capability MEANS — its user outcome, its posture, its boundary — is unchanged by which plugin mounts it. Two things did change. Their published tool names carry the publisher's namespace (`vault_provenance_*`, `vault_fileclass_*`, `vault_jd_scaffold_*`), and for the seven `obsidian_jd_*` tools that was forced rather than chosen: the host refuses to publish an external tool whose name begins `obsidian_`. And their scoping is now the host's to enforce, which since 2026-09-07 splits by tool rather than by surface: a tool that MUTATES the note it names spells the argument `note_path`, which the host recognizes, so an active path allowlist scopes it per-path and the kernel's record guard, lock consult and journal target see that note; every other tool — the reads that name a note, and everything that names none — carries no recognized key, so the host blocks it outright rather than scoping one argument while the work reaches further. Per surface: provenance is refused entirely, fileclass is seven refused and `set` scoped, JD scaffolding is five refused and two scoped. The package READMEs carry the reasoning and the one residual JD scaffolding accepted.
+
+After that extraction the host mounts two built-in modules: Scheme and Acceptance.
 
 The target defaults above describe the coherent product, not proof of a particular build. [Status and compatibility](status-and-compatibility.md) owns promotion to shipped status.
 
@@ -117,17 +121,17 @@ The first Community bundle has an exact distribution profile.
 - scheme resolution and preview-first bounded placement;
 - vocabulary validation;
 - conformance, health, and survey reports;
-- Fileclass inspection and named representation proposals when its dependency is supported; and
-- provenance inspection and staleness reports, without unconstrained regeneration.
+- Fileclass inspection and named representation proposals when its dependency is supported (now the separate `vault-fileclass` satellite plugin — absent from the Community bundle because it is simply not part of it, not because of a manifest exclusion decision); and
+- provenance inspection and staleness reports, without unconstrained regeneration (now the separate `vault-provenance` satellite plugin, on the same terms).
 
 **Private/operator in the first release:**
 
 - skills and policy compilation or export (now the separate `vault-skills` satellite plugin — absent from the Community bundle because it is simply not part of it, not because of a manifest exclusion decision);
 - cross-session fleet coordination (now the separate `vault-crosssession` satellite plugin — absent from the Community bundle because it is simply not part of it, not because of a manifest exclusion decision);
-- JD scaffolding;
+- JD scaffolding (now the separate `vault-jd-scaffold` satellite plugin — absent from the Community bundle because it is simply not part of it, not because of a manifest exclusion decision);
 - triage mutations (now the separate `vault-triage` satellite plugin — absent from the Community bundle because it is simply not part of it, not because of a manifest exclusion decision);
 - QuickAdd execution bindings;
-- provenance regeneration with external outputs;
+- provenance regeneration with external outputs (in the `vault-provenance` satellite, on the same terms);
 - opaque or pathless third-party mutations; and
 - every advanced capability pack excluded by the public contract.
 

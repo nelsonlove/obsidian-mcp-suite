@@ -784,7 +784,9 @@ describe("path allowlist — HOST-owned since the satellite extraction", () => {
     // guard.ts:10-12) — keep in sync BY HAND when the guard's lists change; a
     // made-up list here gave false comfort (review of #363: four entries the
     // guard never recognized, six recognized keys that would have slipped).
-    const GUARD_PATH_KEYS = ["path", "from", "to", "target_path", "template_path", "subdir", "file_path", "output_folder", "paths", "refs"];
+    // `note_path` joined the list on 2026-09-07 (mutating-tier round 1). No input here
+    // names it, so this assertion decides exactly as it did.
+    const GUARD_PATH_KEYS = ["path", "from", "to", "target_path", "template_path", "subdir", "file_path", "output_folder", "note_path", "paths", "refs"];
     for (const p of props) {
       assert.ok(!GUARD_PATH_KEYS.includes(p), `input '${p}' is a guard-recognized path key — it would flip the host from block-outright to scope-by-path and break the whole-surface-refuses story`);
     }

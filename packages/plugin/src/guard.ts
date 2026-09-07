@@ -15,7 +15,27 @@ export type { GuardSettings };
 // that import creates lands under it) — recognized here so the kernel journals
 // it as the operation's target and consults advisory locks over it, exactly
 // like any other named path.
-const PATH_KEYS = ["path", "from", "to", "target_path", "template_path", "subdir", "file_path", "output_folder"];
+// `note_path` joined at S8 (the mutating tier), and the reason is the kernel,
+// not the allowlist: the fileclass/jd-scaffold/provenance satellites renamed
+// `path` away to get F3's refuse-all under an allowlist, which ALSO removed
+// their writes from collectPaths — and collectPaths feeds record immutability,
+// the advisory lock consult and the journal's target, none of which is
+// allowlist-gated. A satellite field-write could suddenly mutate a
+// `record: true` note the kernel used to refuse. Recognizing `note_path`
+// restores all three for single-note writes (per-path allowlist scoping, the
+// same posture as every host write tool).
+//
+// THE CONTRACT THAT SPELLING NOW CARRIES, settled at round 2 (2026-09-07) and
+// binding on any satellite that adds a note-taking tool: **spell the argument
+// `note_path` iff the tool MUTATES the note it names.** Kernel visibility is a
+// mutating concern — the record guard, the lock consult and the journal target
+// all bind at the mutating dequeue — so a READ gains nothing from being here
+// and loses F3's refusal. Reads whose answers can name paths their caller
+// cannot see (`vault_fileclass_explain` / `_get`, `vault_provenance_check`)
+// spell it `note` deliberately, which this list does NOT contain, so F3 refuses
+// them wholesale under an allowlist. Bulk tools that name no note stay pathless
+// for the same reason. Do not add `note` here.
+const PATH_KEYS = ["path", "from", "to", "target_path", "template_path", "subdir", "file_path", "output_folder", "note_path"];
 // Keys whose ARRAY values carry paths (refs = obsidian_resolve's batch input).
 const ARRAY_PATH_KEYS = ["paths", "refs"];
 // Defensive depth cap: MCP args arrive as parsed JSON, so nesting is bounded in

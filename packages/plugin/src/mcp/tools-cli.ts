@@ -32,7 +32,8 @@ import { z } from "zod";
 import { execFile } from "node:child_process";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ok, fail, okError, codedError } from "./helpers.js";
-import { spawnEnv, findBinary } from "../claude-cli.js";
+import { spawnEnv } from "../claude-cli.js";
+import { findObsidianBinary, scanForAcceptFence } from "@vault-mcp/core";
 import type { ServerCtx } from "./tools-core.js";
 // Reuse the SAME accepted-family rule the MCP note-write primitive uses — no
 // second definition of "accepted" on the CLI path (see cliAcceptRefusal below).
@@ -52,23 +53,13 @@ export const DEFAULT_TIMEOUT_MS = 30_000;
 export const MAX_TIMEOUT_MS = 300_000;
 const MAX_BUFFER = 4 * 1024 * 1024;
 
-// Pure + testable: returns the first existing CLI binary, else null. Probes
-// fixed locations (Obsidian's GUI PATH is minimal): the macOS install targets
-// plus /usr/bin for Linux packagings. An X_OK probe can't distinguish the CLI
-// forwarder from a same-named app launcher (worst case: calls time out) — a
-// content probe per connection-build would cost a process spawn, so we accept
-// the tradeoff and surface the found path via obsidian_doctor instead.
-export function findObsidianBinary(opts?: {
-  candidates?: string[];
-  fileExists?: (p: string) => boolean;
-}): string | null {
-  const candidates = opts?.candidates ?? [
-    "/usr/local/bin/obsidian",
-    "/opt/homebrew/bin/obsidian",
-    "/usr/bin/obsidian",
-  ];
-  return findBinary(candidates, opts?.fileExists);
-}
+// `findObsidianBinary` was DEFINED here until the mutating tier's extraction.
+// The `vault-fileclass` satellite points the fileclass CLI's `obsidian eval`
+// bridge at the same binary through `OBSIDIAN_BIN`, so the probe (candidate
+// list included) had to be one copy across two plugins — published to
+// `@vault-mcp/core` and re-exported here unchanged, so `tools-core.ts`,
+// `tools-cli-dedicated.ts` and `tests/cli-tools.test.mjs` keep their imports.
+export { findObsidianBinary };
 
 // Commands that execute arbitrary code, restart the app, or weaken the plugin
 // sandbox: `command` runs ANY Obsidian command by id; `eval` / `dev:*` are
@@ -593,85 +584,19 @@ export function templateContentAcceptRefusal(content: string, parseYaml?: (yaml:
   return scanForAcceptFence(content, parseYaml);
 }
 
-/**
- * Two checks, deliberately different in kind:
- *
- *  1. **The leading fence** — decided by `leadingFrontmatterBlock`, the SAME
- *     recognizer the write path uses, applied to the SAME BYTES the vault will
- *     honor. Parity is structural here, not a matter of two normalizations
- *     happening to agree: #126 was a BOM asymmetry, and scanning a
- *     CRLF-folded copy re-opened the identical class on `\r` (a lone CR inside
- *     a scalar is content to the write path, a line break to a folded scan).
- *     Deciding over the raw document removes the whole class rather than its
- *     latest instance.
- *  2. **Embedded fences** — a deliberately BROADER, conservative sweep over a
- *     line-ending-folded copy. `append` content is not a note's leading
- *     frontmatter, and the resulting note cannot be read pre-exec, so an
- *     acceptance-asserting block anywhere in written content is refused.
- *     Broader than the write path is fine; narrower is the bypass.
- */
-export function scanForAcceptFence(honored: string, parseYaml?: (yaml: string) => unknown): string | null {
-  const leading = leadingFrontmatterBlock(honored);
-  if (leading !== null) {
-    const reason = acceptReasonForBlock(leading, parseYaml);
-    if (reason) return reason;
-  }
-  const folded = stripLeadingBom(honored).replace(/\r\n?/g, "\n");
-  // The closer is prefix-matched, exactly as the shared recognizer now does
-  // (a line whose first three bytes are `---` closes the block, whatever
-  // follows). This sweep is contractually the BROADER of the two — narrower is
-  // the bypass — so leaving it on the old `---`-alone-on-its-line closer while
-  // the leading recognizer widened would have inverted its own contract.
-  // Refusal still requires an acceptance assertion INSIDE the block, so a
-  // wider notion of "block" costs nothing on ordinary content.
-  const fenceRe = /(?:^|\n)---[ \t]*\n([\s\S]*?)\n---/g;
-  let m: RegExpExecArray | null;
-  let sawFence = leading !== null;
-  while ((m = fenceRe.exec(folded)) !== null) {
-    sawFence = true;
-    const reason = acceptReasonForBlock(m[1], parseYaml);
-    if (reason) return reason;
-  }
-  return sawFence && !parseYaml
-    ? "carries a frontmatter fence that cannot be verified without a YAML parser"
-    : null;
-}
-
-/**
- * Does one YAML block assert acceptance? Shared by both checks above so they
- * cannot disagree about a block's meaning either — the same reasoning that
- * put the boundary itself in one place.
- *
- * With no parser injected the caller fails closed on the presence of any fence
- * (defensive; production always injects obsidian.parseYaml). A block a real
- * parser cannot read cannot be judged structurally, so one that mentions the
- * acceptance field textually is treated as suspect rather than let through.
- */
-function acceptReasonForBlock(block: string, parseYaml?: (yaml: string) => unknown): string | null {
-  if (!parseYaml) return null;
-  let parsed: unknown;
-  try {
-    parsed = parseYaml(block);
-  } catch {
-    if (/acceptance[-_]status/i.test(block) && /\baccepted\b|accepted[-_]/i.test(block)) {
-      return "carries an accepted acceptance-status fence";
-    }
-    // Same suspect-not-through treatment for the declared protected properties
-    // (#224): a block real YAML rejects cannot be judged structurally, so one
-    // that mentions a declared key textually (either separator form) refuses
-    // rather than slipping the perimeter on a parse error.
-    for (const prop of declaredProtectedProperties()) {
-      const k = canonicalPropertyKey(prop.key);
-      const pat = new RegExp(k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/-/g, "[-_]"), "i");
-      if (pat.test(block)) return `carries a fence mentioning the protected property '${prop.key}'`;
-    }
-    return null;
-  }
-  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-    return acceptForbiddenReason(parsed as Record<string, unknown>);
-  }
-  return null;
-}
+// `scanForAcceptFence` and its private `acceptReasonForBlock` were DEFINED here
+// until the mutating tier's extraction. They moved VERBATIM to
+// `@vault-mcp/core` (`src/accept-scan.ts`) because their two callers now live
+// in DIFFERENT PLUGINS — this file's template/content guard and the
+// `vault-jd-scaffold` satellite's template apply — and two copies of an accept
+// predicate is how one vault gets two definitions of "accepted". The move is
+// behaviour-preserving by construction: every symbol the predicate is defined
+// over (`leadingFrontmatterBlock`, `stripLeadingBom`, `acceptForbiddenReason`,
+// `declaredProtectedProperties`, `canonicalPropertyKey`) was already core's,
+// reached from here through `write-notes-compose.ts`, itself a bare re-export
+// of core's accept-guard. Re-exported so `tests/cli-tools.test.mjs` and every
+// other caller keep their imports.
+export { scanForAcceptFence };
 
 // ── template guard: the create-from-template closure ─────────────────────────
 //

@@ -54,7 +54,9 @@ function deps(settings = {}) {
   return {
     getSettings: () => ({ ...settings }),
     schemeNotes: () => [],
-    vocabSource: { paths: () => [], frontmatter: () => null, body: async () => null },
+    // A stale `vocabSource` stand-in sat here after the S7 extraction and did
+    // nothing (this is a .mjs file, so an excess key type-checks nowhere).
+    // MountDeps is down to these two fields; anything else is dead weight.
   };
 }
 

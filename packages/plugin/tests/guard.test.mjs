@@ -193,3 +193,25 @@ test("crosssession tool arguments are NOT path keys — the tripwire that actual
   const paths = collectPaths({ handle: "h", channel: "c", body: "b", through_stamp: "s" });
   assert.deepEqual(paths, [], "a crosssession argument became a recognized path key — coordinate with the satellite");
 });
+
+test("note_path is a recognized path key — the kernel reaches satellite single-note writes (S8, 2026-09-07)", () => {
+  // The mutating tier renamed `path` -> `note_path` on its single-note write
+  // tools for F3's sake, which silently removed those writes from record
+  // immutability, the lock consult and the journal target — all fed by
+  // collectPaths, none gated on an allowlist. This pin is what makes the
+  // restoration a fact rather than a comment.
+  assert.deepEqual(collectPaths({ note_path: "Records/x.md" }), ["Records/x.md"]);
+});
+
+test("`note` is NOT a recognized path key — the read half of the round-2 posture (2026-09-07)", () => {
+  // Round 1 (above) reached further than its reason: it also made the tier's
+  // READ tools per-path scopable, and their answers name paths the caller
+  // cannot see (fileclass resolves inheritance from definitions outside the
+  // allowlist; provenance's freshness answer enumerates every path the note's
+  // `derived-from` globs resolve to). The host scopes the note you NAME, not
+  // the paths the answer CONTAINS. So `vault_fileclass_explain` / `_get` and
+  // `vault_provenance_check` spell their argument `note`, and F3 refuses them
+  // outright under an allowlist. If this ever starts collecting, those three
+  // silently become path oracles again.
+  assert.deepEqual(collectPaths({ note: "Records/x.md" }), []);
+});

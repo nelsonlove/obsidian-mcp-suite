@@ -22,9 +22,12 @@
 // The report runs over the whole vault and does NOT apply the path allowlist,
 // matching the health scan's precedent ("a partial report is a misleading
 // one"). That scan is now the `vault-health` satellite's `vault_health_scan`,
-// where the same posture holds; this tool and `provenance_reconcile` are the
-// two whole-vault readers issue #381 still names inside this plugin, and both
-// still owe it the enumerate-or-filter decision. It is also the right call
+// where the same posture holds. `provenance_reconcile` was the other whole-vault
+// reader issue #381 named inside this plugin, and it left with the mutating
+// tier — as the `vault-provenance` satellite's `vault_provenance_reconcile` it
+// is now blocked wholesale under an allowlist rather than answering vault-wide.
+// So THIS TOOL IS THE LAST ONE ON #381's LIST, and it still owes the
+// enumerate-or-filter decision. It is also the right call
 // here specifically: every target it names is
 // already a plaintext line in the committed baseline note (a governed vault
 // note), so the paths are not secret to a session that can read the baseline. A
