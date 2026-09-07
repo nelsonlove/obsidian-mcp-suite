@@ -45,18 +45,20 @@
 //
 // ── Allowlist posture: FAIL-CLOSED, and deliberately so ─────────────────────
 //
-// The ENFORCED boundary is now the HOST's. An external tool's arguments are
-// scoped only when they carry a name the host recognizes as a path key
-// (`path`, `from`, `to`, `target_path`, `template_path`, `subdir`, `file_path`,
-// `output_folder`, `paths`, `refs`), and a MUTATING external tool whose call
-// carries none is blocked outright while a path allowlist is active. NOT ONE
-// argument below is a host path key — `note_path`, `folder_path` and
-// `templates_folder` are all deliberately outside that list — so under an
-// active allowlist this whole surface is refused wholesale.
+// The ENFORCED boundary is the HOST's. An external tool's arguments are scoped
+// only when they carry a name the host recognizes as a path key, and a MUTATING
+// external tool whose call carries none is blocked outright while a path
+// allowlist is active. AT THE EXTRACTION not one argument below was a host path
+// key — `note_path`, `folder_path` and `templates_folder` were all outside that
+// list — so the whole surface was refused wholesale under an active allowlist.
+// **That is no longer the shipped posture: `note_path` joined the host's list at
+// round 1 and stayed at round 2. See the ROUND 2 block below for what actually
+// ships; `folder_path` and `templates_folder` are still outside the list.**
 //
 // `promote_to_folder`'s and `reindex_category`'s note argument was RENAMED
-// `path` → `note_path` to make that so, and that is the decision to understand
-// before touching anything here:
+// `path` → `note_path` to make that so, and the reasoning is the decision to
+// understand before touching anything here (round 2 overturns its conclusion,
+// not its analysis):
 //
 //   * Keeping `path` on `promote_to_folder` would have scoped the SOURCE note
 //     and nothing else, while the write goes to a FOLDER and a NEW FILE the plan
@@ -73,11 +75,50 @@
 //     cannot. A scoped session could pull hidden siblings' names into a visible
 //     note — a read-boundary bypass, not a rounding error.
 //
-// The cost is real and is stated rather than rounded off: under an ACTIVE
-// allowlist, JD scaffolding is now UNAVAILABLE rather than partially available.
-// With no allowlist configured — the ordinary case — nothing changes at all.
-// The reversal, if it is ever wanted, is one word per tool: rename the argument
-// back to `path`.
+// The cost was real and was stated rather than rounded off: under an ACTIVE
+// allowlist, JD scaffolding became UNAVAILABLE rather than partially available.
+// With no allowlist configured — the ordinary case — nothing changed at all.
+//
+// ── ROUND 2 (2026-09-07): the two named notes ARE path-keyed, and one ────────
+// ── residual was ratified rather than closed ────────────────────────────────
+//
+// Everything above is the extraction's reasoning and stands as history. Two
+// corrections landed on top of it:
+//
+//   ROUND 1 — the host ADDED `note_path` to its PATH_KEYS, because
+//   `collectPaths` is not the allowlist's private walker. The SAME list feeds
+//   record immutability, the advisory-lock consult and the journal record's
+//   `target.path`, and NONE of those is gated on an allowlist. Pathless,
+//   `reindex_category` could rewrite a `record: true` index note the kernel used
+//   to refuse — on every vault, allowlist or not. That was a real regression
+//   this file's own reasoning had not weighed, and recognizing `note_path`
+//   restored all three checks.
+//
+//   ROUND 2 — the rule that settles which spelling a tool takes: kernel
+//   visibility is a MUTATING concern (the record guard, the lock consult and the
+//   journal target all bind at the mutating dequeue), so a MUTATING tool that
+//   names a note keeps `note_path`, and a READ whose answer can name
+//   out-of-allowlist paths goes pathless instead. Every tool in this package is
+//   mutating, so `promote_to_folder` and `reindex_category` keep `note_path` and
+//   the other five stay pathless (they name no note) and keep F3's refuse-all.
+//
+// TWO consequences are documented rather than glossed, because both are real:
+//
+//   * `promote_to_folder`'s COMPUTED destinations (the folder, the new file) are
+//     named by no argument and so lie outside the host's argument-derived guard.
+//     That is the documented `obsidian_repoint_link` boundary — discovered
+//     writes the guard never sees — and the handler reports `filesChanged` /
+//     `files` so the journal names what actually changed.
+//   * `reindex_category` is THE ONE RATIFIED RESIDUAL of the whole round-2
+//     posture: mutating, with a vault-wide sibling READ. Under an allowlist it
+//     now proceeds per-path-scoped while its area/system tiers read hidden
+//     siblings and can write their names into the visible note's `## Contents`.
+//     That is ACCEPTED, not overlooked. The kernel protection it buys is live on
+//     every vault; the leak needs an allowlist, and this operator's allowlist is
+//     empty. The reversal is one word — `note_path` → `note` — which puts the
+//     tool back under F3's refuse-all at the cost of the record guard on the
+//     note it rewrites. An apiVersion-2 SDK that carries the caller's scope to a
+//     publisher closes it properly by waking the dormant sibling filter below.
 //
 // ── The in-handler allowlist checks are DORMANT SEAMS, kept on purpose ──────
 //
@@ -446,10 +487,13 @@ export function buildJdScaffoldTools(source: JdScaffoldSource, ctx: JdScaffoldTo
         "Converts an XX.YY (or 5-digit expanded-area id) note into a same-named folder with the note moved inside " +
         "as the folder's cover note, via app.fileManager.renameFile (link-healing). Refuses (not_id_note / " +
         "already_cover_note / folder_exists) rather than guessing. `dry_run: true` reports the plan without " +
-        "writing. The note is named by `note_path`, which is deliberately NOT one of the host's recognized path " +
-        "keys: the folder and the new file this tool writes are COMPUTED and named by no argument, so scoping the " +
-        "source alone would be the illusion of a check. Under an active Governor path allowlist the call is " +
-        "refused outright.",
+        "writing. The note is named by `note_path`, which the host DOES recognize as a path key, so the " +
+        "record-immutability guard, the advisory-lock consult and the journal's target all see the source note, and " +
+        "an active path allowlist scopes the call to it (out_of_allowlist) rather than refusing the tool wholesale. " +
+        "Be precise about what that buys: the FOLDER and the NEW FILE this tool writes are COMPUTED and named by no " +
+        "argument, so they lie outside the host's argument-derived guard — the same documented boundary as " +
+        "obsidian_repoint_link's discovered writes. The success result reports filesChanged / files, so the journal " +
+        "names what actually changed.",
       inputSchema: {
         note_path: z.string().min(1).describe("Vault path of the note to promote."),
         dry_run: z.boolean().describe("If true, report the plan without writing anything."),
@@ -511,10 +555,14 @@ export function buildJdScaffoldTools(source: JdScaffoldSource, ctx: JdScaffoldTo
         "consolidates every category `## Contents` within the same area; system (`00.00`) consolidates every " +
         "category across every area. Descriptions written as `[[link]] *(note)*` are preserved across every " +
         "regen, at every tier — the target file's own local description always wins over an inherited one. " +
-        "The area-management and system tiers READ every sibling `XX.00` file in the vault, which is why this " +
-        "tool's note argument (`note_path`) is deliberately not a host path key: scoping the note written would " +
-        "leave that vault-wide read unscoped. Under an active Governor path allowlist the call is refused " +
-        "outright instead. `dry_run: true` reports the planned new content without writing.",
+        "The area-management and system tiers READ every sibling `XX.00` file in the vault. This tool's note " +
+        "argument (`note_path`) IS a host path key, so the record-immutability guard, the lock consult and the " +
+        "journal's target all see the index note being rewritten, and an active path allowlist scopes the call to " +
+        "it. The accepted residual, stated rather than glossed: that scoping covers the note WRITTEN, not the " +
+        "vault-wide sibling READ, so under an allowlist the area/system tiers can still fold hidden siblings' names " +
+        "into a visible note. Kernel protection on the write was judged worth more than a wholesale refusal; the " +
+        "reversal is one word (`note_path` → `note`). `dry_run: true` reports the planned new content without " +
+        "writing.",
       inputSchema: {
         note_path: z.string().min(1).describe('Vault path of the XX.00 index file to reindex (e.g. "10-19 Personal/06 Digital tools/06.00 JDex.md").'),
         dry_run: z.boolean().describe("If true, report the plan without writing anything."),
@@ -548,9 +596,21 @@ export function buildJdScaffoldTools(source: JdScaffoldSource, ctx: JdScaffoldTo
         // tiers — so that listing bounds its OWN iteration through the
         // allowlist, filtered BEFORE any read: a hidden sibling's
         // name/description must never reach `new_content`, not even under
-        // dry_run. DORMANT as a satellite (nothing supplies getSettings), and
-        // the reason `note_path` is not a path key: the host cannot scope this
-        // read from an argument, so it refuses the call outright instead.
+        // dry_run. DORMANT as a satellite (nothing supplies getSettings).
+        //
+        // THIS IS THE ONE RATIFIED RESIDUAL OF THE ROUND-2 POSTURE (2026-09-07).
+        // `note_path` IS a host path key, so under an allowlist the host scopes
+        // the note this tool WRITES and the kernel's record guard / lock consult
+        // / journal target all see it — but nothing scopes this sibling READ,
+        // because the host can only check paths an argument names. So a scoped
+        // session can pull hidden siblings' names into a visible note's
+        // `## Contents`. That was weighed and ACCEPTED: the kernel protection is
+        // live on every vault while the leak needs an allowlist that this
+        // operator does not run, and the reversal is one word (`note_path` →
+        // `note`, which puts the whole tool back under F3's refuse-all). Do not
+        // "fix" it by re-deriving a scope the satellite cannot see — an
+        // apiVersion-2 SDK that hands a publisher the caller's scope makes the
+        // filter above live and closes it properly.
         const scoped = Boolean(settings?.allowlist?.length);
         const allPaths = scoped ? visiblePathsOf(source.allNotePaths(), settings) : source.allNotePaths();
         // Only area-management/system tiers cross-read sibling XX.00 files

@@ -202,3 +202,16 @@ test("note_path is a recognized path key — the kernel reaches satellite single
   // restoration a fact rather than a comment.
   assert.deepEqual(collectPaths({ note_path: "Records/x.md" }), ["Records/x.md"]);
 });
+
+test("`note` is NOT a recognized path key — the read half of the round-2 posture (2026-09-07)", () => {
+  // Round 1 (above) reached further than its reason: it also made the tier's
+  // READ tools per-path scopable, and their answers name paths the caller
+  // cannot see (fileclass resolves inheritance from definitions outside the
+  // allowlist; provenance's freshness answer enumerates every path the note's
+  // `derived-from` globs resolve to). The host scopes the note you NAME, not
+  // the paths the answer CONTAINS. So `vault_fileclass_explain` / `_get` and
+  // `vault_provenance_check` spell their argument `note`, and F3 refuses them
+  // outright under an allowlist. If this ever starts collecting, those three
+  // silently become path oracles again.
+  assert.deepEqual(collectPaths({ note: "Records/x.md" }), []);
+});

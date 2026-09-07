@@ -327,11 +327,14 @@ describe("handlers", () => {
     assert.equal(calls.length, 0);
   });
 
-  test("explain/get/set refuse a backslash in note_path before anything runs", async () => {
+  test("explain/get/set refuse a backslash in the note argument before anything runs", async () => {
+    // The argument's SPELLING differs by tool since round 2 (`note` on the two
+    // reads, `note_path` on the write), but the refusal is the same check and
+    // the message names whichever argument the caller passed.
     const { tools, calls } = mounted();
     for (const [bare, args] of [
-      ["explain", { note_path: "Books\\..\\..\\secret.md" }],
-      ["get", { note_path: "Books\\Dune.md", field: "status" }],
+      ["explain", { note: "Books\\..\\..\\secret.md" }],
+      ["get", { note: "Books\\Dune.md", field: "status" }],
       ["set", { note_path: "Books\\Dune.md", field: "status", value: "read" }],
     ]) {
       const res = await call(tools, bare, args);
@@ -347,7 +350,7 @@ describe("handlers", () => {
       ["schema", {}],
       ["schema", { fileclass: "   " }],
       ["explain", {}],
-      ["get", { note_path: "a.md" }],
+      ["get", { note: "a.md" }],
       ["set", { note_path: "a.md", field: "status" }],
     ]) {
       const res = await call(tools, bare, args);
@@ -412,9 +415,9 @@ describe("the allowlist seam is DORMANT, and is kept so it cannot rot", () => {
     const argsFor = {
       list: {},
       schema: { fileclass: "Book" },
-      explain: { note_path: "Projects/a.md" },
+      explain: { note: "Projects/a.md" },
       query: { fileclass: "Book" },
-      get: { note_path: "Projects/a.md", field: "status" },
+      get: { note: "Projects/a.md", field: "status" },
       validate: {},
       set: { note_path: "Projects/a.md", field: "status", value: "read" },
       set_where: { fileclass: "Book", field: "status", value: "read" },
@@ -463,20 +466,30 @@ describe("publication", () => {
     assert.equal(sanitizeOwnerId("fileclass"), "fileclass");
   });
 
-  test("the SINGLE-NOTE tools are path-keyed (kernel-visible); the bulk surface stays pathless (F3 refuse-all)", () => {
-    // The posture, as CORRECTED at S8's review. The extraction first went
-    // all-pathless for F3's refuse-all under an allowlist — and that silently
-    // removed the single-note writes from collectPaths, which ALSO feeds
-    // record immutability, the lock consult and the journal target, none of
-    // them allowlist-gated. `vault_fileclass_set` could suddenly field-write a
-    // `record: true` note the kernel used to refuse. The host now recognizes
-    // `note_path`, so explain/get/set are per-path scoped like every host
-    // write tool AND kernel-visible again; the bulk/engine tools stay pathless
-    // deliberately, so F3 still refuses them wholesale under an allowlist.
+  test("the MUTATING single-note tool is path-keyed (kernel-visible); every read stays pathless (F3 refuse-all)", () => {
+    // THE POSTURE, in its round-2 form, after three generations of spelling.
+    //
+    // The extraction went all-pathless (`path` → `note_path`) for F3's
+    // refuse-all under an allowlist. ROUND 1 found that silently removed the
+    // single-note WRITE from collectPaths, which ALSO feeds record immutability,
+    // the lock consult and the journal target — none of them allowlist-gated —
+    // so `vault_fileclass_set` could field-write a `record: true` note the
+    // kernel used to refuse, on every vault. The host therefore recognizes
+    // `note_path`.
+    //
+    // ROUND 2 narrowed that to the tools it was ever about. Kernel visibility is
+    // a MUTATING concern: the record guard, the lock consult and the journal
+    // target all bind at the mutating dequeue, so a READ gains nothing from
+    // being path-keyed and loses F3's refusal. `explain` and `get` answer with
+    // inheritance resolved from fileClass definitions a scoped session cannot
+    // see, so a per-path-scoped answer would be a path oracle. Their argument is
+    // `note`, which is NOT a host key, and F3 refuses them outright under an
+    // allowlist at zero kernel cost. `set` keeps `note_path`.
+    //
     // HOST_PATH_KEYS is a SNAPSHOT (review aid); the live pins are the host's
     // guard.test.mjs collectPaths tests.
     const { specs } = mounted();
-    const KEYED = ["explain", "get", "set"];
+    const KEYED = ["set"];
     for (const spec of specs) {
       const keys = Object.keys(spec.inputSchema ?? {}).filter((a) => HOST_PATH_KEYS.includes(a));
       if (KEYED.includes(spec.name)) {
@@ -485,6 +498,14 @@ describe("publication", () => {
         assert.deepEqual(keys, [], `${spec.name} must stay pathless — F3 is its allowlist posture`);
       }
     }
+    // The two reads name a note and must do so under the NON-key spelling —
+    // without this, deleting the argument entirely would also pass above.
+    const argsOf = (name) => Object.keys(specs.find((s) => s.name === name).inputSchema ?? {});
+    assert.ok(argsOf("explain").includes("note"), "explain still names a note, as `note`");
+    assert.ok(argsOf("get").includes("note"), "get still names a note, as `note`");
+    // Vacuity: the snapshot really does contain the spellings this test avoids.
+    assert.ok(HOST_PATH_KEYS.includes("path") && HOST_PATH_KEYS.includes("note_path"));
+    assert.ok(!HOST_PATH_KEYS.includes("note"), "`note` must NOT be a host path key — the read posture rides on it");
   });
 
   test("an UNTRUSTED readOnly claim makes every tool mutating to the host", () => {

@@ -8,7 +8,9 @@
 //   1. It does nothing without the Governor host. The plugin's entire surface is
 //      the seven MCP tools it publishes — no pane, no palette command, no
 //      ribbon. With Governor absent it loads and sits there.
-//   2. Under an ACTIVE Governor path allowlist the whole surface is refused.
+//   2. Under an ACTIVE Governor path allowlist, five of the seven are refused
+//      outright and the two that name a note are scoped to it (round 2,
+//      2026-09-07) — including reindex's ratified sibling-read residual.
 //      That is deliberate and fail-closed (no argument here is a path key the
 //      host can scope by), but a user watching every call refuse deserves to
 //      know it is the posture rather than a bug.
@@ -44,7 +46,7 @@ export class JdScaffoldSettingTab extends PluginSettingTab {
     containerEl.createEl("p", {
       cls: "setting-item-description",
       text:
-        "Under an ACTIVE Governor path allowlist all seven tools are refused outright. That is deliberate: none of them carries an argument Governor recognizes as a path, and the folders and files they write are computed rather than named, so Governor refuses what it cannot scope. With no allowlist configured they behave exactly as before.",
+        "Under an ACTIVE Governor path allowlist, five of the seven tools are refused outright — they name no note, so Governor has nothing to scope them by, and the folders and files they write are computed rather than named. The two that DO name a note (promote to folder, reindex category) name it `note_path`, which Governor recognizes as a path, so those two are scoped to that note and its record-immutability guard, lock consult and journal target all see it. One residual, stated plainly: reindex's area and system tiers read every sibling XX.00 index file in the vault, and that read is not scoped by the note argument — so under an allowlist those tiers can fold hidden siblings' names into a visible note. With no allowlist configured all seven behave exactly as before.",
     });
   }
 }

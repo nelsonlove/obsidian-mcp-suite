@@ -23,12 +23,15 @@
 //     an external tool as `<sanitized publisher id>_<bare name>`, so the plugin
 //     id IS the tool namespace. Recorded in CLAUDE.md and README.md, not buried
 //     here.
-//   * THE ALLOWLIST BOUNDARY MOVED TO THE HOST, and for this surface it lands
-//     exactly where the module's own refusal did: the note argument is named
-//     `note_path` rather than `path`, so no tool carries a recognized path key
-//     and the host blocks all eight outright under an active allowlist — the
-//     module's whole-surface refusal, reproduced by the boundary instead of by
-//     a check this package can no longer make. See tools.ts.
+//   * THE ALLOWLIST BOUNDARY MOVED TO THE HOST, and after round 2 (2026-09-07)
+//     it lands ALMOST where the module's own refusal did — seven of the eight
+//     tools refused outright, one scoped. The two READS that name a note call
+//     it `note`, which is not a host path key, and the five bulk/engine tools
+//     name no note at all: all seven are blocked outright under an active
+//     allowlist. `set` calls it `note_path`, which IS a key, so the host scopes
+//     that one write per-path AND the kernel's record guard, lock consult and
+//     journal target see the note it rewrites. The asymmetry is the decision:
+//     a read gains nothing from kernel visibility, a write does. See tools.ts.
 //   * REFUSALS THROW; the host renders a thrown error's lowercase-snake `code`
 //     as `Error [code]: message`, the envelope the module already produced. ONE
 //     envelope changed: a FAILED CLI run used to be `okError` (a report plus

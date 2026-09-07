@@ -23,11 +23,14 @@
 //     (the host publishes `<sanitized publisher id>_<bare name>`), and half was
 //     FORCED: the host's registry refuses any published name starting
 //     `obsidian_`, so no plugin id could have carried the shipped spellings.
-//   * THE ALLOWLIST BOUNDARY MOVED TO THE HOST, and for this surface it closes
-//     harder than the in-tool checks it replaces: no tool carries an argument
-//     the host recognizes as a path key, so under an active path allowlist the
-//     host blocks all seven outright. Fail-closed. tools.ts explains why
-//     `path` → `note_path` was the right rename rather than the wrong one.
+//   * THE ALLOWLIST BOUNDARY MOVED TO THE HOST. After round 2 (2026-09-07):
+//     five of the seven tools name no note, carry no argument the host
+//     recognizes as a path key, and are blocked outright under an active path
+//     allowlist. The two that DO name a note call it `note_path`, which IS a
+//     key, so they are scoped to that note and the kernel's record guard, lock
+//     consult and journal target all see it. tools.ts explains the whole three-
+//     round history, including the ONE ratified residual — `reindex_category`'s
+//     vault-wide sibling read is not scoped by its note argument.
 //   * REFUSALS THROW; the host renders a thrown error's lowercase-snake `code`
 //     as `Error [code]: message`, the envelope the module already produced.
 //   * The host's queue, journal, record-immutability guard and kernel args

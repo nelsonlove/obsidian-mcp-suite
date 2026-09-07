@@ -636,7 +636,7 @@ describe("provenance tools: handlers answer over the injected backend", () => {
       notes: { "audit.md": { "derived-from": ["src.md"], generated: "2020-01-01T00:00:00" } },
       stats: { "src.md": { type: "file", mtime: Date.parse("2030-01-01T00:00:00Z") } },
     });
-    const res = await tools(backend).call("check", { note_path: "audit.md" });
+    const res = await tools(backend).call("check", { note: "audit.md" });
     assert.equal(res.isError, undefined);
     assert.equal(res.structuredContent.fresh, false);
     assert.deepEqual(res.structuredContent.changed, ["src.md"]);
@@ -645,7 +645,7 @@ describe("provenance tools: handlers answer over the injected backend", () => {
     assert.equal(res.structuredContent.globDeletionsUndetectable, false);
     assert.ok(!("sourcesRemoved" in res.structuredContent), "sourcesRemoved is omitted when no removal is detected");
     assert.ok(!("expectedSourceCount" in res.structuredContent), "expectedSourceCount is omitted with no witness");
-    // The RESULT key stays `path` even though the ARGUMENT is now `note_path`:
+    // The RESULT key stays `path` even though the ARGUMENT is now `note`:
     // the rename exists to keep the host's guard from recognizing an argument,
     // and a response key is not an argument.
     assert.equal(res.structuredContent.path, "audit.md");
@@ -655,7 +655,7 @@ describe("provenance tools: handlers answer over the injected backend", () => {
     const missingBackend = fakeBackend({
       notes: { "audit.md": { "derived-from": ["gone.md"], generated: "2035-01-01T00:00:00" } },
     });
-    const m = await tools(missingBackend).call("check", { note_path: "audit.md" });
+    const m = await tools(missingBackend).call("check", { note: "audit.md" });
     assert.equal(m.structuredContent.fresh, false);
     assert.deepEqual(m.structuredContent.missing, ["gone.md"]);
 
@@ -666,7 +666,7 @@ describe("provenance tools: handlers answer over the injected backend", () => {
       globs: { "src/*.md": ["src/a.md"] },
       stats: { "src/a.md": { type: "file", mtime: Date.parse("2001-01-01T00:00:00Z") } },
     });
-    const s = await tools(shrunk).call("check", { note_path: "audit.md" });
+    const s = await tools(shrunk).call("check", { note: "audit.md" });
     assert.equal(s.structuredContent.fresh, false);
     assert.deepEqual(s.structuredContent.sourcesRemoved, { expected: 5, actual: 1 });
     assert.equal(s.structuredContent.expectedSourceCount, 5);
@@ -677,14 +677,14 @@ describe("provenance tools: handlers answer over the injected backend", () => {
       globs: { "src/*.md": ["src/a.md"] },
       stats: { "src/a.md": { type: "file", mtime: Date.parse("2001-01-01T00:00:00Z") } },
     });
-    const u = await tools(unwitnessed).call("check", { note_path: "audit.md" });
+    const u = await tools(unwitnessed).call("check", { note: "audit.md" });
     assert.equal(u.structuredContent.fresh, true);
     assert.equal(u.structuredContent.globDeletionsUndetectable, true);
   });
 
   test("a kernel throw crosses the boundary as an UNCODED `Error: …`, exactly as the module's fail() rendered it", async () => {
     const backend = fakeBackend({ notes: { "x.md": { generated: "2020-01-01T00:00:00" } } });
-    const res = await tools(backend).call("check", { note_path: "x.md" });
+    const res = await tools(backend).call("check", { note: "x.md" });
     assert.equal(res.isError, true);
     assert.equal(errText(res), "Error: x.md has no derived-from");
   });
@@ -805,26 +805,36 @@ describe("publication: names, flags, and what the host's guard can scope", () =>
   });
 
   test("NOT ONE argument is a host path key — so under an allowlist the host blocks all three wholesale", () => {
-    // THE DECISION, PINNED. `check`'s argument was RENAMED `path` → `note_path`
-    // at the extraction so that this holds for the whole surface rather than for
-    // two tools out of three. Why renaming was right, not merely convenient:
-    // a satellite cannot see the host's allowlist, and had `check` kept `path`
-    // the host would have scoped the ONE note named while the answer still
-    // listed every file its `derived-from` globs resolve to — the host scopes
-    // the note you NAME, not the paths the answer CONTAINS. Fail-closed and
-    // uniform beats one-tool-open, one-tool-shut. See tools.ts and CLAUDE.md.
+    // THE DECISION, PINNED, in its round-2 form. The argument's spelling went
+    // `path` → `note_path` (the extraction) → `note` (round 2), and the pin is
+    // the same each time: no argument on this surface is a host path key, so
+    // under an active allowlist the host's F3 gate refuses all three wholesale.
+    //
+    // Why that is right and not merely convenient: a satellite cannot see the
+    // host's allowlist, and were `check` scopable the host would scope the ONE
+    // note named while the answer still listed every file its `derived-from`
+    // globs resolve to — the host scopes the note you NAME, not the paths the
+    // answer CONTAINS. Fail-closed and uniform beats one-tool-open.
+    //
+    // ROUND 1 broke that briefly and it is worth knowing why the fix was
+    // narrowed rather than reverted: the host added `note_path` to PATH_KEYS
+    // because `collectPaths` also feeds record immutability, the lock consult
+    // and the journal target, and pathless single-note WRITES had escaped all
+    // three. That reason is real — and it is a MUTATING reason. `check` is a
+    // read: it has no dequeue, no record guard, no journal target to lose. So
+    // round 2 spells its argument `note`, which the host does not recognize,
+    // and this whole package carries no host path key again. The mutating
+    // siblings elsewhere in the tier (`vault_fileclass_set`,
+    // `vault_jd_scaffold_promote_to_folder`, `_reindex_category`) keep
+    // `note_path` for exactly the reason round 1 named.
     //
     // HOST_PATH_KEYS is a SNAPSHOT carried as data — a REVIEW AID, never a live
     // tripwire: it does not read the host's source and will not fail when the
     // host changes its list. The pin that fires then is the host's own
-    // tests/guard.test.mjs over the live `collectPaths`.
-    // CORRECTED at S8's review: `note_path` IS a host path key now (kernel
-    // visibility — record guard, locks, journal target all ride collectPaths).
-    // `check` is the one tool that names a note, so it is scoped per-path; the
-    // whole-vault reconcile and the mutating regen stay pathless, so F3
-    // refuses them wholesale under an allowlist — that half of the posture is
-    // unchanged.
-    const KEYED = ["check"];
+    // tests/guard.test.mjs over the live `collectPaths`. Vacuity guard below:
+    // `path` and `note_path` ARE on that list, so "no keys" is a real finding
+    // rather than an empty snapshot.
+    const KEYED = [];
     for (const spec of specs()) {
       const keys = Object.keys(spec.inputSchema ?? {}).filter((k) => HOST_PATH_KEYS.includes(k));
       if (KEYED.includes(spec.name)) {
@@ -833,14 +843,17 @@ describe("publication: names, flags, and what the host's guard can scope", () =>
         assert.deepEqual(keys, [], `${spec.name} stays pathless`);
       }
     }
-    assert.deepEqual(Object.keys(specs()[0].inputSchema), ["note_path"]);
+    assert.ok(HOST_PATH_KEYS.includes("path"), "vacuity: `path` is a host path key");
+    assert.ok(HOST_PATH_KEYS.includes("note_path"), "vacuity: `note_path` is a host path key since round 1");
+    assert.ok(!HOST_PATH_KEYS.includes("note"), "`note` must NOT be a host path key — the whole posture rides on it");
+    assert.deepEqual(Object.keys(specs()[0].inputSchema), ["note"]);
     assert.deepEqual(Object.keys(specs()[1].inputSchema ?? {}), [], "reconcile takes no arguments at all");
     assert.deepEqual(Object.keys(specs()[2].inputSchema), ["write"]);
   });
 
   test("refusals throw with a lowercase-snake code, which the host renders as `Error [code]: message`", async () => {
     const { call } = tools(fakeBackend());
-    const res = await call("check", { note_path: "" });
+    const res = await call("check", { note: "" });
     assert.equal(res.isError, true);
     assert.match(errText(res), /^Error \[invalid_argument\]: /);
   });
@@ -849,17 +862,17 @@ describe("publication: names, flags, and what the host's guard can scope", () =>
     // The SDK converts zod to JSON Schema and the host converts it back through
     // a small subset: type, description and string enums survive; min, max,
     // default and pattern do not. So an empty-string / missing / non-string
-    // `note_path` reaches the handler and must refuse there. This is the
+    // `note` reaches the handler and must refuse there. This is the
     // vault_skills_release semver lesson.
     const { call } = tools(fakeBackend());
-    for (const args of [{}, { note_path: "" }, { note_path: "   " }, { note_path: 7 }, { note_path: null }]) {
+    for (const args of [{}, { note: "" }, { note: "   " }, { note: 7 }, { note: null }]) {
       const res = await call("check", args);
       assert.equal(res.isError, true, JSON.stringify(args));
-      assert.match(errText(res), /^Error \[invalid_argument\]: 'note_path' must be a non-empty string$/, JSON.stringify(args));
+      assert.match(errText(res), /^Error \[invalid_argument\]: 'note' must be a non-empty string$/, JSON.stringify(args));
     }
   });
 
-  test("a backslash in note_path is refused `invalid_path`, before every other check", async () => {
+  test("a backslash in note is refused `invalid_path`, before every other check", async () => {
     // Every check downstream splits on `/` alone, so `Meta\..\..\secret.md`
     // reads as ONE opaque segment here and as a traversal to whatever normalizes
     // it later. Obsidian paths never legitimately contain a backslash. Same rule
@@ -869,12 +882,12 @@ describe("publication: names, flags, and what the host's guard can scope", () =>
     });
     const { call } = tools(backend);
     for (const bad of ["Meta\\..\\..\\secret.md", "a\\b.md", "\\", "ok/but\\bad.md"]) {
-      const res = await call("check", { note_path: bad });
+      const res = await call("check", { note: bad });
       assert.equal(res.isError, true, bad);
       assert.match(errText(res), /^Error \[invalid_path\]: /, bad);
     }
     // Vacuity: the very same note IS answerable when addressed without one.
-    const fine = await call("check", { note_path: "audit.md" });
+    const fine = await call("check", { note: "audit.md" });
     assert.equal(errText(fine).startsWith("Error [invalid_path]"), false);
   });
 
@@ -989,7 +1002,8 @@ describe("shipped strings name only things that exist here", () => {
   test("the descriptions state the fail-closed allowlist posture rather than implying scoping", () => {
     const [check, reconcileSpec, regen] = specs();
     assert.match(check.description, /allowlist/);
-    assert.match(check.description, /note_path/);
+    assert.match(check.description, /named `note`/);
+    assert.match(check.description, /blocks it outright/);
     assert.match(reconcileSpec.description, /blocks it outright|blocked outright/);
     assert.match(regen.description, /blocked outright/);
   });

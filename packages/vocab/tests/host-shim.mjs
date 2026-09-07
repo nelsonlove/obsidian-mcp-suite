@@ -53,6 +53,11 @@ export const OWNER = sanitizeOwnerId(PLUGIN_ID);
  */
 export const HOST_PATH_KEYS = [
   "path", "from", "to", "target_path", "template_path", "subdir", "file_path", "output_folder",
+  // `note_path` joined the host's list on 2026-09-07 (mutating-tier round 1): the kernel's
+  // record guard, lock consult and journal target all ride `collectPaths`, and a pathless
+  // single-note WRITE had escaped all three. No tool in THIS package names it, so the F3
+  // predicate below decides exactly as it did — the snapshot is synced to stay a review aid.
+  "note_path",
   "paths", "refs",
 ];
 

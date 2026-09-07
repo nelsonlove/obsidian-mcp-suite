@@ -97,10 +97,14 @@ export class FileclassSettingTab extends PluginSettingTab {
     }
 
     say(
-      "Under an active Governor path allowlist ALL EIGHT tools are refused. That is deliberate and matches what this " +
-        "surface always did: the fileclass CLI runs over the whole vault through its engine, so its output cannot be " +
-        "scoped to an allowlist, and no argument here is a host path key (the note argument is named `note_path`, " +
-        "not `path`, precisely so the host refuses rather than half-scopes).",
+      "Under an active Governor path allowlist SEVEN of the eight tools are refused outright and one is scoped. " +
+        "Five (list, schema, query, validate, set_where) name no note at all, and the two READ tools that do " +
+        "(explain, get) name it `note`, which the host does not recognize as a path key — deliberate, because the " +
+        "fileclass CLI runs its engine over the whole vault and resolves inheritance from definitions a scoped " +
+        "session cannot see, so a half-scoped answer would name notes outside the allowlist. The exception is `set`: " +
+        "its `note_path` argument IS a host path key, so the host scopes the write per-path AND its record-" +
+        "immutability guard, lock consult and journal target all see the note being written. That trade is the point " +
+        "— a read gains nothing from being scopable, a write gains the kernel's protection.",
     );
 
     say(

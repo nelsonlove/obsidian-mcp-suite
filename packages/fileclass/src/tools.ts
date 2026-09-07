@@ -55,7 +55,10 @@
 // `obsidian_fileclass_schema` for the DIFFERENT metadata-menu plugin. It is
 // untouched, differently spelled, and unrelated to this package.
 //
-// ── ARGUMENT RENAME: `path` → `note_path`, and it is the whole posture ──────
+// ── ARGUMENT RENAMES: `path` → `note_path` → (for the reads) `note` ────────
+//
+// This is the whole allowlist posture, and it took three generations to settle.
+// Read the round-2 block below before changing any argument name here.
 //
 // The module refused its WHOLE SURFACE while a path allowlist was active: the
 // CLI runs over the entire vault through its engine and its output cannot be
@@ -81,13 +84,48 @@
 // the CLI performs through the live plugin rather than through any path the
 // guard inspected.
 //
-// So the path-shaped argument is named `note_path`, which is NOT in the host's
-// PATH_KEYS. All eight tools therefore carry no recognized path key and are
-// BLOCKED WHOLESALE under an active allowlist — reproducing the module's
-// whole-surface refusal exactly, enforced by the host instead of by a check
-// this package can no longer make. Fail-closed. The reversal is one word:
-// rename the argument back to `path` and the host will scope those three tools
-// per-path instead.
+// So the path-shaped argument was named `note_path`, which was NOT in the host's
+// PATH_KEYS at the extraction. All eight tools therefore carried no recognized
+// path key and were BLOCKED WHOLESALE under an active allowlist — reproducing
+// the module's whole-surface refusal exactly, enforced by the host instead of by
+// a check this package can no longer make. Fail-closed.
+//
+// ── ROUND 2 (2026-09-07): the argument split in TWO, and here is why ────────
+//
+// The paragraphs above are the extraction's reasoning and they stand as history.
+// Two corrections landed on top of them, in order, and the second is the posture
+// this file now ships:
+//
+//   ROUND 1 — the host ADDED `note_path` to its PATH_KEYS. The rename above had
+//   quietly cost more than allowlist availability: `collectPaths` is not the
+//   allowlist's private walker. The SAME list feeds record immutability, the
+//   advisory-lock consult and the journal record's `target.path`, and NONE of
+//   those is gated on an allowlist. A pathless `set` could field-write a
+//   `record: true` note the kernel used to refuse, on every vault, allowlist or
+//   not. Recognizing `note_path` restored all three.
+//
+//   ROUND 2 — but round 1 also silently re-opened `explain` and `get` to
+//   per-path scoping under an allowlist, which is exactly the weaker posture
+//   the paragraphs above rejected. The resolution is that kernel visibility is
+//   a MUTATING concern: the record guard, the lock consult and the journal
+//   target all bind at the mutating dequeue, so a READ tool gains NOTHING from
+//   being path-keyed. It only loses the refusal. So:
+//
+//     * `explain` and `get` — READS whose answer can name paths outside the
+//       allowlist (the engine resolves inheritance from fileClass definitions
+//       the session cannot see) — spell the argument `note`, which is not a
+//       recognized key. Under an allowlist F3 refuses them outright, closing
+//       that path oracle at zero kernel cost. With no allowlist, unchanged.
+//     * `set` — the one MUTATING tool that names a note — keeps `note_path`.
+//       The record guard on the note it rewrites is always-on protection and
+//       is worth more than the refusal; the allowlist scopes it per-path like
+//       every host write tool.
+//     * `list` / `schema` / `query` / `validate` / `set_where` are pathless as
+//       they always were, so F3 still refuses them wholesale.
+//
+// The reversal in either direction is one word per tool: `note` → `path` opens
+// a read to host scoping, `note_path` → `note` takes a write back out of the
+// kernel's sight. Neither is free, and this file says which cost each buys.
 //
 // `allowlistRefusal` below is KEPT as a dormant seam over `ctx.getSettings`,
 // the skills/triage/crosssession/bases posture: nothing supplies it in the
@@ -394,12 +432,16 @@ function requireText(value: unknown, name: string): string {
  *
  * The BACKSLASH refusal is first, before every other check — the same rule the
  * triage and bases satellites adopted. Every check downstream (here, the CLI's
- * own path handling, and the host guard's `isVisible` if the argument is ever
- * renamed back into a path key) splits on `/` alone, so a backslash reads as
- * ONE opaque segment here and as a traversal to whatever normalizes it later.
- * An Obsidian path never legitimately contains a backslash, so refusing is free
- * and closes the class rather than the instance. */
-function requireNotePath(value: unknown, name = "note_path"): string {
+ * own path handling, and the host guard's `isVisible` for the one argument that
+ * IS a path key) splits on `/` alone, so a backslash reads as ONE opaque segment
+ * here and as a traversal to whatever normalizes it later. An Obsidian path
+ * never legitimately contains a backslash, so refusing is free and closes the
+ * class rather than the instance.
+ *
+ * `name` is REQUIRED at every call site rather than defaulted, because the two
+ * spellings are the posture (round 2): `note` on the reads, `note_path` on the
+ * write. A refusal message must name the argument the caller actually passed. */
+function requireNotePath(value: unknown, name: string): string {
   const text = requireText(value, name);
   if (text.includes("\\")) {
     refuse("invalid_path", `'${name}' contains a backslash ('${text}') — vault paths use '/' only`);
@@ -557,19 +599,22 @@ export function buildFileclassTools(ctx: FileclassToolsCtx): SdkToolSpec[] {
       name: "explain",
       description:
         "Explain a note: its fileClasses, ancestry, and resolved field values. Proxies the Fileclass CLI " +
-        "`explain <path> --json`." +
+        "`explain <path> --json`. Under an active Governor path allowlist this call is refused outright: the note " +
+        "argument is named `note` rather than `path` or `note_path`, so the host recognizes no path key and blocks " +
+        "it. That is deliberate — the CLI resolves inheritance from fileClass definitions the session cannot see, so " +
+        "a per-path-scoped answer would still name notes outside the allowlist." +
         COMMON,
       inputSchema: {
-        note_path: z
+        note: z
           .string()
           .min(1)
-          .describe("Vault-relative note path, e.g. 'Books/Dune.md'. (Named `note_path`, not `path`, deliberately — see the plugin's README.)"),
+          .describe("Vault-relative note path, e.g. 'Books/Dune.md'. (Named `note`, not `path`/`note_path`, deliberately — see the plugin's README.)"),
         timeout_ms: timeoutSchema,
       },
       ...RO,
       handler: async (args: Record<string, unknown>) => {
         guard();
-        const notePath = requireNotePath(args.note_path);
+        const notePath = requireNotePath(args.note, "note");
         return run({ command: "explain", positionals: [notePath] }, optionalTimeout(args.timeout_ms));
       },
     },
@@ -603,16 +648,20 @@ export function buildFileclassTools(ctx: FileclassToolsCtx): SdkToolSpec[] {
     {
       name: "get",
       description:
-        "Get one field's value on a note. Proxies the Fileclass CLI `get <path> <field> --json`." + COMMON,
+        "Get one field's value on a note. Proxies the Fileclass CLI `get <path> <field> --json`. Under an active " +
+        "Governor path allowlist this call is refused outright — the note argument is named `note`, which the host " +
+        "does not recognize as a path key, because the engine resolves the value against fileClass definitions the " +
+        "session cannot see." +
+        COMMON,
       inputSchema: {
-        note_path: z.string().min(1).describe("Vault-relative note path."),
+        note: z.string().min(1).describe("Vault-relative note path. (Named `note`, not `path`/`note_path`, deliberately.)"),
         field: z.string().min(1).describe("Field name."),
         timeout_ms: timeoutSchema,
       },
       ...RO,
       handler: async (args: Record<string, unknown>) => {
         guard();
-        const notePath = requireNotePath(args.note_path);
+        const notePath = requireNotePath(args.note, "note");
         const field = requireText(args.field, "field");
         return run({ command: "get", positionals: [notePath, field] }, optionalTimeout(args.timeout_ms));
       },
@@ -645,10 +694,13 @@ export function buildFileclassTools(ctx: FileclassToolsCtx): SdkToolSpec[] {
         "invalid value). Proxies the Fileclass CLI `set <path> <field> <value> --json`. Acceptance is human-only: a " +
         "field-write that would introduce acceptance-status: accepted (or accepted-by / accepted-on) is refused " +
         "with Error [accept_forbidden] — agents write only acceptance-status: proposed. An ordinary guarded " +
-        "mutating tool: the host's read-only mode, write queue, journal and kernel arguments all apply." +
+        "mutating tool: the host's read-only mode, write queue, journal and kernel arguments all apply. The note " +
+        "argument is `note_path`, which the host DOES recognize as a path key, so the record-immutability guard, the " +
+        "advisory-lock consult and the journal's target all see the note being written, and an active path allowlist " +
+        "scopes the call per-path (out_of_allowlist) rather than refusing the tool wholesale." +
         COMMON,
       inputSchema: {
-        note_path: z.string().min(1).describe("Vault-relative note path."),
+        note_path: z.string().min(1).describe("Vault-relative note path. (A host path key, deliberately — the kernel must see the note this writes.)"),
         field: z.string().min(1).describe("Field name."),
         value: z.union([z.string(), z.number(), z.boolean()]).describe("Value to set (passed to the CLI as a string)."),
         timeout_ms: timeoutSchema,
@@ -656,7 +708,7 @@ export function buildFileclassTools(ctx: FileclassToolsCtx): SdkToolSpec[] {
       ...RW,
       handler: async (args: Record<string, unknown>) => {
         guard();
-        const notePath = requireNotePath(args.note_path);
+        const notePath = requireNotePath(args.note_path, "note_path");
         const field = requireText(args.field, "field");
         const value = requireFieldValue(args.value);
         const acceptReason = fileclassSetAcceptRefusal(field, value);

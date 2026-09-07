@@ -69,7 +69,15 @@ Note one collision that is not a collision: the host has always shipped `obsidia
 
 ### 2. An argument was renamed, and that is the whole allowlist posture
 
-**`path` → `note_path`, on `explain`, `get` and `set`.**
+The note argument has been spelled three ways, and the current spelling differs by tool. The whole table, with the reason each generation existed:
+
+| tool | at the fold | extraction (S8) | **now (round 2, 2026-09-07)** | why this spelling |
+|---|---|---|---|---|
+| `explain` | `path` | `note_path` | **`note`** | a READ whose answer resolves inheritance from fileClass definitions outside the allowlist — not scopable, so it is refused outright |
+| `get` | `path` | `note_path` | **`note`** | same: the engine resolves the value against definitions the session cannot see |
+| `set` | `path` | `note_path` | **`note_path`** | the one MUTATING tool that names a note — `note_path` is a host path key, so the record guard, the lock consult and the journal target all see the note it rewrites |
+
+Read the rest of this section for how it got here; the short version is that **kernel visibility is a mutating concern**, so a tool is path-keyed iff it mutates the note it names.
 
 The module refused its **whole surface** while a path allowlist was active: the fileclass CLI runs over the entire vault through its engine and its output cannot be attributed to paths, so a scoped answer was not expressible (the `obsidian_cli` / Dataview precedent). That refusal ran in-module, over the host's guard settings. **A satellite cannot see the host's allowlist**, so that check goes dormant — and the question becomes what the host enforces in its place.
 
@@ -77,11 +85,19 @@ The host's gate is evaluated **at call time on the ACTUAL ARGUMENTS**: a mutatin
 
 Keeping `path` would have left `explain` / `get` / `set` **open** under an allowlist, scoped per-path by the host, while the other five stayed blocked. That is strictly weaker than the module's refuse-all, and weaker in the direction that matters: the host would scope the note *named*, while the CLI still runs its engine over the whole vault and returns whatever that engine attributes to the note — including inheritance from fileClass definitions the session cannot see, and, for `set`, a write performed through the live plugin rather than through any path the guard inspected.
 
-So the argument is named `note_path`, which is not one of the host's path keys. **All eight tools are therefore blocked wholesale under an active allowlist** — the module's own refusal, reproduced by the boundary instead of by a check this package can no longer make. Fail-closed, and identical in effect to what shipped before.
+So at the extraction the argument was named `note_path`, which was not one of the host's path keys, and **all eight tools were blocked wholesale under an active allowlist** — the module's own refusal, reproduced by the boundary instead of by a check this package can no longer make. Fail-closed, and identical in effect to what shipped before.
 
-**The reversal is one word**: rename the argument back to `path` and the host will scope those three tools per-path instead. Do that only with the paragraph above answered.
+**That is no longer what ships. Two corrections landed on top of it, and this is the record of both.**
 
-**RESOLVED at S8's review — the host recognizes `note_path` now.** The paragraph below records the ledger as it stood when the argument was pathless; it is kept because the reasoning is the reversal-decision record. Since the review, `note_path` is on the host's path-key list, so for every tool that names a note the three kernel checks are LIVE again — record immutability refuses a `record: true` target, foreign lock claims are disclosed, and the journal carries the argument-derived target — and the allowlist scopes those tools per-path (the standard host write-tool posture). Tools with no named note stay pathless, so F3 still refuses them wholesale under an allowlist. The trade the paragraph below weighs no longer has to be made.
+**Round 1 (2026-09-07): the host added `note_path` to its path-key list.** The rename above had cost more than allowlist availability — the cost ledger below is the paragraph that says so, and it was written before anyone acted on it. `collectPaths` is not the allowlist's private walker: the same list feeds record immutability, the advisory-lock consult and the journal's target, **none of them gated on an allowlist**. Pathless, `vault_fileclass_set` could field-write a `record: true` note the kernel used to refuse, on every vault, allowlist or not. Recognizing `note_path` restored all three.
+
+**Round 2 (2026-09-07), after an independent review: the fix was narrowed to the tools it was ever about.** Round 1 also made `explain` and `get` per-path scopable under an allowlist — which is exactly the weaker posture two paragraphs above rejects, re-created silently. The rule that settles it: **kernel visibility is a MUTATING concern.** The record guard, the lock consult and the journal target all bind at the mutating dequeue, so a read gains nothing from being path-keyed and loses only F3's refusal. So `explain` and `get` now spell the argument `note`, which the host does not recognize, and are refused outright under an allowlist at zero kernel cost; `set` keeps `note_path` and is scoped per-path like every host write tool, with the kernel watching the note it rewrites. Five tools name no note at all and were never in question.
+
+**Under an active allowlist, then: seven of the eight refused, one scoped.** Not the "all eight" the extraction shipped, and the difference is stated here rather than left to be discovered.
+
+**The reversal is one word per tool, in either direction, and each direction costs something.** `note` → `path` opens a read to host scoping and re-creates the oracle. `note_path` → `note` takes the write back out of the kernel's sight. Do neither without answering the paragraph that argues against it.
+
+**The cost ledger below is kept in full.** It is the decision record — the argument that made round 1 correct — and it must not be deleted just because it has been acted on.
 
 **The rename costs more than allowlist availability, and the ledger has to be complete.** The host's path-key list is not the allowlist's private walker: the same list feeds three other kernel checks — record immutability (a mutating call that NAMES a note carrying `record: true` is refused before it runs), the advisory-lock consult (a foreign scope claim covering a named path is disclosed on the call), and the journal record's argument-derived target path. With no argument in the host's path-key list, all three see an empty path list on every call this plugin makes. So a `record: true` note is no longer protected from this plugin's writes by that check; a foreign claim covering the note is no longer disclosed; and the journal names no target path, mitigated only where a handler returns `filesChanged` / `files`, which the kernel records as the operation's effects. **None of those three is gated on an allowlist**, so they are lost in the ordinary, no-allowlist case too — the opposite direction from the tightening above, and not something to fold into it as if the change were strictly stricter. The record guard's own documented posture is already fail-open and "protective, not load-bearing", so this widens a gap that was open by design rather than closing one. It is still a real reduction, it is the strongest argument for reversing the rename, and the reversal is one word per tool.
 
@@ -98,7 +114,7 @@ The module used the host's `okError()` for a failed CLI run — `ok()`'s shape p
 
 The consequence, stated plainly because a client keying on `isError` will meet it: **a fileclass CLI failure now arrives as a successful MCP call carrying a report that says it failed.** Every tool description says so, and a test pins it.
 
-Everything else is byte-compatible with the folded era: `accept_forbidden` and `out_of_allowlist` render as `Error [code]: message` exactly as `codedError` produced them. Three refusal codes are **new**, all of them argument validation the JSON-Schema round trip no longer carries: `invalid_argument` (a missing/blank required string, an out-of-range `timeout_ms`, a non-positive `limit`, a `value` that is not string/number/boolean) and `invalid_path` (a backslash in `note_path`).
+Everything else is byte-compatible with the folded era: `accept_forbidden` and `out_of_allowlist` render as `Error [code]: message` exactly as `codedError` produced them. Three refusal codes are **new**, all of them argument validation the JSON-Schema round trip no longer carries: `invalid_argument` (a missing/blank required string, an out-of-range `timeout_ms`, a non-positive `limit`, a `value` that is not string/number/boolean) and `invalid_path` (a backslash in the note argument — `note` on `explain`/`get`, `note_path` on `set`; the refusal names whichever one you passed).
 
 ### 4. Settings adopt once from the host, and never write back
 
