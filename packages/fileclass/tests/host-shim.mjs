@@ -50,6 +50,10 @@ export const OWNER = sanitizeOwnerId(PLUGIN_ID);
  */
 export const HOST_PATH_KEYS = [
   "path", "from", "to", "target_path", "template_path", "subdir", "file_path", "output_folder",
+  // `note_path` joined the host's list at S8's review: the kernel's record
+  // guard, lock consult and journal target all ride collectPaths, and a
+  // pathless single-note write had silently escaped all three.
+  "note_path",
   "paths", "refs",
 ];
 

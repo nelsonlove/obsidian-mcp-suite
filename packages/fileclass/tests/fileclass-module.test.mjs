@@ -463,25 +463,28 @@ describe("publication", () => {
     assert.equal(sanitizeOwnerId("fileclass"), "fileclass");
   });
 
-  test("NOT ONE argument is a host path key — so the host blocks all eight under an allowlist", () => {
-    // This is the extraction's whole allowlist posture. The module refused its
-    // own surface over ctx.getSettings; a satellite cannot, so the argument that
-    // WOULD have been `path` is named `note_path` and the host's F3 gate — "a
-    // mutating external tool whose actual arguments carry no recognized path
-    // key is blocked outright while an allowlist is active" — refuses all eight
-    // instead. HOST_PATH_KEYS here is a SNAPSHOT carried as data: a review aid,
-    // never a live tripwire. The pin that fires when the host changes its list
-    // is the host's own tests/guard.test.mjs over the live collectPaths.
+  test("the SINGLE-NOTE tools are path-keyed (kernel-visible); the bulk surface stays pathless (F3 refuse-all)", () => {
+    // The posture, as CORRECTED at S8's review. The extraction first went
+    // all-pathless for F3's refuse-all under an allowlist — and that silently
+    // removed the single-note writes from collectPaths, which ALSO feeds
+    // record immutability, the lock consult and the journal target, none of
+    // them allowlist-gated. `vault_fileclass_set` could suddenly field-write a
+    // `record: true` note the kernel used to refuse. The host now recognizes
+    // `note_path`, so explain/get/set are per-path scoped like every host
+    // write tool AND kernel-visible again; the bulk/engine tools stay pathless
+    // deliberately, so F3 still refuses them wholesale under an allowlist.
+    // HOST_PATH_KEYS is a SNAPSHOT (review aid); the live pins are the host's
+    // guard.test.mjs collectPaths tests.
     const { specs } = mounted();
+    const KEYED = ["explain", "get", "set"];
     for (const spec of specs) {
-      for (const arg of Object.keys(spec.inputSchema ?? {})) {
-        assert.ok(!HOST_PATH_KEYS.includes(arg), `${spec.name} declares the host path key '${arg}'`);
+      const keys = Object.keys(spec.inputSchema ?? {}).filter((a) => HOST_PATH_KEYS.includes(a));
+      if (KEYED.includes(spec.name)) {
+        assert.deepEqual(keys, ["note_path"], `${spec.name} must carry exactly note_path`);
+      } else {
+        assert.deepEqual(keys, [], `${spec.name} must stay pathless — F3 is its allowlist posture`);
       }
     }
-    // …and the note argument really is spelled note_path, on exactly the three
-    // tools that name a note.
-    const named = specs.filter((s) => "note_path" in (s.inputSchema ?? {})).map((s) => s.name);
-    assert.deepEqual(named, ["explain", "get", "set"]);
   });
 
   test("an UNTRUSTED readOnly claim makes every tool mutating to the host", () => {

@@ -818,18 +818,21 @@ describe("publication: names, flags, and what the host's guard can scope", () =>
     // tripwire: it does not read the host's source and will not fail when the
     // host changes its list. The pin that fires then is the host's own
     // tests/guard.test.mjs over the live `collectPaths`.
+    // CORRECTED at S8's review: `note_path` IS a host path key now (kernel
+    // visibility — record guard, locks, journal target all ride collectPaths).
+    // `check` is the one tool that names a note, so it is scoped per-path; the
+    // whole-vault reconcile and the mutating regen stay pathless, so F3
+    // refuses them wholesale under an allowlist — that half of the posture is
+    // unchanged.
+    const KEYED = ["check"];
     for (const spec of specs()) {
-      for (const key of Object.keys(spec.inputSchema ?? {})) {
-        assert.ok(
-          !HOST_PATH_KEYS.includes(key),
-          `${spec.name}.${key} would make the tool scopable — revisit the README's and settings tab's fail-closed posture`,
-        );
+      const keys = Object.keys(spec.inputSchema ?? {}).filter((k) => HOST_PATH_KEYS.includes(k));
+      if (KEYED.includes(spec.name)) {
+        assert.deepEqual(keys, ["note_path"], `${spec.name} carries exactly note_path`);
+      } else {
+        assert.deepEqual(keys, [], `${spec.name} stays pathless`);
       }
     }
-    // Vacuity guard: the assertion above is only meaningful while the name the
-    // rename moved AWAY from is genuinely on the host's list.
-    assert.ok(HOST_PATH_KEYS.includes("path"), "the pin means nothing unless `path` IS a host path key");
-    assert.ok(!HOST_PATH_KEYS.includes("note_path"), "…and `note_path` is not");
     assert.deepEqual(Object.keys(specs()[0].inputSchema), ["note_path"]);
     assert.deepEqual(Object.keys(specs()[1].inputSchema ?? {}), [], "reconcile takes no arguments at all");
     assert.deepEqual(Object.keys(specs()[2].inputSchema), ["write"]);

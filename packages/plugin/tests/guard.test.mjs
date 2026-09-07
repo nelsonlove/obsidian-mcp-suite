@@ -193,3 +193,12 @@ test("crosssession tool arguments are NOT path keys — the tripwire that actual
   const paths = collectPaths({ handle: "h", channel: "c", body: "b", through_stamp: "s" });
   assert.deepEqual(paths, [], "a crosssession argument became a recognized path key — coordinate with the satellite");
 });
+
+test("note_path is a recognized path key — the kernel reaches satellite single-note writes (S8, 2026-09-07)", () => {
+  // The mutating tier renamed `path` -> `note_path` on its single-note write
+  // tools for F3's sake, which silently removed those writes from record
+  // immutability, the lock consult and the journal target — all fed by
+  // collectPaths, none gated on an allowlist. This pin is what makes the
+  // restoration a fact rather than a comment.
+  assert.deepEqual(collectPaths({ note_path: "Records/x.md" }), ["Records/x.md"]);
+});
