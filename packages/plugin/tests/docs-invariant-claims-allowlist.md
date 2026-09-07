@@ -179,6 +179,11 @@ argument.
 
 - First, the guard-argument question came out the OPPOSITE way from triage's: triage renamed `target` → `target_path` to give the host's guard something to scope, but cross-session's `channel` was deliberately left un-path-keyed, because it is a REF (uid | folder-note path | folder) rather than a path, because the file `post` writes is discovered inside the handler and named by no argument, and because path-keying it would refuse every uid-addressed call under an allowlist — the bug the scheme-write `to` → `to_address` rename fixed, in reverse.
 
+## docs/suite-split-design.md (scheme ruling, S8)
+
+- Scheme addressing (`jd:<address>`) is wired into the host's guard interception point (`mcp/guarded.ts`) exactly like `uid:` addressing — every path argument of every tool, host or external, can carry a scheme ref, and the resolution must run before the allowlist checks the resolved path.
+  approved 2026-09-07: substantiated by shipped code and its pins — `resolveSchemeArgs` binds in `makeGuarded` immediately after uid resolution and before `guardCall` (guarded.ts), which is the CLAUDE.md-documented design ("Resolution runs before the guard so the allowlist checks the RESOLVED path"), exercised by the scheme-addressing suites. The sentence is the RATIONALE for ruling scheme host-side, describing the existing wiring; it asserts no new behavior.
+
 ## docs/acceptance-model.md (WP10c retirement)
 
 - **The first consumer — the per-note auto-accept policy (#135) — RETIRED (WP10c, 2026-08-25).** `auto-accept` remains in the default declared list as authority-conferring, but the policy's operational half is deleted per the development guide's order: `auto-accept: all` no longer parses at all (a whole-note blank check never belonged in frontmatter — it reads as no policy under every authority era, including after a cutover rollback), and `auto-accept: appends` is migrated to content proposals — an appended tail is residual content like any other edit, and lands as an ordinary proposal for the human's decision.
