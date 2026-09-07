@@ -34,34 +34,20 @@ const NOTES = ["00-09 System/06 Agent tooling/06.20 obsidian-vault-mcp-plugin.md
  * obsidian_pending_review over it without ever calling the handler in these tests. */
 const pendingReviewSource = { read: async () => null };
 
-/** A no-op provenance backend — the provenance module registers its tools over
- * it without ever calling a handler in these registration-only tests. */
-const provenanceSource = {
-  noteFrontmatter: () => null,
-  read: async () => null,
-  stat: async () => null,
-  glob: async () => [],
-  writeNote: async () => {},
-};
-
 // Inert `vocabSource`, `healthSource` and `basesSource` fixtures lived here
-// until the S7 satellite extraction. Those three modules are separate plugins
-// now (`vault-vocab`, `vault-health`, `vault-bases`), each with its own suite,
-// and `MountDeps` no longer declares a slot for any of them.
+// until the S7 satellite extraction; the `provenanceSource` backend and the
+// fileclass presence/binary/vault-name fixtures lived here until the mutating
+// tier followed. All six of those modules are separate plugins now
+// (`vault-vocab`, `vault-health`, `vault-bases`, `vault-provenance`,
+// `vault-fileclass`, `vault-jd-scaffold`), each with its own suite, and
+// `MountDeps` no longer declares a slot for any of them — it is down to
+// `getSettings` and `schemeNotes`.
 
 function deps(overrides = {}) {
   return {
     getSettings: () => ({ ...(overrides.settings ?? {}) }),
     schemeNotes: () => NOTES,
     pendingReviewSource,
-    provenanceSource,
-    // The fileclass module (#188) gates on the Fileclass plugin being present +
-    // a CLI binary; supply both so an ENABLED fileclass module registers its
-    // eight tools (the drift checks need a contributed tool list). The exec is
-    // never called in these registration-only tests.
-    vaultName: "TestVault",
-    fileclassPresent: () => true,
-    fileclassBinary: "/usr/local/bin/fileclass",
     ...overrides.deps,
   };
 }
@@ -90,26 +76,27 @@ describe("mountModules: the built-in modules register through the registry", () 
     }
     assert.deepEqual(registry.problems, []);
     const described = registry.describe();
-    // provenance (the obsidian-provenance fold), fileclass (#188, the
-    // fileclass CLI fold), governance (#83) and jd-scaffold (Stage A of the
-    // jd-dashboard fold) all ship DISABLED (opt-in surfaces a human turns on),
-    // so they contribute nothing here — scheme is the only live module left.
-    // (Triage was a tenth module until S5, cross-session a ninth until S6, and
-    // vocab, health and bases went at S7; they are the `vault-triage`,
-    // `vault-crosssession`, `vault-vocab`, `vault-health` and `vault-bases`
-    // satellite plugins and mount nothing here.)
-    assert.deepEqual(described.map((d) => d.id), ["scheme", "provenance", "fileclass", "acceptance", "jd-scaffold"]);
+    // TWO modules remain. acceptance (#83) ships DISABLED — its capability is
+    // an Obsidian pane, not a tool — so scheme is the only live one. (Triage
+    // was a tenth module until S5, cross-session a ninth until S6, vocab,
+    // health and bases went at S7, and provenance, fileclass and jd-scaffold
+    // went with the mutating tier after them; all nine are satellite plugins
+    // and mount nothing here.)
+    assert.deepEqual(described.map((d) => d.id), ["scheme", "acceptance"]);
     for (const d of described) {
-      if (["provenance", "fileclass", "acceptance", "jd-scaffold"].includes(d.id)) {
+      if (d.id === "acceptance") {
         assert.equal(d.enabled, false);
         assert.deepEqual(d.tools, []);
       } else {
         assert.ok(d.enabled && d.tools.length > 0);
       }
     }
-    // No provenance/fileclass tool leaked onto the surface while the modules are off.
-    assert.ok(!names.some((n) => n.startsWith("provenance_")));
-    assert.ok(!names.some((n) => n.startsWith("fileclass_")));
+    // Nothing provenance-, fileclass- or jd-scaffold-shaped can leak from the
+    // mount now: those modules are gone, and these names are exactly what a
+    // half-reverted extraction would put back.
+    assert.ok(!names.some((n) => n.startsWith("provenance_") || n.startsWith("vault_provenance_")));
+    assert.ok(!names.some((n) => n.startsWith("fileclass_") || n.startsWith("vault_fileclass_")));
+    assert.ok(!names.some((n) => n.startsWith("obsidian_jd_") || n.startsWith("vault_jd_scaffold_")));
     // Nothing triage-, vocab-, health- or bases-shaped can leak from the mount
     // at all now: those modules are gone. Kept as pins because the satellites
     // publish through the EXTERNAL registry, which is a different surface with
@@ -145,17 +132,29 @@ describe("mountModules: the built-in modules register through the registry", () 
     assert.equal(registry.isEnabled("scheme"), false);
   });
 
-  test("a stale modules.vocab / .health / .bases row is an unknown id, not a mount", () => {
-    // The three modules left at S7. An existing data.json still carries their
-    // rows; the mount must simply not know them rather than resurrect anything.
+  test("a stale row for any extracted module is an unknown id, not a mount", () => {
+    // Six modules left in two waves: vocab/health/bases at S7, then
+    // provenance/fileclass/jd-scaffold as the mutating tier. An existing
+    // data.json still carries their rows; the mount must simply not know them
+    // rather than resurrect anything.
     const { server, registry } = mount({
-      settings: { modules: { vocab: { enabled: true }, health: { enabled: true }, bases: { enabled: true } } },
+      settings: {
+        modules: {
+          vocab: { enabled: true },
+          health: { enabled: true },
+          bases: { enabled: true },
+          provenance: { enabled: true },
+          fileclass: { enabled: true },
+          "jd-scaffold": { enabled: true },
+        },
+      },
     });
     const names = [...server.tools.keys()];
     assert.ok(!names.some((n) => n.startsWith("obsidian_vocab") || n === "obsidian_health" || n.startsWith("base_")));
-    assert.equal(registry.describe().find((d) => d.id === "vocab"), undefined);
-    assert.equal(registry.describe().find((d) => d.id === "health"), undefined);
-    assert.equal(registry.describe().find((d) => d.id === "bases"), undefined);
+    assert.ok(!names.some((n) => n.startsWith("provenance_") || n.startsWith("fileclass_") || n.startsWith("obsidian_jd_")));
+    for (const id of ["vocab", "health", "bases", "provenance", "fileclass", "jd-scaffold"]) {
+      assert.equal(registry.describe().find((d) => d.id === id), undefined, id);
+    }
     // Reported, not silently swallowed — the same "unknown module id" note a
     // stale `modules.skills` / `.triage` / `.crosssession` row already gets.
     // It is how a user learns why a module tab disappeared.
@@ -163,6 +162,9 @@ describe("mountModules: the built-in modules register through the registry", () 
       "settings name unknown module 'vocab' — ignored",
       "settings name unknown module 'health' — ignored",
       "settings name unknown module 'bases' — ignored",
+      "settings name unknown module 'provenance' — ignored",
+      "settings name unknown module 'fileclass' — ignored",
+      "settings name unknown module 'jd-scaffold' — ignored",
     ]);
   });
 
@@ -237,31 +239,59 @@ describe("mount gate 2: the host ctx handed to modules is minimal", () => {
     assert.deepEqual(host.visible(["Projects/a.md", "Archive/b.md"]), ["Projects/a.md"]);
   });
 
-  test("builtinModules declares the five capability modules (provenance + fileclass + jd-scaffold mutating; acceptance NOT)", () => {
+  test("builtinModules declares the TWO remaining capability modules, and NEITHER is mutating", () => {
     const mods = builtinModules(deps());
     assert.deepEqual(mods.map((m) => [m.id, m.posture]), [
       ["scheme", "capability"],
-      ["provenance", "capability"],
-      // fileclass (#188, the fileclass CLI fold) is a MUTATING capability module
-      // (set / set_where write typed frontmatter through the accept guard).
-      ["fileclass", "capability"],
-      // governance is posture "capability", NOT "governance" — the v1 registry refuses
+      // acceptance is posture "capability", NOT "governance" — the v1 registry refuses
       // the governance posture (it is inert). It clears that gate by being read-only.
       ["acceptance", "capability"],
-      // jd-scaffold (Stage A of the jd-dashboard fold) is a MUTATING capability
-      // module (standard_zeros / ensure_category_indexes / promote_to_folder
-      // create/rename real vault notes and folders).
-      ["jd-scaffold", "capability"],
-      // WHAT LEFT, and when: triage (#221 phase 2) at S5, cross-session (#232)
-      // at S6, and vocab + health + bases (#243) at S7. All five are satellite
-      // plugins now, reaching the vault through the external-tool registry —
-      // same guarded interception point, different publisher. This list is the
-      // shrinking record of the suite split; a name reappearing here without a
-      // package being deleted would be a half-reverted extraction.
+      // WHAT LEFT, and when: skills (#292) at S4, triage (#221 phase 2) at S5,
+      // cross-session (#232) at S6, vocab + health + bases (#243) at S7, and
+      // provenance + fileclass (#188) + jd-scaffold as the mutating tier after
+      // them. All nine are satellite plugins now, reaching the vault through
+      // the external-tool registry — same guarded interception point, different
+      // publisher. This list is the shrinking record of the suite split; a name
+      // reappearing here without a package being deleted would be a
+      // half-reverted extraction.
     ]);
-    // provenance, fileclass and jd-scaffold are the modules that declare they
-    // may contribute mutating tools; scheme and acceptance are NOT mutating.
-    assert.deepEqual(mods.filter((m) => m.mutating).map((m) => m.id), ["provenance", "fileclass", "jd-scaffold"]);
+    // NO module declares `mutating` any more: provenance, fileclass and
+    // jd-scaffold were the last three and all three left. The flag and the
+    // gate's branch for it are deliberately KEPT (a documented module-host
+    // capability with six shipped users behind it, not unused perimeter
+    // surface), which is why this assertion is an empty list rather than a
+    // deleted test — an id appearing here is a real decision someone made.
+    assert.deepEqual(mods.filter((m) => m.mutating).map((m) => m.id), []);
+  });
+
+  test("the dormant `mutating` escape hatch still works — the gate branch is exercised, not merely retained", () => {
+    // With no built-in module declaring `mutating`, the gate's exemption branch
+    // would otherwise be dead code that nothing proves. Mount a synthetic
+    // module through the same registry to keep the behaviour pinned: a
+    // mutating module's non-read-only tool registers, and a non-mutating
+    // module's identical tool is refused into `problems` and never reaches the
+    // server.
+    const server = fakeServer();
+    const mutatingTool = { title: "t", description: "d", annotations: { readOnlyHint: false } };
+    const make = (id, mutating) => ({
+      id,
+      posture: "capability",
+      capabilities: ["synthetic"],
+      enabled: true,
+      ...(mutating ? { mutating: true } : {}),
+      register: (registerTool) => registerTool(`${id}_writes`, mutatingTool, async () => ({})),
+    });
+    const registry = new ModuleRegistry([make("declared", true), make("undeclared", false)], {});
+    registry.registerAll((n, d, h) => server.registerTool(n, d, h), mountHost(deps()), {
+      gate: (name, def, moduleId) =>
+        def?.annotations?.readOnlyHint === true || moduleId === "declared"
+          ? null
+          : "not explicitly read-only",
+    });
+    const names = [...server.tools.keys()];
+    assert.ok(names.includes("declared_writes"), "a declared-mutating module's write tool registers");
+    assert.ok(!names.includes("undeclared_writes"), "an undeclared module's write tool must be refused");
+    assert.ok(registry.problems.length > 0, "the refusal is reported, not swallowed");
   });
 });
 
@@ -411,7 +441,7 @@ describe("#81 config-host: both built-in modules carry a manifest, drift-free", 
     const settings = { schemes: [{ id: "jd", provider: "johnny-decimal", config: { contentDecimalFloor: 20 } }], modules: {} };
     const mods = builtinModules(deps({ settings }));
     const hosted = collect(mods, settings.modules, settings);
-    assert.deepEqual(hosted.map((h) => h.id), ["scheme", "provenance", "fileclass", "acceptance", "jd-scaffold"]);
+    assert.deepEqual(hosted.map((h) => h.id), ["scheme", "acceptance"]);
     const scheme = hosted.find((h) => h.id === "scheme");
     assert.equal(scheme.fields.find((f) => f.key === "contentDecimalFloor").value, 20);
     // The governance module renders its section too — two badge-display toggles
@@ -435,23 +465,18 @@ describe("#81 config-host: both built-in modules carry a manifest, drift-free", 
     assert.deepEqual(govField("requiredFrontmatterKeys").value, []);
     assert.equal(governance.enabled, false);
     assert.equal(governance.directory.tools.length, 0);
-    // The fileclass module (#188, the fileclass CLI fold) renders its own config
-    // tab: one config field (the CLI binary path, default blank) plus an
-    // eight-tool capability directory (six read + two write). Ships disabled.
-    const fileclass = hosted.find((h) => h.id === "fileclass");
-    assert.equal(fileclass.fields.length, 1);
-    assert.equal(fileclass.fields.find((f) => f.key === "binaryPath").value, "");
-    assert.equal(fileclass.enabled, false);
-    assert.equal(fileclass.directory.tools.length, 8);
-    assert.equal(fileclass.directory.tools.filter((t) => t.readOnly === false).length, 2);
-    // Five modules rendered their own config tabs here and no longer do:
-    // triage's eight fields left at S5, crosssession's three at S6, and at S7
+    // EIGHT modules rendered their own config tabs here and no longer do:
+    // triage's eight fields left at S5, crosssession's three at S6, then at S7
     // health's one (`emptyChars`), bases' two (`queryTimeoutMs` / `rowCap`) and
     // vocab's bespoke LIST-shaped instance form — the one module-specific
-    // branch this renderer ever had. Each set was ported verbatim into its own
-    // package's `src/settings.ts` and is pinned by that package's suite; the
-    // host hosts nothing for any of them.
-    for (const gone of ["triage", "crosssession", "vocab", "health", "bases"]) {
+    // branch this renderer ever had — and finally, with the mutating tier,
+    // provenance's three (`notesDir` / `notesSource` / `auditNote`) and
+    // fileclass's one (`binaryPath`). jd-scaffold is in the list too and never
+    // had any: it declared no config block at all, so its satellite has nothing
+    // to adopt. Each set was ported verbatim into its own package's
+    // `src/settings.ts` and is pinned by that package's suite; the host hosts
+    // nothing for any of them.
+    for (const gone of ["triage", "crosssession", "vocab", "health", "bases", "provenance", "fileclass", "jd-scaffold"]) {
       assert.equal(hosted.find((h) => h.id === gone), undefined, `${gone} should not be hosted`);
     }
   });

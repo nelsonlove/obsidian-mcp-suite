@@ -774,20 +774,15 @@ export class VaultMcpSettingTab extends PluginSettingTab {
 
   /** The live module list + a throwaway registry used ONLY for `isEnabled`
    * resolution — no `registerAll` runs here, so no live vault/server is
-   * needed to render the tab (the `schemeNotes`/`provenanceSource` deps below
-   * are unused stand-ins: `builtinModules` closes over them, but nothing in
-   * THIS file ever calls a module's `register()`). */
+   * needed to render the tab (the `schemeNotes` dep below is an unused
+   * stand-in: `builtinModules` closes over it, but nothing in THIS file ever
+   * calls a module's `register()`). The `provenanceSource` stand-in that used
+   * to sit beside it went with the provenance module at the mutating-tier
+   * extraction; it was the only REQUIRED field MountDeps ever had. */
   private moduleList(): VaultModule[] {
     return builtinModules({
       getSettings: () => this.plugin.settings,
       schemeNotes: () => [],
-      provenanceSource: {
-        noteFrontmatter: () => null,
-        read: async () => null,
-        stat: async () => null,
-        glob: async () => [],
-        writeNote: async () => {},
-      },
     });
   }
 

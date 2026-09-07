@@ -5,7 +5,8 @@
 // vault, so this is real fs traversal rather than an Obsidian vault read —
 // but the traversal itself takes an injected `DirLister` rather than calling
 // `fs` directly, so it stays pure and headless-testable the way the rest of
-// this kernel is (see provenance-config.ts's "Obsidian-free" convention,
+// this kernel is (see the provenance kernel's `provenance-config.ts`
+// "Obsidian-free" convention — now in the `vault-provenance` satellite —
 // applied here to "filesystem-free" instead).
 
 /** One directory entry, as the injected lister reports it. */
