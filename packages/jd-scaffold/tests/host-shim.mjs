@@ -55,6 +55,9 @@ export const OWNER = sanitizeOwnerId(PLUGIN_ID);
  */
 export const HOST_PATH_KEYS = [
   "path", "from", "to", "target_path", "template_path", "subdir", "file_path", "output_folder",
+  // note_path joined the host list at S8's review — kernel visibility for
+  // argument-named single-note operations.
+  "note_path",
   "paths", "refs",
 ];
 

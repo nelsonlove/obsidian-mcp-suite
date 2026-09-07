@@ -953,20 +953,29 @@ describe("publication: names, flags, and what the host's guard can scope", () =>
     // illusion of a check. `folder_path` and `templates_folder` were never on
     // the host's list either — verified against the snapshot below rather than
     // assumed.
+    // CORRECTED at S8's review: `note_path` IS a host path key now, because
+    // the kernel's record guard, lock consult and journal target all ride
+    // collectPaths and a pathless named-note write had escaped all three —
+    // reindex could rewrite a `record: true` index note the kernel used to
+    // refuse. The named note is therefore scoped and kernel-visible; the
+    // COMPUTED side-writes (standard-zeros' created files, promote's folder
+    // note) remain beyond the argument-derived guard, exactly like
+    // obsidian_repoint_link's discovered writes — a documented boundary with
+    // an existing precedent, not an illusion dressed as a check, because the
+    // docs say which half is scoped and the journal's effects field names
+    // what actually changed.
+    const KEYED = ["promote_to_folder", "reindex_category"];
     for (const spec of specs()) {
-      for (const key of Object.keys(spec.inputSchema ?? {})) {
-        assert.ok(
-          !HOST_PATH_KEYS.includes(key),
-          `${spec.name}.${key} would make the tool scopable — revisit the README's fail-closed posture first`,
-        );
+      const keys = Object.keys(spec.inputSchema ?? {}).filter((k) => HOST_PATH_KEYS.includes(k));
+      if (KEYED.includes(spec.name)) {
+        assert.deepEqual(keys, ["note_path"], `${spec.name} carries exactly note_path`);
+      } else {
+        assert.deepEqual(keys, [], `${spec.name} stays pathless — F3 is its allowlist posture`);
       }
     }
-    // The pin is only meaningful while these are not host path keys.
-    for (const arg of ["note_path", "folder_path", "templates_folder"]) {
+    for (const arg of ["folder_path", "templates_folder"]) {
       assert.ok(!HOST_PATH_KEYS.includes(arg), arg);
     }
-    // …and it is only a rename while `path` IS one.
-    assert.ok(HOST_PATH_KEYS.includes("path"), "`path` is a host path key — that is why note_path exists");
   });
 
   test("refusals throw with a lowercase-snake code, which the host renders as `Error [code]: message`", async () => {

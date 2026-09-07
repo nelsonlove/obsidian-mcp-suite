@@ -15,7 +15,17 @@ export type { GuardSettings };
 // that import creates lands under it) — recognized here so the kernel journals
 // it as the operation's target and consults advisory locks over it, exactly
 // like any other named path.
-const PATH_KEYS = ["path", "from", "to", "target_path", "template_path", "subdir", "file_path", "output_folder"];
+// `note_path` joined at S8 (the mutating tier), and the reason is the kernel,
+// not the allowlist: the fileclass/jd-scaffold satellites renamed `path` away
+// to get F3's refuse-all under an allowlist, which ALSO removed their writes
+// from collectPaths — and collectPaths feeds record immutability, the advisory
+// lock consult and the journal's target, none of which is allowlist-gated. A
+// satellite field-write could suddenly mutate a `record: true` note the kernel
+// used to refuse. Recognizing `note_path` restores all three for single-note
+// writes (per-path allowlist scoping, the same posture as every host write
+// tool); BULK tools stay pathless deliberately, so F3 still refuses them
+// wholesale under an allowlist.
+const PATH_KEYS = ["path", "from", "to", "target_path", "template_path", "subdir", "file_path", "output_folder", "note_path"];
 // Keys whose ARRAY values carry paths (refs = obsidian_resolve's batch input).
 const ARRAY_PATH_KEYS = ["paths", "refs"];
 // Defensive depth cap: MCP args arrive as parsed JSON, so nesting is bounded in
