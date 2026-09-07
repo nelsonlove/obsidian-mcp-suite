@@ -472,11 +472,15 @@ describe("reindex_category", () => {
   });
 
   test("a sibling XX.00 file outside the allowlist is excluded from consolidation, and scoped_to_allowlist reports true", async () => {
-    // The read-boundary containment this tool used to enforce for itself, and
-    // the exact reason `note_path` is NOT a host path key: the host could scope
-    // the note WRITTEN, but never this vault-wide sibling READ. As a satellite
-    // the seam is dormant, so the host refuses the whole call under an
-    // allowlist instead; supplying getSettings here keeps the behaviour pinned.
+    // The read-boundary containment this tool used to enforce for itself. It is
+    // also THE RATIFIED RESIDUAL of the round-2 posture (2026-09-07): the host
+    // scopes the note WRITTEN — `note_path` is a path key — but never this
+    // vault-wide sibling READ, and as a satellite the filter exercised here is
+    // dormant because nothing supplies getSettings. So under a live allowlist
+    // the area/system tiers really can fold hidden siblings' names into a
+    // visible note. Accepted deliberately (README §2) rather than closed, and
+    // this test is what keeps the machinery from rotting before an
+    // apiVersion-2 SDK can supply the scope and make it live.
     const allPaths = [
       "10-19 Personal/10 Foo/10.00 Area index.md",
       "10-19 Personal/06 Digital tools/06.00 JDex.md",
@@ -943,7 +947,7 @@ describe("publication: names, flags, and what the host's guard can scope", () =>
     }
   });
 
-  test("NOT ONE argument is a host path key — so under an allowlist the host blocks all seven wholesale", () => {
+  test("exactly the two note-naming tools are path-keyed; the other five stay pathless (F3 refuse-all)", () => {
     // The decision, pinned. `path` WAS an argument of promote_to_folder and
     // reindex_category and was deliberately renamed `note_path`: keeping it
     // would have scoped the SOURCE note while the folder and file promote
@@ -953,17 +957,31 @@ describe("publication: names, flags, and what the host's guard can scope", () =>
     // illusion of a check. `folder_path` and `templates_folder` were never on
     // the host's list either — verified against the snapshot below rather than
     // assumed.
-    // CORRECTED at S8's review: `note_path` IS a host path key now, because
-    // the kernel's record guard, lock consult and journal target all ride
+    // ROUND 1 (2026-09-07): `note_path` IS a host path key now, because the
+    // kernel's record guard, lock consult and journal target all ride
     // collectPaths and a pathless named-note write had escaped all three —
     // reindex could rewrite a `record: true` index note the kernel used to
-    // refuse. The named note is therefore scoped and kernel-visible; the
-    // COMPUTED side-writes (standard-zeros' created files, promote's folder
-    // note) remain beyond the argument-derived guard, exactly like
-    // obsidian_repoint_link's discovered writes — a documented boundary with
-    // an existing precedent, not an illusion dressed as a check, because the
-    // docs say which half is scoped and the journal's effects field names
-    // what actually changed.
+    // refuse, on every vault, allowlist or not. The named note is therefore
+    // scoped and kernel-visible.
+    //
+    // ROUND 2 (2026-09-07): the rule that settles the spelling for anything
+    // added here — path-key an argument iff the tool MUTATES the note it names.
+    // Every tool in this package mutates, so the two that name a note keep
+    // `note_path`; the tier's READ tools went the other way (`note`, not a
+    // key), because kernel visibility binds at the mutating dequeue and buys a
+    // read nothing while costing it F3's refusal.
+    //
+    // TWO residuals ride with that, both documented rather than glossed:
+    //   * the COMPUTED side-writes (standard-zeros' created files, promote's
+    //     folder + new file) remain beyond the argument-derived guard, exactly
+    //     like obsidian_repoint_link's discovered writes — a documented
+    //     boundary with an existing precedent, mitigated by filesChanged/files;
+    //   * reindex_category's vault-wide sibling READ is not scoped by the note
+    //     argument, so under an allowlist its area/system tiers can fold hidden
+    //     siblings' names into a visible note. THAT ONE WAS RATIFIED, not
+    //     overlooked (README §2): the kernel protection is live on every vault
+    //     while the leak needs an allowlist, and the reversal is one word
+    //     (`note_path` -> `note`), which this pin would catch immediately.
     const KEYED = ["promote_to_folder", "reindex_category"];
     for (const spec of specs()) {
       const keys = Object.keys(spec.inputSchema ?? {}).filter((k) => HOST_PATH_KEYS.includes(k));
@@ -976,6 +994,10 @@ describe("publication: names, flags, and what the host's guard can scope", () =>
     for (const arg of ["folder_path", "templates_folder"]) {
       assert.ok(!HOST_PATH_KEYS.includes(arg), arg);
     }
+    // Vacuity: the snapshot really does hold the spellings this posture turns on.
+    assert.ok(HOST_PATH_KEYS.includes("path"), "vacuity: `path` is a host path key");
+    assert.ok(HOST_PATH_KEYS.includes("note_path"), "vacuity: `note_path` is a host path key since round 1");
+    assert.ok(!HOST_PATH_KEYS.includes("note"), "`note` is the tier's PATHLESS spelling and must not become a key");
   });
 
   test("refusals throw with a lowercase-snake code, which the host renders as `Error [code]: message`", async () => {

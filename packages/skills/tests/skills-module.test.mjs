@@ -96,7 +96,13 @@ describe("vault-skills satellite: the six published tools", () => {
     // path key while an allowlist is active. This test pins the FACT the
     // README's allowlist posture rests on, so a later argument rename cannot
     // silently change which tools survive a sandbox.
-    const PATH_KEYS = ["path", "from", "to", "target_path", "template_path", "subdir", "file_path", "output_folder", "paths", "refs"];
+    // Snapshot of the host's PATH_KEYS + ARRAY_PATH_KEYS (a review aid, not a live
+    // tripwire — the host's own guard.test.mjs is the pin that fires). `note_path`
+    // joined the host's list on 2026-09-07 (mutating-tier round 1: the kernel's record
+    // guard, lock consult and journal target all ride collectPaths, and a pathless
+    // single-note write had escaped all three). No tool here names it, so the
+    // assertions below decide exactly as they did.
+    const PATH_KEYS = ["path", "from", "to", "target_path", "template_path", "subdir", "file_path", "output_folder", "note_path", "paths", "refs"];
     const hasPathKey = (spec) => Object.keys(spec.inputSchema ?? {}).some((k) => PATH_KEYS.includes(k));
     const specs = build();
     assert.equal(hasPathKey(toolNamed(specs, "mark")), true);

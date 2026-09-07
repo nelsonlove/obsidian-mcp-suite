@@ -21,11 +21,14 @@ plugin id is the tool namespace, and the bare names shed the `provenance_`
 prefix so nothing publishes as `vault_provenance_provenance_check`. The three
 names shipped by the module were `provenance_check`, `provenance_reconcile` and
 `provenance_regen`; they are the three in the table above. `check`'s `path`
-argument is now **`note_path`**. That last one is a scoping decision, not a
+argument is now **`note`** — it was `note_path` from the extraction until
+2026-09-07, when the host began recognizing `note_path` as a path key for the
+tier's MUTATING tools and this READ moved to a third spelling to stay out of
+that list. That last one is a scoping decision, not a
 spelling one: `path` is a key the host's guard recognizes, so keeping it would
 have let a session under a path allowlist run `check` scoped to the note it
 names — while the answer still lists every path that note's `derived-from`
-globs resolve to, including files the session cannot see. Named `note_path`, no
+globs resolve to, including files the session cannot see. Named `note`, no
 tool in this plugin carries a recognized path key, so the host blocks all three
 outright while an allowlist is active. Fail-closed. The reversal is one word.
 `packages/provenance/README.md` and `packages/provenance/CLAUDE.md` own the
@@ -203,7 +206,7 @@ detection makes: a note whose plain-path source was deleted used to read fresh.
 
 | Key | Always present? | Meaning |
 | --- | --- | --- |
-| `path` | yes | the note that was checked (echoed back — the RESULT key stayed `path` even though the ARGUMENT is now `note_path`; only the argument name decides how the host scopes a call) |
+| `path` | yes | the note that was checked (echoed back — the RESULT key stayed `path` even though the ARGUMENT is now `note`; only the argument name decides how the host scopes a call) |
 | `fresh` | yes | no `changed`, no `missing`, no `sourcesRemoved` |
 | `changed` | yes | resolved source files with mtime > `generated` |
 | `sources` | yes | every file the `derived-from` set resolved to |

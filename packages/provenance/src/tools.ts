@@ -24,9 +24,10 @@
 // README.md as the extraction's breaking change, with the one-line reversal
 // named there.
 //
-// `check`'s `path` argument is now `note_path`. That is NOT cosmetic — see the
-// allowlist section below. It is the same class of rename the host itself made
-// when it moved its scheme-write `to` → `to_address` AWAY from a path key.
+// `check`'s `path` argument was renamed `note_path` at the extraction and is
+// now spelled `note`. That is NOT cosmetic — see the allowlist section below.
+// It is the same class of rename the host itself made when it moved its
+// scheme-write `to` → `to_address` AWAY from a path key.
 //
 // ── Derivation is NOT acceptance (the load-bearing distinction) ──────────────
 //
@@ -76,6 +77,34 @@
 //     argument back to `path` and `check` becomes host-scoped per-path again.
 //   * Pinned by the `publication` test ("NOT ONE argument is a host path key").
 //
+// ── ROUND 2 (2026-09-07): the argument is `note`, and the posture is intact ──
+//
+// The block above is the extraction's reasoning and it stands. What follows is
+// the correction history on top of it, because for a moment the posture was not
+// what that block says:
+//
+//   ROUND 1 — the host ADDED `note_path` to its PATH_KEYS. The reason was real
+//   and was about the MUTATING tier as a whole: `collectPaths` is not the
+//   allowlist's private walker, and the same list feeds record immutability, the
+//   advisory-lock consult and the journal's `target.path`, none of them gated on
+//   an allowlist. A pathless single-note WRITE had escaped all three.
+//
+//   ROUND 2 — that fix reached further than its reason. It made `check`, a READ,
+//   host-scopable again, which is precisely what the numbered argument above
+//   rejects: the host scopes the note you NAME, not the paths the answer
+//   CONTAINS, and this answer enumerates every path the note's `derived-from`
+//   globs resolve to. Kernel visibility is a MUTATING concern — the record
+//   guard, the lock consult and the journal target all bind at the mutating
+//   dequeue — so a read gains nothing from being path-keyed and loses the
+//   refusal. `check`'s argument is therefore spelled `note`, which the host does
+//   not recognize, and the fail-closed whole-surface posture the block above
+//   describes is the one that actually ships. `reconcile` and `regen` are
+//   pathless as they always were.
+//
+// So this package carries NO host path key at all, and the `publication` pin
+// reads exactly that way again. The one-word reversal named above is unchanged
+// in kind, only in spelling: `note` → `path`.
+//
 // `ctx.getSettings` is kept as a DORMANT seam and is NOT supplied in the shipped
 // configuration. It was already dormant as a module — its comment there said it
 // was "retained for a future cycle that scopes the audit read surface to the
@@ -114,7 +143,7 @@
 // The SDK converts a zod shape to JSON Schema and the host converts it back
 // through a deliberately small subset (`json-schema-to-zod.ts`): `type`,
 // `description` and STRING `enum` survive; `default`, `min`, `max` and `pattern`
-// DO NOT. `note_path`'s `.min(1)` is therefore re-applied in the handler — that
+// DO NOT. `note`'s `.min(1)` is therefore re-applied in the handler — that
 // is the `vault_skills_release` semver lesson: a constraint that lives only in
 // the declared schema never runs for an MCP caller.
 //
@@ -214,12 +243,12 @@ export function emptyProvenanceBackend(): ProvenanceBackend {
  */
 function requireNotePath(value: unknown): string {
   if (typeof value !== "string" || value.trim().length === 0) {
-    refuse("invalid_argument", "'note_path' must be a non-empty string");
+    refuse("invalid_argument", "'note' must be a non-empty string");
   }
   if (value.includes("\\")) {
     refuse(
       "invalid_path",
-      `'note_path' contains a backslash, which is never a valid Obsidian path separator: ${value}`,
+      `'note' contains a backslash, which is never a valid Obsidian path separator: ${value}`,
     );
   }
   return value;
@@ -316,21 +345,22 @@ export function buildProvenanceTools(source: ProvenanceBackend, ctx: ProvenanceT
         "that has SHRUNK since generation (`sourcesRemoved`). Without that witness, deletions inside a GLOB entry " +
         "cannot be seen, and the result says so (`globDeletionsUndetectable: true`). Read-only in intent; the " +
         "Governor host registers it as mutating unless this plugin is trusted, and blocks it outright while a path " +
-        "allowlist is active — the note argument is deliberately named `note_path`, which the host does not " +
-        "recognize as a path key, so the whole surface fails closed rather than answering with paths it cannot " +
-        "scope.",
+        "allowlist is active — the note argument is deliberately named `note` (not `path`, not `note_path`), which " +
+        "the host does not recognize as a path key, so the whole surface fails closed rather than answering with " +
+        "paths it cannot scope. The answer enumerates every path this note's `derived-from` globs resolve to, and " +
+        "the host would have scoped only the note NAMED, so a scopable spelling would leak the rest.",
       inputSchema: {
-        note_path: z
+        note: z
           .string()
           .min(1)
           .describe(
             "Vault-relative path of the derived note to check (the Python CLI's `check <artifact>`). Named " +
-              "`note_path`, not `path`, deliberately — see the tool description.",
+              "`note`, not `path` or `note_path`, deliberately — see the tool description.",
           ),
       },
       ...RO,
       handler: async (args: Record<string, unknown>) => {
-        const notePath = requireNotePath(args.note_path);
+        const notePath = requireNotePath(args.note);
         const v = await checkFreshness(source as ProvenanceSource, notePath);
         // Additive in SHAPE: `changed` / `sources` / `generated` keep their names
         // and meaning, and the deleted-source fields are new keys beside them.
@@ -338,7 +368,7 @@ export function buildProvenanceTools(source: ProvenanceBackend, ctx: ProvenanceT
         // and no `sourcesRemoved` are new conditions, which is the whole point:
         // a note whose plain-path source was deleted used to read fresh.
         //
-        // The RESULT KEY stays `path`, even though the argument is `note_path`:
+        // The RESULT KEY stays `path`, even though the argument is `note`:
         // the rename exists to keep the host's guard from recognizing an
         // ARGUMENT, and a response key is not an argument. Renaming it too would
         // break every reader of the answer for nothing.

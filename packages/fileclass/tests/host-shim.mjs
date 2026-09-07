@@ -27,10 +27,11 @@
 // allowlist, or the kernel's record-immutability guard: those are host code
 // with host tests, and re-implementing them here would be a second copy that
 // could drift into asserting a posture the host does not actually enforce.
-// What this package DOES pin about them is the only half it owns — that NOT ONE
-// of its eight tools carries an argument in the host's PATH_KEYS, which is what
-// makes the whole surface blocked-wholesale under an allowlist (see the
-// `publication` tests).
+// What this package DOES pin about them is the only half it owns — WHICH of its
+// eight tools carries an argument in the host's PATH_KEYS. Since round 2
+// (2026-09-07) that is exactly one, the mutating `set`; the two reads that name
+// a note spell it `note`, which is not a key. So seven are refused wholesale
+// under an allowlist and one is scoped per-path (see the `publication` tests).
 
 const PLUGIN_ID = "vault-fileclass";
 

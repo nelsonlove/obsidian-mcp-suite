@@ -345,13 +345,17 @@ const schemeBinding: ConfigBinding = {
 // tab and are adopted once out of `modules.provenance.config`.
 //
 // One argument changed with them, and it is a scoping decision rather than a
-// spelling one: `check`'s `path` is now `note_path`. `path` is a key the host's
-// guard recognizes, so keeping it would have let a session under a path
-// allowlist run the check scoped to the note it names — while the answer still
-// listed every path that note's `derived-from` globs resolve to. Named
-// `note_path`, no tool in that plugin carries a recognized path key, so F3
-// blocks all three outright under an allowlist. Fail-closed, and the same
-// posture the fileclass and jd-scaffold satellites took.
+// spelling one: `check`'s `path` became `note_path` at the extraction and is
+// now spelled `note` (round 2, 2026-09-07). `path` is a key this guard
+// recognizes, so keeping it would have let a session under a path allowlist run
+// the check scoped to the note it names — while the answer still listed every
+// path that note's `derived-from` globs resolve to. `note_path` is a key too
+// SINCE ROUND 1 (see guard.ts), which briefly re-opened exactly that; round 2
+// settled the rule — kernel visibility is a MUTATING concern, so a read that
+// can name out-of-allowlist paths goes pathless while a mutating tool that
+// names a note keeps `note_path`. `check` is a read, so it is `note`, and no
+// tool in that plugin carries a recognized path key: F3 blocks all three
+// outright under an allowlist. Fail-closed.
 //
 // ── the health module manifest USED TO LIVE HERE ────────────────────────────
 //
@@ -389,9 +393,13 @@ const schemeBinding: ConfigBinding = {
 // its note arguments away from `path`. The module refused every one of its
 // eight tools while an allowlist was active, because the CLI runs its engine
 // over the whole vault and its output cannot be attributed to paths; a
-// satellite cannot make that check, so the arguments are named `note_path` and
-// the host's F3 gate refuses all eight instead. Same refusal, enforced at the
-// boundary.
+// satellite cannot make that check, so the host's F3 gate had to do it instead.
+// After round 2 (2026-09-07) that reproduction is SEVEN of the eight: the two
+// reads that name a note spell it `note` and are refused with the five pathless
+// ones, while `set` spells it `note_path` — a key — so the host scopes that one
+// write per-path and the kernel's record guard sees the note it rewrites. The
+// asymmetry is deliberate: a read gains nothing from kernel visibility, a write
+// does.
 //
 // NOT related, and easy to confuse: `obsidian_fileclass_schema` /
 // `obsidian_fileclass_insert_fields` in tools-integrations.ts are for the
@@ -556,12 +564,18 @@ const ACCEPTANCE_MANIFEST: ModuleManifest = {
 // that plugin has nothing to adopt, and says so rather than shipping an empty
 // migration.
 //
-// Two of its tools named a `path` argument; both are now `note_path`, so F3
-// blocks the whole surface under an allowlist. That is stricter than the module
-// was, deliberately: promote-to-folder writes to destinations the plan computes
-// and no argument names, and reindex reads every sibling index file vault-wide
-// at the area and system tiers — the module bounded both itself with
-// `visiblePaths`, and a satellite cannot.
+// Two of its tools named a `path` argument; both are now `note_path`, which
+// THIS host recognizes as a path key since round 1 (2026-09-07). So under an
+// allowlist those two are scoped per-path and the kernel's record guard, lock
+// consult and journal target all see the note they rewrite; the other five name
+// no note and F3 refuses them wholesale. Two residuals are documented rather
+// than glossed, both in `packages/jd-scaffold`: promote-to-folder writes to
+// destinations the plan COMPUTES and no argument names (the obsidian_repoint_link
+// boundary — reported back as `filesChanged`/`files` so the journal's `effects`
+// names them), and reindex READS every sibling index file vault-wide at the area
+// and system tiers, which the argument-derived guard cannot scope. The module
+// bounded both itself with `visiblePaths`; a satellite cannot, and the reindex
+// case was ratified as an accepted residual rather than closed.
 //
 
 /** What the mount needs from the live plugin (server.ts supplies the Obsidian

@@ -20,7 +20,9 @@
 //     host publishes an external tool as `<sanitized publisher id>_<bare name>`,
 //     so the plugin id IS the tool namespace. Same rename class as bases'.
 //     Recorded in CLAUDE.md and README.md, not buried here.
-//   * ONE ARGUMENT WAS RENAMED TOO: `check`'s `path` is now `note_path`, so
+//   * ONE ARGUMENT WAS RENAMED TOO: `check`'s `path` became `note_path` at the
+//     extraction and is `note` since round 2 (2026-09-07, once `note_path`
+//     itself became a host path key for the tier's MUTATING tools) — so
 //     that NO tool here carries an argument the host recognizes as a path key.
 //     Under an active path allowlist the host therefore blocks the ENTIRE
 //     surface outright. Fail-closed, uniform, and stated plainly in the settings
