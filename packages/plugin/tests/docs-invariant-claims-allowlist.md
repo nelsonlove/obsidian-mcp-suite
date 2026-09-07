@@ -428,6 +428,20 @@ pending the operator's review like every other span in this file.
 - **Since S7 the enforced boundary is the HOST's, because a satellite cannot reach the host's guard settings.** The host's gate tests the arguments a call actually carries, so the two tools land differently and the difference matters:
 - The enforced boundary is now the HOST's, because a satellite cannot reach the host's guard settings, and the host's gate tests the arguments a call actually carries.
 
+## docs/suite-split-design.md (mutating-tier extraction)
+
+- With no argument in `PATH_KEYS` all three see an empty path list on every call in the tier, so a `record: true` note is no longer protected from `vault_fileclass_set` or `vault_jd_scaffold_reindex_category` by that kernel check, a foreign scope claim covering the note is no longer disclosed, and the journal names no target path except where a handler reports `filesChanged`/`files` as effects.
+  approved at the mutating-tier extraction: this is a DISCLOSURE of a reduction, not a safety claim — the class of sentence this control exists to make sure gets written rather than omitted. It is mechanically checkable in one place: `collectPaths` (packages/plugin/src/guard.ts) is the single walker that feeds the allowlist check, `recordImmutableRefusal`, `locks.coveringAny` and the journal's `target.path`, and the satellites' `publication` tests pin that none of their arguments is in its key list. The `filesChanged`/`files` carve-out is the `reportedEffects` convention in mcp/guarded.ts, which the jd-scaffold and provenance write handlers do return.
+
+
+- For provenance and JD scaffolding it is strictly stricter than the module was, and that is the point: keeping `path` would have handed the guard one argument while the work reached further — provenance's freshness answer names every path the checked note's `derived-from` globs resolve to, JD promote-to-folder writes to destinations the plan COMPUTES and no argument names, and JD reindex reads every sibling index file vault-wide at the area and system tiers.
+  approved at the mutating-tier extraction: every clause is a statement about ARGUMENT NAMES and about code that moved in this same change, and each half is pinned on the side that owns it. "Strictly stricter" is the host's F3 gate (`packages/plugin/src/mcp/external-tools.ts`) applied to specs that carry no key in `collectPaths`' list — pinned by each satellite's `publication` test ("NOT ONE argument is a host path key") and, on the host side, by the live `collectPaths` pin in tests/guard.test.mjs. The three blast-radius clauses describe the code as extracted: provenance's check returns a resolved `sources` list, JD promote-to-folder computes `folderPath`/`newFilePath` from the note path, and JD reindex fetches every `isIndexFilePath` sibling at the area/system tiers. It is a claim about what the boundary now refuses, not a claim that anything is unreachable.
+
+## docs/provenance.md (mutating-tier extraction)
+
+- That last one is a scoping decision, not a spelling one: `path` is a key the host's guard recognizes, so keeping it would have let a session under a path allowlist run `check` scoped to the note it names — while the answer still lists every path that note's `derived-from` globs resolve to, including files the session cannot see.
+  approved at the mutating-tier extraction: a claim about ARGUMENT NAMES and about a result shape, both checkable in one place each. `path` is in `PATH_KEYS` (packages/plugin/src/guard.ts) and `note_path` is not — pinned on the host side by the live `collectPaths` test in tests/guard.test.mjs and on the satellite side by packages/provenance's `publication` test. The `sources` list is `checkFreshness`' resolved source set, returned verbatim by the check handler and unfiltered by anything (the satellite has no allowlist to filter by). It states what the old spelling would have permitted, not that the new one guarantees anything further.
+
 ## Imported documentation corpus (2026-08-23) — tracked, not approved-as-true, PENDING OPERATOR REVIEW
 
 The 2026-08-23 documentation migration (PR #340, executed on the operator's

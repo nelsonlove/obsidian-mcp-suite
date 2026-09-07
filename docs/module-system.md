@@ -82,8 +82,9 @@ module itself declares `mutating: true`** in its registration row. A refused too
 registered, not recorded in `describe()`, and does not reserve its name** (the gate runs
 *before* the registration is recorded, so bookkeeping stays truthful).
 
-The `mutating: true` declaration is a real, deliberate escape hatch — six of the current
-modules use it (see the table below) — not a bypass of any write control: a declared-mutating
+The `mutating: true` declaration is a real, deliberate escape hatch — **no current module uses
+it**, and six did over the suite split's life (see the table below) — not a bypass of any write
+control: a declared-mutating
 module's tools still register through the guard-patched registrar, so they take the full
 kernel treatment (read-only mode, path allowlist, write queue, journal, kernel args) exactly
 like built-in mutating tools. What the gate refuses is the UNDECLARED case: slipping a
@@ -143,15 +144,17 @@ type ModuleSettings = Record<string, { enabled?: boolean; config?: Record<string
 ## The built-in modules
 
 The authoritative inventory is the [module directory](modules.md); this table is the
-mount-registration view (id, default, declared posture). Five modules register today:
+mount-registration view (id, default, declared posture). Two modules register today:
 
 | Module id | Default | Posture | Capabilities |
 | --- | --- | --- | --- |
 | `scheme` | enabled | read-only | `addressing`, `allocation` — deep ref: [scope-provider.md](scope-provider.md) |
 | `acceptance` | disabled | read-only (zero MCP tools; gates the in-Obsidian review pane) | `acceptance` |
-| `provenance` | disabled | **mutating** | `freshness`, `reconcile`, `regen` — deep ref: [provenance.md](provenance.md) |
-| `fileclass` | disabled | **mutating** | `fileclass` |
-| `jd-scaffold` | disabled | **mutating** | `scaffolding` |
+
+Neither declares `mutating`. The flag and its gate branch remain in the module host as a
+tested, dormant seam: `provenance`, `fileclass` and `jd-scaffold` were the last three modules
+that used it (skills, triage and cross-session used it before them), and all six left as
+satellite plugins. A module that needs it again declares it the same way they did.
 
 Skills is no longer a built-in module: it now ships as its own satellite plugin, `vault-skills`, publishing the same six tools through `vault-mcp-api` — see [skills.md](skills.md).
 
@@ -161,7 +164,9 @@ Cross-session coordination is no longer a built-in module either: it now ships a
 
 The whole **read tier** left together at S7 — the vocabulary provider (`vault-vocab`, [vocabulary-module.md](vocabulary-module.md)), the health scan (`vault-health`) and the Bases surface (`vault-bases`, [bases.md](bases.md)) — publishing `vault_vocab_*`, `vault_health_{scan,lint}` and `vault_bases_{list,query}` respectively. All eight names changed, for the same plugin-id-is-the-namespace reason, and `base_`/`obsidian_` were stripped rather than carried into a second namespace.
 
-`scheme` is the last of the two modules that pre-date the host, so its config rows still live in the top-level `schemes`
+The **mutating tier** left next, and it was the last of them: the fileclass CLI proxy (`vault-fileclass`), derived-content provenance (`vault-provenance`, [provenance.md](provenance.md)) and JD scaffolding (`vault-jd-scaffold`), publishing `vault_fileclass_*`, `vault_provenance_{check,reconcile,regen}` and `vault_jd_scaffold_*`. Their names changed too, and the seven `obsidian_jd_*` tools had no choice about it: the host refuses to publish an external tool whose name begins `obsidian_`. All three took the same fail-closed allowlist posture — no tool in the tier carries an argument the host recognizes as a path key, so under an active path allowlist the host blocks each surface wholesale rather than scoping an argument narrower than the work it names.
+
+`scheme` is the last of the modules that pre-date the host, so its config rows still live in the top-level `schemes`
 setting (not `modules.<id>.config`) and its tool layer filters via its own
 `getSettings` + guard imports — preserved verbatim so the mount is a pure re-wiring with **zero
 behavior change**. (Vocab was the other, on the top-level `vocabularies` setting, until S7.) A *new* module should instead read `host`/`config` and use `host.visible`,

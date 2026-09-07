@@ -12,7 +12,8 @@
 //
 // The register is a report ABOUT accepted debt, not an acceptance record. Its
 // frontmatter carries DERIVATION stamps only (`generated` + `generator`, the
-// provenance module's convention) and structurally cannot carry an
+// provenance convention — that surface is the `vault-provenance` satellite
+// since the mutating-tier extraction, but the convention is unchanged) and structurally cannot carry an
 // acceptance-family key: `renderDebtRegister` emits a fixed two-key block and
 // nothing from the sidecar reaches frontmatter. `registerAcceptRefusal` runs
 // the shared accept-guard over the rendered text anyway — running the guard is
@@ -39,7 +40,8 @@ import { buildDebtReport, type DebtItem, type DebtReport, type DebtReportOpts } 
 export const REGISTER_BASENAME = "Conformance debt.md";
 
 /** The `generator:` stamp on the rendered register — identifies the producer
- * (the provenance module's `AUDIT_GENERATOR` convention). Constant, not a
+ * (the provenance `AUDIT_GENERATOR` convention, now in the `vault-provenance`
+ * satellite). Constant, not a
  * user knob. */
 export const REGISTER_GENERATOR = "conformance-debt-register";
 

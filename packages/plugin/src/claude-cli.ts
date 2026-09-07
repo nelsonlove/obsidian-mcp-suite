@@ -1,32 +1,20 @@
 import { execFile } from "node:child_process";
-import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { promisify } from "node:util";
+// `spawnEnv` (PATH augmentation for spawned processes) and `findBinary` (the
+// executable-file probe) were DEFINED here until the mutating tier's
+// extraction, when the `vault-fileclass` satellite — which spawns the
+// `fileclass` CLI out of its own plugin — needed both to behave identically to
+// the host's. Publishing beat forking a pair of one-line functions whose whole
+// value is that both sides agree (the `isVisible` / `executeQuickAddChoice` /
+// `resolveScope` precedent). They are re-exported unchanged below, so every
+// call site and test in this package is untouched.
+import { spawnEnv, findBinary } from "@vault-mcp/core";
 
 const pexecFile = promisify(execFile);
 
-// Obsidian's GUI process inherits a minimal PATH. The `claude` launcher is
-// commonly a shell shim that runs `#!/usr/bin/env node`, which fails with
-// ENOENT when node's directory isn't on PATH. Augment PATH for spawned calls
-// so the shim (and any node-based CLI) can resolve `node`.
-const EXTRA_BIN_DIRS = ["/opt/homebrew/bin", "/usr/local/bin"];
-export function spawnEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  const parts = [base.PATH, ...EXTRA_BIN_DIRS].filter(Boolean) as string[];
-  return { ...base, PATH: parts.join(":") };
-}
-
-// Pure + testable: returns the first candidate that is an executable file,
-// else null. Shared by findClaudeBinary here and findObsidianBinary in
-// mcp/tools-cli.ts so the probe logic can't drift between the two.
-export function findBinary(
-  candidates: string[],
-  fileExists?: (p: string) => boolean
-): string | null {
-  const exists = fileExists ?? ((p: string) => { try { fs.accessSync(p, fs.constants.X_OK); return true; } catch { return false; } });
-  for (const c of candidates) if (exists(c)) return c;
-  return null;
-}
+export { spawnEnv, findBinary };
 
 // Pure + testable: returns the first candidate that exists, else null.
 export function findClaudeBinary(opts?: {
