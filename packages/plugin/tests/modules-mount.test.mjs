@@ -155,17 +155,15 @@ describe("mountModules: the built-in modules register through the registry", () 
     for (const id of ["vocab", "health", "bases", "provenance", "fileclass", "jd-scaffold"]) {
       assert.equal(registry.describe().find((d) => d.id === id), undefined, id);
     }
-    // Reported, not silently swallowed — the same "unknown module id" note a
-    // stale `modules.skills` / `.triage` / `.crosssession` row already gets.
-    // It is how a user learns why a module tab disappeared.
-    assert.deepEqual(registry.problems, [
-      "settings name unknown module 'vocab' — ignored",
-      "settings name unknown module 'health' — ignored",
-      "settings name unknown module 'bases' — ignored",
-      "settings name unknown module 'provenance' — ignored",
-      "settings name unknown module 'fileclass' — ignored",
-      "settings name unknown module 'jd-scaffold' — ignored",
-    ]);
+    // INVERTED (2026-09-07): these rows are now SILENT by design. They are the
+    // satellites' preserved one-shot adoption sources — satellites never write
+    // the host's settings, so the rows stay forever, and warning about them
+    // eight times per connection was the instrument crying wolf on the
+    // operator's live console the day after S8 shipped. The "why did my module
+    // tab disappear" question this warning used to answer is answered by the
+    // extraction story in the settings tab and docs instead. A row naming a
+    // NEVER-extracted unknown id still warns — pinned in the describe below.
+    assert.deepEqual(registry.problems.filter((x) => x.includes("unknown module")), []);
   });
 
   test("a registered scheme tool actually answers over the injected listing", async () => {
@@ -479,5 +477,26 @@ describe("#81 config-host: both built-in modules carry a manifest, drift-free", 
     for (const gone of ["triage", "crosssession", "vocab", "health", "bases", "provenance", "fileclass", "jd-scaffold"]) {
       assert.equal(hosted.find((h) => h.id === gone), undefined, `${gone} should not be hosted`);
     }
+  });
+});
+
+describe("extracted-module settings rows are adoption sources, not typos (2026-09-07)", () => {
+  // The day after S8 shipped, the operator's console carried eight
+  // "settings name unknown module — ignored" errors per connection: one per
+  // extracted module whose modules.<id> row the satellites deliberately
+  // preserve as their one-shot adoption source. The warning exists for
+  // typos; these rows are designed-in state.
+  test("a preserved satellite row raises NO problem", () => {
+    const { registry } = mount({ settings: { modules: { skills: { enabled: true }, vocab: { enabled: true, config: {} } } } });
+    const rowProblems = registry.problems.filter((p) => p.includes("unknown module"));
+    assert.deepEqual(rowProblems, [], "extracted-module rows must be silent");
+  });
+
+  test("a genuine typo still warns — the instrument survives", () => {
+    const { registry } = mount({ settings: { modules: { sklls: { enabled: true } } } });
+    assert.ok(
+      registry.problems.some((p) => p.includes("unknown module 'sklls'")),
+      "the typo warning must not have been silenced along with the adoption rows"
+    );
   });
 });
