@@ -52,7 +52,7 @@ export function writeDiscovery(slug: string, d: Discovery): void {
       { mode: 0o600 },
     );
   } catch (e) {
-    console.error("[governor] legacy discovery write failed (compat copy only)", e);
+    console.error("[vault-mcp] legacy discovery write failed (compat copy only)", e);
   }
 }
 
@@ -73,6 +73,6 @@ export function writeBridge(): void {
     fs.mkdirSync(legacyStateDir(), { recursive: true });
     fs.writeFileSync(legacyBridgeDestPath(), BRIDGE_SOURCE, { mode: 0o755 });
   } catch (e) {
-    console.error("[governor] legacy bridge write failed (compat copy only)", e);
+    console.error("[vault-mcp] legacy bridge write failed (compat copy only)", e);
   }
 }

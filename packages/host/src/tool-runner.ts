@@ -41,7 +41,7 @@ export function openToolRunner(app: App, buildRegistry: () => CapturedRegistry):
   try {
     registry = buildRegistry();
   } catch (e) {
-    new Notice(`governor: tool-runner failed to build the tool registry — ${(e as Error).message}`);
+    new Notice(`vault-mcp: tool-runner failed to build the tool registry — ${(e as Error).message}`);
     return;
   }
   new ToolPickerModal(app, registry).open();
@@ -237,7 +237,7 @@ class ToolResultModal extends Modal {
     new Setting(contentEl).addButton((b) =>
       b.setButtonText("Copy result").onClick(async () => {
         await navigator.clipboard.writeText(resultText);
-        new Notice("governor: result copied.");
+        new Notice("vault-mcp: result copied.");
       })
     );
   }

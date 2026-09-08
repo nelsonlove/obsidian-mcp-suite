@@ -9,8 +9,8 @@ a set of gates that keep the acceptance model intact even as the plugin grows ne
 (The [vocabulary provider](vocabulary-module.md) was the other founding example; it ships as the
 separate `vault-vocab` satellite plugin since S7 and is documented here as the pattern's origin.)
 
-Files: `packages/plugin/src/kernel/modules/` (the host — pure, Obsidian-free) and
-`packages/plugin/src/mcp/modules-mount.ts` (the mount — wires the built-in modules to the live
+Files: `packages/host/src/kernel/modules/` (the host — pure, Obsidian-free) and
+`packages/host/src/mcp/modules-mount.ts` (the mount — wires the built-in modules to the live
 plugin).
 
 ## What a module is
@@ -32,13 +32,7 @@ interface VaultModule {
 **Posture** distinguishes the two kinds of surface a module could face:
 
 - **`capability`** — faces agents; contributes tools.
-- **`governance`** — faces the human; a deliberately one-way, read-only surface (the shape of
-  the acceptance module's review pane). **The v1 host
-  refuses governance-postured modules outright** at construction. The fold (#83) landed by
-  clearing that gate rather than lifting it: the acceptance module (module id `acceptance`;
-  the posture name `governance` is unrelated to the retired module id of the same spelling)
-  declares posture `capability` and contributes ZERO MCP tools — its whole surface is the
-  in-Obsidian pane. The posture exists in the type so the contract models the asymmetry.
+- **`governance`** — faces the human; a deliberately one-way, read-only surface (the shape of the acceptance module's review pane, back when acceptance was a host module — see below for where it went at S3c). **The v1 host refuses governance-postured modules outright** at construction. The fold (#83) landed by clearing that gate rather than lifting it: the acceptance module (module id `acceptance`; the posture name `governance` is unrelated to the retired module id of the same spelling) declared posture `capability` and contributed ZERO MCP tools — its whole surface was the in-Obsidian pane. The posture exists in the type so the contract models the asymmetry, even though no module currently registered uses `governance`.
 
 ## Registration goes *through* the registry — the key property
 
@@ -132,29 +126,18 @@ type ModuleSettings = Record<string, { enabled?: boolean; config?: Record<string
   tool count from 56 to 51 on the next connect (the 5 scheme tools gone, the vocab module's
   four — still a module at the time — intact), and re-enabling restored it — while `jd:` addressing kept resolving at the kernel level even with
   the module off.
-  - **Exception — the acceptance module's Obsidian surface mounts LIVE.** Acceptance contributes
-    zero MCP tools; its `enabled` flag gates an in-Obsidian *review pane + gavel ribbon*, not a
-    tool surface. That pane now **mounts/unmounts the moment the toggle flips, with no plugin
-    reload** (`main.ts setGovernanceMounted` → `wireGovernance` returns a child `Component` the
-    plugin `removeChild`s on disable). Its badge-display config is still read live per refresh.
-    The always-on read-only `obsidian_pending_review` MCP view is unaffected by the toggle either
-    way. The scheme module's in-Obsidian panes (Inbox/Drift) live-mount the same way. Tool surfaces
-    for every module stay next-connect.
+  - **Historical (removed at S3c) — the acceptance module's Obsidian surface used to mount LIVE.** While acceptance was still a host module it contributed zero MCP tools; its `enabled` flag gated an in-Obsidian *review pane + gavel ribbon*, not a tool surface, and that pane mounted/unmounted the moment the toggle flipped, with no plugin reload (`main.ts setGovernanceMounted` → `wireGovernance` returning a child `Component` the plugin `removeChild`s on disable). The always-on read-only `obsidian_pending_review` MCP view was unaffected by the toggle either way. At S3c acceptance left the host's module registry entirely with the governance provider — see [modules.md](modules.md) for where its enabled flag and config now live — and `obsidian_pending_review` is now one of the five tools the provider publishes through `vault-mcp-api` under the host's closed grandfather table, not a host built-in view. The scheme module's in-Obsidian panes (Inbox/Drift) still live-mount the same way the acceptance pane used to. Tool surfaces for every currently-registered module stay next-connect.
 
 ## The built-in modules
 
 The authoritative inventory is the [module directory](modules.md); this table is the
-mount-registration view (id, default, declared posture). Two modules register today:
+mount-registration view (id, default, declared posture). One module registers today:
 
 | Module id | Default | Posture | Capabilities |
 | --- | --- | --- | --- |
 | `scheme` | enabled | read-only | `addressing`, `allocation` — deep ref: [scope-provider.md](scope-provider.md) |
-| `acceptance` | disabled | read-only (zero MCP tools; gates the in-Obsidian review pane) | `acceptance` |
 
-Neither declares `mutating`. The flag and its gate branch remain in the module host as a
-tested, dormant seam: `provenance`, `fileclass` and `jd-scaffold` were the last three modules
-that used it (skills, triage and cross-session used it before them), and all six left as
-satellite plugins. A module that needs it again declares it the same way they did.
+It does not declare `mutating`. The flag and its gate branch remain in the module host as a tested, dormant seam: `provenance`, `fileclass` and `jd-scaffold` were the last three modules that used it (skills, triage and cross-session used it before them), and all six left as satellite plugins. `acceptance` left too, at S3c, but unlike the other six it did not become a `vault-*` satellite: it departed with the governance provider (`packages/governor`, Obsidian plugin id `governor`), the same plugin that already held mandates, cohorts and the history store, so its enabled flag and config now live in the provider's own settings rather than a new satellite's. A module that needs the `mutating` declaration again declares it the same way the six satellites did.
 
 Skills is no longer a built-in module: it now ships as its own satellite plugin, `vault-skills`, publishing the same six tools through `vault-mcp-api` — see [skills.md](skills.md).
 

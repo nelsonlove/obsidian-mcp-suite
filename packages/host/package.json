@@ -1,7 +1,7 @@
 {
-  "name": "obsidian-vault-mcp-plugin",
-  "version": "0.18.2",
-  "description": "Obsidian plugin embedding an in-renderer MCP server with direct app.* access, reached via Unix socket + bundled stdio bridge.",
+  "name": "@vault-mcp/host",
+  "version": "0.19.0",
+  "description": "The Governor suite's MCP host: an Obsidian plugin embedding an in-renderer MCP server with direct app.* access, reached via Unix socket + bundled stdio bridge.",
   "type": "module",
   "scripts": {
     "build": "node esbuild.config.mjs production",

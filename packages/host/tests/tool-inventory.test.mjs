@@ -198,11 +198,19 @@ describe("full tool inventory lock (TOOL-INVENTORY.md)", () => {
     // two empty sets. Only the non-FS names below actually exercise the scan —
     // the FS names are seeded from the imported FS_TOOLS constant, so they'd
     // survive a broken regex; they're included only so the pin list reads as
-    // "every idiom", with scheme (registerTool), write_notes (register),
-    // pending_review (registerTool) and call_tool (reg) covering all three.
+    // "every idiom", with scheme (registerTool), write_notes (register) and
+    // call_tool (reg) covering all three.
+    //
+    // "obsidian_pending_review" was the fourth pin here until S3c. It moved to
+    // the governance provider package (packages/governor/src/tools/pending-
+    // review.ts) and is published back into this host through vault-mcp-api
+    // under its unchanged shipped name, via the closed GRANDFATHERED_TOOL_NAMES
+    // table in src/mcp/external-tools.ts. It is no longer registered anywhere
+    // under packages/host/src, so this scan cannot and must not find it; its
+    // registerTool idiom is still covered by the scheme and code-mode pins.
     const registered = await registeredToolNames();
     for (const name of [...EXPECTED_FS_TOOL_NAMES, ...EXPECTED_SCHEME_TOOL_NAMES, ...EXPECTED_SCHEME_WRITE_TOOL_NAMES,
-      "obsidian_write_notes", "obsidian_pending_review", "obsidian_call_tool"]) {
+      "obsidian_write_notes", "obsidian_call_tool"]) {
       assert.ok(registered.has(name), `registration scan lost "${name}"`);
     }
   });

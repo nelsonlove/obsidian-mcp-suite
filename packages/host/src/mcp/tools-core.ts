@@ -61,8 +61,11 @@ export interface ServerCtx {
   captureObservations?: boolean;
   /** Stopgap ceiling on total captured bytes, pending real retention. */
   captureMaxBytes?: number;
-  historyEnabled?: boolean;
-  historyScope?: { mode: "whole-vault" | "explicit"; include: string[]; exclude: string[] };
+  // `historyEnabled` / `historyScope` were here until S3c. They were always the
+  // GOVERNANCE PROVIDER's facts — the Git history store, its D10 scope, and the
+  // decision to record at all belong to whoever owns the standing chain — and
+  // nothing host-side ever read them except the composition root that built the
+  // provider's proposal observer. They now live in the provider's own settings.
   };
   // `getVocabularies` was here until the read-tier satellite extraction (suite
   // split, S7). It carried `settings.vocabularies` to the vocab module's tool

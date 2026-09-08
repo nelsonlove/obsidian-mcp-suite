@@ -1,6 +1,6 @@
 # The vault-skills plugin — compiling vault notes into a Claude Code plugin
 
-> **Deep reference for the shipped implementation.** Canonical concepts and the target design live in the [documentation corpus](README.md); what is shipped versus target is owned by [status-and-compatibility.md](status-and-compatibility.md). Since the S4 satellite extraction (`docs/suite-split-design.md` §6), this reference documents the standalone `vault-skills` plugin, not a module of the host plugin (`governor`).
+> **Deep reference for the shipped implementation.** Canonical concepts and the target design live in the [documentation corpus](README.md); what is shipped versus target is owned by [status-and-compatibility.md](status-and-compatibility.md). Since the S4 satellite extraction (`docs/suite-split-design.md` §6), this reference documents the standalone `vault-skills` plugin, not a module of the host plugin (`vault-mcp`).
 
 
 The `vault-skills` plugin (default off, mutating) compiles the vault's `type: skill` / `agent` /

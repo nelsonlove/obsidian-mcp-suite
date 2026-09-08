@@ -9,7 +9,7 @@ This machine's vault copy says the authority cutover ran, but the standing chain
 If a Governor control (Accept, Admit, Cut over, adopt-baseline — and, pre-cutover, the auto-accept checkboxes) produces no dialog and no notice, check whether the view lives in a popout window. On 0.15.0–0.17.0 the gesture gate refused clicks from popout windows silently (see [Status and compatibility](status-and-compatibility.md#current-release-state)); use the main window there. On later builds popout clicks work, and a genuinely blocked click shows a notice instead of doing nothing.
 
 > [!note] Target-state document
-> This page describes the target product. Not every behavior below is shipped — what IS shipped is owned by [Current release state](status-and-compatibility.md#current-release-state).
+> This page describes the target product. Not every behavior below is shipped — what IS shipped is owned by [Current release state](status-and-compatibility.md#current-release-state). The host/Governor plugin split described in this page is built but not yet cut over on this vault; see [the migration plan](s3c-migration-plan.md) for the cutover procedure.
 
 Start with the symptom. Do not widen scope, enable a private pack, or retry an uncertain mutation merely to see whether the error disappears.
 
@@ -18,12 +18,12 @@ Start with the symptom. Do not widen scope, enable a private pack, or retry an u
 Check:
 
 1. Obsidian is open on the desktop and the intended vault is active.
-2. Governor is enabled and the local bridge is on.
-3. The client registration points to the current Governor bridge.
+2. Vault MCP, the host plugin, is enabled and the local bridge is on; Governor is also enabled if governed writes are expected.
+3. The client registration points to the current Vault MCP bridge.
 4. The client session was restarted after registration.
 5. The local socket belongs to the current user and is not a stale path from another vault.
 
-If connection still fails, turn the bridge off and on, reconnect once, and collect sanitized client and Governor errors. Do not expose the socket over the network as a workaround.
+If connection still fails, turn the bridge off and on, reconnect once, and collect sanitized client, Vault MCP, and Governor errors. Do not expose the socket over the network as a workaround.
 
 ## A capability is missing
 
@@ -40,7 +40,7 @@ Reconnect after enabling a module whose surface is built per connection. Do not 
 
 ## An action or surface binding is unavailable
 
-A capability may be visible while its registered action version, handler, or surface binding is unavailable or inconsistent. Governor should refuse before execution and name the mismatched action, version, or binding. Reconnect to refresh projections; if the mismatch persists, treat it as registry/runtime drift and stop that path rather than calling a raw handler.
+A capability may be visible while its registered action version, handler, or surface binding is unavailable or inconsistent. Vault MCP, which holds the action registry, should refuse before execution and name the mismatched action, version, or binding. Reconnect to refresh projections; if the mismatch persists, treat it as registry/runtime drift and stop that path rather than calling a raw handler.
 
 ## The target is outside scope
 
@@ -164,7 +164,7 @@ Enable the review center, refresh it, and reconnect if needed. Only `published: 
 
 ## A Base query is slow or unavailable
 
-Base evaluation depends on a supported Obsidian Bases API and on the `vault-bases` plugin, which since the S7 satellite extraction is a separate plugin rather than a module of this one — install and enable it alongside Governor, and call its tools as `vault_bases_list` / `vault_bases_query`. Hidden or background Obsidian windows may evaluate large views more slowly.
+Base evaluation depends on a supported Obsidian Bases API and on the `vault-bases` plugin, which since the S7 satellite extraction is a separate plugin rather than a module of this one — install and enable it alongside the Vault MCP host plugin, and call its tools as `vault_bases_list` / `vault_bases_query`. Hidden or background Obsidian windows may evaluate large views more slowly.
 
 - Confirm the Base opens normally in Obsidian.
 - Confirm the requested view exists.
@@ -224,7 +224,7 @@ Before uninstalling:
 3. Resolve or export important pending proposals.
 4. Preserve the local Git store, portable attestations, required observation payloads, operation/effect records, journal, mandates, and standing history according to your retention policy.
 5. Make a verified vault backup.
-6. Disable and uninstall Governor through Obsidian.
+6. Disable and uninstall Governor (the provider) through Obsidian; if you are removing the connection entirely rather than just turning off governance, also disable and uninstall Vault MCP (the host).
 
 Your notes remain Markdown. Plugin-owned operational files, including replayable observations, may remain under the vault's configured plugin-data or local application-data directories until you remove them deliberately. Review [Privacy](../PRIVACY.md) before removing logs, payloads, or baselines.
 

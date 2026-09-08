@@ -160,22 +160,22 @@ const CORE_DIRECT: McpSurfaceRow[] = [
   { tool: "obsidian_list_scope_claims", readOnly: true, module: "core", distribution: "public-default", postcondition: "List live claims inside the allowlist and count, without naming, those outside it." },
 ];
 
-// ── the review surface's READ half ───────────────────────────────────────────
-// The acceptance module contributes ZERO mutating tools by design; these two
-// reads are always-on and deliberately decoupled from its enabled toggle.
-
-const ACCEPTANCE: McpSurfaceRow[] = [
-  { tool: "obsidian_pending_review", readOnly: true, module: "acceptance", distribution: "public-default", postcondition: "Report the published pending-review index, or that it is unavailable — never a known-empty queue." },
-  { tool: "governance_revisions", readOnly: true, module: "acceptance", distribution: "public-default", paths: ["folder"], postcondition: "List notes awaiting revision, capped, so a dispatcher can see waiting work." },
-  // The revision round-trip's ONE agent verb. It moves a note from `revising`
-  // back to `proposed`; it cannot write the accepted family.
-  { tool: "governance_submit_revision", readOnly: false, module: "acceptance", distribution: "public-optional", paths: ["path"], discovered: "none", postcondition: "Return a revising note to proposed, removing addressed revision callouts." },
-
-  // WP9 mandate negotiation: agents draft and list; activation is the pane's
-  // gesture-gated control and deliberately has no tool.
-  { tool: "governance_mandate_draft", readOnly: false, module: "acceptance", distribution: "public-optional", discovered: "none", postcondition: "Record a mandate draft or counter-proposal — a candidate the human can activate; confers no authority." },
-  { tool: "governance_mandates", readOnly: true, module: "acceptance", distribution: "public-optional", postcondition: "List mandate drafts and mandates with usage against budgets, scope-filtered." },
-];
+// ── THE FIVE ACCEPTANCE ROWS WERE HERE UNTIL THE HOST/PROVIDER SPLIT (S3c) ──
+//
+// `obsidian_pending_review`, `governance_revisions`, `governance_submit_revision`,
+// `governance_mandate_draft` and `governance_mandates` are published by the
+// governance PROVIDER now (`packages/governor`, plugin id `governor`), through
+// the external-tool registry like every satellite's tools — so, like every
+// external tool, they are outside this inventory by design. Same removal as the
+// six `vault_skills_*` rows at S4, the two triage rows at S5, the four
+// cross-session rows at S6 and the eight read-tier rows at S7.
+//
+// ONE THING IS DIFFERENT HERE AND IT IS THE WHOLE POINT: their NAMES did not
+// change. Every other extraction paid the `<plugin id>_<bare name>` rename tax;
+// these five were already on the wire, so the host carries a closed grandfather
+// table (`mcp/external-tools.ts`) that lets the `governor` publisher — and only
+// it, and only for these five names — publish unprefixed, past the F1
+// `obsidian_*` refusal included.
 
 // ── navigation and host-plugin lifecycle ─────────────────────────────────────
 
@@ -361,7 +361,6 @@ const SURVEY: McpSurfaceRow[] = [
 export const MCP_SURFACE_INVENTORY: McpSurfaceRow[] = [
   ...CORE_FS,
   ...CORE_DIRECT,
-  ...ACCEPTANCE,
   ...NAV,
   ...INTEGRATIONS,
   ...CLI,

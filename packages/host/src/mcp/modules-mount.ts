@@ -61,7 +61,6 @@ import {
 import { makeRegistry, DEFAULT_SCHEMES, validateExcludedRoots, excludeRoots, type SchemeInstanceConfig } from "../kernel/scheme/registry.js";
 import { validateJdConfig, type JdConfig } from "../kernel/scheme/jd.js";
 import { registerSchemeTools } from "./tools-scheme.js";
-import { DEFAULT_GOVERNANCE_SETTINGS, DEFAULT_ACCEPTANCE_SETTINGS } from "../governor/kernel/settings.js";
 
 // ── manifests (#81: config-host — see
 //    docs/superpowers/specs/2026-08-10-config-host-design.md) ──────────────
@@ -405,133 +404,23 @@ const schemeBinding: ConfigBinding = {
 // `obsidian_fileclass_insert_fields` in tools-integrations.ts are for the
 // metadata-menu plugin. They stay here and were untouched by the extraction.
 //
-// ── acceptance module manifest (#83, cycle 2: the accept gesture + pane) ─────────────
+// ── THE ACCEPTANCE MODULE MANIFEST USED TO LIVE HERE ─────────────────────────
 //
-// Module id `acceptance` since 0.12.0 (historically `governance` — the source dirs
-// src/governor/wiring/ + src/governor/kernel/ and the shipped governance_* tool names keep
-// the old word; the settings key migrated via migrateLegacyModuleIds).
+// Removed at the host/provider split (S3c). The acceptance capability was never
+// an MCP surface — its registrar was a NO-OP on the transport, and its whole job
+// was to carry an `enabled` flag and a `config` block for a review pane that
+// `main.ts` wired somewhere else entirely. Both halves of that are the
+// governance PROVIDER's now: the flag, the five config fields (the two badge
+// toggles, `acceptedBy`, `gateMode`, `requiredFrontmatterKeys`) and the
+// gesture-gated allowlist controls the module rendered itself all live in
+// `packages/governor`, in the provider's own `data.json` and its own settings
+// tab.
 //
-// The acceptance module's enabled-flag gates the Obsidian REVIEW PANE — the human-only
-// Accept / Revert / Adopt / auto-accept-allowlist surface (src/governor/wiring/{pane,wiring}.ts,
-// wired in main.ts, NOT here). It contributes ZERO tools to the MCP transport: the accept
-// gesture never touches the bridge. The one MCP read surface — obsidian_pending_review — is
-// registered ALWAYS-ON and read-only in server.ts, DECOUPLED from this toggle (cycle 2 fixed
-// the cycle-1 regression that gated the read surface behind this default-off module). So an
-// agent can always SEE the pending queue; only a human at the pane can accept. #101 adds ONE
-// agent verb — governance_submit_revision — likewise registered always-on in server.ts (an
-// ordinary guarded MUTATING tool, never through this module): it resubmits a revising note as
-// `proposed`, and it cannot accept anything.
+// A `modules.acceptance` row surviving in the HOST's `data.json` is therefore an
+// UNKNOWN MODULE ID, reported by the skip-and-report below and never mounted.
+// That is deliberate and harmless: the row is the provider's adoption source and
+// the host must not silently claim it.
 //
-// Posture is "capability", NOT "governance": the ModuleRegistry deliberately REFUSES the
-// "governance" posture in v1 (it is inert). This module clears that gate by contributing NO
-// MCP tools at all — its register() is a no-op on the transport — so it mounts as an ordinary
-// (empty) capability module, subject to the same read-only-only registrar gate, the
-// accept/baseline-name tripwire, and collision checks as every other module. It ships DISABLED:
-// the whole accept pane is opt-in; a human turns it on in the config tab. Because the module
-// contributes nothing to MCP, the tripwire's "no accept-shaped tool reaches the surface" holds
-// trivially — the accept path lives entirely behind gesture-gated pane buttons.
-//
-// The config fields below are the accept pane's ONLY MCP-side knobs — display prefs and
-// acceptance-convergence parameters, not accept capabilities. They live at
-// `modules.acceptance.config.*`, the exact keys the pane wiring reads through
-// `governanceDisplaySettings` / `governanceAcceptanceSettings` (governor/kernel/settings.ts):
-// the two pending-count badges (default ON), the `acceptedBy` identity the human's own Accept
-// gesture stamps into a `proposed` note (#221/#164 convergence — settings are human-only by
-// construction, so the identity is human-set), and the OPTIONAL `requiredFrontmatterKeys`
-// conformance gate (default EMPTY = no gate; when set, Accept on a `proposed` note REFUSES —
-// no stamp, no baseline advance — while any listed key is missing/empty; this is where the
-// legacy QuickAdd accept-macro's vault-specific uid/title/description checks live now, as
-// per-vault config rather than plugin hardcode). None of these confers accept/revert/adopt
-// capability — `acceptedBy` only labels the human's own gesture and `requiredFrontmatterKeys`
-// can only make Accept refuse MORE; the human-only accept controls remain gesture-gated pane
-// buttons, never settings.
-const ACCEPTANCE_CONFIG_FIELDS: ConfigField[] = [
-  {
-    key: "showRibbonBadge",
-    label: "Ribbon pending-count badge",
-    type: "toggle",
-    help:
-      "Show the pending-review count as a badge on the acceptance ribbon icon. Off ⇒ the ribbon icon still " +
-      "opens the pane, just without the count badge. Takes effect on the next queue refresh (the badge prefs " +
-      "are read live).",
-  },
-  {
-    key: "showViewTabBadge",
-    label: "Pane tab pending-count badge",
-    type: "toggle",
-    help:
-      "Show the pending-review count as a badge overlaid on the review pane's tab-header icon. Off ⇒ no tab " +
-      "badge; the ribbon badge above is independent. Takes effect on the next queue refresh (the badge prefs " +
-      "are read live).",
-  },
-  {
-    key: "acceptedBy",
-    label: "Accepted-by identity",
-    type: "text",
-    placeholder: DEFAULT_ACCEPTANCE_SETTINGS.acceptedBy,
-    help:
-      "The identity the pane's Accept stamps as `accepted-by` (and records in the acceptance log) when " +
-      "accepting a note whose frontmatter is `acceptance-status: proposed`. Human-set by construction — " +
-      "this settings tab is not agent-reachable, and agent transports can never write the accepted family.",
-  },
-  {
-    key: "gateMode",
-    label: "Conformance-gate response",
-    type: "select",
-    options: ["soft", "hard", "off"],
-    help:
-      "How Accept responds when a `proposed` note is missing required frontmatter (below). `soft` (default): " +
-      "a modal offers Accept anyway / Open note / Cancel — the override is a second explicit human click. " +
-      "`hard`: refuse with a notice (fix, then accept). `off`: the gate is not checked at all. Never an agent " +
-      "surface — agents cannot reach Accept in any mode.",
-  },
-  {
-    key: "requiredFrontmatterKeys",
-    label: "Required frontmatter for acceptance",
-    type: "csv",
-    placeholder: "uid, title, description",
-    help:
-      "Optional conformance gate: comma-separated frontmatter keys that must be present and non-empty " +
-      "before a `proposed` note can be Accepted. While any listed key is missing, Accept refuses with no " +
-      "partial write (no stamp AND no baseline advance). Empty (the default) ⇒ no gate. The legacy QuickAdd " +
-      "accept-macro's vault-specific checks (uuid7 uid, title, description) map onto this setting.",
-  },
-];
-
-const ACCEPTANCE_MANIFEST: ModuleManifest = {
-  summary:
-    "Acceptance: the human-only review pane. When enabled, the plugin registers an Obsidian " +
-    "review pane where a human reviews agent changes and Accepts / Reverts / Requests changes / Adopts a " +
-    "baseline, plus a Proposed section (the context-aware Accept: accepting a proposed note also stamps " +
-    "the accepted family into its frontmatter — the ONE accept across both lifecycles), a Revising section " +
-    "(withdraw a revision request) and — pre-cutover only — an auto-accept allowlist for " +
-    "provably-mechanical changes (retired with the legacy era; the per-note policies are deleted, WP10c). Every state-changing control is a real-click gesture in the pane — never " +
-    "a command, never an MCP tool, never a method on any object reachable from `app`. This module " +
-    "contributes ZERO tools to the MCP transport: the read-only obsidian_pending_review view and the " +
-    "guarded governance_submit_revision resubmit verb (which can never accept) are registered always-on in " +
-    "server.ts, independent of this toggle. Ships disabled — a human enables the accept pane here.",
-  // The `config` block ships the two badge-DISPLAY toggles plus the two acceptance-convergence
-  // fields (ACCEPTANCE_CONFIG_FIELDS) — the accept
-  // pane's only MCP-side knobs, read at pane-wire time from `modules.acceptance.config` (no
-  // ConfigBinding — the default location, exactly where the pane wiring reads them). They confer
-  // NO accept capability. The auto-accept ALLOWLIST and adopt-baseline are NOT
-  // manifest config fields (they are not scalar knobs) — they are gesture-gated, human-only-mutable
-  // controls the acceptance module RENDERS itself, into BOTH the review pane and the settings tab
-  // (connection-ui.ts calls the module's renderGovernanceSettings, which builds them from its own
-  // module-private accept-capable controller — never surfaced as data here).
-  config: {
-    fields: ACCEPTANCE_CONFIG_FIELDS,
-    defaults: { ...DEFAULT_GOVERNANCE_SETTINGS, ...DEFAULT_ACCEPTANCE_SETTINGS } as Record<string, unknown>,
-  },
-  //
-  // The directory is deliberately EMPTY — the module adds no MCP tool, address form, rule pack, or
-  // kernel arg. The capability it provides (the review pane) is an Obsidian UI surface, described
-  // in the summary, not an MCP capability. An empty directory renders a section with no tool rows.
-  directory: {
-    tools: [],
-  },
-};
-
 // ── the bases module manifest USED TO LIVE HERE ─────────────────────────────
 //
 // Removed at the read-tier satellite extraction (suite split, S7). Evaluated
@@ -669,23 +558,13 @@ export function builtinModules(deps: MountDeps): VaultModule[] {
     // double gate (Fileclass plugin loaded AND CLI binary found) went too, and
     // is now evaluated at publish time rather than per connection build.
     //
-    // The acceptance module (#83, cycle 2; id `acceptance` since 0.12.0, historically
-    // `governance`): the accept pane's toggle. It
-    // contributes ZERO MCP tools — its registrar is a NO-OP on the transport. Its
-    // enabled-flag is read by main.ts (NOT here) to decide whether to wire the Obsidian
-    // review pane (src/governor/wiring/wiring.ts). Deliberately NOT `mutating`: it registers no
-    // tool at all, so the mount's read-only-only registrar gate is satisfied vacuously and
-    // the accept/baseline-name tripwire has nothing to catch (the accept path lives entirely
-    // behind gesture-gated pane buttons, never on the MCP surface). Default DISABLED: the
-    // accept pane is opt-in (a human enables it in the config tab). The read-only
-    // obsidian_pending_review view is registered always-on in server.ts, independent of this.
-    moduleFromRegistrar(
-      { id: "acceptance", capabilities: ["acceptance"], enabled: false, manifest: ACCEPTANCE_MANIFEST },
-      // No-op registrar: the acceptance capability is an Obsidian UI pane (wired in main.ts),
-      // not an MCP tool. Contributing nothing keeps the transport read-only by construction.
-      () => { /* contributes no MCP tools */ },
-      () => ({}),
-    ),
+    // THE ACCEPTANCE MODULE IS GONE FROM HERE (host/provider split, S3c). The
+    // human-only review pane ships as `packages/governor` (plugin id
+    // `governor`), which owns its own enabled flag, its own config block and
+    // its own settings tab. It contributed ZERO MCP tools while it lived here,
+    // so nothing on the transport changed when it left — what changed is that
+    // the host no longer holds a settings row for a pane it cannot mount.
+    //
     // THE BASES MODULE IS GONE FROM HERE (suite split, S7). Evaluated Base
     // rows ship as `packages/bases` (plugin id `vault-bases`), publishing
     // `vault_bases_list` and `vault_bases_query`. The hidden-leaf capture

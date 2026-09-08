@@ -21,19 +21,17 @@
 
 /** The six change classes, in their CANONICAL ORDER.
  *
- * The order is load-bearing rather than cosmetic: canonical proposal subjects
- * sort an item's classes this way before hashing (coding guide §8), so two
- * producers computing the same subject must agree on it. It runs from the
- * narrowest semantic effect to the widest authority effect. */
-export const CHANGE_CLASSES = [
-  "encoding",
-  "presentation",
-  "representation",
-  "structural",
-  "content",
-  "authority",
-] as const;
-export type ChangeClass = (typeof CHANGE_CLASSES)[number];
+ * PUBLISHED into `@vault-mcp/core` at the host/provider split (S3c) and
+ * re-exported here, so no call site in this package moved. The order is
+ * load-bearing rather than cosmetic — canonical proposal subjects sort an
+ * item's classes this way before hashing (coding guide section 8), so two
+ * producers computing the same subject must agree on it — and after the split
+ * those two producers are in two plugins. A forked copy whose order drifted
+ * would hash the same change to two different subjects, which is the standing
+ * chain silently forking. */
+export { CHANGE_CLASSES } from "@vault-mcp/core";
+export type { ChangeClass } from "@vault-mcp/core";
+import type { ChangeClass } from "@vault-mcp/core";
 
 /** Where an action may ship. `private` and `excluded` differ: a private action
  * exists in an operator build and is ABSENT from the Community bundle; an

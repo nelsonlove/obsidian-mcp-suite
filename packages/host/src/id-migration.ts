@@ -1,57 +1,110 @@
-// id-migration.ts — the 0.12.0 plugin-id migration (`vault-mcp` → `governor`,
-// issue #266): adopt the OLD plugin folder's data into the new plugin dir on
-// first load.
+// id-migration.ts — the plugin-id migrations, both of them.
 //
-// The old folder (`.obsidian/plugins/vault-mcp/`) holds everything that must
-// not be lost: `data.json` (settings), `journal/` (the append-only write
-// journal), `install-id.json`, the acceptance module's baseline store and
-// acceptance log, cross-session receipts — whatever lives beside the plugin's
-// own data. On load, BEFORE settings load and before the kernel opens the
-// journal, the plugin moves that folder's CONTENTS (adapter `rename`, an fs
-// rename on desktop — atomic per entry, no copy) into its own dir, then
-// leaves a `MIGRATED.md` marker in the old folder. The old folder itself is
-// NOT deleted — a human removes it after live verification.
+// The id has moved twice, in opposite directions, and this module is the whole
+// mechanism for both:
 //
-// Safety posture, in order:
-//   - PLAN before touching anything (planFolderMigration is pure + fixture-
-//     tested); the plan either skips, aborts, or names every move up front.
-//   - The old plugin's CODE artifacts (main.js, manifest.json, styles.css)
-//     never move — they would overwrite the new plugin's own code.
-//   - If ANY move target already exists on the new side, the whole migration
-//     ABORTS loudly and moves nothing (never overwrite; never half-adopt an
-//     ambiguous state).
-//   - Idempotent: the marker (or an old folder with no data.json, or a new
-//     dir that already has data.json) ⇒ skip.
-//   - A failure must never fail the plugin load — the caller logs and
-//     continues with a fresh state; the old folder is still intact.
+//   0.12.0 (#266): `vault-mcp` → `governor`. One plugin, renamed. It MOVED the
+//   old folder's contents into the new folder, because there was exactly one
+//   plugin and exactly one owner of every file in it.
+//
+//   S3c (the suite split): `governor` → `vault-mcp` for the HOST, while the
+//   governance PROVIDER takes the id `governor` and KEEPS the folder. That
+//   makes the second migration a fundamentally different act from the first,
+//   and getting the difference wrong would be the worst bug in this file's
+//   history: the source folder is now a LIVE PLUGIN'S OWN DIRECTORY. Moving out
+//   of it would delete the provider's state from under it.
+//
+// So S3c ADOPTS BY COPY, and never writes into the source at all:
+//
+//   • The host copies three things out of `.obsidian/plugins/governor/` —
+//     `journal/`, `install-id.json`, and the host-owned keys of `data.json` —
+//     into its own `.obsidian/plugins/vault-mcp/`.
+//   • It leaves every byte of the source in place, including the ones it just
+//     copied. That is the satellite-adoption precedent (`vault-crosssession`
+//     merged the host's read receipts and never touched the host's copy) and it
+//     is ALSO what makes the rollback path work: disable both plugins, reinstall
+//     the single-plugin `governor` build, and it finds its journal, its install
+//     id and its settings exactly where it left them.
+//   • `governance/` is NOT copied and NOT moved. The authority state stays with
+//     the plugin that keeps the id, which is the whole reason the provider keeps
+//     it.
+//
+// THE ONE-SHOT LATCH is the host's own `data.json`. Once the host has saved
+// settings it is provisioned, and adoption never runs again — the same latch
+// the 0.12.0 migration used, and the same reason: a second adoption over a
+// running host would copy a stale journal month back over a live one.
+//
+// COPY, NOT MOVE — and the choice is about rollback, not tidiness. A MOVE would
+// leave the reverted single-plugin build looking at an EMPTY journal directory,
+// which reads as "this vault has no write history" — the silent-zero class, on
+// the one file that is append-only evidence. A COPY leaves the pre-split
+// history complete and in place, and costs only a documented DIVERGENCE: writes
+// after the split land in the host's copy alone, so a rollback resumes from the
+// split moment and the post-split months live in the host's folder until a human
+// reconciles them. Divergence is reconcilable (records are timestamped and
+// `corrects`-chained); an empty journal is not recoverable from inside the
+// product at all.
+//
+// Safety posture, unchanged in shape from the 0.12.0 machinery:
+//   - PLAN before touching anything (`planHostAdoption` is pure + fixture-tested).
+//   - The source plugin's CODE artifacts never travel.
+//   - If a copy target already exists on the host side, that ENTRY is skipped
+//     rather than overwritten — never clobber, never half-adopt.
+//   - A failure must never fail the plugin load. The caller logs, raises a
+//     sticky Notice, and continues.
 
-/** Marker left in the old folder after a successful migration. */
+/** Marker the 0.12.0 MOVE left in the folder it emptied. Still recognized:
+ * a `governor` folder carrying it is a 0.12.0 destination, not a source that
+ * has already been adopted from. */
 export const MIGRATION_MARKER = "MIGRATED.md";
 
-/** The plugin's own id (0.12.0+). Single source of truth for code that must
- * name itself — the self-preservation refusals (don't disable/reload/uninstall
- * the plugin hosting the connection) and the receipt store's plugin-dir
- * default. Must match manifest.json's `id`. */
-export const PLUGIN_ID = "governor";
+/** The note the HOST writes in ITS OWN directory recording what it adopted and
+ * from where. Deliberately not written into the source: the host never writes
+ * into the provider's folder, which makes "never touches the source" structural
+ * rather than merely intended (the `ReceiptStore.loadFrom`-with-no-`saveTo`
+ * pattern). */
+export const ADOPTION_RECORD = "ADOPTED-FROM-GOVERNOR.md";
 
-/** The old plugin folder name under `<configDir>/plugins/`. */
-export const LEGACY_PLUGIN_ID = "vault-mcp";
+/** The host's own id (S3c+). Single source of truth for code that must name
+ * itself — the self-preservation refusals (don't disable/reload/uninstall the
+ * plugin hosting the connection) and the plugin-dir defaults. Must match
+ * manifest.json's `id`. */
+export const PLUGIN_ID = "vault-mcp";
 
-/** Old-plugin code artifacts that must never be moved onto the new plugin's
- * own files. Everything else in the old folder is treated as data. */
+/**
+ * The id the HOST used between 0.12.0 and S3c, which is ALSO the governance
+ * provider's live id. One string, two meanings, and both matter:
+ *
+ *   • it is the folder the host adopts its journal, install id and settings
+ *     FROM, and
+ *   • it is a plugin the host must refuse to disable or uninstall through MCP,
+ *     which the self-preservation rules already do — so the provider is
+ *     protected by name even before it registers on the seam and earns the
+ *     `providerIds()` refusal.
+ */
+export const LEGACY_PLUGIN_ID = "governor";
+
+/** Plugin code artifacts. Never adopted — they would overwrite the host's own
+ * build with the provider's. */
 export const CODE_ARTIFACTS = new Set(["main.js", "manifest.json", "styles.css"]);
 
-export type MigrationPlan =
-  | {
-      action: "skip";
-      reason: string;
-      /** True when the skip is NOT routine (fresh install / marker present)
-       * and a human should look — e.g. the old folder looks half-migrated.
-       * The caller escalates these to console.error + a Notice. */
-      warn?: boolean;
-    }
-  | { action: "abort"; reason: string }
-  | { action: "migrate"; entries: string[] };
+/**
+ * What the host adopts, and NOTHING ELSE. Both entries are host machinery that
+ * happened to live in the pre-split plugin's directory:
+ *
+ *   • `journal/` — the kernel's append-only write journal. The host is its only
+ *     writer and always was; the provider merely reads it through
+ *     `journal-reader.ts` to build the review queue, and reads it from
+ *     wherever it is told to look.
+ *   • `install-id.json` — the server identity stamped into `actor.server` on
+ *     every journal record. Copied rather than re-minted so the audit stream
+ *     does not report a new install at the split.
+ *
+ * `governance/` is absent by design. `crosssession-receipts.json` is absent
+ * because the `vault-crosssession` satellite already adopted it at S6 and its
+ * copy is authoritative.
+ */
+export const HOST_ADOPTED_ENTRIES = ["journal", "install-id.json"] as const;
 
 export interface FolderListing {
   /** Basenames of files directly in the folder. */
@@ -60,109 +113,92 @@ export interface FolderListing {
   folders: string[];
 }
 
-/**
- * Decide what (if anything) to move. Pure — operates on listings only.
- *
- * `oldDir === null` means the old folder does not exist.
- * `legacyPluginEnabled` is Obsidian's own "is the OLD plugin id still in
- * community-plugins.json" answer — see the abort below for why it dominates.
- */
-export function planFolderMigration(
-  oldDir: FolderListing | null,
-  newDir: FolderListing,
-  legacyPluginEnabled = false,
-): MigrationPlan {
-  // The old id and the new id are DIFFERENT plugins to Obsidian, so both run
-  // concurrently while community-plugins.json lists both — the normal state
-  // right after installing the new one. Migrating out from under a LIVE old
-  // instance is the worst case in this whole feature: it keeps its own
-  // journal/data.json handles, recreates both in the folder we just emptied
-  // (a split-brain append-only journal while MIGRATED.md asserts success),
-  // and its discovery write races our compat copy WITHOUT the `legacy: true`
-  // marker, breaking the bridge's de-duplication. Refuse, move nothing, and
-  // make the human disable it first — the adoption window survives a reload,
-  // a split-brain journal does not.
-  if (legacyPluginEnabled) {
-    return {
-      action: "abort",
-      reason:
-        `the legacy '${LEGACY_PLUGIN_ID}' plugin is still ENABLED — refusing to migrate its data while it is ` +
-        `running (it would keep writing into the folder being moved, splitting the append-only journal). ` +
-        `Disable "Vault MCP" in Settings → Community plugins, then reload this plugin. Nothing was moved.`,
-    };
-  }
-  if (oldDir === null) {
-    return { action: "skip", reason: "no legacy vault-mcp plugin folder — fresh install" };
-  }
-  if (oldDir.files.includes(MIGRATION_MARKER)) {
-    return { action: "skip", reason: `legacy folder already carries ${MIGRATION_MARKER} — migration already ran` };
-  }
-  if (!oldDir.files.includes("data.json")) {
-    // Detect the half-migrated state a mid-sequence rename failure leaves
-    // behind (data.json moved, some entries stranded, no marker written):
-    // stay hands-off, but say so LOUDLY on every load instead of only once —
-    // a silent skip here is how stranded journal months get forgotten.
-    const leftovers = [
-      ...oldDir.files.filter((f) => f !== MIGRATION_MARKER && !CODE_ARTIFACTS.has(f)),
-      ...oldDir.folders,
-    ];
-    if (leftovers.length > 0 && newDir.files.includes("data.json")) {
-      return {
-        action: "skip",
-        warn: true,
-        reason:
-          `legacy folder has no data.json and no ${MIGRATION_MARKER}, but still holds: ${leftovers.join(", ")} — ` +
-          `this looks like an earlier PARTIAL migration. Move those entries into the governor plugin dir by hand ` +
-          `(or delete them if they are truly stale), then leave a ${MIGRATION_MARKER} note.`,
-      };
+export type AdoptionPlan =
+  | {
+      action: "skip";
+      reason: string;
+      /** True when the skip is NOT routine and a human should look. The caller
+       * escalates these to console.error + a sticky Notice. */
+      warn?: boolean;
     }
-    return { action: "skip", reason: "legacy folder has no data.json — nothing to adopt" };
+  | {
+      action: "adopt";
+      /** Basenames to copy, in order. Never includes an entry the host already has. */
+      entries: string[];
+      /** Whether the source carries a `data.json` whose host half should be adopted. */
+      settings: boolean;
+      /** Entries present on BOTH sides and therefore skipped rather than overwritten. */
+      skipped: string[];
+    };
+
+/**
+ * Decide what (if anything) the host copies out of the provider's folder.
+ * Pure — operates on listings only.
+ *
+ * `sourceDir === null` means there is no `governor` folder: either a fresh
+ * install of the suite, or a vault that never ran the 0.12.0 rename and whose
+ * data is therefore ALREADY in `plugins/vault-mcp/`, which is now the host's own
+ * folder. Both are "nothing to do", and the second is the happy accident of
+ * moving the id back: a pre-0.12.0 vault needs no host adoption at all.
+ */
+export function planHostAdoption(sourceDir: FolderListing | null, hostDir: FolderListing): AdoptionPlan {
+  if (sourceDir === null) {
+    return { action: "skip", reason: `no '${LEGACY_PLUGIN_ID}' plugin folder — nothing to adopt from` };
   }
-  if (newDir.files.includes("data.json")) {
+  if (hostDir.files.includes("data.json")) {
     return {
       action: "skip",
-      reason:
-        "the governor plugin dir already has its own data.json — not a fresh install; leaving both folders untouched",
+      reason: `the ${PLUGIN_ID} plugin dir already has its own data.json — already provisioned; leaving both folders untouched`,
     };
   }
-  const entries = [
-    ...oldDir.files.filter((f) => f !== MIGRATION_MARKER && !CODE_ARTIFACTS.has(f)),
-    ...oldDir.folders,
-  ];
-  const newSide = new Set([...newDir.files, ...newDir.folders]);
-  const conflicts = entries.filter((e) => newSide.has(e));
-  if (conflicts.length > 0) {
+  if (!sourceDir.files.includes("data.json")) {
+    // A `governor` folder with code but no data is the 0.12.0 SOURCE folder
+    // (emptied, marker left) rather than a live provider. Nothing to adopt, and
+    // nothing alarming — say so quietly.
+    if (sourceDir.files.includes(MIGRATION_MARKER)) {
+      return { action: "skip", reason: `the '${LEGACY_PLUGIN_ID}' folder carries ${MIGRATION_MARKER} and no data.json — an emptied 0.12.0 source, not a provider` };
+    }
     return {
-      action: "abort",
+      action: "skip",
+      warn: true,
       reason:
-        `refusing to migrate: these entries already exist in the governor plugin dir and would be ` +
-        `overwritten: ${conflicts.join(", ")}. Reconcile by hand, then reload.`,
+        `the '${LEGACY_PLUGIN_ID}' folder has no data.json, so there are no host settings to adopt. The host is ` +
+        `running at DEFAULTS — socket enabled, read-only OFF, allowlist EMPTY. Check that folder by hand before ` +
+        `letting this vault serve agents.`,
     };
   }
-  if (entries.length === 0) {
-    // data.json is in oldDir.files and not a code artifact, so this cannot
-    // happen; kept as a defensive terminal rather than an empty "migrate".
-    return { action: "skip", reason: "legacy folder has nothing to move" };
-  }
-  return { action: "migrate", entries };
+  const present = new Set([...hostDir.files, ...hostDir.folders]);
+  const available = HOST_ADOPTED_ENTRIES.filter(
+    (e) => sourceDir.files.includes(e) || sourceDir.folders.includes(e)
+  );
+  const entries = available.filter((e) => !present.has(e));
+  const skipped = available.filter((e) => present.has(e));
+  return { action: "adopt", entries, settings: true, skipped };
 }
 
-/** The adapter surface the migration needs — Obsidian's DataAdapter satisfies
- * it structurally; tests inject a fake. All paths vault-relative. */
-export interface MigrationFs {
+/** The adapter surface adoption needs. Obsidian's DataAdapter satisfies it
+ * structurally; tests inject a fake. All paths vault-relative.
+ *
+ * There is deliberately NO `rename` and NO `remove`: the whole point of S3c's
+ * adoption is that it cannot move or delete anything, and a surface that cannot
+ * express those operations is a stronger guarantee than a rule saying not to. */
+export interface AdoptionFs {
   exists(path: string): Promise<boolean>;
   list(path: string): Promise<{ files: string[]; folders: string[] }>;
-  rename(from: string, to: string): Promise<void>;
+  read(path: string): Promise<string>;
   write(path: string, data: string): Promise<void>;
+  mkdir(path: string): Promise<void>;
 }
 
-export interface MigrationResult {
-  plan: MigrationPlan;
-  /** Entries actually moved (basenames), in order. */
-  moved: string[];
-  /** Set when a rename failed mid-sequence: the entry that failed. The
-   * marker is NOT written in that case, and `moved` names what already
-   * landed on the new side so a human can reconcile. */
+export interface AdoptionResult {
+  plan: AdoptionPlan;
+  /** Entries actually copied (basenames), in order. */
+  copied: string[];
+  /** The source's raw `data.json` text, when it was read. The caller splits it. */
+  settingsJson?: string;
+  /** Set when a copy failed mid-sequence: the entry that failed. Everything
+   * already copied is named in `copied` so a human can reconcile, and nothing
+   * on the source side was touched. */
   failedEntry?: string;
 }
 
@@ -171,62 +207,106 @@ function base(p: string): string {
   return i === -1 ? p : p.slice(i + 1);
 }
 
-async function listing(fs: MigrationFs, dir: string): Promise<FolderListing | null> {
+async function listing(fs: AdoptionFs, dir: string): Promise<FolderListing | null> {
   if (!(await fs.exists(dir))) return null;
   const l = await fs.list(dir);
   return { files: l.files.map(base), folders: l.folders.map(base) };
 }
 
-export function markerText(now: Date, oldDir: string, newDir: string, moved: string[]): string {
+/**
+ * Copy one file or one folder tree, source → destination.
+ *
+ * Read-then-write rather than an adapter `copy`, for two reasons: the
+ * `AdoptionFs` surface above is the one this module can promise (no rename, no
+ * remove), and a read/write pair is exercisable headlessly against a fake. The
+ * journal is JSONL and the install id is JSON, so text is the right shape;
+ * nothing binary is adopted.
+ *
+ * NEVER overwrites: an existing destination entry is left alone. The plan
+ * already filtered top-level collisions, so this is the guard for anything a
+ * concurrent load created underneath one.
+ */
+async function copyEntry(fs: AdoptionFs, from: string, to: string): Promise<void> {
+  const l = await fs.list(from).catch(() => null);
+  if (l === null) {
+    // Not listable ⇒ a file.
+    if (await fs.exists(to)) return;
+    await fs.write(to, await fs.read(from));
+    return;
+  }
+  await fs.mkdir(to);
+  for (const f of l.files) {
+    const name = base(f);
+    if (await fs.exists(`${to}/${name}`)) continue;
+    await fs.write(`${to}/${name}`, await fs.read(`${from}/${name}`));
+  }
+  for (const d of l.folders) {
+    const name = base(d);
+    await copyEntry(fs, `${from}/${name}`, `${to}/${name}`);
+  }
+}
+
+export function adoptionRecordText(now: Date, sourceDir: string, hostDir: string, copied: string[], skipped: string[]): string {
   return [
-    "# Migrated to the `governor` plugin folder",
+    `# Adopted from the \`${LEGACY_PLUGIN_ID}\` plugin folder`,
     "",
-    `On ${now.toISOString()} the Governor plugin (0.12.0 id migration, vault-mcp → governor)`,
-    `moved this folder's data into \`${newDir}\`:`,
+    `On ${now.toISOString()} the Vault MCP host (the suite split's host/provider separation)`,
+    `COPIED these entries out of \`${sourceDir}\` into \`${hostDir}\`:`,
     "",
-    ...moved.map((m) => `- \`${m}\``),
+    ...copied.map((m) => `- \`${m}\``),
+    ...(skipped.length ? ["", "Already present here, so left alone:", "", ...skipped.map((m) => `- \`${m}\``)] : []),
     "",
-    "Only the old plugin's own code files (main.js, manifest.json, styles.css) and this",
-    "marker remain. This folder is left in place deliberately — remove it by hand after",
-    `verifying the migrated data under \`${newDir}\`.`,
+    "It also copied the host-owned keys of that folder's `data.json` into this folder's own",
+    "`data.json`. **Nothing was moved and nothing was deleted.** Every byte named above is still",
+    `in \`${sourceDir}\`, which the governance provider now owns — including \`governance/\`,`,
+    "which the host neither reads nor copies.",
+    "",
+    "That is deliberate, and it is the rollback path: to go back to the single-plugin build,",
+    "disable both plugins, reinstall it under the `governor` id, and it will find its journal,",
+    "its install id and its settings exactly where it left them. The only thing it will not have",
+    "is whatever was written AFTER this date, which lives in this folder's `journal/`.",
     "",
   ].join("\n");
 }
 
 /**
- * Run the migration `oldDir` → `newDir`. Callers gate on nothing: every
- * skip/abort decision lives in the plan. Throws only on unexpected fs errors
- * during listing; rename failures are captured in the result (loudly logged
- * by the caller) so a partial move is always reported, never hidden.
+ * Run the host's one-shot adoption from the provider's folder.
+ *
+ * Throws only on unexpected fs errors during listing; copy failures are
+ * captured in the result (loudly logged by the caller) so a partial adoption is
+ * always reported, never hidden. The source is never written to on any path.
  */
-export async function runFolderMigration(
-  fs: MigrationFs,
-  oldDir: string,
-  newDir: string,
-  opts: { now?: () => Date; legacyPluginEnabled?: boolean } = {},
-): Promise<MigrationResult> {
+export async function runHostAdoption(
+  fs: AdoptionFs,
+  sourceDir: string,
+  hostDir: string,
+  opts: { now?: () => Date } = {}
+): Promise<AdoptionResult> {
   const now = opts.now ?? (() => new Date());
-  // Checked BEFORE any listing: a live old instance is a refusal, not a
-  // condition to be reconciled against what happens to be on disk right now.
-  if (opts.legacyPluginEnabled) {
-    return { plan: planFolderMigration(null, { files: [], folders: [] }, true), moved: [] };
-  }
-  const oldListing = await listing(fs, oldDir);
-  const newListing = (await listing(fs, newDir)) ?? { files: [], folders: [] };
-  const plan = planFolderMigration(oldListing, newListing);
-  if (plan.action !== "migrate") return { plan, moved: [] };
+  const sourceListing = await listing(fs, sourceDir);
+  const hostListing = (await listing(fs, hostDir)) ?? { files: [], folders: [] };
+  const plan = planHostAdoption(sourceListing, hostListing);
+  if (plan.action !== "adopt") return { plan, copied: [] };
 
-  const moved: string[] = [];
+  const copied: string[] = [];
   for (const entry of plan.entries) {
     try {
-      await fs.rename(`${oldDir}/${entry}`, `${newDir}/${entry}`);
-      moved.push(entry);
+      await copyEntry(fs, `${sourceDir}/${entry}`, `${hostDir}/${entry}`);
+      copied.push(entry);
     } catch {
-      return { plan, moved, failedEntry: entry };
+      return { plan, copied, failedEntry: entry };
     }
   }
-  // Marker only after EVERY entry landed — a partial move must stay
-  // re-inspectable, not be stamped "done".
-  await fs.write(`${oldDir}/${MIGRATION_MARKER}`, markerText(now(), oldDir, newDir, moved));
-  return { plan, moved };
+  let settingsJson: string | undefined;
+  if (plan.settings) {
+    try {
+      settingsJson = await fs.read(`${sourceDir}/data.json`);
+    } catch {
+      return { plan, copied, failedEntry: "data.json" };
+    }
+  }
+  // The record goes in the HOST's own folder, only after every copy landed.
+  await fs.mkdir(hostDir).catch(() => undefined);
+  await fs.write(`${hostDir}/${ADOPTION_RECORD}`, adoptionRecordText(now(), sourceDir, hostDir, copied, plan.skipped));
+  return { plan, copied, settingsJson };
 }

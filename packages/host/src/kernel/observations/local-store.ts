@@ -27,7 +27,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { stateDir } from "../../paths.js";
+import { stateDir, legacyStateDir } from "../../paths.js";
 import type { BlobStore } from "./store.js";
 
 /**
@@ -72,12 +72,36 @@ import type { BlobStore } from "./store.js";
  */
 const SLUG = /^[a-z0-9][a-z0-9._-]*$/;
 
-/** `~/.claude/governor/observations/<vault-slug>/` */
+/** `~/.claude/vault-mcp/observations/<vault-slug>/` */
 export function observationDir(vaultSlug: string): string {
   if (!SLUG.test(vaultSlug) || vaultSlug.includes("..")) {
     throw new Error(`refusing to place the observation store at vault slug '${vaultSlug}': not a single safe path segment`);
   }
   return path.join(stateDir(), "observations", vaultSlug);
+}
+
+/**
+ * `~/.claude/governor/observations/<vault-slug>/` — where this store lived
+ * between 0.12.0 and the host/provider split (S3c), when the host held the id
+ * `governor` and therefore that state namespace.
+ *
+ * READ-ONLY RESIDUE. The store below writes only to the current directory and
+ * falls back to this one on a miss, so a payload recorded before the split is
+ * still replayable and nothing had to be moved. It is never written and never
+ * pruned: this is a content-addressed blob directory, so a copy that stays put
+ * costs disk and nothing else — while relocating it would mean rewriting the
+ * one thing the design calls "the exact note text Governor returned", for no
+ * gain a fallback does not already give.
+ *
+ * The fallback outlives the grace period on purpose. There is no date at which
+ * silently losing access to recorded evidence becomes correct; a human clears
+ * this directory when they decide the old payloads are spent.
+ */
+export function legacyObservationDir(vaultSlug: string): string {
+  if (!SLUG.test(vaultSlug) || vaultSlug.includes("..")) {
+    throw new Error(`refusing to address the legacy observation store at vault slug '${vaultSlug}': not a single safe path segment`);
+  }
+  return path.join(legacyStateDir(), "observations", vaultSlug);
 }
 
 /**
@@ -135,6 +159,8 @@ export interface LocalBlobStoreOpts {
  */
 export function createLocalBlobStore(opts: LocalBlobStoreOpts): BlobStore {
   const dir = observationDir(opts.vaultSlug);
+  // Read-only residue from before the split. Never written, never pruned.
+  const legacyDir = legacyObservationDir(opts.vaultSlug);
   const io = opts.fsImpl ?? fs.promises;
   let ensured = false;
 
@@ -192,12 +218,23 @@ export function createLocalBlobStore(opts: LocalBlobStoreOpts): BlobStore {
       try {
         return await io.readFile(fileFor(dir, key), "utf8");
       } catch (e) {
-        // ENOENT is "not stored", which the layer above turns into
-        // `payload_missing`. Any other error is a real failure and must not be
-        // laundered into "absent" — a permissions problem reading a payload is
-        // not the same fact as the payload having been pruned.
-        if ((e as NodeJS.ErrnoException)?.code === "ENOENT") return null;
-        throw e;
+        // ENOENT is "not stored HERE" — so before turning it into
+        // `payload_missing`, look in the pre-split directory. A payload
+        // recorded while the host held the id `governor` is still the exact
+        // bytes an agent was shown, and losing replay of it because a plugin id
+        // moved would be the split quietly destroying evidence.
+        //
+        // Any OTHER error is a real failure and must not be laundered into
+        // "absent" — a permissions problem reading a payload is not the same
+        // fact as the payload having been pruned — so it rethrows without
+        // consulting the fallback.
+        if ((e as NodeJS.ErrnoException)?.code !== "ENOENT") throw e;
+        try {
+          return await io.readFile(fileFor(legacyDir, key), "utf8");
+        } catch (e2) {
+          if ((e2 as NodeJS.ErrnoException)?.code === "ENOENT") return null;
+          throw e2;
+        }
       }
     },
 
@@ -206,11 +243,23 @@ export function createLocalBlobStore(opts: LocalBlobStoreOpts): BlobStore {
         await io.access(fileFor(dir, key));
         return true;
       } catch {
-        return false;
+        // Same fallback as `get`, for the same reason: a pre-split payload is
+        // present, and a `has` that said otherwise would make the layer above
+        // refuse a replay it can actually serve.
+        try {
+          await io.access(fileFor(legacyDir, key));
+          return true;
+        } catch {
+          return false;
+        }
       }
     },
 
     async remove(key) {
+      // ONLY the current directory. The pre-split store is read-only residue
+      // (see `legacyObservationDir`): this plugin does not own that namespace
+      // any more, and reaching into it here is exactly what the fallback exists
+      // to avoid. A human clears it.
       try {
         await io.unlink(fileFor(dir, key));
       } catch (e) {

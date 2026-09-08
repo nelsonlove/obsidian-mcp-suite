@@ -7,7 +7,6 @@ import { DANGEROUS_LIST_DESC } from "./mcp/tools-cli.js";
 import { OPAQUE_ACCEPT_CLI_COMMANDS, OPAQUE_ACCEPT_COMMAND_IDS } from "./mcp/cli-policy.js";
 import { CommandSuggest } from "./command-suggest.js";
 import { builtinModules } from "./mcp/modules-mount.js";
-import { renderGovernanceSettings } from "./governor/wiring/wiring.js";
 import {
   ModuleRegistry,
   collect,
@@ -400,7 +399,7 @@ export class VaultMcpSettingTab extends PluginSettingTab {
         b.onClick(async () => {
           this.plugin.settings.enabled = !this.plugin.settings.enabled;
           await this.plugin.saveSettings();
-          new Notice("governor: reload the plugin (or restart Obsidian) for this change to take effect.");
+          new Notice("vault-mcp: reload the plugin (or restart Obsidian) for this change to take effect.");
           this.display();
         });
       });
@@ -605,7 +604,7 @@ export class VaultMcpSettingTab extends PluginSettingTab {
           const effective = normalizeProtectedProperties(raw, () => {});
           if (effective.length < raw.length) {
             new Notice(
-              `governor: ${raw.length - effective.length} protected-property line(s) ignored ` +
+              `vault-mcp: ${raw.length - effective.length} protected-property line(s) ignored ` +
                 `(floor keys and unknown grades cannot be declared) — see the console for details.`
             );
           }
@@ -671,77 +670,18 @@ export class VaultMcpSettingTab extends PluginSettingTab {
           })
       );
 
-    // ── local history (WP4, D10) ────────────────────────────────────────────
+    // ── the LOCAL HISTORY settings block used to be here (WP4, D10) ─────────
     //
-    // DEFAULT OFF. Git retains HISTORICAL bytes: once recorded, an edit or a
-    // deletion in the vault does not remove what history holds. D10 makes
-    // enabling that a disclosed human decision, and makes the scope a human
-    // choice separate from any connection allowlist.
-    containerEl.createEl("h4", { text: "Local history" });
-    new Setting(containerEl)
-      .setName("Record vault history")
-      .setDesc(
-        "Off by default. When on, Governor keeps a Git history of your notes at ~/.claude/governor/history/ — outside your vault, never synced. " +
-          "History RETAINS old bytes: editing or deleting a note later does not remove what was already recorded. " +
-          "Guarded territories are never recorded regardless of the scope below. Nothing is recorded until proposals ship; choosing the scope now means the first recorded byte already respects it."
-      )
-      .addToggle((t) =>
-        t.setValue(this.plugin.settings.historyEnabled === true).onChange(async (value) => {
-          this.plugin.settings.historyEnabled = value;
-          await this.plugin.saveSettings();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName("History scope")
-      .setDesc(
-        "Whole vault records everything except the exclusions; explicit roots records only the folders you list below. Connection allowlists never change this — what one agent may see and what history records are different decisions."
-      )
-      .addDropdown((dd) =>
-        dd
-          .addOption("whole-vault", "Whole vault (minus exclusions)")
-          .addOption("explicit", "Only explicit roots")
-          .setValue(this.plugin.settings.historyScope.mode)
-          .onChange(async (value) => {
-            this.plugin.settings.historyScope.mode = value === "explicit" ? "explicit" : "whole-vault";
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Included roots")
-      .setDesc("One folder per line. Used only when the scope is explicit. A root names the folder and everything under it.")
-      .addTextArea((t) =>
-        t
-          .setPlaceholder("Notes\nProjects")
-          .setValue(this.plugin.settings.historyScope.include.join("\n"))
-          .onChange(async (value) => {
-            this.plugin.settings.historyScope.include = value
-              .split("\n")
-              .map((x) => x.trim())
-              .filter(Boolean);
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Excluded roots")
-      .setDesc(
-        "One prefix per line, always subtracted in either mode. The defaults (.obsidian, .trash) and the guarded territories are always excluded — listing more here narrows history further."
-      )
-      .addTextArea((t) =>
-        t
-          .setPlaceholder("Private notes/")
-          .setValue(this.plugin.settings.historyScope.exclude.join("\n"))
-          .onChange(async (value) => {
-            this.plugin.settings.historyScope.exclude = value
-              .split("\n")
-              .map((x) => x.trim())
-              .filter(Boolean);
-            await this.plugin.saveSettings();
-          })
-      );
-
+    // "Record vault history", the whole-vault/explicit scope dropdown and the
+    // two root textareas moved to the governance provider at the host/provider
+    // split (S3c), with the settings they wrote. They were always the
+    // provider's facts — the Git history store is the standing chain's
+    // evidence, and D10's "recording is a disclosed human decision" is a
+    // decision about governance, not about transport — and nothing host-side
+    // ever read them. The repository itself did not move: it stays at
+    // `~/.claude/governor/history/<vault-slug>/`, because the provider kept the
+    // id `governor`.
+    //
     // Developer affordances. The tool-runner defaults ON because it grants no
     // capability beyond the MCP surface itself: it invokes the same guarded
     // captured tools a code-mode connection gets (read-only mode, allowlist,
@@ -808,12 +748,12 @@ export class VaultMcpSettingTab extends PluginSettingTab {
 
     new Setting(section)
       .setName("Enabled")
-      // Acceptance's Obsidian surface (review pane + gavel ribbon) mounts/unmounts LIVE from this
-      // toggle — no reload. Every other module is tool-only: its surface mounts per connection, so
-      // its toggle takes effect on the next session connect.
+      // `scheme`'s Obsidian surface (the Inbox + Drift panes) mounts/unmounts LIVE from this
+      // toggle — no reload. A tool-only module's surface mounts per connection, so its toggle
+      // takes effect on the next session connect.
       .setDesc(
-        mod.id === "acceptance"
-          ? "Mounts or unmounts the review pane and gavel ribbon live — no plugin reload needed."
+        mod.id === "scheme"
+          ? "Mounts or unmounts the Inbox and Drift panes live — no plugin reload needed."
           : "Takes effect on the next session connect."
       )
       .addToggle((t) =>
@@ -823,14 +763,9 @@ export class VaultMcpSettingTab extends PluginSettingTab {
             [mod.id]: { ...this.plugin.settings.modules[mod.id], enabled: value },
           };
           await this.plugin.saveSettings();
-          // Let modules whose in-app surface follows this toggle mount/unmount live (acceptance's
-          // pane + ribbon). Tool-only modules are unaffected — they take effect on the next connect.
+          // Let modules whose in-app surface follows this toggle mount/unmount live. Tool-only
+          // modules are unaffected — they take effect on the next connect.
           await this.plugin.onModuleEnabledChanged(mod.id, value);
-          // Acceptance's live mount also decides whether its settings-tab section (adopt-baseline +
-          // auto-accept) can render its gesture-gated controls vs. a hint — so re-render the tab now
-          // that the mount has settled, mirroring the socket-toggle re-render. (Other modules are
-          // tool-only: nothing in their section changes on toggle, so no re-render is needed.)
-          if (mod.id === "acceptance") this.display();
         })
       );
 
@@ -847,17 +782,15 @@ export class VaultMcpSettingTab extends PluginSettingTab {
       this.renderConfigField(section, mod, field, renderProblems);
     }
 
-    // Gap B — the vocab module's LIST-shaped settings — used to append a
-    // bespoke per-instance form here, the one module-specific branch in this
-    // otherwise generic renderer. It left with the module at S7, so
-    // acceptance's is now the only one.
-
-    // Acceptance's bespoke branch: the module EXPOSES a render function that builds its
-    // gesture-gated adopt-baseline + auto-accept controls internally, from its own module-private
-    // accept-capable controller. We only hand it a container — connection-ui never receives, holds,
-    // or can walk the accept-capable deps (that is what keeps the accept boundary intact across
-    // this new surface). It renders the live controls only when acceptance is mounted, else a hint.
-    if (mod.id === "acceptance") renderGovernanceSettings(this.plugin, section);
+    // TWO bespoke branches used to hang here and both are gone. The vocab
+    // module's LIST-shaped per-instance form left with the module at S7.
+    // Acceptance's `renderGovernanceSettings` — which handed a container to a
+    // render function that built its gesture-gated adopt-baseline and
+    // auto-accept controls from its own module-private accept-capable
+    // controller — left at the host/provider split (S3c), and so did the
+    // reason it had to be shaped that way: this settings tab never received,
+    // held, or could walk the accept-capable deps, and now it is not even in
+    // the same plugin as them. The renderer is fully generic again.
 
     const dir = hosted.directory;
     if (dir.tools.length > 0) {

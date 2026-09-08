@@ -5,7 +5,7 @@
 
 The kernel is the plugin-singleton machinery every mutating tool call routes through. It
 turns "an agent editing files" into a **serialized, journaled, concurrency-safe, attributable**
-stream of operations. It lives in `packages/plugin/src/kernel/` and is Obsidian-free by
+stream of operations. It lives in `packages/host/src/kernel/` and is Obsidian-free by
 construction (pure TypeScript, headlessly testable); the MCP layer wires it to the live vault.
 
 The user-facing prose for these primitives is in the top-level
@@ -20,7 +20,7 @@ instance** — one vault mutation at a time, across every connected session and 
 agent. Reads never queue, so a slow write never stalls a session's reads.
 
 - **Per-operation budget: `WRITE_TIMEOUT_MS = 30_000`** (30 seconds — a constant, not a
-  setting; `packages/plugin/src/kernel/write-queue.ts`). If an operation hasn't settled by
+  setting; `packages/host/src/kernel/write-queue.ts`). If an operation hasn't settled by
   then it is **abandoned**, that one call fails with `Error [write_timeout]`, and the queue
   immediately moves on — a wedged operation can never take down the bridge or anyone else's
   session. The vault may or may not have been modified; re-read before retrying. The deadline
@@ -36,12 +36,12 @@ agent. Reads never queue, so a slow write never stalls a session's reads.
 ## The append-only write journal
 
 Every mutating operation appends **one JSONL line** to
-`.obsidian/plugins/governor/journal/YYYY-MM.jsonl` (rolled monthly, inside the plugin's own
-folder, not the note tree). It records the **operation** — what happened, to what, on whose
+`.obsidian/plugins/vault-mcp/journal/YYYY-MM.jsonl` (rolled monthly, inside the host's own
+plugin folder, not the note tree). It records the **operation** — what happened, to what, on whose
 behalf — never the note bytes (git already covers bytes; arguments are reduced to a digest
 with bodies/long strings collapsed to `<N chars>`).
 
-A record's shape (`packages/plugin/src/kernel/journal.ts`):
+A record's shape (`packages/host/src/kernel/journal.ts`):
 
 ```json
 {"ts":"2026-08-08T19:04:11.427Z","op":"obsidian_write_note",
@@ -111,7 +111,7 @@ names one with **`Error [record_immutable]`**, naming the path and pointing at t
 convention. Nothing runs; the refusal is journaled (`outcome: "error"`).
 
 - **The one exemption is `obsidian_append_note`**, by **tool identity**
-  (`RECORD_EXEMPT_OPS`, `packages/plugin/src/kernel/record-guard.ts`) — the only tool whose
+  (`RECORD_EXEMPT_OPS`, `packages/host/src/kernel/record-guard.ts`) — the only tool whose
   whole contract is a pure end-of-file append. Argument shapes never exempt anything;
   `obsidian_append_at_heading` inserts mid-file and is refused like any other mutation.
 - **Every named path counts**, not just the primary: a move **onto** a record note would
@@ -153,7 +153,7 @@ sent while the first is **still in flight** waits for it and shares the same out
 simultaneous retries of one dropped request run the operation once and all four get one answer.
 
 - **Window: `IDEMPOTENCY_TTL_MS = 10 minutes`, capped at `IDEMPOTENCY_MAX = 500` keys**
-  (least-recently-used evicted first; `packages/plugin/src/kernel/idempotency.ts`).
+  (least-recently-used evicted first; `packages/host/src/kernel/idempotency.ts`).
 - **Identity is `(key, operation, arguments, if_rev)`.** Reusing a key for a different tool,
   the same tool with different arguments, or the same call under a *different* `if_rev`
   (including dropping or adding one) fails with `Error [idempotency_mismatch]` and runs
@@ -171,8 +171,8 @@ simultaneous retries of one dropped request run the operation once and all four 
 ## Advisory scope locks + TTL
 
 `obsidian_claim_scope` / `obsidian_renew_scope` / `obsidian_release_scope` /
-`obsidian_list_scope_claims` (`packages/plugin/src/kernel/locks.ts`,
-`packages/plugin/src/mcp/tools-locks.ts`) let two agents working the same folder tell each
+`obsidian_list_scope_claims` (`packages/host/src/kernel/locks.ts`,
+`packages/host/src/mcp/tools-locks.ts`) let two agents working the same folder tell each
 other so. A claim takes a **scope** (a vault path prefix), a **reason**, and an optional
 `ttl_ms`, and returns a claim id.
 
@@ -207,9 +207,9 @@ claim to disclose in a session that cannot write. Listing still works. Claims ar
 ## Server / install identity
 
 Every journal record's `actor.server` carries a persistent **install id** — minted once and
-kept beside the journal in `.obsidian/plugins/governor/install-id.json`
-(`packages/plugin/src/kernel/install-id.ts`) — plus the **vault name** and plugin **version**.
-This is what keeps a journal attributable after it's copied off the machine, and keeps two
+kept beside the journal in `.obsidian/plugins/vault-mcp/install-id.json`
+(`packages/host/src/kernel/install-id.ts`) — plus the **vault name** and host plugin
+**version**. This is what keeps a journal attributable after it's copied off the machine, and keeps two
 vaults' journals distinguishable when read together. The `initialize` handshake carries the
 vault name too, in `serverInfo.title`.
 
@@ -217,7 +217,7 @@ vault name too, in `serverInfo.title`.
 
 `if_rev`, `idempotency_key`, and `intent` are **kernel arguments**, not tool arguments: no
 handler knows about them. They are declared generically on **every mutating registration**
-(`withKernelArgs` in `packages/plugin/src/mcp/guarded.ts`) and consumed generically (stripped
+(`withKernelArgs` in `packages/host/src/mcp/guarded.ts`) and consumed generically (stripped
 from args and passed to `Kernel.runMutation`). Read-only tools are left untouched — neither
 argument means anything without a write.
 

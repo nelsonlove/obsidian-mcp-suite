@@ -264,3 +264,29 @@ export { spawnEnv, findBinary, findObsidianBinary, EXTRA_BIN_DIRS } from "./spaw
 // it is defined over was already core's, reached by the host through
 // `mcp/write-notes-compose.ts`, itself a bare re-export of this accept-guard.
 export { scanForAcceptFence } from "./accept-scan.js";
+
+// ── The settings split, published at the host/provider split (S3c) ───────────
+//
+// Which of the pre-split plugin's `data.json` keys belong to the host and which
+// to the governance provider. Both plugins read the SAME file — the provider
+// keeps the folder and the file, the host copies its half out once — so the two
+// halves have to agree about the whole shape. Declared twice, they would not:
+// a key both claim gets each plugin's save overwriting the other's edit, and a
+// key neither claims is dropped on the first save after the split. Same
+// one-table reasoning as `isVisible` and `scanForAcceptFence`.
+export { splitSettings, HOST_SETTING_KEYS, PROVIDER_SETTING_KEYS, PROVIDER_MODULE_IDS } from "./settings-split.js";
+export type { HostSettingKey, ProviderSettingKey } from "./settings-split.js";
+
+// ── Action-contract vocabulary and the vault slug, published at S3c ──────────
+//
+// The action REGISTRY stays the host's (§6). What crosses is the small part the
+// governance provider's write observer must agree with byte-for-byte: the
+// canonical change-class order (two producers hashing the same subject must
+// sort classes the same way) and the `note.write` identity the observer speaks
+// for. `vaultSlug` is published for the same class of reason and at its
+// sharpest: the host names the socket by it and the provider names the standing
+// chain's git directory by it, and a one-character disagreement reads as "chain
+// absent here" on the machine that is holding the chain.
+export { CHANGE_CLASSES, NOTE_WRITE_ACTION } from "./action-contract.js";
+export type { ChangeClass } from "./action-contract.js";
+export { vaultSlug } from "./vault-slug.js";

@@ -1,12 +1,12 @@
 # Inbox triage — the disposition substrate's second instance (#221, phase 3 shape per #241)
 
-> **Deep reference for the shipped implementation.** Canonical concepts and the target design live in the [documentation corpus](README.md); what is shipped versus target is owned by [status-and-compatibility.md](status-and-compatibility.md). Since the S5 satellite extraction (`suite-split-design.md` §6) this reference documents the standalone **`vault-triage`** plugin, not a module of the host plugin (`governor`).
+> **Deep reference for the shipped implementation.** Canonical concepts and the target design live in the [documentation corpus](README.md); what is shipped versus target is owned by [status-and-compatibility.md](status-and-compatibility.md). Since the S5 satellite extraction (`suite-split-design.md` §6) this reference documents the standalone **`vault-triage`** plugin, not a module of the host plugin (`vault-mcp`).
 
 
 The successor to the vault's retired `dispose-inbox-item` QuickAdd flow,
 shipped as the standalone `vault-triage` plugin with exactly two tools — a
 read-only queue view and one guarded mutating disposition verb, published to
-the Governor host through `vault-mcp-api`. There is **no human UI** in this
+the host through `vault-mcp-api`. There is **no human UI** in this
 plugin beyond its settings tab, deliberately: no pane, no palette command, no
 ribbon.
 
