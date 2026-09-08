@@ -24,7 +24,7 @@ You can also respond conversationally—for example, “Adopt D01–D06; use B f
 
 These are load-bearing decisions already expressed consistently across the suite:
 
-- Governor is the product and plugin identity.
+- Governor is the product name. Its plugin identity is no longer singular in realization: since the S3c host/provider split the governance provider package (`packages/governor`) keeps the Obsidian plugin id `governor`, while the MCP host ships separately as `packages/host`, plugin id `vault-mcp`. See `docs/suite-split-design.md` §8.
 - The name refers to the regulating mechanism in an engine.
 - Obsidian remains the visible human surface and live application authority.
 - The four public postures are Looking only, Drafting a change, Proposing governed changes, and Working under a mandate.

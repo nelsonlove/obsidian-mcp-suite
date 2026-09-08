@@ -222,7 +222,7 @@ export function createGovernanceSeam(): { seam: GovernanceSeam; consult: SeamCon
 
   const seam: GovernanceSeam = {
     registerWriteObserver(id, observe) {
-      if (typeof observe !== "function") throw new TypeError(`governor: write observer for '${id}' is not a function`);
+      if (typeof observe !== "function") throw new TypeError(`vault-mcp: write observer for '${id}' is not a function`);
       const entry: HookEntry<WriteObserver> = { id: String(id), fn: observe };
       state().observers.push(entry);
       let disposed = false;
@@ -233,7 +233,7 @@ export function createGovernanceSeam(): { seam: GovernanceSeam; consult: SeamCon
       };
     },
     registerSessionRefusal(id, refuse) {
-      if (typeof refuse !== "function") throw new TypeError(`governor: session refusal for '${id}' is not a function`);
+      if (typeof refuse !== "function") throw new TypeError(`vault-mcp: session refusal for '${id}' is not a function`);
       const entry: HookEntry<SessionRefusalHook> = { id: String(id), fn: refuse };
       state().sessionRefusals.push(entry);
       let disposed = false;
@@ -262,10 +262,10 @@ export function createGovernanceSeam(): { seam: GovernanceSeam; consult: SeamCon
           try {
             const r = fn(facts);
             if (r && typeof (r as Promise<void>).catch === "function") {
-              (r as Promise<void>).catch((e) => console.error(`[governor] write observer '${id}' failed`, e));
+              (r as Promise<void>).catch((e) => console.error(`[vault-mcp] write observer '${id}' failed`, e));
             }
           } catch (e) {
-            console.error(`[governor] write observer '${id}' failed`, e);
+            console.error(`[vault-mcp] write observer '${id}' failed`, e);
           }
         });
       }
@@ -322,7 +322,7 @@ export function reportCompletedWrite(
   if (!facts) return false;
   if (!sources.includes(facts.path)) {
     console.warn(
-      `[governor] write facts for '${facts.path}' do not match operation ${operation.id}'s sources; not reported`
+      `[vault-mcp] write facts for '${facts.path}' do not match operation ${operation.id}'s sources; not reported`
     );
     return false;
   }

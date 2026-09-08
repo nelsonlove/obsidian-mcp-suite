@@ -104,12 +104,12 @@ function wirePane(plugin: Plugin, component: Component, viewType: string, label:
   try {
     plugin.registerView(viewType, factory);
   } catch (e) {
-    console.warn(`[governor] ${viewType} view type already registered — reusing it`, e);
+    console.warn(`[vault-mcp] ${viewType} view type already registered — reusing it`, e);
   }
   component.register(() => {
     for (const leaf of app.workspace.getLeavesOfType(viewType)) leaf.detach();
     try { viewRegistryOf(plugin)?.unregisterView(viewType); }
-    catch (e) { console.warn(`[governor] ${viewType} view unregister failed`, e); }
+    catch (e) { console.warn(`[vault-mcp] ${viewType} view unregister failed`, e); }
   });
   const ribbon = plugin.addRibbonIcon(icon, label, () => void activateView(app, viewType));
   component.register(() => ribbon.remove());
@@ -150,7 +150,7 @@ export function wireSchemePanes(plugin: Plugin, opts: WireSchemePanesOpts): Comp
     };
     wirePane(plugin, component, INBOX_VIEW_TYPE, "Open JD inboxes", "inbox", (leaf) => new InboxPaneView(leaf, inboxController));
   } catch (e) {
-    console.error("[governor] scheme inbox pane wiring failed", e);
+    console.error("[vault-mcp] scheme inbox pane wiring failed", e);
   }
 
   try {
@@ -161,7 +161,7 @@ export function wireSchemePanes(plugin: Plugin, opts: WireSchemePanesOpts): Comp
     };
     wirePane(plugin, component, DRIFT_VIEW_TYPE, "Open JD drift", "alert-triangle", (leaf) => new DriftPaneView(leaf, driftController));
   } catch (e) {
-    console.error("[governor] scheme drift pane wiring failed", e);
+    console.error("[vault-mcp] scheme drift pane wiring failed", e);
   }
 
   return component;

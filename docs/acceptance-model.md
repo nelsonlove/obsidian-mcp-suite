@@ -1,6 +1,6 @@
 # The acceptance model
 
-> **This documents the LEGACY acceptance system.** It was the live authority until the WP8 cutover ran (a human-confirmed act, taken 2026-08-23; see the [cutover runbook](../packages/plugin/docs/wp8-cutover-runbook.md)). Post-cutover its writers refuse and the successor model is [standing-and-attestations.md](standing-and-attestations.md). Current state: [status-and-compatibility.md](status-and-compatibility.md).
+> **This documents the LEGACY acceptance system, which now lives wholly in `packages/governor`.** It was the live authority until the WP8 cutover ran (a human-confirmed act, taken 2026-08-23; see the [cutover runbook](../packages/governor/docs/wp8-cutover-runbook.md)). Post-cutover its writers refuse and the successor model is [standing-and-attestations.md](standing-and-attestations.md). Current state: [status-and-compatibility.md](status-and-compatibility.md).
 
 
 > **This is the heart of the design.** Everything else in the kernel — the queue, the
@@ -55,7 +55,7 @@ reviewer can send a change back for another pass:
   shared accept-forbidden guard re-checks its write. `revising` and `proposed` are
   agent-legal status transitions; the accepted-family stays forbidden exactly as above.
 
-The full verb set is declared as **data** (`governor/kernel/dispositions.ts`): each
+The full verb set is declared as **data** (`packages/governor/src/kernel/dispositions.ts`): each
 disposition carries `{id, authority, surface, label, effect}`, and the pane renders its
 controls from that table. The authority axis (#221) is what sorts them — a verb that confers
 standing is a human gesture; a mechanical, reversible write is agent-expressible. Accept
@@ -76,7 +76,7 @@ They are now converged: the pane's gesture-gated **Accept is context-aware** and
 | `revising` | Never stamped (baseline advance only) — a revising note goes through withdraw / `governance_submit_revision` back to `proposed` first |
 
 **Ordering is the load-bearing part**: the stamp itself changes the note, so `acceptNote`
-(governor/kernel/accept.ts) stamps FIRST, re-reads, **verifies the fold** — status now
+(`packages/governor/src/kernel/accept.ts`) stamps FIRST, re-reads, **verifies the fold** — status now
 `accepted`, body byte-identical to pre-stamp, and the non-stamp frontmatter **key set**
 unchanged; a foreign write racing into the accept window that changes the body or adds or
 removes a frontmatter key aborts the accept with no baseline advance — and only then
@@ -101,7 +101,7 @@ fail-safe ambiguous classification instead.
 
 **This does not touch the agent-side guarantee.** The stamp is an in-app,
 human-gesture-gated `processFrontMatter` call (`stampAcceptedFrontmatter`, module-scope and
-unexported in `governor/wiring/wiring.ts`, reachable only through the gesture-gated accept
+unexported in `packages/governor/src/wiring/wiring.ts`, reachable only through the gesture-gated accept
 handler) — it **bypasses MCP entirely** and is exactly the human path the accept-forbidden
 guard reserves. Every agent transport still refuses the accepted family; `@vault-mcp/core`
 is unchanged.
@@ -131,7 +131,7 @@ human-only by construction):
 The guarantee is enforced at the **shared write primitive** — the single point every
 filesystem-expressible write routes through — so it holds on **every write surface at once**,
 not tool by tool. The rule itself is defined once
-(`packages/plugin/src/mcp/write-notes-compose.ts`) and reused everywhere; there is no second
+(`packages/host/src/mcp/write-notes-compose.ts`) and reused everywhere; there is no second
 definition of "accepted" to drift.
 
 ### Recognition parity: a guard stricter than the write path is a bypass
@@ -250,7 +250,7 @@ argument. This closes the "S2" evasion: a caller who embeds a raw
 `---\nacceptance-status: accepted\n---` fence in a note **body** (rather than in a structured
 frontmatter argument) still has that fence become the note's real frontmatter, so it is
 parsed and caught. `frontmatterOf()` matches a leading `---` fence exactly the way Obsidian
-recognizes one (`packages/plugin/src/mcp/obsidian-backend.ts`, `guardWrittenContent`).
+recognizes one (`packages/host/src/mcp/obsidian-backend.ts`, `guardWrittenContent`).
 
 ### It is a transition, not a snapshot — a human's `accepted` survives
 
@@ -358,7 +358,7 @@ uninspectable-write set.
 `obsidian_cli` proxies ~104 official Obsidian CLI commands, which run *inside* Obsidian and
 therefore **bypass the MCP note-write primitive** where the guard above lives. That is a real
 hole — an agent could otherwise persist acceptance through the CLI. So the CLI path grows its
-**own** accept-forbidden check (`cliAcceptRefusal` in `packages/plugin/src/mcp/tools-cli.ts`),
+**own** accept-forbidden check (`cliAcceptRefusal` in `packages/host/src/mcp/tools-cli.ts`),
 run **before the command executes**, reusing the exact same `acceptForbiddenReason` rule — no
 fork of "accepted." A CLI write is always an *introduce* (the CLI path has no expression for
 "carry an existing human value forward"), so the introduce check is exactly right.

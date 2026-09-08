@@ -10,14 +10,15 @@ The current monorepo is organized around:
 
 | Path | Responsibility |
 |---|---|
-| `packages/plugin/` | Governor Obsidian plugin, local bridge, MCP surface, review UI, live adapters, modules, and plugin tests |
+| `packages/host/` | The Vault MCP host Obsidian plugin (id `vault-mcp`): socket transport and embedded bridge, the guard, kernel v0 (write queue, journal, idempotency, advisory locks, uid index, record guard), the operation executor and action registry, observation capture and the blob store, the core `obsidian_*` tools, scheme/JD addressing, the conformance rail, the module host, the external-tool registry, and the governance seam. With no provider installed every seam consultation is vacuous and the host works fully standalone |
+| `packages/governor/` | The Governor governance provider Obsidian plugin (id `governor`): proposals, verification, admission, cohorts, mandates, transformations/promotion, the history store, the review pane, the gesture perimeter, the legacy acceptance machinery with its migration/cutover/store-binding, and the five MCP tools it publishes through `vault-mcp-api` |
 | `packages/core/` | Shared pure types and utilities, including guards used by more than one backend |
-| `packages/vault-mcp-api/` | SDK through which another Obsidian plugin can publish capabilities to Governor |
-| `packages/skills/`, `packages/triage/`, `packages/crosssession/`, `packages/vocab/`, `packages/health/`, `packages/bases/`, `packages/quickadd-choices-compile/` | Satellite plugins extracted from the host by the suite split (ids `vault-skills`, `vault-triage`, `vault-crosssession`, `vault-vocab`, `vault-health`, `vault-bases`, `quickadd-choices-compile`). Each builds its own `main.js` from its own manifest and publishes its tools to Governor through `vault-mcp-api`, so none of them is part of the Community bundle |
+| `packages/vault-mcp-api/` | SDK through which another Obsidian plugin can publish capabilities to the host |
+| `packages/skills/`, `packages/triage/`, `packages/crosssession/`, `packages/vocab/`, `packages/health/`, `packages/bases/`, `packages/quickadd-choices-compile/` | Satellite plugins extracted from the host by the suite split (ids `vault-skills`, `vault-triage`, `vault-crosssession`, `vault-vocab`, `vault-health`, `vault-bases`, `quickadd-choices-compile`). Each builds its own `main.js` from its own manifest and publishes its tools through `vault-mcp-api`, so none of them is part of the Community bundle |
 | `packages/server/` | Separate filesystem/server deployment; not part of the ordinary Community Plugin promise |
 | `docs/` | Existing implementation and historical reference; target-state public docs must resolve status explicitly |
 
-The Community release is built from the plugin package. A server or private capability pack must not silently enter its distribution bundle or disclosures. The [Module directory](modules.md) accounts for every current module family and cross-cutting provider surface.
+The Community release is built from the host and governor packages, now two Obsidian plugins rather than one. A server or private capability pack must not silently enter either distribution bundle or disclosures. The [Module directory](modules.md) accounts for every current module family and cross-cutting provider surface.
 
 ## Development setup
 
@@ -25,7 +26,8 @@ Use a dedicated test vault, never the primary personal vault. Install dependenci
 
 ```bash
 npm test --workspaces --if-present
-npm --workspace packages/plugin run build
+npm --workspace packages/host run build
+npm --workspace packages/governor run build
 ```
 
 The actual release process must verify the package and manifest versions agree before building.

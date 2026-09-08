@@ -16,13 +16,13 @@ the reference for the tools and where they live.
 The plugin keeps a **uid index** (`uid → path`, and the inverse), built at load from
 Obsidian's own metadata cache (no file reads) and kept current from Obsidian's events — a uid
 added/changed/removed by an edit, a note renamed/moved/deleted
-(`packages/plugin/src/kernel/uid-index.ts`). Notes with no `uid` frontmatter are simply not in
+(`packages/host/src/kernel/uid-index.ts`). Notes with no `uid` frontmatter are simply not in
 it.
 
 **Anywhere a tool takes a path, it also takes `uid:<value>`** — on reads and writes alike, on
 the full surface, in Code Mode, and on path-taking tools published by other plugins. It binds
 at the **same single interception point** as the accept guard and the write queue
-(`packages/plugin/src/mcp/guarded.ts`), so handlers never see a uid reference — they get the
+(`packages/host/src/mcp/guarded.ts`), so handlers never see a uid reference — they get the
 resolved path.
 
 ```jsonc
@@ -44,7 +44,7 @@ read a path out of a sandbox.
 
 ### `obsidian_resolve_uid`
 
-The read-only lookup, both directions (`packages/plugin/src/mcp/tools-uid.ts`):
+The read-only lookup, both directions (`packages/host/src/mcp/tools-uid.ts`):
 
 - `{uid}` → `{path, duplicates?}`
 - `{path}` → `{uid}`
@@ -71,7 +71,7 @@ is advisory here (Obsidian exposes no rename-without-rewrite API, so links updat
 Links rot for reasons the server didn't cause: a note deleted in Finder, a rename by another
 tool, a `[[wikilink]]` typed against a note nobody created, a uid pasted into a second note.
 
-**`obsidian_check_links`** (`packages/plugin/src/mcp/tools-links.ts`) is a **read-only** report
+**`obsidian_check_links`** (`packages/host/src/mcp/tools-links.ts`) is a **read-only** report
 — no queue slot, no journal record, no `fix`/`heal` argument, works in read-only mode:
 
 ```jsonc
@@ -98,7 +98,7 @@ backslash case arrived with that move and made both callers stricter at once.
 
 ## `obsidian_repoint_link` — the one deliberate repair
 
-To act on a report, **`obsidian_repoint_link`** (`packages/plugin/src/mcp/tools-vault-write.ts`)
+To act on a report, **`obsidian_repoint_link`** (`packages/host/src/mcp/tools-vault-write.ts`)
 rewrites every wikilink matching a name to a target you choose — `dry_run` first,
 `unresolved_only` to leave working links alone. One deliberate call, one decision. It **is a
 mutating operation** (queued, journaled) and the journal records what actually changed via an

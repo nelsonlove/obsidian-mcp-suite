@@ -10,10 +10,16 @@
 // against the actual diff rather than carrying it.
 
 import type { ActionDefinition } from "../action.js";
+// The id, version and DECLARED classes are a published contract since S3c: the
+// governance provider's write observer skips any write whose
+// `operation.action` is not this id, and checks the derived classes against
+// these declared ones. Two copies would let the host bump the version while the
+// provider quietly stopped proposing.
+import { NOTE_WRITE_ACTION } from "@vault-mcp/core";
 
 export const NOTE_WRITE_V1: ActionDefinition = {
-  id: "note.write",
-  version: 1,
+  id: NOTE_WRITE_ACTION.id,
+  version: NOTE_WRITE_ACTION.version,
   title: "Write a note",
   postcondition:
     "Replace the entire content of one visible Markdown note at a fixed path (creating it if absent), leaving every other note untouched.",
@@ -23,7 +29,7 @@ export const NOTE_WRITE_V1: ActionDefinition = {
   // Asserted content; PROVEN content by the class firewall at proposal build
   // time (classification rule 5: evaluated from the diff, never solely from
   // the declaration). Path changes are outside this contract by construction.
-  changeClasses: ["content"],
+  changeClasses: [...NOTE_WRITE_ACTION.changeClasses],
   observations: {
     // The write's RESULT envelope is plumbing — path and created flag — and
     // an ephemeral observation supports nothing (the registry refuses the

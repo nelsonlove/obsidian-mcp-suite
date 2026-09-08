@@ -1,4 +1,4 @@
-import { Plugin, FileSystemAdapter, Modal, Notice, TFile, type Component } from "obsidian";
+import { Plugin, FileSystemAdapter, Modal, Notice, type Component } from "obsidian";
 import * as fs from "node:fs";
 import { UnixSocketListener } from "./socket-transport.js";
 import { buildMcpServer } from "./mcp/server.js";
@@ -10,40 +10,17 @@ import { ConnectionSetupModal, VaultMcpSettingTab } from "./connection-ui.js";
 import { findClaudeBinary, claudeIsRegistered, claudeRegister, claudeRemove, claudeEnsureConnectPlugin } from "./claude-cli.js";
 import { ExternalToolRegistry, type VaultMcpApi } from "./mcp/external-tools.js";
 import { createGovernanceSeam, type GovernanceSeam } from "./mcp/seam.js";
-import type { ProviderToolRegistrar } from "./mcp/server.js";
-import { registerMandateTools } from "./mcp/tools-governance-mandate.js";
-import { isLive, livenessOf, DEFAULT_VOCABULARIES, type VocabInstanceSettings } from "@vault-mcp/core";
+import { DEFAULT_VOCABULARIES, splitSettings, type VocabInstanceSettings } from "@vault-mcp/core";
 import { Kernel, WriteQueue, WriteJournal, IdempotencyStore, LockStore, UidIndex, loadInstallId, migrateLegacyModuleIds, type ModuleSettings } from "./kernel/index.js";
-import { createSessionStore } from "./governor/kernel/sessions/session-store.js";
-import { createProposalStore } from "./governor/kernel/proposals/proposal-store.js";
-import { createProposalObserver } from "./governor/wiring/write-observer.js";
-import { buildAdmission, type AdmissionUiDeps } from "./governor/wiring/admission-wiring.js";
-import { buildMandateUi, type MandateUiDeps } from "./governor/wiring/mandate-wiring.js";
-import { createMandateStore } from "./governor/kernel/mandates/lifecycle.js";
-import { budgetBreach } from "./governor/kernel/mandates/budgets.js";
-import { governanceAcceptanceSettings } from "./governor/kernel/settings.js";
-import { buildPromotionUi, type PromotionUiDeps } from "./governor/wiring/promotion-wiring.js";
-import { createTransformationRegistry } from "./governor/kernel/transformations/transformation.js";
-import { createPromotionStore } from "./governor/kernel/transformations/promotion.js";
-import { createDefaultPredicateRegistry } from "./governor/kernel/verification/predicates.js";
-import { openGitRepository } from "./governor/wiring/history-store/git-repository.js";
-import { historyDir } from "./governor/wiring/history-store/local-data-root.js";
-import { uuidv7 } from "@vault-mcp/core";
-import { effectiveScope, isTracked } from "./governor/kernel/history-store/history-scope.js";
-import { proposalRef } from "./governor/kernel/history-store/refs.js";
-import { EXCLUDED_PREFIXES } from "@vault-mcp/core";
-import type { HistoryRepository } from "./governor/kernel/history-store/repository.js";
+import { createSessionLog } from "./kernel/sessions/session-log.js";
 import { obsidianProbe, obsidianServerIdentity, obsidianUidSource } from "./kernel/obsidian-probe.js";
 import { DEFAULT_SCHEMES, type SchemeInstanceConfig } from "./kernel/scheme/registry.js";
 import { DEFAULT_PROTECTED_PROPERTIES, setDeclaredProtectedProperties } from "@vault-mcp/core";
-import { wireGovernance, nudgeGovernanceQueue, setLegacyWriteGuard, baselinesOf } from "./governor/wiring/wiring.js";
-import { buildMigration, type Migration } from "./governor/wiring/migration-wiring.js";
 // Host-side since S2 (condition 9): the mount decision is generic, and the
-// HOST already uses it for the scheme panes below — a shared helper living in
-// the provider's subtree would have been one more thing S3 has to untangle.
+// HOST uses it for the scheme panes.
 import { mountAction } from "./mount-state.js";
 import { wireSchemePanes, registerSchemeCommands } from "./scheme/wiring.js";
-import { runFolderMigration, LEGACY_PLUGIN_ID } from "./id-migration.js";
+import { runHostAdoption, LEGACY_PLUGIN_ID, PLUGIN_ID } from "./id-migration.js";
 
 interface VaultMcpSettings {
   setupAcknowledged: boolean;
@@ -67,6 +44,14 @@ interface VaultMcpSettings {
    * Empty by default: an external tool's `readOnlyHint: true` is otherwise
    * treated as mutating (queued, journaled, allowlist-scoped, blocked in
    * read-only mode) — see mcp/external-tools.ts.
+   *
+   * SINCE THE HOST/PROVIDER SPLIT this list is also how an operator restores
+   * read-only-mode availability to the governance provider's three read tools
+   * (`obsidian_pending_review`, `governance_revisions`, `governance_mandates`),
+   * by listing `governor` here. It does NOT restore them under a path
+   * allowlist: the F3 gate blocks any external tool whose arguments carry no
+   * recognized path key, trusted or not, and that is the documented posture
+   * every satellite extraction has shipped.
    */
   trustedReadOnlyPlugins: string[];
   /**
@@ -79,6 +64,10 @@ interface VaultMcpSettings {
    * HARDCODED floor underneath — entries naming them are ignored loudly
    * (@vault-mcp/core normalizeProtectedProperties); this list can only EXTEND
    * the perimeter. Synced into the core guard registry on load and save.
+   *
+   * NOTE the floor is the HOST's, and stays the host's after the split: even a
+   * governance-less host refuses an agent stamping `accepted`. The provider
+   * adds review on top of that floor; it does not supply it.
    */
   protectedProperties: Array<{ key: string; grade: string }>;
   /**
@@ -111,10 +100,15 @@ interface VaultMcpSettings {
   schemes: SchemeInstanceConfig[];
   /**
    * The module host's per-module rows (`{ enabled?, config? }` keyed by
-   * module id — "scheme", "vocab"). An absent row means the module's default
-   * (both built-ins default enabled); `enabled: false` unmounts that module's
-   * whole tool surface on the next connection. See kernel/modules/ and
-   * mcp/modules-mount.ts.
+   * module id). An absent row means the module's default; `enabled: false`
+   * unmounts that module's whole tool surface on the next connection. See
+   * kernel/modules/ and mcp/modules-mount.ts.
+   *
+   * ONE built-in capability module remains after the host/provider split:
+   * `scheme`. The `acceptance` row travelled to the governance provider, which
+   * now owns the review pane's enabled flag and its config block in its own
+   * `data.json`. A surviving `modules.acceptance` row here is an unknown id —
+   * reported by the module host's skip-and-report, never mounted.
    */
   modules: ModuleSettings;
   /**
@@ -137,9 +131,11 @@ interface VaultMcpSettings {
    */
   enforceRecordImmutability: boolean;
   /**
-   * Capture the exact bytes Governor returns from a native read, so a reviewer can replay what an agent was actually shown.
+   * Capture the exact bytes the host returns from a native read, so a reviewer can replay what an agent was actually shown.
    *
-   * DEFAULT OFF, and it stays off until a human turns it on. Capturing note bodies writes vault content to `~/.claude/governor/observations/<vault>/` — outside the vault, outside Sync — and that is a privacy decision a plugin must not make on somebody's behalf by shipping it enabled.
+   * DEFAULT OFF, and it stays off until a human turns it on. Capturing note bodies writes vault content to `~/.claude/vault-mcp/observations/<vault>/` — outside the vault, outside Sync — and that is a privacy decision a plugin must not make on somebody's behalf by shipping it enabled.
+   *
+   * HOST-SIDE by ruling (suite-split condition 9, S3b): capture records what the host's own transport read, which is the same class of fact as the session scope digest the host already asserts about a connection. The provider reasons over observation REFERENCES and never sees the store.
    *
    * Only NATIVE actions are captured. The 123 derived contracts claim nothing about their observations, so turning this on does not suddenly start recording every tool in the product; today it means `obsidian_read_note` alone.
    */
@@ -148,14 +144,6 @@ interface VaultMcpSettings {
    * Ceiling on total captured bytes, per vault. A stopgap, and named as one: real retention does not exist yet, so without a cap the store grows forever. Capture stops and says why rather than filling the disk.
    */
   captureMaxBytes: number;
-  /**
-   * Local history recording (WP4, D10). DEFAULT OFF: Git retains historical bytes, and D10 makes turning that on a disclosed human choice, never a shipped default. Nothing consumes the repository until proposals (WP6) — the setting exists now so the scope is chosen before the first byte is recorded, not after.
-   */
-  historyEnabled: boolean;
-  /**
-   * The human-chosen history scope (D10) — SEPARATE from any connection allowlist, which can never widen or narrow it. whole-vault records everything minus exclusions; explicit records only the included roots. Exclusions always win, and the guarded territories are always appended at runtime regardless of what this stores.
-   */
-  historyScope: { mode: "whole-vault" | "explicit"; include: string[]; exclude: string[] };
   /**
    * The in-Obsidian dev tool-runner ("Vault MCP: Run tool…" — src/tool-runner.ts).
    * Default ON: it grants nothing the MCP surface doesn't already grant — it
@@ -167,23 +155,13 @@ interface VaultMcpSettings {
    */
   devToolRunner: boolean;
 }
-// WP6b-2: the admission UI-deps factory, keyed off the plugin instance in a
-// module-local WeakMap (the wiring.ts pattern) — NOT a plugin property, so
-// renderer JS walking `app.plugins` finds no admit-capable function (§9).
-const admissionFactories = new WeakMap<Plugin, () => AdmissionUiDeps>();
-// WP9: the mandate surface factory — same shape and reasoning as admission's.
-const mandateUiFactories = new WeakMap<Plugin, () => MandateUiDeps>();
-// WP10a: the promotion surface factory.
-const promotionUiFactories = new WeakMap<Plugin, () => PromotionUiDeps>();
-// WP8: per-plugin migration surface (import / cutover / rollback), built in onload.
-const migrations = new WeakMap<Plugin, Migration>();
+
 // The externally-published tool registry and the governance seam, both held in
-// module-private WeakMaps for the same reason the factories above are (§9,
-// suite-split condition 1): a `private` class field is compile-time privacy
-// only, so `app.plugins.plugins.governor.externalRegistry` handed renderer JS
-// every third-party handler — and would have handed it every REGISTERED HOOK
-// once the seam existed. A reachable write observer is a proposal factory
-// callable with forged facts, which is strictly more than the `app.vault`
+// module-private WeakMaps (§9, suite-split condition 1): a `private` class field
+// is compile-time privacy only, so `app.plugins.plugins['vault-mcp'].externalRegistry`
+// handed renderer JS every third-party handler — and would have handed it every
+// REGISTERED HOOK once the seam existed. A reachable write observer is a proposal
+// factory callable with forged facts, which is strictly more than the `app.vault`
 // equivalence covers: writing bytes through `app.vault` produces a loud queue
 // entry, while a forged proposal is quiet by design.
 //
@@ -227,14 +205,12 @@ const DEFAULT_SETTINGS: VaultMcpSettings = {
   devToolRunner: true,
   captureObservations: false,
   captureMaxBytes: 50 * 1024 * 1024,
-  historyEnabled: false,
-  historyScope: { mode: "whole-vault", include: [], exclude: [] },
 };
 
 class DiagnosticsModal extends Modal {
   constructor(app: any, private readonly lines: string[]) { super(app); }
   onOpen() {
-    this.titleEl.setText("governor diagnostics");
+    this.titleEl.setText("Vault MCP diagnostics");
     for (const l of this.lines) this.contentEl.createEl("p", { text: l });
   }
   onClose() { this.contentEl.empty(); }
@@ -244,26 +220,25 @@ export default class VaultMcpPlugin extends Plugin {
   private listener: UnixSocketListener | null = null;
   private slug = "";
   declare settings: VaultMcpSettings;
-  // The governance review pane's live-mount handle: the child Component wireGovernance registers
-  // its view/ribbon/events/interval on, or null when the pane is unmounted. Non-null ⇔ mounted, so
-  // it doubles as the idempotency state. `governanceReconcile` serializes mount/unmount so a rapid
+  /**
+   * Settings the host ADOPTED from the pre-split plugin's `data.json` but has
+   * not yet persisted. Held between `loadSettings` and the first save so the
+   * adoption is not lost if nothing ever calls `saveSettings`.
+   */
+  private adoptedSettings: Record<string, unknown> | null = null;
+  // Live-mount handle for the scheme Inbox + Drift panes (jd-dashboard fold
+  // Stages B/C, governor#286): one shared Component for both panes, since
+  // they're gated by the same "scheme" module toggle and always mount/unmount
+  // together. `schemePanesReconcile` serializes mount/unmount so a rapid
   // enable→disable can't interleave a half-finished mount with a teardown.
-  private governanceComponent: Component | null = null;
-  private governanceReconcile: Promise<void> = Promise.resolve();
-  // Same live-mount handle/serialization pattern as governance's, for the scheme Inbox + Drift
-  // panes (jd-dashboard fold Stages B/C, governor#286): one shared Component for both panes,
-  // since they're gated by the same "scheme" module toggle and always mount/unmount together.
   private schemePanesComponent: Component | null = null;
   private schemePanesReconcile: Promise<void> = Promise.resolve();
-  // Public plugin-to-plugin API: app.plugins.plugins['governor'].api (the
-  // property rides the plugin instance, so it moved with the 0.12.0 id
-  // migration automatically; the old 'vault-mcp' lookup finds nothing once
-  // the old plugin entry is removed — SDK consumers need a dual-id read).
+  // Public plugin-to-plugin API: app.plugins.plugins['vault-mcp'].api.
   //
-  // apiVersion stays 1 while the object GAINS the governance seam: the seam's
+  // apiVersion stays 1 while the object CARRIES the governance seam: the seam's
   // methods are additive, so every published `vault-mcp-api` build (which
   // refuses to register against an unexpected apiVersion) keeps working. What
-  // the object LOST is `unregisterTools(ownerPluginId)` — an id-addressed
+  // the object LOST at S2 is `unregisterTools(ownerPluginId)` — an id-addressed
   // revocation anyone holding this object could aim at anyone else's tools; the
   // disposer `registerTools` returns is now the only way to revoke, and it can
   // only revoke what its holder registered.
@@ -275,7 +250,12 @@ export default class VaultMcpPlugin extends Plugin {
   };
 
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const own = (await this.loadData()) as Record<string, unknown> | null;
+    // The one-shot adoption from the pre-split plugin's folder (see onload):
+    // used ONLY when this plugin has no data.json of its own, so a host that
+    // has ever saved settings never re-reads the provider's copy.
+    const seed = own ? null : this.adoptedSettings;
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, seed ?? {}, own ?? {});
     // A hand-edited/corrupt data.json must not silently DISABLE a guard: any
     // value that isn't an explicit `false` reads as enforced (same
     // fail-toward-the-safe-default discipline as the cliPolicy/protected-
@@ -287,29 +267,14 @@ export default class VaultMcpPlugin extends Plugin {
     if (typeof this.settings.captureMaxBytes !== "number" || this.settings.captureMaxBytes <= 0) {
       this.settings.captureMaxBytes = DEFAULT_SETTINGS.captureMaxBytes;
     }
-    // History fails toward NOT recording: only an explicit true enables, and a
-    // corrupt scope disables recording AND resets to explicit-with-nothing —
-    // the shape that records zero paths. The first draft reset to the
-    // whole-vault DEFAULT, which is the MOST-recording shape: a user whose
-    // explicit include list survived a corrupted mode field would silently
-    // have gone from "record Notes/" to "record everything".
-    this.settings.historyEnabled = this.settings.historyEnabled === true;
-    const hs = this.settings.historyScope;
-    if (
-      !hs ||
-      (hs.mode !== "whole-vault" && hs.mode !== "explicit") ||
-      !Array.isArray(hs.include) ||
-      !Array.isArray(hs.exclude) ||
-      ![...hs.include, ...hs.exclude].every((x) => typeof x === "string")
-    ) {
-      this.settings.historyScope = { mode: "explicit", include: [], exclude: [] };
-      this.settings.historyEnabled = false;
-    }
     // 0.12.0 module-id rename (`governance` → `acceptance`): adopt a legacy
     // `modules.governance` row under the new id when no `modules.acceptance`
     // row exists yet, dropping the old key so the next save persists the new
     // shape (one-time migrate-on-save; the row's live config rides across
-    // verbatim). Pinned by tests/settings-migration.test.mjs.
+    // verbatim). Kept after the host/provider split even though the host no
+    // longer MOUNTS an acceptance module: the row is what the PROVIDER reads
+    // out of this same file, and normalizing its id here is what keeps the
+    // provider from having to know about the 0.12.0 spelling too.
     this.settings.modules = migrateLegacyModuleIds(this.settings.modules);
     // Object.assign is shallow: a hand-edited data.json carrying a PARTIAL
     // cliPolicy (one list, not both) would leave the other undefined and
@@ -343,6 +308,8 @@ export default class VaultMcpPlugin extends Plugin {
   }
   async saveSettings() {
     await this.saveData(this.settings);
+    // Adoption is spent the moment the host owns a data.json of its own.
+    this.adoptedSettings = null;
     // Keep the core guard registry live with settings-tab edits (#224).
     setDeclaredProtectedProperties(this.settings.protectedProperties);
   }
@@ -355,7 +322,7 @@ export default class VaultMcpPlugin extends Plugin {
   async autoRegister(force = false): Promise<void> {
     const bin = findClaudeBinary();
     if (!bin) {
-      if (force) new Notice("governor: `claude` CLI not found. Use the manual command in settings.");
+      if (force) new Notice("Vault MCP: `claude` CLI not found. Use the manual command in settings.");
       else this.showFallbackOnce();
       return;
     }
@@ -363,18 +330,17 @@ export default class VaultMcpPlugin extends Plugin {
     try {
       if (await claudeIsRegistered(bin)) {
         // `claude mcp add` errors on a duplicate name, so never re-add.
-        if (force) new Notice("governor: already connected to Claude Code.");
+        if (force) new Notice("Vault MCP: already connected to Claude Code.");
         this.ensureConnectPlugin(bin, force);
         return;
       }
       await claudeRegister(bin, bridgeDestPath(), this.app.vault.getName());
       new Notice(
-        "governor: connected to Claude Code (server name 'governor'). Restart any open Claude Code session to use it. " +
-          "If this vault was registered under the old 'vault-mcp' name, remove that entry: claude mcp remove vault-mcp.",
+        "Vault MCP: connected to Claude Code (server name 'governor'). Restart any open Claude Code session to use it.",
       );
       this.ensureConnectPlugin(bin, force);
     } catch (e) {
-      new Notice(`governor: auto-register failed — ${(e as Error).message}. Use the manual command in settings.`);
+      new Notice(`Vault MCP: auto-register failed — ${(e as Error).message}. Use the manual command in settings.`);
       this.showFallbackOnce();
     }
   }
@@ -386,19 +352,19 @@ export default class VaultMcpPlugin extends Plugin {
   private ensureConnectPlugin(bin: string, force: boolean): void {
     void claudeEnsureConnectPlugin(bin)
       .then((r) => {
-        if (r === "installed") new Notice("governor: installed the vault-mcp-connect Claude Code plugin.");
-        else if (force) new Notice("governor: vault-mcp-connect plugin already installed.");
+        if (r === "installed") new Notice("Vault MCP: installed the vault-mcp-connect Claude Code plugin.");
+        else if (force) new Notice("Vault MCP: vault-mcp-connect plugin already installed.");
       })
       .catch((e: unknown) => {
-        console.error("governor: connect-plugin provisioning skipped —", e instanceof Error ? e.message : e);
+        console.error("[vault-mcp] connect-plugin provisioning skipped —", e instanceof Error ? e.message : e);
       });
   }
 
   async claudeRemoveRegistration(): Promise<void> {
     const bin = findClaudeBinary();
-    if (!bin) { new Notice("governor: `claude` CLI not found."); return; }
+    if (!bin) { new Notice("Vault MCP: `claude` CLI not found."); return; }
     await claudeRemove(bin);
-    new Notice("governor: removed Claude Code registration.");
+    new Notice("Vault MCP: removed Claude Code registration.");
   }
 
   private showFallbackOnce(): void {
@@ -448,62 +414,62 @@ export default class VaultMcpPlugin extends Plugin {
   }
 
   async onload() {
-    // 0.12.0 plugin-id migration (vault-mcp → governor, #266): adopt the OLD
-    // plugin folder's data (settings, journal, install-id, baselines,
-    // acceptance log, receipts) into this plugin's own dir BEFORE settings
-    // load and before the kernel opens the journal. Idempotent (marker /
-    // no-data.json / already-provisioned ⇒ skip), abort-don't-overwrite, and
-    // never fatal to the load — see src/id-migration.ts. The old folder is
-    // left in place (with a MIGRATED.md marker) for the human to remove after
-    // live verification.
+    // ── the host's one-shot adoption from the pre-split plugin folder ────────
+    //
+    // The suite split gave the host back the id `vault-mcp` and left the
+    // governance provider holding `governor` — and, with it, the folder both
+    // halves used to share. So the host COPIES three things out of
+    // `.obsidian/plugins/governor/`: the write journal, the install id, and the
+    // host-owned keys of `data.json`. It never moves and never deletes, and it
+    // never touches `governance/` — the authority state stays with the plugin
+    // that kept the id, which is the whole reason it kept it. See
+    // src/id-migration.ts for the plan, the copy discipline and the
+    // COPY-not-MOVE rollback argument.
     //
     // EVERY non-success outcome raises a STICKY Notice (`new Notice(msg, 0)`),
     // not just a console line. The reason is specific: when adoption does not
     // happen, `loadSettings()` below falls back to DEFAULT_SETTINGS — socket
-    // enabled, read-only OFF, allowlist EMPTY, acceptance module off — i.e.
-    // the guard config silently resets to OPEN, and the first `saveSettings()`
-    // writes a fresh data.json into the new dir, which permanently closes the
-    // one-shot adoption window (every later load then hits the "already has
-    // its own data.json" skip). A console.error nobody opens is not a signal
-    // for that.
-    const migrationPluginDir = this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
-    const migrationNotice = (msg: string) => {
-      console.error(`[governor] ${msg}`);
-      try { new Notice(`governor: ${msg}`, 0); } catch { /* pre-layout; the console line stands */ }
+    // enabled, read-only OFF, allowlist EMPTY — i.e. the guard config silently
+    // resets to OPEN, and the first `saveSettings()` writes a fresh data.json
+    // into the new dir, which permanently closes the one-shot adoption window
+    // (every later load then hits the "already provisioned" skip). A
+    // console.error nobody opens is not a signal for that.
+    const pluginDir = this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
+    const adoptionNotice = (msg: string) => {
+      console.error(`[vault-mcp] ${msg}`);
+      try { new Notice(`Vault MCP: ${msg}`, 0); } catch { /* pre-layout; the console line stands */ }
     };
     try {
-      const legacyDir = `${this.app.vault.configDir}/plugins/${LEGACY_PLUGIN_ID}`;
-      // Obsidian runs the old id and the new id as two DIFFERENT plugins, so
-      // both are live while community-plugins.json lists both. `enabledPlugins`
-      // is the right probe here (not the loaded-instance rule): it is populated
-      // at startup regardless of which of the two loaded first.
-      const legacyPluginEnabled =
-        ((this.app as any).plugins?.enabledPlugins as Set<string> | undefined)?.has(LEGACY_PLUGIN_ID) === true;
-      const result = await runFolderMigration(this.app.vault.adapter, legacyDir, migrationPluginDir, {
-        legacyPluginEnabled,
-      });
-      if (result.plan.action === "migrate") {
+      const sourceDir = `${this.app.vault.configDir}/plugins/${LEGACY_PLUGIN_ID}`;
+      const result = await runHostAdoption(this.app.vault.adapter, sourceDir, pluginDir);
+      if (result.plan.action === "adopt") {
         if (result.failedEntry) {
-          migrationNotice(
-            `data-folder migration INCOMPLETE — '${result.failedEntry}' failed to move; ` +
-              `moved so far: ${result.moved.join(", ") || "(none)"}. No marker written; ` +
-              `old folder left at ${legacyDir} — reconcile by hand before re-enabling. ` +
-              `Settings are running at DEFAULTS until this is resolved.`,
+          adoptionNotice(
+            `adoption from ${sourceDir} INCOMPLETE — '${result.failedEntry}' failed to copy; ` +
+              `copied so far: ${result.copied.join(", ") || "(none)"}. Nothing was moved or deleted, and ` +
+              `${sourceDir} is untouched. Settings are running at DEFAULTS until this is resolved.`,
           );
         } else {
-          console.log(`[governor] adopted legacy plugin data from ${legacyDir}: ${result.moved.join(", ")}`);
+          if (result.settingsJson) {
+            try {
+              this.adoptedSettings = splitSettings(JSON.parse(result.settingsJson)).host;
+            } catch (e) {
+              adoptionNotice(
+                `the '${LEGACY_PLUGIN_ID}' data.json could not be parsed, so NO settings were adopted and this ` +
+                  `host is running at DEFAULTS — socket enabled, read-only OFF, allowlist EMPTY. ${
+                    e instanceof Error ? e.message : String(e)
+                  }`,
+              );
+            }
+          }
+          console.log(`[vault-mcp] adopted from ${sourceDir}: ${[...result.copied, ...(this.adoptedSettings ? ["settings"] : [])].join(", ")}`);
         }
-      } else if (result.plan.action === "abort") {
-        migrationNotice(`data-folder migration ABORTED: ${result.plan.reason}`);
       } else if (result.plan.warn) {
-        // A non-routine skip: the old folder looks half-migrated. Escalated on
-        // EVERY load until a human resolves it — the stranded data here is the
-        // append-only journal, which no later run can reconstruct.
-        migrationNotice(`data-folder migration needs attention: ${result.plan.reason}`);
+        adoptionNotice(`adoption needs attention: ${result.plan.reason}`);
       }
     } catch (e) {
-      migrationNotice(
-        `data-folder migration FAILED — continuing with DEFAULT settings; the old folder is untouched. ${
+      adoptionNotice(
+        `adoption FAILED — continuing with DEFAULT settings; nothing was moved and the '${LEGACY_PLUGIN_ID}' folder is untouched. ${
           e instanceof Error ? e.message : String(e)
         }`,
       );
@@ -511,6 +477,11 @@ export default class VaultMcpPlugin extends Plugin {
 
     // Load settings FIRST so the enabled gate and guard settings are available.
     await this.loadSettings();
+    // Persist an adoption immediately rather than waiting for a settings edit:
+    // an adopted-but-unsaved allowlist would be lost on the next reload, and
+    // "the guard config silently reset to OPEN" is the failure this whole
+    // block exists to prevent.
+    if (this.adoptedSettings) await this.saveSettings();
 
     const vaultName = this.app.vault.getName();
     this.slug = vaultSlug(vaultName);
@@ -519,31 +490,31 @@ export default class VaultMcpPlugin extends Plugin {
     const adapter = this.app.vault.adapter;
     const basePath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : "";
 
-    // Write the build-time-embedded bridge into ~/.claude/governor/ (and a
-    // grace-period copy into the legacy ~/.claude/vault-mcp/ — see discovery.ts).
+    // Write the build-time-embedded bridge into ~/.claude/vault-mcp/ (and a
+    // grace-period copy into ~/.claude/governor/, where every registration
+    // made between 0.12.0 and the split still points — see discovery.ts).
     try { writeBridge(); }
-    catch (e) { console.error("[governor] writeBridge failed", e); }
+    catch (e) { console.error("[vault-mcp] writeBridge failed", e); }
 
     // Kernel v0 — ONE queue and ONE journal per plugin instance, shared by
     // every per-connection server built below. The journal lives beside the
-    // plugin's own data (`.obsidian/plugins/governor/journal/YYYY-MM.jsonl`),
+    // plugin's own data (`.obsidian/plugins/vault-mcp/journal/YYYY-MM.jsonl`),
     // out of the note tree so it can never be mistaken for vault content.
-    const pluginDir = this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
+    //
     // The identity substrate's uid index — one per plugin instance, like the
     // queue: it is a map of the vault, not of a connection.
     const uidIndex = new UidIndex(obsidianUidSource(this.app));
-    // #261: every journal append nudges the governance module's queue poll. Renderer timers
-    // are throttled/suspended by Chromium while the window is occluded, so the 2.5s poll
-    // interval does not tick during unattended sessions — exactly when agents write. The
-    // journal grows only through this kernel, so the append itself is the reliable
-    // "journal grew" event; the nudge is a no-op while governance is unmounted, and the
-    // signature/in-flight gates in pollJournal keep repeated nudges cheap.
-    //
-    // #272: the same append also nudges the WRITE QUEUE's wall-clock deadline check.
+    // #272: every journal append nudges the WRITE QUEUE's wall-clock deadline check.
     // Some journal records land without taking a queue slot (idempotent replays,
     // deduped waiters, key mismatches), so an append can happen while an operation
-    // is wedged mid-queue — one more timer-free event that abandons an overdue
+    // is wedged mid-queue — one timer-free event that abandons an overdue
     // operation instead of leaving it holding the queue in an occluded window.
+    //
+    // #261's second consumer — nudging the governance review queue's poll — left
+    // with the provider. The provider polls the journal DIRECTORY it is told to
+    // read and no longer needs the host to tell it the file grew; renderer timer
+    // throttling is a real problem, and it is now the provider's to solve on its
+    // own side rather than a hook the host holds for it.
     const writeQueue = new WriteQueue();
     const journal = new WriteJournal(this.app.vault.adapter, `${pluginDir}/journal`);
     // A cheap monotonic head marker for session base states (WP5): the count
@@ -560,7 +531,6 @@ export default class VaultMcpPlugin extends Plugin {
       void done.then(() => {
         journalAppends++;
         writeQueue.nudge();
-        nudgeGovernanceQueue(this);
       });
       return done;
     };
@@ -577,247 +547,30 @@ export default class VaultMcpPlugin extends Plugin {
     // The install id is a small file beside the journal (`install-id.json`), so
     // the identity that stamps every record lives with the records; it survives
     // restarts, and a failure to persist degrades to an ephemeral id rather than
-    // failing the load.
+    // failing the load. Adopted (copied) from the pre-split folder above, so the
+    // audit stream does not report a new install at the split.
     const { install } = await loadInstallId(this.app.vault.adapter, pluginDir);
     const serverIdentity = obsidianServerIdentity(this.app, install, this.manifest.version);
 
-    // ── the session store (WP5) ─────────────────────────────────────────────
+    // ── the session lifecycle log (WP5; host-owned since the split) ──────────
     //
-    // One durable append-only log beside the plugin's other evidence
-    // (`governance/sessions.jsonl`). Session records carry identifiers and
-    // digests, never note bodies, so — unlike observation payloads — they
-    // belong WITH the synced/backed-up evidence, and auditability wins.
-    const sessionsFile = `${pluginDir}/governance/sessions.jsonl`;
-    const sessionAdapter = this.app.vault.adapter;
+    // Condition 7 ruled the host mints and named what the host keeps:
+    // identifiers, scope digest, lifecycle. This is that record, append-only
+    // beside the journal. It is EVIDENCE, not a gate — no `get`, because
+    // reading it to decide whether a mutation may proceed is asking permission,
+    // and the host asks nobody. Expiry is the host's own pure floor; revocation
+    // is the provider's, answered through the seam.
+    //
     // Appends are serialized through one chain: the exists?append:write pair
     // is not atomic, and two concurrent connection opens on a fresh vault
     // could otherwise both take the `write` branch, silently losing one
-    // `opened` event. Same mutex shape the history store's CAS uses.
+    // `opened` event.
+    const sessionsFile = `${pluginDir}/sessions.jsonl`;
+    const sessionAdapter = this.app.vault.adapter;
     let sessionIoChain: Promise<unknown> = Promise.resolve();
-    // Proposals share the sessions' IO shape: append-only JSONL beside the
-    // acceptance log, serialized through its own chain. Identifiers and
-    // digests only — never note bodies (those live in the history store).
-    const proposalsFile = `${pluginDir}/governance/proposals.jsonl`;
-    let proposalIoChain: Promise<unknown> = Promise.resolve();
-    const proposalStore = createProposalStore({
+    const sessionLog = createSessionLog({
       appendLine: (line) => {
         const task = async () => {
-          const dir = `${pluginDir}/governance`;
-          if (!(await sessionAdapter.exists(dir))) await sessionAdapter.mkdir(dir);
-          if (await sessionAdapter.exists(proposalsFile)) await sessionAdapter.append(proposalsFile, line + "\n");
-          else await sessionAdapter.write(proposalsFile, line + "\n");
-        };
-        const next = proposalIoChain.then(task, task);
-        proposalIoChain = next.catch(() => undefined);
-        return next;
-      },
-      readLines: async () => {
-        if (!(await sessionAdapter.exists(proposalsFile))) return [];
-        const raw = await sessionAdapter.read(proposalsFile);
-        return raw.split("\n").filter(Boolean);
-      },
-    });
-
-    // The history repository, opened LAZILY on first recording: an idle vault
-    // with history off never touches the gitdir. One instance per plugin —
-    // the single-writer assumption the CAS mutex documents.
-    let historyRepoPromise: Promise<HistoryRepository> | null = null;
-    const lazyHistoryRepo = () =>
-      (historyRepoPromise ??= openGitRepository({
-        gitdir: historyDir(vaultSlug(vaultName)),
-        worktree: (this.app.vault.adapter as unknown as { basePath: string }).basePath,
-      }));
-
-    // The admission machinery factory (WP6b-2): claims IO, settlement append
-    // into the acceptance log, note IO, all closure-held. Built per mount by
-    // wireGovernance's call-site; the standing capability itself is
-    // constructed inside buildAdmission from the lazy history repo.
-    const claimsFile = `${pluginDir}/governance/admission-claims.jsonl`;
-    let claimIoChain: Promise<unknown> = Promise.resolve();
-    const claimIo = {
-      appendLine: (line: string) => {
-        const task = async () => {
-          const dir = `${pluginDir}/governance`;
-          if (!(await sessionAdapter.exists(dir))) await sessionAdapter.mkdir(dir);
-          if (await sessionAdapter.exists(claimsFile)) await sessionAdapter.append(claimsFile, line + "\n");
-          else await sessionAdapter.write(claimsFile, line + "\n");
-        };
-        const next = claimIoChain.then(task, task);
-        claimIoChain = next.catch(() => undefined);
-        return next;
-      },
-      readLines: async () => {
-        if (!(await sessionAdapter.exists(claimsFile))) return [];
-        return (await sessionAdapter.read(claimsFile)).split("\n").filter(Boolean);
-      },
-    };
-    const acceptanceLogFile = `${pluginDir}/governance/acceptance-log.jsonl`;
-
-    // WP8: the migration surface — legacy evidence import + the
-    // human-confirmed authority cutover. Built here (adapter-backed stores
-    // beside the other governance files, all in-vault and inside the
-    // obsidian-backup net), state loaded before the guard is set so the
-    // BaselineStore's live guard reflects the persisted flip from the first
-    // write after load.
-    const storeIdPath = `${historyDir(vaultSlug(vaultName))}/governor-store-id.json`;
-    const migration: Migration = buildMigration({
-      io: {
-        exists: (p) => sessionAdapter.exists(p),
-        read: (p) => sessionAdapter.read(p),
-        write: (p, d) => sessionAdapter.write(p, d),
-        append: (p, d) => sessionAdapter.append(p, d),
-        mkdir: (p) => sessionAdapter.mkdir(p),
-      },
-      paths: {
-        govDir: `${pluginDir}/governance`,
-        acceptanceLog: acceptanceLogFile,
-        pendingIndex: `${pluginDir}/governance/pending-index.json`,
-        baselinesDir: `${pluginDir}/governance/baselines`,
-        legacyEvidence: `${pluginDir}/governance/legacy-evidence.jsonl`,
-        cutoverState: `${pluginDir}/governance/cutover.json`,
-      },
-      baselines: () => baselinesOf(this),
-      now: () => Date.now(),
-      // The store-id lives INSIDE the machine-local history dir (node fs —
-      // outside the vault, outside the adapter): it rides the #337 chain
-      // backup and nothing else, which is the whole binding (store-binding.ts).
-      storeIdIo: {
-        read: async () => {
-          try {
-            // STATIC fs, not a dynamic import (live incident, 2026-08-23):
-            // a runtime import("node:fs/promises") goes through the
-            // renderer's module loader and is CORS-blocked
-            // (app://obsidian.md cannot fetch node: URLs) — the bind click
-            // failed live on exactly this line's sibling. The bundled
-            // static `node:fs` is the mechanism every other node API in
-            // this plugin already uses.
-            const raw = await fs.promises.readFile(storeIdPath, "utf8");
-            const parsed = JSON.parse(raw) as { storeId?: unknown };
-            return typeof parsed.storeId === "string" && parsed.storeId ? parsed.storeId : null;
-          } catch {
-            return null;
-          }
-        },
-        write: async (id) => {
-          await fs.promises.mkdir(historyDir(vaultSlug(vaultName)), { recursive: true });
-          await fs.promises.writeFile(storeIdPath, JSON.stringify({ storeId: id, mintedAt: new Date().toISOString() }, null, 2));
-        },
-      },
-      mintId: () => uuidv7(Date.now()),
-    });
-    migrations.set(this, migration);
-    // AWAITED, not fire-and-forget: until the persisted state is read,
-    // isCutOver() would answer from the default (not cut over), so on a
-    // vault that HAS cut over a legacy write could slip through the load
-    // window — and a swallowed load failure would leave two standing
-    // writers permanently (review finding). A loadState failure itself
-    // reads as corrupt inside the store and fails toward fewer writers.
-    await migration.loadState();
-    setLegacyWriteGuard(this, () => !migration.isCutOver());
-
-    // ── the transformation registry + promotion evidence store (WP10a) ──────
-    // The registry ships EMPTY: real transformations arrive by their own
-    // reviewed registrations (no legacy entry receives authority merely
-    // because it was previously allowlisted). Evidence accrues in
-    // `governance/promotion-evidence.jsonl`; the pane's promote/demote
-    // gestures decide on top of it.
-    // ONE predicate registry, shared by admission verification and the
-    // transformation registry — "the declared verifier is registered" and
-    // "admission can run it" stay one fact by construction.
-    const predicateRegistry = createDefaultPredicateRegistry();
-    const transformationRegistry = createTransformationRegistry(predicateRegistry);
-    const promotionFile = `${pluginDir}/governance/promotion-evidence.jsonl`;
-    let promotionIoChain: Promise<unknown> = Promise.resolve();
-    const promotionStore = createPromotionStore({
-      appendLine: (line) => {
-        const task = async () => {
-          const dir = `${pluginDir}/governance`;
-          if (!(await sessionAdapter.exists(dir))) await sessionAdapter.mkdir(dir);
-          if (await sessionAdapter.exists(promotionFile)) await sessionAdapter.append(promotionFile, line + "\n");
-          else await sessionAdapter.write(promotionFile, line + "\n");
-        };
-        const next = promotionIoChain.then(task, task);
-        promotionIoChain = next.catch(() => undefined);
-        return next;
-      },
-      readLines: async () => {
-        if (!(await sessionAdapter.exists(promotionFile))) return [];
-        const raw = await sessionAdapter.read(promotionFile);
-        return raw.split("\n").filter(Boolean);
-      },
-    });
-    promotionUiFactories.set(this, () =>
-      buildPromotionUi({
-        registry: transformationRegistry,
-        store: promotionStore,
-        principal: () => governanceAcceptanceSettings((this.settings.modules?.acceptance?.config ?? {}) as Record<string, unknown>).acceptedBy,
-      })
-    );
-
-    admissionFactories.set(this, () =>
-      buildAdmission({
-        repo: lazyHistoryRepo,
-        predicates: predicateRegistry,
-        promotion: {
-          transformationOf: (id, version) => transformationRegistry.get(id, version),
-          recordEvidence: (tuple, evidence, at) => promotionStore.recordEvidence(tuple, evidence, at),
-          verdictOf: (tuple) => promotionStore.verdictOf(tuple),
-        },
-        // WP10b: the mandate door's stores. The wiring's context resolver
-        // reads these; every failure refuses the automatic path, loudly.
-        mandates: {
-          get: (id) => mandateStore.getMandate(id),
-          usageOf: (id) => mandateStore.usageOf(id),
-          charge: (id, delta, at) => mandateStore.charge(id, delta, at),
-          markExhausted: (id, breach, at) => mandateStore.markExhausted(id, breach, at),
-        },
-        claimIo,
-        proposals: proposalStore,
-        readNoteBytes: async (path) => {
-          if (!(await sessionAdapter.exists(path))) return null;
-          return new TextEncoder().encode(await sessionAdapter.read(path));
-        },
-        writeNoteBytes: async (path, bytes) => {
-          // Through the VAULT API, not the raw adapter: vault.modify fires the
-          // modify event, so the written-back bytes surface through the
-          // ordinary review machinery (classifier → queue) instead of landing
-          // silently. A revert is a change like any other — D06.
-          const file = this.app.vault.getAbstractFileByPath(path);
-          const text = new TextDecoder().decode(bytes);
-          if (file instanceof TFile) await this.app.vault.modify(file, text);
-          else await this.app.vault.create(path, text);
-        },
-        appendSettlement: (record) => {
-          // Serialized like its sibling stores, and the exists?append:write
-          // pair kept inside the chain — which strictly orders settlement
-          // and claims appends against EACH OTHER. Honest bound (re-review):
-          // wiring.ts's appendLog writes the same file OFF this chain, so the
-          // first-ever-settlement vs first-ever-accept-record race on a
-          // not-yet-existing file is narrowed, not closed; both writers are
-          // human-gesture-paced, so the practical window is nil.
-          const task = async () => {
-            const line = JSON.stringify(record) + "\n";
-            if (await sessionAdapter.exists(acceptanceLogFile)) await sessionAdapter.append(acceptanceLogFile, line);
-            else await sessionAdapter.write(acceptanceLogFile, line);
-          };
-          const next = claimIoChain.then(task, task);
-          claimIoChain = next.catch(() => undefined);
-          return next;
-        },
-        refreshProjections: async () => nudgeGovernanceQueue(this),
-        bindingGate: async () => {
-          const verdict = await migration.binding();
-          if (verdict.state === "pre-cutover" || verdict.state === "bound") return { ok: true } as const;
-          return { ok: false as const, code: verdict.state === "marker-unbound" ? "marker_unbound" : "store_mismatch", detail: verdict.detail };
-        },
-      })
-    );
-
-    const sessionStore = createSessionStore({
-      appendLine: (line) => {
-        const task = async () => {
-          const dir = `${pluginDir}/governance`;
-          if (!(await sessionAdapter.exists(dir))) await sessionAdapter.mkdir(dir);
           if (await sessionAdapter.exists(sessionsFile)) await sessionAdapter.append(sessionsFile, line + "\n");
           else await sessionAdapter.write(sessionsFile, line + "\n");
         };
@@ -825,45 +578,7 @@ export default class VaultMcpPlugin extends Plugin {
         sessionIoChain = next.catch(() => undefined);
         return next;
       },
-      readLines: async () => {
-        if (!(await sessionAdapter.exists(sessionsFile))) return [];
-        const raw = await sessionAdapter.read(sessionsFile);
-        return raw.split("\n").filter(Boolean);
-      },
     });
-
-    // ── the mandate store (WP9) ─────────────────────────────────────────────
-    // Bounded-delegation records: drafts, grants, usage, transitions. Same
-    // shape and reasoning as sessions.jsonl — identifiers, terms, and digests,
-    // never note bodies; in-vault evidence inside the obsidian-backup net.
-    const mandatesFile = `${pluginDir}/governance/mandates.jsonl`;
-    let mandateIoChain: Promise<unknown> = Promise.resolve();
-    const mandateStore = createMandateStore({
-      appendLine: (line) => {
-        const task = async () => {
-          const dir = `${pluginDir}/governance`;
-          if (!(await sessionAdapter.exists(dir))) await sessionAdapter.mkdir(dir);
-          if (await sessionAdapter.exists(mandatesFile)) await sessionAdapter.append(mandatesFile, line + "\n");
-          else await sessionAdapter.write(mandatesFile, line + "\n");
-        };
-        const next = mandateIoChain.then(task, task);
-        mandateIoChain = next.catch(() => undefined);
-        return next;
-      },
-      readLines: async () => {
-        if (!(await sessionAdapter.exists(mandatesFile))) return [];
-        const raw = await sessionAdapter.read(mandatesFile);
-        return raw.split("\n").filter(Boolean);
-      },
-    });
-    mandateUiFactories.set(this, () =>
-      buildMandateUi({
-        store: mandateStore,
-        attachSessionMandate: (sessionId, mandateId, now) => sessionStore.attachMandate(sessionId, mandateId, now),
-        // The grant records the same configured human identity acceptance stamps.
-        principal: () => governanceAcceptanceSettings((this.settings.modules?.acceptance?.config ?? {}) as Record<string, unknown>).acceptedBy,
-      })
-    );
 
     const ctx = {
       pluginVersion: this.manifest.version,
@@ -882,164 +597,30 @@ export default class VaultMcpPlugin extends Plugin {
         cliPolicy: this.settings.cliPolicy,
         captureObservations: this.settings.captureObservations,
         captureMaxBytes: this.settings.captureMaxBytes,
-        historyEnabled: this.settings.historyEnabled,
-        historyScope: this.settings.historyScope,
       }),
       serverIdentity,
       sessions: {
         // LIFECYCLE ONLY (condition 7 — the host mints). `get` is deliberately
         // absent: reading the durable record to decide whether a queued
-        // mutation may proceed is asking PERMISSION, and that question now
-        // goes to the seam's session-refusal hook, which the provider answers
-        // from this same store (see the registration below).
-        open: (session: import("@vault-mcp/core").SessionV1, now: number) => sessionStore.open(session, now),
-        close: (sessionId: string, now: number) => sessionStore.close(sessionId, now),
-        markExpired: (sessionId: string, now: number) => sessionStore.markExpired(sessionId, now),
+        // mutation may proceed is asking PERMISSION, and that question goes to
+        // the seam's session-refusal hook, which a provider answers from its
+        // own revocation state.
+        open: (session: import("@vault-mcp/core").SessionV1, now: number) => sessionLog.open(session, now),
+        close: (sessionId: string, now: number) => sessionLog.close(sessionId, now),
+        markExpired: (sessionId: string, now: number) => sessionLog.markExpired(sessionId, now),
         replicaId: install,
         vaultId: vaultName,
         journalHead: () => journalHeadMarker(),
       },
       // The consultation half of the governance seam. The REGISTRATION half
       // rides `this.api`; this side is closure-held and reaches no further than
-      // the per-connection servers built below.
+      // the per-connection servers built below. With no provider installed
+      // every consultation is vacuous, which is the ordinary case, not a
+      // special one.
       seam: seamOf(this).consult,
       getExternalTools: () => externalRegistryOf(this).entries(),
       kernel,
     };
-
-    // ── the governance provider registers on the seam (suite split, S2) ──────
-    //
-    // In-tree the provider is compiled into this same artifact, so these two
-    // registrations look like ordinary wiring. That is exactly the point of S2:
-    // everything the host used to do FOR the provider now happens THROUGH the
-    // seam, in one artifact and at zero distribution risk, so S3 can move the
-    // provider into its own plugin by changing who calls these two lines and
-    // nothing else. Both disposers are handed to `this.register`, so a plugin
-    // unload revokes the hooks — a stale observer holding a dead provider's
-    // stores is worse than no observer.
-    const seam = seamOf(this).seam;
-
-    // WHAT CROSSES OUTWARD: the exact bytes of a completed write. The producer
-    // behind this hook is the WP6b-1 proposal machinery, verbatim, moved out of
-    // mcp/server.ts — see governor/wiring/write-observer.ts.
-    this.register(
-      seam.registerWriteObserver(
-        this.manifest.id,
-        createProposalObserver({
-          historyEnabled: () => this.settings.historyEnabled === true,
-          proposals: {
-            open: (proposal, now) => proposalStore.open(proposal, now),
-            uidOf: (path: string) => {
-              const uid = (this.app.metadataCache.getCache(path)?.frontmatter as Record<string, unknown> | undefined)?.uid;
-              return typeof uid === "string" && uid.length > 0 ? uid : null;
-            },
-            vaultId: vaultName,
-            // Record the proposal's base and proposed snapshots in the history
-            // store (WP4 consumed at last), returning the recording ref — the
-            // evidence admission-time verification replays base bytes from,
-            // because the write itself destroys them. Null when the path is
-            // outside the effective history scope: an untracked path is
-            // ungoverned by the new system, and the producer skips the proposal
-            // rather than opening a dead one.
-            record: async (proposalId: string, path: string, baseBytes: Uint8Array | null, proposedBytes: Uint8Array) => {
-              const scope = effectiveScope(this.settings.historyScope, EXCLUDED_PREFIXES);
-              if (!isTracked(scope, path)) return null;
-              const repo = await lazyHistoryRepo();
-              const ref = proposalRef(proposalId);
-              // Base first (recorded-missing for a creation), proposed chained
-              // on it — the ref chain IS the diff, and stock git can read both.
-              const base = await repo.recordSnapshot({
-                ref,
-                files: [{ path, bytes: baseBytes }],
-                message: `base for proposal ${proposalId}`,
-                timestamp: Math.floor(Date.now() / 1000),
-                expectedRef: null,
-              });
-              await repo.recordSnapshot({
-                ref,
-                files: [{ path, bytes: proposedBytes }],
-                message: `proposed for proposal ${proposalId}`,
-                timestamp: Math.floor(Date.now() / 1000),
-                expectedRef: base.oid,
-              });
-              return ref;
-            },
-          },
-          sessions: { get: (id: string) => sessionStore.get(id) },
-          mandates: {
-            getMandate: (id: string) => mandateStore.getMandate(id),
-            usageOf: (id: string) => mandateStore.usageOf(id),
-            // WP10b producer charge: usage recorded, then the breach observed
-            // into the durable `exhausted` transition — a spent budget STOPS
-            // (normal stop), it never silently keeps counting.
-            chargeAndObserve: async (id: string, delta: { items: number; proposals: number; bytes: number }) => {
-              const at = Date.now();
-              await mandateStore.charge(id, delta, at);
-              const m = await mandateStore.getMandate(id);
-              if (m && m.status === "active") {
-                const breach = budgetBreach(m.terms.budgets, await mandateStore.usageOf(id), m.activatedAt, at);
-                if (breach !== null) await mandateStore.markExhausted(id, breach.detail, at);
-              }
-            },
-          },
-        })
-      )
-    );
-
-    // WHAT CROSSES INWARD: a refusal, and only a refusal. Revocation is a human
-    // act in the review pane, landing in the provider's own session store — so
-    // the provider is what notices it, and the host learns only "refused, and
-    // here is the coded reason". The host's own TTL floor (mcp/server.ts) runs
-    // regardless, so a host with no provider still stops honouring an expired
-    // session.
-    //
-    // The catch is the PROVIDER's choice, not the seam's default: an
-    // unhandled throw from a refusal hook is treated as a refusal (fail
-    // closed), which is right for a hook that means to guard something. Here a
-    // store read that fails is the pre-S2 behaviour — degrade to the host's own
-    // expiry view rather than wedge every write in the vault behind a
-    // corrupted `sessions.jsonl`. Missing a revocation on a transient read
-    // error is what this code did before; refusing every write is not.
-    this.register(
-      seam.registerSessionRefusal(this.manifest.id, async (sessionId) => {
-        if (!sessionId) return null;
-        let record;
-        try {
-          record = await sessionStore.get(sessionId);
-        } catch (e) {
-          console.error("[governor] session store read failed; falling back to the host's expiry floor", e);
-          return null;
-        }
-        if (!record) return null; // a session the store never saw refuses nothing
-        const at = Date.now();
-        if (isLive(record, at)) return null;
-        return {
-          code: "session_not_live",
-          detail: `this connection's session (${sessionId}) is ${livenessOf(record, at)}; reconnect to open a new session`,
-        };
-      })
-    );
-
-    // ── the governance provider's TOOL contributions (suite split, S2) ───────
-    //
-    // Mandate negotiation is provider surface that happens to be an MCP tool.
-    // It arrives as a registrar closed over the provider's own store, rather
-    // than as a port on `ServerCtx`, so the host's per-connection context names
-    // no provider type. At S3 this array is what the provider publishes for
-    // itself through `vault-mcp-api`.
-    const providerTools: ProviderToolRegistrar[] = [
-      (server, connection) =>
-        registerMandateTools(server, {
-          draft: (d, now) => mandateStore.draft(d, now),
-          allDrafts: () => mandateStore.allDrafts(),
-          allMandates: () => mandateStore.allMandates(),
-          usageOf: (id) => mandateStore.usageOf(id),
-          sessionId: () => connection.sessionId(),
-          client: () => connection.clientLabel(),
-          now: () => Date.now(),
-          getSettings: () => ctx.getSettings(),
-        }),
-    ];
 
     // The uid index is kept fresh only while something can actually read it:
     // a live socket, or the dev tool-runner (which resolves uid: addressing
@@ -1052,8 +633,8 @@ export default class VaultMcpPlugin extends Plugin {
       // One MCP server per connection → concurrent Claude Code sessions and
       // background agents share the plugin without evicting each other.
       this.listener = new UnixSocketListener(sock, (transport, connOpts) => {
-        const server = buildMcpServer(this.app, ctx, { codeMode: connOpts.codeMode, providerTools });
-        server.connect(transport).catch((e) => console.error("[governor] connect failed", e));
+        const server = buildMcpServer(this.app, ctx, { codeMode: connOpts.codeMode });
+        server.connect(transport).catch((e) => console.error("[vault-mcp] connect failed", e));
       });
       await this.listener.listen();
 
@@ -1067,45 +648,22 @@ export default class VaultMcpPlugin extends Plugin {
         capabilities: ["preamble"],
       };
       writeDiscovery(this.slug, discovery);
-      console.log(`[governor] listening on ${sock}`);
+      console.log(`[vault-mcp] listening on ${sock}`);
     } else {
-      console.log("[governor] disabled in settings; socket not started");
+      console.log("[vault-mcp] disabled in settings; socket not started");
     }
 
     this.addSettingTab(new VaultMcpSettingTab(this.app, this));
-
-    // ── acceptance review pane (#83, cycle 2; module id `acceptance` since 0.12.0,
-    // historically `governance` — the src/governor/wiring/ dirs keep the old name) ────
-    // Mounted when the acceptance module is enabled (default OFF — the module default is
-    // `enabled: false`, so an absent settings row means off). This is the human-only Accept
-    // surface: an Obsidian review pane whose Accept / Revert / Adopt / auto-accept-allowlist
-    // controls are gesture-gated closures — NEVER a command, an MCP tool, or a method on this
-    // plugin instance. It is independent of the MCP socket (`settings.enabled`): a human can review
-    // even with the transport off. The read-only obsidian_pending_review MCP view is registered
-    // always-on in server.ts, separate from this toggle.
-    //
-    // The mount FOLLOWS the toggle LIVE: flipping the acceptance-enabled toggle in the settings tab
-    // mounts or unmounts the pane + gavel ribbon immediately, with NO plugin reload (see
-    // `setGovernanceMounted` and connection-ui.ts's per-module enable hook). Here at onload we mount
-    // it once if it starts enabled. See src/governor/wiring/.
-    if (this.settings.modules?.acceptance?.enabled === true) {
-      void this.setGovernanceMounted(true);
-    }
 
     // ── scheme Inbox + Drift panes (jd-dashboard fold, Stages B/C) ─────────────
     // Mounted on the scheme module's own enabled flag, matching its
     // default-true semantics elsewhere (modules-mount.ts:
     // `settings.modules?.scheme?.enabled === false` is the disabled check, so
     // an absent settings row means on) — both panes are meaningless without
-    // scheme addressing configured, the same reasoning the skills GUI used to
-    // ride its own module's toggle here before skills became its own plugin.
-    // LIVE mount/unmount (governor#286, fixed
-    // after #285/#287 shipped with the pre-#200 onload-only shape): flipping
+    // scheme addressing configured. LIVE mount/unmount (governor#286): flipping
     // the toggle in settings mounts or unmounts both panes immediately, no
-    // plugin reload, via `setSchemePanesMounted` below — same pattern as
-    // governance's pane, minus any accept-relevant state (there is none
-    // here; both panes are read-only). Neither pane forces a leaf open on
-    // its own — the ribbon icon / command opens it on demand.
+    // plugin reload, via `setSchemePanesMounted` below. Neither pane forces a
+    // leaf open on its own — the ribbon icon / command opens it on demand.
     if (this.settings.modules?.scheme?.enabled !== false) {
       void this.setSchemePanesMounted(true);
     }
@@ -1156,7 +714,6 @@ export default class VaultMcpPlugin extends Plugin {
               codeMode: true,
               clientLabel: "tool-runner",
               onRegistry: (r) => (registry = r),
-              providerTools,
             });
             return registry;
           });
@@ -1178,81 +735,42 @@ export default class VaultMcpPlugin extends Plugin {
           `Vault: ${this.app.vault.getName()}`,
           `Socket: ${socketPath(this.slug)}`,
           `Version: ${this.manifest.version}`,
+          `Governance provider: ${seamOf(this).consult.providerIds().join(", ") || "none registered"}`,
           ...integrations,
         ]).open();
       },
     });
 
-    // Signal publishers (vault-mcp-api SDK) that the api is (re-)available.
-    // Both events fire during the 0.12.0 id-migration grace period: `governor:ready`
-    // is the canonical event going forward; `vault-mcp:ready` is kept for any
-    // publisher built against the old id (the SDK needs a dual-id read or a
-    // major bump before the legacy event can be dropped).
-    this.app.workspace.trigger("governor:ready", this.api);
-    this.app.workspace.trigger("vault-mcp:ready", this.api);
+    // Signal publishers (vault-mcp-api SDK) and the governance provider that
+    // the api is (re-)available. `vault-mcp:ready` is canonical again — the id
+    // returned to `vault-mcp` at the split — and `governor:ready` keeps firing
+    // for anything built against the 0.12.0-era id. Both carry the same object;
+    // the SDK resolves the host by id and not by which event woke it.
+    this.app.workspace.trigger(`${PLUGIN_ID}:ready`, this.api);
+    this.app.workspace.trigger(`${LEGACY_PLUGIN_ID}:ready`, this.api);
   }
 
   /**
    * The settings tab calls this when a module's enable toggle flips (connection-ui.ts's per-module
-   * "Enabled" toggle). Acceptance and scheme are the two modules whose Obsidian surface mounts/
-   * unmounts LIVE from here, with no plugin reload — acceptance's review pane + gavel ribbon, and
-   * scheme's Inbox + Drift panes (governor#286). Every other module is tool-only: its MCP surface
-   * mounts per connection, so its toggle still takes effect on the next session connect (unchanged
-   * semantics) and there is nothing to mount or unmount in-app.
+   * "Enabled" toggle). `scheme` is the one module whose Obsidian surface mounts/unmounts LIVE from
+   * here, with no plugin reload — its Inbox + Drift panes (governor#286). Every other module is
+   * tool-only: its MCP surface mounts per connection, so its toggle takes effect on the next
+   * session connect and there is nothing to mount or unmount in-app.
+   *
+   * `acceptance` used to be handled here too. Its pane left with the governance provider at the
+   * host/provider split, and so did the toggle that mounts it: the provider's own settings tab
+   * owns that control now, over the provider's own `data.json`.
    */
   async onModuleEnabledChanged(moduleId: string, enabled: boolean): Promise<void> {
-    if (moduleId === "acceptance") await this.setGovernanceMounted(enabled);
     if (moduleId === "scheme") await this.setSchemePanesMounted(enabled);
   }
 
   /**
-   * Drive the governance pane's mount state to `enabled`, live, without a plugin reload. Idempotent
-   * (enabling when already mounted, or disabling when already unmounted, is a no-op) and serialized
-   * so a rapid enable→disable can't interleave a mount with a teardown. Mount runs the full
-   * wireGovernance registration (view + ribbon + events + poll interval, all on a child Component);
-   * unmount is `removeChild`, which runs every cleanup that Component registered — detaching open
-   * governance leaves (dropping the sole reference to the accept-capable controller), unregistering
-   * the view type, removing the ribbon, cancelling the interval, clearing the debounce timers, and
-   * flipping the disposed flag. The accept boundary is preserved across the cycle: mount/unmount
-   * changes only WHETHER the pane exists, never HOW its gesture-gated controls are reached.
-   */
-  async setGovernanceMounted(enabled: boolean): Promise<void> {
-    const next = this.governanceReconcile.then(() => this.applyGovernanceMount(enabled));
-    // Keep the chain alive even if one step rejected, so a later toggle still reconciles.
-    this.governanceReconcile = next.catch(() => {});
-    await next;
-  }
-
-  private async applyGovernanceMount(enabled: boolean): Promise<void> {
-    const action = mountAction(this.governanceComponent !== null, enabled);
-    if (action === "none") return; // already in the desired state — idempotent no-op
-    if (action === "mount") {
-      try {
-        this.governanceComponent = await wireGovernance(this, {
-          getConfig: () => (this.settings.modules?.acceptance?.config ?? {}) as Record<string, unknown>,
-          // Built fresh per mount, handed as an argument (§9: never a property).
-          admission: admissionFactories.get(this)?.(),
-          mandates: mandateUiFactories.get(this)?.(),
-          promotion: promotionUiFactories.get(this)?.(),
-          migration: migrations.get(this),
-        });
-      } catch (e) {
-        console.error("[governor] governance pane wiring failed", e);
-        this.governanceComponent = null;
-      }
-    } else {
-      this.removeChild(this.governanceComponent!);
-      this.governanceComponent = null;
-    }
-  }
-
-  /**
-   * Drive the scheme Inbox + Drift panes' mount state to `enabled`, live, without a plugin reload —
-   * same idempotent, serialized shape as `setGovernanceMounted` (governor#286). Mount runs
+   * Drive the scheme Inbox + Drift panes' mount state to `enabled`, live, without a plugin reload.
+   * Idempotent (enabling when already mounted, or disabling when already unmounted, is a no-op) and
+   * serialized so a rapid enable→disable can't interleave a mount with a teardown. Mount runs
    * `wireSchemePanes` (both views + both ribbons, on one shared child Component); unmount is
-   * `removeChild`, which detaches any open leaves and unregisters both view types. Neither pane
-   * carries acceptance-relevant state, so unlike governance's cycle there's nothing beyond
-   * existence for mount/unmount to change.
+   * `removeChild`, which detaches any open leaves and unregisters both view types.
    */
   async setSchemePanesMounted(enabled: boolean): Promise<void> {
     const next = this.schemePanesReconcile.then(() => this.applySchemePanesMount(enabled));
@@ -1269,7 +787,7 @@ export default class VaultMcpPlugin extends Plugin {
           getSchemes: () => this.settings.schemes ?? DEFAULT_SCHEMES,
         });
       } catch (e) {
-        console.error("[governor] scheme panes wiring failed", e);
+        console.error("[vault-mcp] scheme panes wiring failed", e);
         this.schemePanesComponent = null;
       }
     } else {

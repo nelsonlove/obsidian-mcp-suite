@@ -324,7 +324,7 @@ export function createOperationExecutor(opts: OperationExecutorOpts): OperationE
     try {
       opts.onClose?.(operation);
     } catch (e) {
-      console.error("[governor] operation sink failed", e);
+      console.error("[vault-mcp] operation sink failed", e);
     }
     return operation;
   }
@@ -470,7 +470,7 @@ export function createOperationExecutor(opts: OperationExecutorOpts): OperationE
           try {
             await opts.propose(operation, result, resolvedSources ?? opts.sourcesOf?.(request) ?? []);
           } catch (e) {
-            console.error("[governor] proposal production failed (the write itself stands)", e);
+            console.error("[vault-mcp] proposal production failed (the write itself stands)", e);
           }
         }
 

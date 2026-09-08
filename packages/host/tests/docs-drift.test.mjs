@@ -66,10 +66,22 @@ const RULES = [
     allowIf: /legacy|historical|before 0\.12|0\.12\.0|shim|migrat/,
   },
   {
-    id: "retired-path: ~/.claude/vault-mcp asserted as the canonical state dir",
-    pattern: /~\/\.claude\/vault-mcp/,
-    // Only grace-period / compat / legacy discussion may name the old dir.
-    allowIf: /legacy|grace|compat|historical|old |pre-0\.12/,
+    id: "retired-path: ~/.claude/governor asserted as the canonical state dir",
+    pattern: /~\/\.claude\/governor/,
+    // INVERTED at S3c (0.19.0). This rule guarded the 0.12.0 direction, when the
+    // host took the `governor` id and `~/.claude/vault-mcp` became the old dir.
+    // The split gives `governor` to the governance provider and returns the host
+    // to `vault-mcp`, so `~/.claude/vault-mcp` is the canonical state dir again
+    // (bridge, socket, discovery, observations/) and naming it needs no excuse.
+    // What now needs one is `~/.claude/governor`, which survives in exactly three
+    // shapes: the grace-period bridge + `legacy: true` discovery copy that keeps
+    // existing `claude mcp` registrations resolving, historical discussion of the
+    // 0.12–0.18 era, and — the reason `history` is in the allowIf — the provider's
+    // history repository at `~/.claude/governor/history/<vault-slug>/`, which does
+    // NOT move, because it belongs to the plugin that kept the id. That last case
+    // excuses itself on the path's own next segment, which is deliberate: it reads
+    // as documentation rather than as an escape hatch someone has to remember.
+    allowIf: /legacy|grace|compat|historical|history|old |pre-0\.12|pre-0\.19/,
   },
 ];
 
@@ -116,8 +128,8 @@ test("every rule detects its own violation class (self-check)", () => {
       "Assent names the broader framework the plugin realizes.",
     "retired-key: modules.governance settings key outside migration context":
       "the pane reads its config from `modules.governance.config`",
-    "retired-path: ~/.claude/vault-mcp asserted as the canonical state dir":
-      "the plugin listens on a per-vault socket in `~/.claude/vault-mcp/`",
+    "retired-path: ~/.claude/governor asserted as the canonical state dir":
+      "the plugin listens on a per-vault socket in `~/.claude/governor/`",
   };
   for (const rule of RULES) {
     const fixture = fixtures[rule.id];
@@ -197,7 +209,7 @@ test("annotated legacy contexts stay allowed for the 0.12.0 rename rules (no ove
 // deleting or adding a qualifier must trip the check, not slide past it.
 // ---------------------------------------------------------------------------
 
-const ALLOWLIST_PATH = join(REPO_ROOT, "packages", "plugin", "tests", "docs-invariant-claims-allowlist.md");
+const ALLOWLIST_PATH = join(REPO_ROOT, "packages", "host", "tests", "docs-invariant-claims-allowlist.md");
 
 // docs/vision-walkthrough.md (#154's bannered vision doc) was RETIRED by the 2026-08-23
 // documentation migration — its content is owned by getting-started.md and user-guide.md per

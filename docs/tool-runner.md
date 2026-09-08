@@ -3,13 +3,13 @@
 > **Deep reference for the shipped implementation.** Canonical concepts and the target design live in the [documentation corpus](README.md); what is shipped versus target is owned by [status-and-compatibility.md](status-and-compatibility.md).
 
 
-An in-Obsidian way to invoke the plugin's own tool surface by hand (#217): **one** palette
-command — registered as "Run tool…", shown in the palette prefixed with the plugin's
-display name ("Governor: Run tool…") — over the whole surface, not one command per tool — ~70 commands would spam the
+An in-Obsidian way to invoke the host's own tool surface by hand (#217): **one** palette
+command — registered as "Run tool…", shown in the palette prefixed with the host plugin's
+display name ("Vault MCP: Run tool…") — over the whole surface, not one command per tool — ~70 commands would spam the
 palette and, since Obsidian commands are agent-reachable via `obsidian_run_command`, would
 multiply the policy surface for zero gain.
 
-Files: `packages/plugin/src/tool-runner.ts` (the modal chain) and `src/tool-runner-core.ts`
+Files: `packages/host/src/tool-runner.ts` (the modal chain) and `src/tool-runner-core.ts`
 (the pure, headless-tested half: listing, zod-schema → form-field derivation, form parsing,
 the run/confirm rules); the command is registered in `main.ts` (`id: run-tool`).
 

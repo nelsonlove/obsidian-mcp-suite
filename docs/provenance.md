@@ -4,7 +4,7 @@
 
 
 The `vault-provenance` plugin (`packages/provenance`) is the fold of the standalone
-`obsidian-provenance` CLI. It was a capability module of the Governor host —
+`obsidian-provenance` CLI. It was a capability module of the host —
 `modules.provenance`, default off, declared mutating — until the suite split's
 mutating tier extracted it into its own Obsidian plugin, publishing its tools to
 the host through `vault-mcp-api`. Three tools:

@@ -15,8 +15,6 @@ import { registerSnippetTools, obsidianSnippetSource } from "./tools-snippets.js
 import { registerExternalTools, externalToolSnapshot } from "./external-tools.js";
 import { registerLockTools } from "./tools-locks.js";
 import { registerUidTools } from "./tools-uid.js";
-import { registerPendingReviewTools, obsidianPendingReviewSource } from "./tools-pending-review.js";
-import { registerGovernanceRevisionTool, registerGovernanceRevisionsListTool } from "./tools-governance-revision.js";
 import { registerLinkTools, obsidianLinkSource } from "./tools-links.js";
 import { registerConformanceDebtTools, registerConformanceDebtRenderTool } from "./tools-conformance-debt.js";
 import { obsidianDebtRenderSource } from "./obsidian-debt-source.js";
@@ -68,34 +66,19 @@ export interface BuildOpts {
    * never be mislabeled.
    */
   clientLabel?: string;
-  /**
-   * Tool registrars supplied by the governance PROVIDER, from the composition
-   * root (main.ts). They arrive as closures over the provider's own stores, so
-   * `ServerCtx` carries no provider port and names no provider type — which is
-   * S2's exit criterion, and the shape S3 replaces with the provider publishing
-   * those tools itself through `vault-mcp-api`.
-   *
-   * This is NOT a seam hook class (see mcp/seam.ts): contributing a tool is the
-   * apiVersion-1 `registerTools` capability, which confers nothing — every
-   * registration here still lands at the guard/queue/journal interception point
-   * above, exactly like a host registration.
-   */
-  providerTools?: ProviderToolRegistrar[];
 }
 
-/**
- * The per-CONNECTION facts a provider-supplied registrar cannot know from the
- * composition root, because they only exist once a connection does. Everything
- * else a provider tool needs (its stores, the settings) it closes over itself.
- */
-export interface ProviderToolContext {
-  /** This connection's session id, or null when no session machinery is wired. */
-  sessionId(): string | null;
-  /** The journal actor's client label, when the build supplied one. */
-  clientLabel(): string | null;
-}
-
-export type ProviderToolRegistrar = (server: McpServer, ctx: ProviderToolContext) => void;
+// `BuildOpts.providerTools` and its `ProviderToolContext` are GONE (S3c).
+//
+// S2 introduced them as the shape that got the mandate tools off `ServerCtx`:
+// registrars handed in by the composition root, closed over the provider's own
+// stores, so the host's per-connection context named no provider type. That was
+// S2's exit criterion and it held. S3c retires the shape itself, because the
+// composition root no longer has a provider to compose — the provider is a
+// separate plugin, and it contributes its tools the way every other plugin
+// does, through `registerTools` on the api object. One publishing path for
+// everybody is the point of the split; a second, privileged one for the
+// provider would be the standing this design is careful never to grant it.
 
 // Per-connection id for the journal's actor block. Monotonic within a plugin
 // load; the load-time epoch keeps ids from colliding across plugin reloads.
@@ -158,7 +141,7 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
       },
       Date.now()
     );
-    ctx.sessions.open(session, Date.now()).catch((e) => console.error("[governor] session open failed", e));
+    ctx.sessions.open(session, Date.now()).catch((e) => console.error("[vault-mcp] session open failed", e));
 
     // The session ends when the connection does. Protocol.onclose is the
     // SDK's own close callback, invoked when the transport closes; chaining
@@ -245,7 +228,7 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   // inventory's correctness is a BUILD property with its own test; re-deciding
   // it per connection would turn a build failure into a runtime outage.
   const actions = buildMcpActionRegistry(externalToolSnapshot(ctx));
-  for (const p of actions.problems) console.error("[governor] action registry:", p);
+  for (const p of actions.problems) console.error("[vault-mcp] action registry:", p);
   // ── observation capture (WP2) ───────────────────────────────────────────────
   //
   // DEFAULT OFF. `enabled` is read live, per call, so turning the setting on
@@ -449,91 +432,34 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   // Addressing by uid needs no tool of its own — `uid:<value>` binds at the
   // interception point above — so this is purely the lookup, in both directions.
   registerUidTools(server, ctx);
-  // ── pending human-review queue, read-only (slice B3b; #83; repointed #261) ──
-  // A READ of the index the governance module publishes at
-  // `<plugin dir>/governance/pending-index.json` (the stewardship standalone's
-  // path is dead since #164), so an agent can see what a human is about to
-  // review and avoid stepping on it. Allowlist-filtered like tools-uid.ts (no
-  // path oracle), and EXPLICITLY `published: false` — never silently empty —
-  // when the governance module is disabled or has never refreshed. Read-only by
-  // construction: it reports published review status; no accept/baseline verb.
+  // ── THE GOVERNANCE PROVIDER'S FIVE TOOLS ARE NOT REGISTERED HERE ──────────
   //
-  // ALWAYS-ON, decoupled from the governance module toggle (#83 cycle 2 fix).
-  // Cycle 1 mounted this THROUGH the governance module, which gated the only MCP
-  // read surface behind that module's default-off toggle — a regression. It is
-  // restored to an always-on read-only registration so the read surface stays
-  // available regardless of whether the (default-off) accept PANE is enabled.
-  // The governance module now gates ONLY the Obsidian review pane (wired in
-  // main.ts), and contributes ZERO tools to the MCP transport — the accept
-  // surface never touches the bridge. See modules-mount.ts's governance module.
-  registerPendingReviewTools(server, {
-    source: obsidianPendingReviewSource(app, ctx.pluginDir),
-    getSettings: () => ctx.getSettings(),
-  });
-  // ── the revision round-trip's ONE agent verb (#101, phase 1 of #221) ───────
-  // governance_submit_revision: a revising agent resubmits (revising → proposed,
-  // addressed [!revision-request] callouts removed, optional [!revision-report]
-  // inserted). An ORDINARY guarded mutating registration — it rides the patched
-  // registerTool above, so read-only mode, the path allowlist, the queue, the
-  // journal and the kernel args all bind at the standard interception point,
-  // and the accept-forbidden guard re-checks the write inside the handler.
-  // Always-on like obsidian_pending_review (it refuses on any non-revising
-  // note, so it is inert until a human marks one revising via the pane). The
-  // governance MODULE still contributes zero tools — this is a server.ts
-  // registration, the registerVaultWriteTools shape.
-  registerGovernanceRevisionTool(server, {
-    read: async (p) => {
-      const f = app.vault.getAbstractFileByPath(p);
-      return f instanceof TFile ? app.vault.read(f) : null;
-    },
-    write: async (p, content) => {
-      const f = app.vault.getAbstractFileByPath(p);
-      if (!(f instanceof TFile)) throw new Error(`not a note: ${p}`);
-      await app.vault.process(f, () => content);
-    },
-    now: () => new Date(),
-  });
-  // The read-side discovery listing beside it — same always-on rationale
-  // (read-only, confers nothing; a dispatcher's view of waiting revision work).
-  registerGovernanceRevisionsListTool(server, {
-    listNotes: async () =>
-      app.vault.getMarkdownFiles().map((f) => ({
-        path: f.path,
-        frontmatter: (app.metadataCache.getFileCache(f)?.frontmatter ?? null) as Record<string, unknown> | null,
-      })),
-    read: async (p) => {
-      const f = app.vault.getAbstractFileByPath(p);
-      return f instanceof TFile ? app.vault.read(f) : null;
-    },
-    getSettings: () => ctx.getSettings(),
-  });
-  // ── the governance provider's own tools ────────────────────────────────────
-  // Mandate negotiation (WP9) is the standing example: draft is MUTATING
-  // (read-only mode blocks negotiating authority; the queue and journal record
-  // the request) and the listing is read-only, and both are candidates-only —
-  // activation has NO tool, it is the pane's gesture-gated control.
+  // `obsidian_pending_review`, `governance_revisions`,
+  // `governance_submit_revision`, `governance_mandate_draft` and
+  // `governance_mandates` were hand-registered at this point until S3c. §6 of
+  // the split design always assigned them to the provider; they published from
+  // here only because that is where the tool tables lived.
   //
-  // They register through registrars the COMPOSITION ROOT supplies, not through
-  // a port on `ServerCtx`. That is S2's exit criterion made structural: the
-  // host's per-connection context named five provider types purely to carry the
-  // mandate store's verbs across, and a context that names provider types
-  // cannot be a host contract at S3. The registrars run through the patched
-  // `server.registerTool` above like everything else, so the guard, the queue,
-  // the journal and the kernel arguments bind unchanged.
-  const providerToolCtx: ProviderToolContext = {
-    sessionId: () => session?.id ?? null,
-    clientLabel: () => opts.clientLabel ?? null,
-  };
-  for (const contribute of opts.providerTools ?? []) {
-    try {
-      contribute(server, providerToolCtx);
-    } catch (e) {
-      // A degraded provider surface must not cost the connection — the module
-      // host's own convention, and the journal's.
-      console.error("[governor] provider tool registrar failed", e);
-    }
-  }
-  // ── capability modules: scope-provider + the rest ─────────────────────────
+  // They now arrive through `registerExternalTools` below, like every other
+  // plugin's tools — the same guard, the same queue, the same journal, the same
+  // kernel arguments. THEIR NAMES DID NOT CHANGE: the host's grandfather table
+  // (`external-tools.ts`) lets the `governor` publisher — and only it, and only
+  // for those five names — publish unprefixed, including past the F1
+  // `obsidian_*` refusal. Every other satellite paid the rename tax; these five
+  // were on the wire when the split happened, and renaming a shipped tool name
+  // breaks agent sessions for zero semantic gain.
+  //
+  // WHAT DID CHANGE, and it is a real cost: as external tools their read-only
+  // claims are distrusted unless an operator lists `governor` in
+  // `trustedReadOnlyPlugins`, and under an active path allowlist the F3 gate
+  // blocks any external tool whose arguments carry no recognized path key — so
+  // four of the five are refused wholesale while an allowlist is active, and
+  // only `governance_submit_revision` (which takes `path`) stays scoped
+  // per-path. They also lose their in-tool `isVisible` filtering, because a
+  // satellite cannot reach the host's guard settings. Stricter, fail-closed,
+  // and the same finding every extraction since S4 has recorded.
+  //
+  // ── capability modules: scope-provider ────────────────────────────────────
   // Ruled decision #2 realized: the capability modules register THROUGH
   // the ModuleRegistry — settings-toggleable (`modules.<id>.enabled`), behind
   // the accept/baseline tripwire, collision refusal, and the mount's
@@ -557,7 +483,7 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   // finding) lands loudly in the console rather than evaporating with the
   // discarded registry. console.error, not a throw — a degraded module
   // surface must not cost the connection (the journal's own convention).
-  for (const p of moduleRegistry.problems) console.error("[governor] module host:", p);
+  for (const p of moduleRegistry.problems) console.error("[vault-mcp] module host:", p);
   // ── link drift, reported not repaired (slice 2.2) ──────────────────────────
   // Read-only by construction: moves already heal their own links through
   // fileManager.renameFile, so this reports the drift that came from OUTSIDE.

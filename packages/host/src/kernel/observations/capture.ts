@@ -232,7 +232,7 @@ export function createCapture(opts: CaptureOpts): Capture {
       } catch (e) {
         // Never the caller's problem.
         const why = e instanceof Error ? e.message : String(e);
-        console.error("[governor] observation capture failed", e);
+        console.error("[vault-mcp] observation capture failed", e);
         return { observation: null, note: `capture failed: ${why}` };
       }
     },

@@ -112,14 +112,14 @@ export class ExternalToolRegistry {
 
   registerTools(ownerPluginId: string, tools: ExternalToolSpec[]): () => void {
     const owner = sanitizeOwnerId(ownerPluginId);
-    if (!owner) throw new TypeError(`governor: unusable owner plugin id '${ownerPluginId}'`);
+    if (!owner) throw new TypeError(`vault-mcp: unusable owner plugin id '${ownerPluginId}'`);
     // Validate everything before inserting anything — a mid-array failure
     // must not leave earlier specs registered with no disposer.
     for (const spec of tools) {
       if (!NAME_RE.test(spec.name))
-        throw new TypeError(`governor: invalid tool name '${spec.name}' (must match ${NAME_RE})`);
+        throw new TypeError(`vault-mcp: invalid tool name '${spec.name}' (must match ${NAME_RE})`);
       if (typeof spec.handler !== "function")
-        throw new TypeError(`governor: tool '${spec.name}' handler is not a function`);
+        throw new TypeError(`vault-mcp: tool '${spec.name}' handler is not a function`);
       const { toolName, grandfathered } = publishedToolName(ownerPluginId, spec.name);
       // F1: reject names that collide with the built-in obsidian_* namespace.
       // The ONE exception is the grandfather table above, which names both the
@@ -127,11 +127,11 @@ export class ExternalToolRegistry {
       // `obsidian_pending_review` survives the split under its shipped name and
       // nothing else gains a way into the reserved namespace.
       if (!grandfathered && toolName.startsWith("obsidian_"))
-        throw new TypeError(`governor: tool name '${toolName}' collides with the reserved obsidian_* namespace`);
+        throw new TypeError(`vault-mcp: tool name '${toolName}' collides with the reserved obsidian_* namespace`);
       // F4: reject cross-owner clobbering (same-owner replace is by design).
       const existing = this.byName.get(toolName);
       if (existing && existing.ownerId !== ownerPluginId)
-        throw new TypeError(`governor: tool '${toolName}' is already published by plugin '${existing.ownerId}'`);
+        throw new TypeError(`vault-mcp: tool '${toolName}' is already published by plugin '${existing.ownerId}'`);
       // F8: reject zod schemas and other non-JSON-Schema values.
       if (spec.inputSchema !== undefined) {
         const s = spec.inputSchema as unknown;
@@ -144,7 +144,7 @@ export class ExternalToolRegistry {
               (s as any).properties === null))
         ) {
           throw new TypeError(
-            `governor: tool '${spec.name}' inputSchema must be a plain JSON Schema object ({ type: "object", … }) — zod schemas must be converted before crossing the plugin boundary (use the vault-mcp-api SDK)`
+            `vault-mcp: tool '${spec.name}' inputSchema must be a plain JSON Schema object ({ type: "object", … }) — zod schemas must be converted before crossing the plugin boundary (use the vault-mcp-api SDK)`
           );
         }
       }
@@ -229,7 +229,7 @@ export function registerExternalTools(server: McpServer, app: App, ctx: ServerCt
     const isReadOnly = claimsReadOnly && trusted.has(ownerId);
     if (claimsReadOnly && !isReadOnly) {
       console.info(
-        `[governor] '${toolName}' declares readOnlyHint but '${ownerId}' is not in trustedReadOnlyPlugins; treating it as mutating`
+        `[vault-mcp] '${toolName}' declares readOnlyHint but '${ownerId}' is not in trustedReadOnlyPlugins; treating it as mutating`
       );
     }
     // F7: widen annotations passthrough — base from readOnlyHint, then overlay
@@ -298,7 +298,7 @@ export function registerExternalTools(server: McpServer, app: App, ctx: ServerCt
         }
       );
     } catch (e) {
-      console.error("[governor] skipping external tool", toolName, e);
+      console.error("[vault-mcp] skipping external tool", toolName, e);
     }
   }
 }

@@ -589,7 +589,7 @@ export class ObsidianBackend implements VaultBackend {
         created,
       });
     } catch (e) {
-      console.error("[governor] write-facts hook failed (observability only)", e);
+      console.error("[vault-mcp] write-facts hook failed (observability only)", e);
     }
   }
 
