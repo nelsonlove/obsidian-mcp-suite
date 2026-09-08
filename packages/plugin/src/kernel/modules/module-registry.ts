@@ -73,6 +73,18 @@ export interface ModuleDescription {
   tools: string[];
 }
 
+/**
+ * Module ids that left the host as satellite plugins (the suite split,
+ * S4–S8). A `modules.<id>` row for one of these is the satellite's
+ * PRESERVED ADOPTION SOURCE, not a typo — kept forever because satellites
+ * never write the host's settings. Grows only when a module is extracted;
+ * never remove an entry while any vault might still carry the row.
+ */
+export const EXTRACTED_MODULE_IDS: ReadonlySet<string> = new Set([
+  "skills", "triage", "crosssession", "vocab", "health", "bases",
+  "fileclass", "provenance", "jd-scaffold",
+]);
+
 export class ModuleRegistry {
   private readonly constructionProblems: string[] = [];
   /** Defects from the LAST registerAll — reset per call, like `contributed`,
@@ -112,11 +124,19 @@ export class ModuleRegistry {
       this.modules.push(m);
     }
     // Settings rows naming a module that does not exist are inert by
-    // construction; say so rather than leaving the row silently dead.
+    // construction; say so rather than leaving the row silently dead — UNLESS
+    // the id names an EXTRACTED module. Those rows are not typos: each
+    // satellite's one-shot settings adoption reads its old `modules.<id>`
+    // row from this data.json and, by design, never deletes it (the
+    // "never write the host" rule every satellite pins). So the rows stay
+    // forever, and warning about them — eight times per connection, on the
+    // operator's live console, the day after the extraction shipped — is the
+    // instrument crying wolf about state the design requires. The typo
+    // warning stays for every OTHER unknown id.
     for (const id of Object.keys(settings)) {
-      if (!modules.some((m) => m.id === id)) {
-        this.constructionProblems.push(`settings name unknown module '${id}' — ignored`);
-      }
+      if (modules.some((m) => m.id === id)) continue;
+      if (EXTRACTED_MODULE_IDS.has(id)) continue;
+      this.constructionProblems.push(`settings name unknown module '${id}' — ignored`);
     }
   }
 
