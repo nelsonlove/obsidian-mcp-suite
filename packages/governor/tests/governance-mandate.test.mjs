@@ -22,11 +22,11 @@ import {
   revokeMandate,
   supersedeMandate,
   termsInvalidReason,
-} from "../src/governor/kernel/mandates/mandate.ts";
-import { declineDraft, markDraftActivated, openDraft, supersedeDraft } from "../src/governor/kernel/mandates/draft.ts";
-import { budgetBreach, budgetsInvalidReason, chargeUsage, ZERO_USAGE } from "../src/governor/kernel/mandates/budgets.ts";
-import { mandateFitOf, pathWithin } from "../src/governor/kernel/mandates/policy.ts";
-import { createMandateStore, foldMandateEvents } from "../src/governor/kernel/mandates/lifecycle.ts";
+} from "../src/kernel/mandates/mandate.ts";
+import { declineDraft, markDraftActivated, openDraft, supersedeDraft } from "../src/kernel/mandates/draft.ts";
+import { budgetBreach, budgetsInvalidReason, chargeUsage, ZERO_USAGE } from "../src/kernel/mandates/budgets.ts";
+import { mandateFitOf, pathWithin } from "../src/kernel/mandates/policy.ts";
+import { createMandateStore, foldMandateEvents } from "../src/kernel/mandates/lifecycle.ts";
 
 const T0 = 1_700_000_000_000;
 const RAND_A = new Uint8Array(10).fill(1);
@@ -411,8 +411,8 @@ describe("the mandate store — append-only events, one fold", () => {
 
 // ── The UI wiring: buildMandateUi (governor/wiring/mandate-wiring.ts) ─────────────
 
-const { buildMandateUi } = await import("../src/governor/wiring/mandate-wiring.ts");
-const { createSessionStore } = await import("../src/governor/kernel/sessions/session-store.ts");
+const { buildMandateUi } = await import("../src/wiring/mandate-wiring.ts");
+const { createSessionStore } = await import("../src/kernel/sessions/session-store.ts");
 const { openSession } = await import("../src/kernel/sessions/session.ts");
 
 function wiredWorld() {
@@ -549,7 +549,7 @@ describe("session ⇄ mandate binding (session-store 'mandated' event)", () => {
 // allowlist gate and the no-session default were shipped untested — a
 // neutered scopeRefusal survived the full suite. These legs close that.) ────
 
-const { registerMandateTools } = await import("../src/mcp/tools-governance-mandate.ts");
+const { registerMandateTools } = await import("../src/tools/mandate.ts");
 
 function mountedTools({ sessionId = "sess-1", allowlist } = {}) {
   const tools = new Map();

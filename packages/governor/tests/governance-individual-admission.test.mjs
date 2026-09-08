@@ -16,15 +16,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { digestUtf8 } from "@vault-mcp/core";
-import { buildProposalSubjectFromOperation, ProposalDependencyError } from "../src/governor/kernel/proposals/proposal-builder.ts";
-import { openProposal, withVerification } from "../src/governor/kernel/proposals/proposal.ts";
-import { createProposalStore } from "../src/governor/kernel/proposals/proposal-store.ts";
-import { createPredicateRegistry, PredicateRegistryError } from "../src/governor/kernel/verification/registry.ts";
-import { verifySubject } from "../src/governor/kernel/verification/verify.ts";
-import { requireAdmissible, AdmissionRefusedError } from "../src/governor/kernel/admission/policy.ts";
-import { createAdmissionService } from "../src/governor/kernel/admission/service.ts";
-import { createClaimStore } from "../src/governor/kernel/admission/settlement.ts";
-import { RefCasError } from "../src/governor/kernel/history-store/types.ts";
+import { buildProposalSubjectFromOperation, ProposalDependencyError } from "../src/kernel/proposals/proposal-builder.ts";
+import { openProposal, withVerification } from "../src/kernel/proposals/proposal.ts";
+import { createProposalStore } from "../src/kernel/proposals/proposal-store.ts";
+import { createPredicateRegistry, PredicateRegistryError } from "../src/kernel/verification/registry.ts";
+import { verifySubject } from "../src/kernel/verification/verify.ts";
+import { requireAdmissible, AdmissionRefusedError } from "../src/kernel/admission/policy.ts";
+import { createAdmissionService } from "../src/kernel/admission/service.ts";
+import { createClaimStore } from "../src/kernel/admission/settlement.ts";
+import { RefCasError } from "../src/kernel/history-store/types.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const d = (t) => digestUtf8(t);
@@ -322,7 +322,7 @@ describe("proposal fold — a crafted opened event cannot skip the transition fu
     // event verbatim, so a crafted line with an already-admitted proposal
     // skipped withAdmitted entirely. The fold now refuses any opened event
     // not in the mint shape.
-    const { foldProposalEvents } = await import("../src/governor/kernel/proposals/proposal-store.ts");
+    const { foldProposalEvents } = await import("../src/kernel/proposals/proposal-store.ts");
     const subj = buildProposalSubjectFromOperation(subjectInput());
     const legit = openProposal({ subject: subj, sessionId: "s" }, T0, RAND(1));
     const crafted = { ...legit, authority: "admitted", verification: "unverified" };

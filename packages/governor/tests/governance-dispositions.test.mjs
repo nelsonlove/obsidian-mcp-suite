@@ -32,7 +32,7 @@ import {
   gestureGatedDispositions,
   acceptEffectFor,
   SUBMIT_REVISION_TOOL,
-} from "../src/governor/kernel/dispositions.ts";
+} from "../src/kernel/dispositions.ts";
 import { dispositionsForSurface, dispositionByIdIn, gestureGatedIn } from "@vault-mcp/core";
 
 const here = path.dirname(fileURLToPath(import.meta.url));

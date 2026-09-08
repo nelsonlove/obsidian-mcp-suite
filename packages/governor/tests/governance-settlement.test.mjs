@@ -16,12 +16,12 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
 import { digestUtf8 } from "@vault-mcp/core";
-import { buildProposalSubjectFromOperation } from "../src/governor/kernel/proposals/proposal-builder.ts";
-import { openProposal, withVerification } from "../src/governor/kernel/proposals/proposal.ts";
-import { createPredicateRegistry } from "../src/governor/kernel/verification/registry.ts";
-import { verifySubject } from "../src/governor/kernel/verification/verify.ts";
-import { createAdmissionService } from "../src/governor/kernel/admission/service.ts";
-import { buildAdmissionClaim, createClaimStore } from "../src/governor/kernel/admission/settlement.ts";
+import { buildProposalSubjectFromOperation } from "../src/kernel/proposals/proposal-builder.ts";
+import { openProposal, withVerification } from "../src/kernel/proposals/proposal.ts";
+import { createPredicateRegistry } from "../src/kernel/verification/registry.ts";
+import { verifySubject } from "../src/kernel/verification/verify.ts";
+import { createAdmissionService } from "../src/kernel/admission/service.ts";
+import { buildAdmissionClaim, createClaimStore } from "../src/kernel/admission/settlement.ts";
 
 const d = (t) => digestUtf8(t);
 const T0 = 1_700_000_000_000;

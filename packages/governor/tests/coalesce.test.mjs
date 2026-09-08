@@ -14,7 +14,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
-import { createCoalescer } from "../src/governor/kernel/coalesce.ts";
+import { createCoalescer } from "../src/kernel/coalesce.ts";
 
 /** A fake clock: setTimeout records, advance() fires what is due. */
 function fakeTimers() {
@@ -101,7 +101,7 @@ describe("createCoalescer — one pass per burst", () => {
 });
 
 describe("the wiring uses it — pinned at the source", () => {
-  const src = fs.readFileSync(new URL("../src/governor/wiring/wiring.ts", import.meta.url), "utf8");
+  const src = fs.readFileSync(new URL("../src/wiring/wiring.ts", import.meta.url), "utf8");
   // Comments explain the bug at length; strip them so the scan reads CODE.
   const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 

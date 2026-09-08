@@ -5,8 +5,8 @@
 // agent-supplied field can influence it.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { evaluate, evaluateRail, autoAcceptRecord } from "../src/governor/kernel/auto-accept/eligibility.ts";
-import { AUTHORIZED_CLASSES, DEFAULT_ALLOWLIST } from "../src/governor/kernel/auto-accept/classes.ts";
+import { evaluate, evaluateRail, autoAcceptRecord } from "../src/kernel/auto-accept/eligibility.ts";
+import { AUTHORIZED_CLASSES, DEFAULT_ALLOWLIST } from "../src/kernel/auto-accept/classes.ts";
 
 const UID = "019fea8c-2093-758a-8da2-e8dbcddda6b4";
 const ALL = [...DEFAULT_ALLOWLIST];

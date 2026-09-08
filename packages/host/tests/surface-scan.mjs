@@ -26,6 +26,27 @@
  * repo actually uses, and anything it cannot resolve is reported as an
  * `unresolved` entry rather than skipped. A silent skip is how a surface goes
  * missing from an inventory that still claims to be complete.
+ *
+ * ── ONE SCANNER, TWO PACKAGES (S3c) ─────────────────────────────────────────
+ *
+ * The four generic scans — `scanCommands`, `scanModuleScopeOnly`,
+ * `scanFunctionReaches`, `scanExports` — take an optional SOURCE ROOT,
+ * defaulting to this package's `src`. `packages/governor`'s authority-inventory
+ * test imports this same file and passes its own root, so the accept
+ * perimeter's export pinning and its zero-commands claim are checked by the
+ * identical instrument that checks the host's. The alternative was a second
+ * copy in the provider's tests, and a forked scanner is drift by construction:
+ * the copy that stops matching is the one nobody is looking at.
+ *
+ * `scanGovernanceCommands` is GONE, and its removal is the reason the
+ * parameter exists. It filtered `scanCommands()` for files under
+ * `src/governor/wiring/` — a prefix that left this package at S3c — so after
+ * the move it filtered a list that could never contain a match and returned
+ * `[]` for the wrong reason. The claim it backed ("the accept path registers no
+ * Obsidian command") is an EMPTINESS claim, which is exactly the kind that
+ * passes loudest when the instrument is broken. It is now made in the
+ * provider's test, over the provider's tree, with a planted command proving the
+ * scan can still see one.
  */
 
 import { readFile } from "node:fs/promises";
@@ -393,8 +414,8 @@ export async function scanUnknownRegistrationCallees() {
  * (`scheme/wiring.ts`) occur, so the id is matched within
  * the object literal rather than at a fixed offset.
  */
-export async function scanCommands() {
-  const files = (await tsFiles(PLUGIN_SRC)).map((f) => ({ ...f, rel: `src/${f.rel}` }));
+export async function scanCommands(root = PLUGIN_SRC) {
+  const files = (await tsFiles(root)).map((f) => ({ ...f, rel: `src/${f.rel}` }));
   const found = new Map();
   const re = /addCommand\(\s*\{[\s\S]{0,400}?\bid:\s*"([a-z][a-z0-9-]*)"/g;
   for (const f of files) {
@@ -407,27 +428,21 @@ export async function scanCommands() {
 }
 
 /**
- * Commands registered from anywhere under `src/governor/wiring/`.
- *
- * Expected to be EMPTY, permanently. This is the inverse of an inventory: the
- * assertion is that a whole class of surface does not exist, because
- * `obsidian_run_command` would make it agent-invocable.
- */
-export async function scanGovernanceCommands() {
-  const commands = await scanCommands();
-  return [...commands.values()].filter((c) => c.file.startsWith("src/governor/wiring/"));
-}
-
-/**
  * Check that named functions exist in a file and are NOT exported.
  *
  * Export is the difference between "a module-scope function only a closure can
  * call" and "a function reachable from any object that can import the module."
  * For the accept perimeter that difference is the whole reachability control,
  * so it is checked rather than trusted.
+ *
+ * `root` is the source root `relPath` is resolved against — this package's
+ * `src` by default, the provider's when the provider's test calls it. The
+ * perimeter this scan was written for lives in the provider now; the scan did
+ * not follow it, because one instrument checking both trees is what keeps the
+ * two from drifting apart.
  */
-export async function scanModuleScopeOnly(relPath, names) {
-  const text = await readFile(resolvePath(PLUGIN_SRC, relPath), "utf8");
+export async function scanModuleScopeOnly(relPath, names, root = PLUGIN_SRC) {
+  const text = await readFile(resolvePath(root, relPath), "utf8");
   const present = new Set();
   const exported = new Set();
   for (const name of names) {
@@ -473,16 +488,16 @@ export async function scanAutomationSites() {
  *
  * Bodies are delimited by this file's own style — a module-scope
  * `function name(` through the next `}` at column 0 — which holds throughout
- * `governor/wiring/wiring.ts`. A function whose body cannot be delimited is
- * reported as `null` rather than silently treated as not calling anything.
+ * the provider's `wiring/wiring.ts`. A function whose body cannot be delimited
+ * is reported as `null` rather than silently treated as not calling anything.
  *
  * `delegates` names indirect routes: `performAccept` does not call `appendLog`
  * itself, it calls `acceptNote`, which appends through its injected deps. Each
  * delegate is listed explicitly rather than followed automatically, because a
  * scanner that chases call graphs would quietly start guessing.
  */
-export async function scanFunctionReaches(relPath, fnNames, callees) {
-  const text = await readFile(resolvePath(PLUGIN_SRC, relPath), "utf8");
+export async function scanFunctionReaches(relPath, fnNames, callees, root = PLUGIN_SRC) {
+  const text = await readFile(resolvePath(root, relPath), "utf8");
   const out = new Map();
   for (const fn of fnNames) {
     const start = text.search(new RegExp(`^(?:export\\s+)?(?:async\\s+)?function\\s+${fn}\\s*\\(`, "m"));
@@ -503,8 +518,8 @@ export async function scanFunctionReaches(relPath, fnNames, callees) {
 }
 
 /** Every `export` from one file, so a NEW export is a visible decision. */
-export async function scanExports(relPath) {
-  const text = await readFile(resolvePath(PLUGIN_SRC, relPath), "utf8");
+export async function scanExports(relPath, root = PLUGIN_SRC) {
+  const text = await readFile(resolvePath(root, relPath), "utf8");
   const names = new Set();
   const re = /^export\s+(?:async\s+)?(?:function|const|let|class|interface|type)\s+([A-Za-z_$][\w$]*)/gm;
   let m;

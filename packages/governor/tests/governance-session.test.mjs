@@ -21,8 +21,8 @@ import {
   SessionNotLiveError,
   SESSION_TTL_MS,
 } from "../src/kernel/sessions/session.ts";
-import { createSessionStore, foldSessionEvents } from "../src/governor/kernel/sessions/session-store.ts";
-import { isUuidV7 } from "../src/governor/kernel/contracts/ids.ts";
+import { createSessionStore, foldSessionEvents } from "../src/kernel/sessions/session-store.ts";
+import { isUuidV7 } from "../src/kernel/contracts/ids.ts";
 
 const T0 = 1_700_000_000_000;
 const RAND = new Uint8Array(10).fill(3);

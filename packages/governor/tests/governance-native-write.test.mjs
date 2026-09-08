@@ -17,18 +17,18 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { NOTE_WRITE_V1 } from "../src/kernel/operations/actions/note-write.ts";
-import { deriveClasses, requireClassesCovered, ClassMismatchError, authorityKeysDiffer, frontmatterUid } from "../src/governor/kernel/proposals/class-firewall.ts";
-import { CONTENT_DIFF_V1, createDefaultPredicateRegistry } from "../src/governor/kernel/verification/predicates.ts";
-import { buildProposalSubjectFromOperation } from "../src/governor/kernel/proposals/proposal-builder.ts";
-import { openProposal } from "../src/governor/kernel/proposals/proposal.ts";
-import { createProposalStore } from "../src/governor/kernel/proposals/proposal-store.ts";
-import { verifySubject } from "../src/governor/kernel/verification/verify.ts";
+import { deriveClasses, requireClassesCovered, ClassMismatchError, authorityKeysDiffer, frontmatterUid } from "../src/kernel/proposals/class-firewall.ts";
+import { CONTENT_DIFF_V1, createDefaultPredicateRegistry } from "../src/kernel/verification/predicates.ts";
+import { buildProposalSubjectFromOperation } from "../src/kernel/proposals/proposal-builder.ts";
+import { openProposal } from "../src/kernel/proposals/proposal.ts";
+import { createProposalStore } from "../src/kernel/proposals/proposal-store.ts";
+import { verifySubject } from "../src/kernel/verification/verify.ts";
 import { digestBytes } from "@vault-mcp/core";
 import { createActionRegistry } from "../src/kernel/operations/registry.ts";
 import { createOperationExecutor } from "../src/kernel/operations/executor.ts";
 import { buildMcpActionRegistry } from "../src/kernel/operations/mcp-registry.ts";
 import { createGovernanceSeam, reportCompletedWrite } from "../src/mcp/seam.ts";
-import { createProposalObserver } from "../src/governor/wiring/write-observer.ts";
+import { createProposalObserver } from "../src/wiring/write-observer.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const enc = (s) => new TextEncoder().encode(s);

@@ -2,8 +2,8 @@
 // the per-note baseline blob store, now at src/governor/kernel/baseline-store.ts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { BaselineStore } from "../src/governor/kernel/baseline-store.ts";
-import { contentHash } from "../src/governor/kernel/hash.ts";
+import { BaselineStore } from "../src/kernel/baseline-store.ts";
+import { contentHash } from "../src/kernel/hash.ts";
 import { makeTmpFs } from "./governance-helpers.mjs";
 
 test("baseline store round-trips through a fresh load", async () => {

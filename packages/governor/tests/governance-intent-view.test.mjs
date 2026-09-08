@@ -8,7 +8,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { truncateIntent, renderIntent } from "../src/governor/kernel/intent-view.ts";
+import { truncateIntent, renderIntent } from "../src/kernel/intent-view.ts";
 
 // A minimal fake DOM element mirroring the two Obsidian HTMLElement helpers renderIntent uses.
 // Setting `text` on creation is the ONLY way this fake accepts content — there is no

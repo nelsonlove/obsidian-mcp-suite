@@ -51,7 +51,7 @@ Known-overstated section instead — see its header for the format.
 - Broader is fine; **narrower is the bypass.** The property is pinned by `tests/accept-fence-parity.test.mjs`, which asserts *write path would honor ⟹ guard refuses* across every tolerated fence variation, plus the normalization cases that motivated the second pass, plus the cost of the conservatism (prose between thematic breaks is refused — a chosen trade, pinned so it reads as a choice).
 - **A value** *asserts* acceptance if — across **every value-type it can take** — it resolves to `accepted` / `accepted-*`:
 - **Move is not a content write.** `obsidian_move_note` / `obsidian_move_notes` rename through `app.fileManager.renameFile` and never touch note content, so a move cannot introduce acceptance and carries no content guard — the guarantee holds by construction there rather than by an added check.
-- So the CLI path grows its **own** accept-forbidden check (`cliAcceptRefusal` in `packages/plugin/src/mcp/tools-cli.ts`), run **before the command executes**, reusing the exact same `acceptForbiddenReason` rule — no fork of "accepted." A CLI write is always an *introduce* (the CLI path has no expression for "carry an existing human value forward"), so the introduce check is exactly right.
+- So the CLI path grows its **own** accept-forbidden check (`cliAcceptRefusal` in `packages/host/src/mcp/tools-cli.ts`), run **before the command executes**, reusing the exact same `acceptForbiddenReason` rule — no fork of "accepted." A CLI write is always an *introduce* (the CLI path has no expression for "carry an existing human value forward"), so the introduce check is exactly right.
 - So the template guard **fails closed on expansion tokens** (#137, Option 2): a template whose resolved bytes carry *any* expansion token — a Templater `<%` opener **or** a core-Templates `{{ … }}` field — is **refused outright**, because its expanded output cannot be inspected before it lands (`templateExpansionRefusal` refuses on either opener as a substring, covering every Templater tag form and the whole core-Templates field class).
 - The pattern connecting every one of these: **the guard must inspect the bytes that will be honored.** Each residual is a place where something else — an escape expansion, a template processor, another plugin's config — produces the honored bytes after the guard has looked.
 - `history:restore` is deliberately not promoted to a dedicated tool: restoring a prior version can reinstate an accepted value a human revoked, and the restored bytes cannot be scanned pre-exec (#110) — it stays in the proxy's default-denied uninspectable-write set.
@@ -61,7 +61,7 @@ Known-overstated section instead — see its header for the format.
   source pins "history:restore" — and the command stays in cli-policy.ts's
   UNINSPECTABLE_WRITE_CLI_COMMANDS default-deny set, whose rationale (#110) this sentence
   restates.
-- **This does not touch the agent-side guarantee.** The stamp is an in-app, human-gesture-gated `processFrontMatter` call (`stampAcceptedFrontmatter`, module-scope and unexported in `governor/wiring/wiring.ts`, reachable only through the gesture-gated accept handler) — it **bypasses MCP entirely** and is exactly the human path the accept-forbidden guard reserves.
+- **This does not touch the agent-side guarantee.** The stamp is an in-app, human-gesture-gated `processFrontMatter` call (`stampAcceptedFrontmatter`, module-scope and unexported in `packages/governor/src/wiring/wiring.ts`, reachable only through the gesture-gated accept handler) — it **bypasses MCP entirely** and is exactly the human path the accept-forbidden guard reserves.
   substantiated 2026-08-18 (acceptance convergence, #221/#164): packages/core is diff-zero in
   that change; governance-module.test.mjs pins stampAcceptedFrontmatter as module-scope,
   unexported, with exactly one caller (acceptNote's injected stampAccepted dep on the
@@ -110,17 +110,16 @@ Known-overstated section instead — see its header for the format.
 
 - The guard monkeypatch (`server.ts`) already wraps every *mutating* registration in one `runMutation`, and the write queue is non-reentrant (a queued closure that enqueues again would deadlock behind itself).
 - **Stamping never writes acceptance.** It defaults `acceptance-status: proposed`, never mints or elevates to `accepted`, and preserves an existing on-disk `acceptance-status` **verbatim** (including a human-granted `accepted` — changing it would destroy the human's decision).
-- It is the third [kernel argument](kernel-v0.md#kernel-arguments) (`KERNEL_ARG_KEYS = ["if_rev", "idempotency_key", "intent"]`), declared on **every mutating registration** via `withKernelArgs` and **peeled by the guarded wrapper before any handler runs** (`packages/plugin/src/mcp/guarded.ts`).
-- **Journal-only.** It is recorded verbatim on the journal record beside `op`/`actor` (`JournalRecord.intent`, `packages/plugin/src/kernel/journal.ts`) and **never reaches note content** — it is peeled before the handler, so it structurally cannot be written into a note's frontmatter or body.
+- It is the third [kernel argument](kernel-v0.md#kernel-arguments) (`KERNEL_ARG_KEYS = ["if_rev", "idempotency_key", "intent"]`), declared on **every mutating registration** via `withKernelArgs` and **peeled by the guarded wrapper before any handler runs** (`packages/host/src/mcp/guarded.ts`).
+- **Journal-only.** It is recorded verbatim on the journal record beside `op`/`actor` (`JournalRecord.intent`, `packages/host/src/kernel/journal.ts`) and **never reaches note content** — it is peeled before the handler, so it structurally cannot be written into a note's frontmatter or body.
 - **Never an accept or idempotency signal.** It is **excluded from idempotency identity** — a retried call may reword its intent freely and still dedupe — and it is **never read back** as any kind of acceptance or approval signal.
 - **Batch-aware.** `obsidian_write_notes` accepts a batch-level `intent` describing the change-*set*; the guarded single-writer peels it per item, so **every** item's journal record carries it and the Acceptance pane's per-note rows each show it.
-- **It exposes data the governance module published — nothing more.** The folded governance module (`src/governor/wiring/wiring.ts`) rewrites a read-only index at `<plugin-dir>/governance/pending-index.json` — beside the acceptance log — on every review-queue refresh (`refresh()`, via the pure serializer in `governor/kernel/pending-index.ts`); this tool reads it.
-  approved 2026-08-19 (#261): substantiated by the publisher wired in `refresh()`
+- **It exposes data the governance provider published — nothing more.** The provider (`packages/governor/src/wiring/wiring.ts`) rewrites a read-only index at `<provider plugin dir>/governance/pending-index.json` — beside the acceptance log — on every review-queue refresh (`refresh()`, via the pure serializer in `packages/governor/src/kernel/pending-index.ts`); this tool reads it.
+  approved 2026-08-19 (#261), reworded at S3c (2026-09-08) for the package move — the claim is unchanged, only where the publisher lives: substantiated by the publisher wired in `refresh()`
   (wiring.ts writes `serializePendingIndex` bytes to `pendingIndexPath` on every queue
   recompute) and the pending-review round-trip tests; the retired stewardship path is dead
   since #164 and no longer read.
 - `readOnlyHint: true`, empty input schema, no write and no accept/baseline verb: it reports pending-ness; it cannot accept ("the accept verb is in no API").
-- **Allowlist-filtered.** The index is written from the whole vault, so every returned entry is filtered through the **same `isVisible` guard** the uid/read tools use, *before* it is reported — a sandboxed session that could learn about pending notes in territory it cannot read would have a path oracle otherwise.
 
 ## docs/suite-split-design.md (PROPOSAL — see the doc's status banner)
 
@@ -167,7 +166,7 @@ Known-overstated section instead — see its header for the format.
 The S6 execution note's guard-argument finding. Substantiated by the same
 evidence as the corresponding `docs/crosssession.md` claims below: the
 `to_address` / `displace_to_address` precedent is recorded in
-`packages/plugin/CLAUDE.md`'s scheme-module bullet (an active allowlist
+`packages/host/CLAUDE.md`'s scheme-module bullet (an active allowlist
 checked the address string as if it were a path), `src/guard.ts`'s
 `collectPaths` + `isVisible` are what would do the prefix-matching, and
 `packages/crosssession/tests/crosssession-module.test.mjs`'s publication block
@@ -183,6 +182,43 @@ argument.
 
 - Scheme addressing (`jd:<address>`) is wired into the host's guard interception point (`mcp/guarded.ts`) exactly like `uid:` addressing — every path argument of every tool, host or external, can carry a scheme ref, and the resolution must run before the allowlist checks the resolved path.
   approved 2026-09-07: substantiated by shipped code and its pins — `resolveSchemeArgs` binds in `makeGuarded` immediately after uid resolution and before `guardCall` (guarded.ts), which is the CLAUDE.md-documented design ("Resolution runs before the guard so the allowlist checks the RESOLVED path"), exercised by the scheme-addressing suites. The sentence is the RATIONALE for ruling scheme host-side, describing the existing wiring; it asserts no new behavior.
+
+## docs/suite-split-design.md (host/governor split, S3c)
+
+Three spans from the S3c execution record, all statements about code that
+exists in this tree rather than about a target state.
+
+Substantiation, in order. **The seam has no veto.** `registerWriteVeto` was
+specced in §5, retriaged as condition 8 ("YAGNI at a perimeter"), and never
+built: `packages/host/src/mcp/seam.ts` declares exactly two registrars
+(`registerWriteObserver`, `registerSessionRefusal`), and
+`packages/host/CLAUDE.md`'s seam bullet records the search for a real
+registrant that came back empty — the fuller transition rule is
+`acceptTransitionReason` in `@vault-mcp/core` (host-side) and the
+legacy-writer guard is a provider-internal `BaselineStore` predicate off the
+MCP write path. The span asserts an absence, and the absence is enumerable.
+
+**The four reads lose their in-tool filtering.** The publishing contract
+carries no caller scope — that is the standing apiVersion-2 item this file's
+S7 and mutating-tier sections already track from the other side — so a
+published tool cannot read `GuardSettings` from the host. What replaces the
+filter is `external-tools.ts`'s F3 branch, which refuses the whole call when
+an allowlist is active and `collectPaths(args)` is empty; four of the five
+published tools carry no `PATH_KEYS` argument. The span says the filtering is
+lost and names what replaces it, which is the honest form of the same finding
+S4–S8 recorded.
+
+**The journal is adopted by copy.** The host's first-load adoption copies
+`journal/`, `install-id.json` and its own `data.json` keys out of the
+provider's plugin folder and deletes nothing; the provider's folder and its
+`governance/` tree are not touched. The reason is stated in the span itself
+and is a correctness argument, not a safety claim: an append-only record must
+not be in flight during a folder rename, and a half-completed adoption has to
+leave the single-artifact rollback intact.
+
+- Note the draft said the provider "registers the fuller transition veto" — it does not, because `registerWriteVeto` was never built (condition 8's YAGNI-at-a-perimeter ruling); the fuller guard is host-side in `@vault-mcp/core` and the legacy-writer guard is provider-internal |
+- The four also lose their in-tool visibility filtering, because a satellite cannot reach the host's guard settings; what replaces it is the host's gate refusing the whole call rather than trimming the answer.
+- **Fourth, the journal is ADOPTED BY COPY, never by move.** The provider keeps `.obsidian/plugins/governor/` and everything under `governance/` — zero moves for the authority state, which is the whole reason the provider took the old id rather than the host.
 
 ## docs/acceptance-model.md (WP10c retirement)
 
@@ -223,14 +259,14 @@ argument.
 
 ## docs/identity-and-links.md
 
-- It binds at the **same single interception point** as the accept guard and the write queue (`packages/plugin/src/mcp/guarded.ts`), so handlers never see a uid reference — they get the resolved path.
+- It binds at the **same single interception point** as the accept guard and the write queue (`packages/host/src/mcp/guarded.ts`), so handlers never see a uid reference — they get the resolved path.
 
 ## docs/kernel-v0.md
 
-- Every mutating operation appends **one JSONL line** to `.obsidian/plugins/governor/journal/YYYY-MM.jsonl` (rolled monthly, inside the plugin's own folder, not the note tree).
+- Every mutating operation appends **one JSONL line** to `.obsidian/plugins/vault-mcp/journal/YYYY-MM.jsonl` (rolled monthly, inside the host's own plugin folder, not the note tree).
 - A failed journal write is logged to console and dropped; it never fails the vault operation.
 - Claiming and releasing are treated as **mutating** (journaled with `target.ref = scope:<prefix>` / `lock:<id>`), so **read-only mode blocks claiming and releasing** — there is nothing for a claim to disclose in a session that cannot write.
-- They are declared generically on **every mutating registration** (`withKernelArgs` in `packages/plugin/src/mcp/guarded.ts`) and consumed generically (stripped from args and passed to `Kernel.runMutation`).
+- They are declared generically on **every mutating registration** (`withKernelArgs` in `packages/host/src/mcp/guarded.ts`) and consumed generically (stripped from args and passed to `Kernel.runMutation`).
 
 ## docs/module-system.md (formerly docs/modules.md — renamed 2026-08-23; spans match by text, headings are organizational)
 
@@ -238,10 +274,10 @@ argument.
 
 ## docs/reference.md
 
-- Every mutating operation also appends **one JSONL line** to `.obsidian/plugins/governor/journal/YYYY-MM.jsonl` (rolled monthly, inside the plugin's own folder rather than the note tree):
+- Every mutating operation also appends **one JSONL line** to `.obsidian/plugins/vault-mcp/journal/YYYY-MM.jsonl` (rolled monthly, inside the host's own folder rather than the note tree):
 - If a journal write fails it is logged to the console and dropped; it never fails the vault operation.
-- Safety guards that apply: read-only mode always applies (mutating external tools are blocked when read-only is on); the path allowlist scopes arguments under recognized path keys (path, from, to, paths, and a few others) — when an allowlist is active, mutating external tools whose args carry no recognized path key are blocked outright, since Governor cannot scope the call.
-- `readOnly: true` on a published tool is an assertion by a third-party plugin about code Governor cannot inspect — and believing it exempts that tool from the write queue, the journal, the path allowlist, the kernel arguments, and read-only mode, all at once.
+- Safety guards that apply: read-only mode always applies (mutating external tools are blocked when read-only is on); the path allowlist scopes arguments under recognized path keys (path, from, to, paths, and a few others) — when an allowlist is active, mutating external tools whose args carry no recognized path key are blocked outright, since the host cannot scope the call.
+- `readOnly: true` on a published tool is an assertion by a third-party plugin about code the host cannot inspect — and believing it exempts that tool from the write queue, the journal, the path allowlist, the kernel arguments, and read-only mode, all at once.
 
 ## docs/reference.md (#264 record immutability)
 
@@ -319,7 +355,7 @@ against the implementation at approval time:
    runs each through core's `isVisible`, which normalizes and prefix-matches at
    a segment boundary. A uid string has no allowlisted prefix, so it would
    refuse `out_of_allowlist`. The named precedent is real and is recorded in
-   `packages/plugin/CLAUDE.md`'s scheme-module bullet: `to`/`displace_to` were
+   `packages/host/CLAUDE.md`'s scheme-module bullet: `to`/`displace_to` were
    renamed to `to_address`/`displace_to_address` precisely because an active
    allowlist checked the ADDRESS STRING as if it were a path. The claim is a
    counterfactual about a rename that was NOT made, which is why it is stated
@@ -405,7 +441,7 @@ boundary is the HOST's rather than the satellite's, and that the host's gate
 decides per call from the arguments the call actually carries.
 
 Substantiated, and deliberately NARROW. The mechanism is
-`packages/plugin/src/mcp/external-tools.ts`'s F3 branch, which reads
+`packages/host/src/mcp/external-tools.ts`'s F3 branch, which reads
 `if (settings.allowlist.length > 0 && collectPaths(args ?? {}).length === 0)`
 — evaluated inside the registered handler, on the ARGUMENTS object, not on the
 declared schema. So "the arguments a call actually carries" is the literal
@@ -441,7 +477,7 @@ pending the operator's review like every other span in this file.
 
 
 - For provenance and JD scaffolding it is strictly stricter than the module was, and that is the point: keeping `path` would have handed the guard one argument while the work reached further — provenance's freshness answer names every path the checked note's `derived-from` globs resolve to, JD promote-to-folder writes to destinations the plan COMPUTES and no argument names, and JD reindex reads every sibling index file vault-wide at the area and system tiers.
-  approved at the mutating-tier extraction: every clause is a statement about ARGUMENT NAMES and about code that moved in this same change, and each half is pinned on the side that owns it. "Strictly stricter" is the host's F3 gate (`packages/plugin/src/mcp/external-tools.ts`) applied to specs that carry no key in `collectPaths`' list. The three blast-radius clauses describe the code as extracted: provenance's check returns a resolved `sources` list, JD promote-to-folder computes `folderPath`/`newFilePath` from the note path, and JD reindex fetches every `isIndexFilePath` sibling at the area/system tiers. It is a claim about what the boundary now refuses, not a claim that anything is unreachable.
+  approved at the mutating-tier extraction: every clause is a statement about ARGUMENT NAMES and about code that moved in this same change, and each half is pinned on the side that owns it. "Strictly stricter" is the host's F3 gate (`packages/host/src/mcp/external-tools.ts`) applied to specs that carry no key in `collectPaths`' list. The three blast-radius clauses describe the code as extracted: provenance's check returns a resolved `sources` list, JD promote-to-folder computes `folderPath`/`newFilePath` from the note path, and JD reindex fetches every `isIndexFilePath` sibling at the area/system tiers. It is a claim about what the boundary now refuses, not a claim that anything is unreachable.
   NOTE UPDATED 2026-09-07 (mutating-tier rounds 1 and 2): the sentence is a COUNTERFACTUAL — what keeping `path` would have done — and all three blast-radius clauses are still exactly true of the code, so the span stands. Its framing ("strictly stricter … keeping `path` would have handed the guard one argument") no longer describes the whole tier, and the paragraph it sits in now ends with a dated bracket that says which surfaces ship refused and which ship scoped. Concretely: provenance's `check` IS pathless as this sentence assumes (argument `note`), so its clause holds unchanged; JD promote-to-folder and JD reindex are now path-keyed (`note_path`) and scoped per-path, so for those two the guard really was handed one argument while the work reaches further — a state accepted on the record rather than avoided, with reindex's vault-wide sibling read named as the ratified residual. **The old note's claim that this is "pinned by each satellite's `publication` test ('NOT ONE argument is a host path key')" is NO LONGER TRUE and has been removed**: those tests now pin which arguments are keys, per tool.
 
 ## docs/suite-split-design.md (mutating-tier rounds 1 and 2, 2026-09-07)
@@ -535,7 +571,7 @@ anchor for every target-state claim is docs/status-and-compatibility.md
   tracked by: substantiated as of 0.17.0 — WP7 exact-and-total coverage pins (a failed or unevaluated item fails the cohort; sampling has no code path to standing). Promotion is the operator's call. [docs/coding-agent-development-guide.md:77]
 - Private signing keys never enter notes, Git, journals, ordinary settings, release artifacts, or Sync.
   tracked by: Gate 3 (signing / portable standing / Sync replicas) per docs/status-and-compatibility.md § Current release state — target-state, not shipped in 0.17.0. [docs/coding-agent-development-guide.md:81]
-- | `packages/plugin/src/mcp/guarded.ts` and other surface registration | Action registry plus surface bindings | Inventory both directions, bind every surface to a versioned action, and make raw handler reachability a build failure |
+- | `packages/host/src/mcp/guarded.ts` and other surface registration | Action registry plus surface bindings | Inventory both directions, bind every surface to a versioned action, and make raw handler reachability a build failure |
   tracked by: work-package directive (WP0/WP10 territory), not a shipped claim — the guide speaks in imperatives to its implementer. [docs/coding-agent-development-guide.md:111]
 - | `governor/kernel/auto-accept/*` | Transformation registry, verifiers, and mandate policy | Reassess every class; no legacy entry receives automatic authority merely because it was previously allowlisted |
   tracked by: work-package directive (WP9 territory), not a shipped claim. [docs/coding-agent-development-guide.md:119]
@@ -581,16 +617,14 @@ anchor for every target-state claim is docs/status-and-compatibility.md
   tracked by: substantiated in kernel terms as of 0.17.0 (cohorts freeze to exact manifests; a changed member refuses) — the session-accept UI framing is target-state (Gate 2). [docs/sessions-mandates-and-cohorts.md:153]
 - | Takes effect | After a human accepts the mandate; never retroactively |
   tracked by: Gate 2 (mandates) per docs/status-and-compatibility.md § Current release state — target-state, not shipped in 0.17.0. [docs/settings.md:205]
-- | Acceptance | On in target product | Human sessions, cohorts, mandates, admission, and history | Review, Git, verifier, and attestation services | Return to proposal-only operation; never expose agent admission |
-  tracked by: target-product settings table — the row describes the target module layout, labeled by the page's own 'target product' column. [docs/settings.md:281]
 - A journal-write failure never turns a completed vault mutation into a failure response.
   tracked by: substantiated as of 0.17.0 — journal failures are swallowed and never fail the vault operation (kernel suites). Promotion is the operator's call. [docs/settings.md:303]
 - A later checkpoint may summarize earlier segments but cannot erase revocation or provenance meaning.
   tracked by: Gate 3 (signing / portable standing / Sync replicas) per docs/status-and-compatibility.md § Current release state — target-state, not shipped in 0.17.0. [docs/standing-and-attestations.md:216]
 - Each authorized device or verifier role has its own private signing key in operating-system protected secret storage; private keys never enter notes, Git, journals, ordinary settings, or Obsidian Sync.
   tracked by: Gate 3 (signing / portable standing / Sync replicas) per docs/status-and-compatibility.md § Current release state — target-state, not shipped in 0.17.0. [docs/standing-and-attestations.md:220]
-- | Human review, cohorts, mandates, and acceptance | Public default in-app surface | Acceptance never exposed to agents; prospective authority remains exact and bounded |
-  tracked by: a row of the page's own TARGET-STATE product matrix, labeled as such by the table it sits in. [docs/status-and-compatibility.md:40]
+- | Human review, cohorts, mandates, and acceptance | Public default in-app surface | Acceptance never exposed to agents; prospective authority remains exact and bounded.
+  tracked by: a row of the page's own TARGET-STATE product matrix, labeled as such by the table it sits in. Reworded at S3c (2026-09-08): the row gained a clause naming the governance provider as a separate plugin, which split the cell into two spans; the second carries no invariant word and is not tracked here. The claim itself is unchanged. [docs/status-and-compatibility.md:44]
 - Every module surface binds a registered action through the shared operation executor; no module receives raw accept or baseline authority.
   tracked by: a contradiction-register resolution describing target architecture, labeled 'Resolved in target architecture' in place. [docs/status-and-compatibility.md:141]
 - **Earlier target claim:** Every proposal required a contemporaneous individual human acceptance gesture.
@@ -621,7 +655,7 @@ own rule a changed span is a new claim. Same epistemic status as the rest of
 this section — agent-classified, tracked, pending the operator's review. The
 count pin in docs-drift.test.mjs was bumped 48 → 51 consciously for these.
 
-- Every journal record's `actor.server` carries a persistent **install id** — minted once and kept beside the journal in `.obsidian/plugins/governor/install-id.json` (`packages/plugin/src/kernel/install-id.ts`) — plus the **vault name** and plugin **version**.
+- Every journal record's `actor.server` carries a persistent **install id** — minted once and kept beside the journal in `.obsidian/plugins/vault-mcp/install-id.json` (`packages/host/src/kernel/install-id.ts`) — plus the **vault name** and host plugin **version**.
   tracked by: substantiated as of 0.17.0 — install-id.ts loadInstallId + its suite (persistent id beside the journal; ephemeral fallback); this is the previously-approved span with the file extension corrected .js → .ts. Promotion is the operator's call. [docs/kernel-v0.md]
 - The only registrar a module holds is the wrapped `scoped` registrar, which runs the forbidden-name + collision + gate checks before forwarding — a module cannot walk it to a raw `registerTool` or to any accept surface.
   tracked by: substantiated as of 0.17.0 — modules-mount suite (gate + forbidden-name + collision pins) and registration-surface-sealed suite (every SDK registration method patched or sealed). Promotion is the operator's call. [docs/module-system.md]

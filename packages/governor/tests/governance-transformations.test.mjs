@@ -17,7 +17,7 @@ import {
   AUTOMATABLE_CLASSES,
   createTransformationRegistry,
   TransformationRegistryError,
-} from "../src/governor/kernel/transformations/transformation.ts";
+} from "../src/kernel/transformations/transformation.ts";
 import {
   createPromotionStore,
   foldPromotionEvents,
@@ -26,8 +26,8 @@ import {
   promotionVerdictOf,
   tupleKeyOf,
   verifierKeyOf,
-} from "../src/governor/kernel/transformations/promotion.ts";
-import { createPredicateRegistry } from "../src/governor/kernel/verification/registry.ts";
+} from "../src/kernel/transformations/promotion.ts";
+import { createPredicateRegistry } from "../src/kernel/verification/registry.ts";
 
 const T0 = 1_700_000_000_000;
 
@@ -219,16 +219,16 @@ describe("promotion — facts recorded, decision gestured, absence spoken", () =
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildAdmission } from "../src/governor/wiring/admission-wiring.ts";
-import { createDefaultPredicateRegistry } from "../src/governor/kernel/verification/predicates.ts";
-import { buildPromotionUi } from "../src/governor/wiring/promotion-wiring.ts";
-import { openGitRepository } from "../src/governor/wiring/history-store/git-repository.ts";
-import { proposalRef } from "../src/governor/kernel/history-store/refs.ts";
-import { createProposalStore } from "../src/governor/kernel/proposals/proposal-store.ts";
-import { openProposal } from "../src/governor/kernel/proposals/proposal.ts";
-import { buildProposalSubjectFromOperation } from "../src/governor/kernel/proposals/proposal-builder.ts";
+import { buildAdmission } from "../src/wiring/admission-wiring.ts";
+import { createDefaultPredicateRegistry } from "../src/kernel/verification/predicates.ts";
+import { buildPromotionUi } from "../src/wiring/promotion-wiring.ts";
+import { openGitRepository } from "../src/wiring/history-store/git-repository.ts";
+import { proposalRef } from "../src/kernel/history-store/refs.ts";
+import { createProposalStore } from "../src/kernel/proposals/proposal-store.ts";
+import { openProposal } from "../src/kernel/proposals/proposal.ts";
+import { buildProposalSubjectFromOperation } from "../src/kernel/proposals/proposal-builder.ts";
 import { digestBytes } from "@vault-mcp/core";
-import { tupleOf } from "../src/governor/kernel/transformations/transformation.ts";
+import { tupleOf } from "../src/kernel/transformations/transformation.ts";
 
 const enc = (s) => new TextEncoder().encode(s);
 

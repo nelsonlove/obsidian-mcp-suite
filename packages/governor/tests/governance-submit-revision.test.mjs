@@ -28,8 +28,8 @@ import {
   registerGovernanceRevisionTool,
   revisionWriteRefusalReason,
   acceptanceStatusOf,
-} from "../src/mcp/tools-governance-revision.ts";
-import { SUBMIT_REVISION_TOOL } from "../src/governor/kernel/dispositions.ts";
+} from "../src/tools/revision.ts";
+import { SUBMIT_REVISION_TOOL } from "../src/kernel/dispositions.ts";
 import { parseGuardFrontmatter } from "@vault-mcp/core";
 import { makeGuarded } from "../src/mcp/guarded.ts";
 import { Kernel, WriteQueue, WriteJournal, IdempotencyStore, LockStore } from "../src/kernel/index.ts";

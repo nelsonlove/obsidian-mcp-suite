@@ -17,16 +17,16 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { buildAdmission } from "../src/governor/wiring/admission-wiring.ts";
-import { openGitRepository } from "../src/governor/wiring/history-store/git-repository.ts";
-import { proposalRef, standingRef } from "../src/governor/kernel/history-store/refs.ts";
-import { createProposalStore } from "../src/governor/kernel/proposals/proposal-store.ts";
-import { openProposal } from "../src/governor/kernel/proposals/proposal.ts";
-import { buildProposalSubjectFromOperation } from "../src/governor/kernel/proposals/proposal-builder.ts";
-import { subjectDigest } from "../src/governor/kernel/contracts/subject-v1.ts";
+import { buildAdmission } from "../src/wiring/admission-wiring.ts";
+import { openGitRepository } from "../src/wiring/history-store/git-repository.ts";
+import { proposalRef, standingRef } from "../src/kernel/history-store/refs.ts";
+import { createProposalStore } from "../src/kernel/proposals/proposal-store.ts";
+import { openProposal } from "../src/kernel/proposals/proposal.ts";
+import { buildProposalSubjectFromOperation } from "../src/kernel/proposals/proposal-builder.ts";
+import { subjectDigest } from "../src/kernel/contracts/subject-v1.ts";
 import { digestBytes } from "@vault-mcp/core";
-import { createClaimStore } from "../src/governor/kernel/admission/settlement.ts";
-import { runGuardedDisposition } from "../src/governor/kernel/gesture.ts";
+import { createClaimStore } from "../src/kernel/admission/settlement.ts";
+import { runGuardedDisposition } from "../src/kernel/gesture.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const enc = (s) => new TextEncoder().encode(s);

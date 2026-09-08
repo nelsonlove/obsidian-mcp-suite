@@ -13,7 +13,7 @@
 // repository identity belongs to the vault). The plugin is the single writer.
 
 import * as path from "node:path";
-import { stateDir, vaultSlug } from "../../../paths.js";
+import { stateDir, vaultSlug } from "../../paths.js";
 
 const SLUG = /^[a-z0-9._-]+$/;
 

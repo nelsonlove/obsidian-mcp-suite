@@ -13,7 +13,7 @@ import {
   deserializeRenameRecords,
   RENAME_RECORDS_CAP,
   RENAME_RECORD_TTL_MS,
-} from "../src/governor/kernel/rename-records.ts";
+} from "../src/kernel/rename-records.ts";
 
 const NOW = Date.parse("2026-08-19T12:00:00Z");
 const rec = (overrides = {}) => ({

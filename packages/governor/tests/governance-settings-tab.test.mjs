@@ -27,7 +27,7 @@ import { installObsidianStub } from "./obsidian-stub.mjs";
 
 installObsidianStub();
 const { renderAllowlist, wireAdoptButton, AUTO_ACCEPT_DESC, ADOPT_BASELINE_DESC } = await import(
-  "../src/governor/wiring/pane.ts"
+  "../src/wiring/pane.ts"
 );
 
 // A test-only stand-in for a genuine user gesture: a real Event whose isTrusted reads true.

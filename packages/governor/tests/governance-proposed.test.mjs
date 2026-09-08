@@ -10,11 +10,11 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { buildProposedList } from "../src/governor/kernel/proposed.ts";
+import { buildProposedList } from "../src/kernel/proposed.ts";
 import {
   governanceAcceptanceSettings,
   DEFAULT_ACCEPTANCE_SETTINGS,
-} from "../src/governor/kernel/settings.ts";
+} from "../src/kernel/settings.ts";
 
 // The same exclusion predicate shape wiring.ts uses (EXCLUDED_PREFIXES).
 const EXCLUDED = ["obsidian-old/", "80-89", "_keep/", "holds/"];

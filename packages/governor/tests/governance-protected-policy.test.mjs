@@ -27,13 +27,13 @@ import {
   honoredValueFromBlessed,
   autoAcceptPolicyOf,
   protectedPropertyDrift,
-} from "../src/governor/kernel/protected-policy.ts";
-import { evaluate } from "../src/governor/kernel/auto-accept/eligibility.ts";
-import { autoAcceptRecord } from "../src/governor/kernel/auto-accept/eligibility.ts";
-import { DEFAULT_ALLOWLIST } from "../src/governor/kernel/auto-accept/classes.ts";
-import { computeQueue } from "../src/governor/kernel/queue.ts";
-import { classifyModify, shouldAdvanceBaselineSilently } from "../src/governor/kernel/classify.ts";
-import { contentHash } from "../src/governor/kernel/hash.ts";
+} from "../src/kernel/protected-policy.ts";
+import { evaluate } from "../src/kernel/auto-accept/eligibility.ts";
+import { autoAcceptRecord } from "../src/kernel/auto-accept/eligibility.ts";
+import { DEFAULT_ALLOWLIST } from "../src/kernel/auto-accept/classes.ts";
+import { computeQueue } from "../src/kernel/queue.ts";
+import { classifyModify, shouldAdvanceBaselineSilently } from "../src/kernel/classify.ts";
+import { contentHash } from "../src/kernel/hash.ts";
 import {
   DEFAULT_PROTECTED_PROPERTIES,
   setDeclaredProtectedProperties,
