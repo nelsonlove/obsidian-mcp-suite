@@ -20,14 +20,14 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { BaselineStore } from "../src/governor/kernel/baseline-store.ts";
+import { BaselineStore } from "../src/kernel/baseline-store.ts";
 import {
   planBaselineReconcile,
   uidOfContent,
   summarizePlan,
-} from "../src/governor/kernel/baseline-reconcile.ts";
-import { contentHash } from "../src/governor/kernel/hash.ts";
-import { baselineRekeyRecord } from "../src/governor/kernel/accept.ts";
+} from "../src/kernel/baseline-reconcile.ts";
+import { contentHash } from "../src/kernel/hash.ts";
+import { baselineRekeyRecord } from "../src/kernel/accept.ts";
 
 /** In-memory BlobFs. */
 function fakeFs(seed = {}) {

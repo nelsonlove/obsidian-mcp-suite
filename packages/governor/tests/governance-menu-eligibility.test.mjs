@@ -6,7 +6,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { isAcceptEligible, selectAcceptEligible } from "../src/governor/kernel/menu-eligibility.ts";
+import { isAcceptEligible, selectAcceptEligible } from "../src/kernel/menu-eligibility.ts";
 
 /** A vault fake: pending queue, per-note acceptance-status, and one excluded root. */
 function ctx({ pending = [], status = {}, excluded = ["80-89"] } = {}) {

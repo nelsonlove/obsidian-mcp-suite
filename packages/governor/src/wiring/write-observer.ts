@@ -25,8 +25,8 @@
 // UNSTAMPED, a recording failure proposes NOTHING, and a throw is caught by the
 // seam's dispatcher, off the caller's result path entirely.
 
-import type { WriteFacts } from "../../mcp/seam.js";
-import { NOTE_WRITE_V1 } from "../../kernel/operations/actions/note-write.js";
+import type { WriteFacts } from "vault-mcp-api";
+import { NOTE_WRITE_ACTION as NOTE_WRITE_V1 } from "@vault-mcp/core";
 import {
   deriveClasses,
   requireClassesCovered,

@@ -3,7 +3,7 @@
 // READER only; parses already-loaded JSONL text, no obsidian runtime.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseJournal, agentWritesSince, recentAgentWrite } from "../src/governor/kernel/journal-reader.ts";
+import { parseJournal, agentWritesSince, recentAgentWrite } from "../src/kernel/journal-reader.ts";
 
 const rec = (o) => JSON.stringify(o);
 const AGENT = { transport: "mcp", client: "agent-x/1.0", connection: "c1" };

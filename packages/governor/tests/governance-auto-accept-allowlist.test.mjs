@@ -11,7 +11,7 @@ import {
   serializeAllowlist,
   deserializeAllowlist,
   isAuthorizedClass,
-} from "../src/governor/kernel/auto-accept/classes.ts";
+} from "../src/kernel/auto-accept/classes.ts";
 
 test("the authorized universe is EXACTLY Nelson's four (frozen)", () => {
   assert.deepEqual(AUTHORIZED_CLASSES.map((s) => s.id), ["uid-stamp", "timestamp", "canonical-order", "link-heal"]);

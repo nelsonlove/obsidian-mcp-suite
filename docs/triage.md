@@ -66,8 +66,9 @@ write is agent-expressible through the guarded path.
 Phase 1 (#101/#228) proved the shape on the live acceptance instance; phase 2
 extracted the generic descriptor shape into a **disposition substrate**, which
 S3 then published to `@vault-mcp/core`. That publication is exactly what let
-triage leave: the acceptance instance (`governor/kernel/dispositions.ts`, in
-the host) and the triage instance now declare against one shape from two
+triage leave: the acceptance instance (`packages/governor/src/kernel/dispositions.ts`,
+which left the host for the governance provider plugin at S3c — the publication
+outlived the arrangement it was built for) and the triage instance now declare against one shape from two
 plugins that share no build, and neither depends on the other. The triage
 instance's **frozen code-level table** is the three built-ins
 (`packages/triage/src/kernel/descriptors.ts`), all `authority: "agent"`.

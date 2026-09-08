@@ -25,18 +25,18 @@ import {
   boundaryDisclosure,
   effectiveScope,
   DEFAULT_HISTORY_EXCLUDES,
-} from "../src/governor/kernel/history-store/history-scope.ts";
+} from "../src/kernel/history-store/history-scope.ts";
 import { EXCLUDED_PREFIXES } from "../../core/src/territories.ts";
-import { standingRef, proposalRef, cohortRef, isGovernorRef } from "../src/governor/kernel/history-store/refs.ts";
+import { standingRef, proposalRef, cohortRef, isGovernorRef } from "../src/kernel/history-store/refs.ts";
 import {
   RefCasError,
   ObjectMissingError,
   ObjectCorruptError,
   RefNameError,
   isObjectId,
-} from "../src/governor/kernel/history-store/types.ts";
-import { openGitRepository, EMPTY_TREE_OID } from "../src/governor/wiring/history-store/git-repository.ts";
-import { historyDir } from "../src/governor/wiring/history-store/local-data-root.ts";
+} from "../src/kernel/history-store/types.ts";
+import { openGitRepository, EMPTY_TREE_OID } from "../src/wiring/history-store/git-repository.ts";
+import { historyDir } from "../src/wiring/history-store/local-data-root.ts";
 
 const enc = (s) => new TextEncoder().encode(s);
 const dec = (b) => new TextDecoder().decode(b);

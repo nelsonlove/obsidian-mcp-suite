@@ -41,13 +41,15 @@
 // unit-testable headlessly like tools-uid.ts. Only `obsidianPendingReviewSource`
 // touches `app`, and it is the one adapter the live server wires in.
 
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { App } from "obsidian";
-import { ok } from "./helpers.js";
-import { PLUGIN_ID } from "../id-migration.js";
-import { isVisible, type GuardSettings } from "../guard.js";
+import type { SdkToolSpec } from "vault-mcp-api";
+import { isVisible, type GuardSettings } from "@vault-mcp/core";
 
-const RO = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+/** This plugin's own id. The index it reads is published into THIS plugin's
+ * directory now — the pane that writes it and the tool that reads it are in the
+ * same artifact again, which is simpler than it was when they were a pane in
+ * one half of a plugin and a tool in the other. */
+export const PLUGIN_ID = "governor";
 
 /**
  * Where the governance module publishes its review-queue index, relative to the vault-mcp
@@ -160,24 +162,22 @@ export function parsePendingIndex(raw: string | null): PendingEntry[] {
   return parsePendingIndexStrict(raw) ?? [];
 }
 
-export function registerPendingReviewTools(server: McpServer, ctx: PendingReviewToolsCtx): void {
-  server.registerTool(
-    "obsidian_pending_review",
+export function buildPendingReviewTools(ctx: PendingReviewToolsCtx): SdkToolSpec[] {
+  return [
     {
-      title: "List notes pending human review",
+      name: "obsidian_pending_review",
       description:
-        "List the notes currently pending human review, as published by vault-mcp's governance module (the review " +
-        "queue the governance pane shows). Each entry carries the note's `path` plus the recorded descriptive fields " +
-        "(`status`, `agent`, `op`, `when`, `writeCount`). Use it to AVOID editing a note that a human is about to " +
-        "review — it is advisory, it blocks nothing. Read-only: this reports review status the governance module " +
-        "published; it cannot accept, reject, or otherwise change a note's review state (there is no accept verb in " +
-        "any API). `published: false` (with a `reason`) means the index is absent or unreadable — the governance " +
-        "module is disabled or has not refreshed — which is NOT the same as an empty queue (`published: true, " +
-        "count: 0`). Only notes within your path allowlist are reported.",
+        "List the notes currently pending human review, as published by the Governor review pane. Each entry " +
+        "carries the note's `path` plus the recorded descriptive fields (`status`, `agent`, `op`, `when`, " +
+        "`writeCount`). Use it to AVOID editing a note that a human is about to review — it is advisory, it blocks " +
+        "nothing. Read-only: this reports review status the pane published; it cannot accept, reject, or otherwise " +
+        "change a note's review state (there is no accept verb in any API). `published: false` (with a `reason`) " +
+        "means the index is absent or unreadable — the review pane is disabled or has not refreshed — which is NOT " +
+        "the same as an empty queue (`published: true, count: 0`). Under a path allowlist this tool is unavailable: " +
+        "it carries no path argument, so the host cannot scope it and blocks it outright.",
       inputSchema: {},
-      annotations: RO,
-    },
-    async () => {
+      readOnly: true,
+      handler: async () => {
       // Every failure mode degrades to an EXPLICIT state — a missing/broken review queue must
       // never surface as a tool error, but must never masquerade as an empty queue either
       // (#261; the #133/#142 silent-zero class). The source swallows read errors to null;
@@ -187,21 +187,21 @@ export function registerPendingReviewTools(server: McpServer, ctx: PendingReview
       try {
         const raw = await ctx.source.read();
         if (raw == null) {
-          return ok({
+          return {
             published: false,
-            reason: "index-not-published — governance module disabled, not yet refreshed, or index unreadable",
+            reason: "index-not-published — the review pane is disabled, has not refreshed, or the index is unreadable",
             pending: [],
             count: 0,
-          });
+          };
         }
         const entries = parsePendingIndexStrict(raw);
         if (entries == null) {
-          return ok({
+          return {
             published: false,
             reason: "index-unreadable — file exists but is not a recognizable pending index",
             pending: [],
             count: 0,
-          });
+          };
         }
         const settings = ctx.getSettings?.();
         // Allowlist filter — the SAME rule the uid/read tools use. `isVisible`
@@ -211,10 +211,11 @@ export function registerPendingReviewTools(server: McpServer, ctx: PendingReview
         // is dropped, so this tool is no path oracle for territory the session
         // cannot read.
         const pending = entries.filter((e) => isVisible(e.path, settings));
-        return ok({ published: true, pending, count: pending.length });
+        return { published: true, pending, count: pending.length };
       } catch {
-        return ok({ published: false, reason: "error", pending: [], count: 0 });
+        return { published: false, reason: "error", pending: [], count: 0 };
       }
-    }
-  );
+      },
+    },
+  ];
 }

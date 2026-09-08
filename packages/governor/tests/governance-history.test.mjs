@@ -16,7 +16,7 @@ import {
   toHistoryEntry,
   renderHistoryEntries,
   HISTORY_DEFAULT_CAP,
-} from "../src/governor/kernel/history.ts";
+} from "../src/kernel/history.ts";
 
 const line = (obj) => JSON.stringify(obj);
 const ts = (i) => `2026-08-18T10:${String(i).padStart(2, "0")}:00.000Z`;

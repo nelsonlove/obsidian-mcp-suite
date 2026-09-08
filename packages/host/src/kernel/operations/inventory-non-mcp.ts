@@ -1,469 +1,63 @@
 // The declared NON-MCP SURFACE INVENTORY — Gate 0, WP0 (second half).
 //
-// MCP is one door onto Governor. It is not the only one, and it is not the
-// important one: the accept gesture has NO MCP surface by design, so an
-// inventory that stopped at the bridge would omit precisely the operations
-// that create standing.
+// MCP is one door onto the host. It is not the only one: commands are
+// agent-invocable through `obsidian_run_command`'s `executeCommandById`,
+// automation runs with no caller at all, and several of this plugin's most
+// consequential acts write outside the vault on every load. An inventory that
+// stopped at the bridge would omit all of them.
 //
 // Three kinds of door are declared here:
 //
-//   ui          an Obsidian command, a review-pane control, a settings button
-//               — something a human clicks
+//   ui          an Obsidian command, a settings button — something a human
+//               clicks
 //   automation  a timer, a vault or metadata event subscription, a
 //               layout-ready hook — work that starts with no caller at all
-//   internal    a Governor-to-Governor call
+//   internal    a host-to-host call
 //
-// The AUTHORITY rows are the point of the exercise. They are the only actions
-// in this repository declared `governorOnly` with the `authority` change
-// class, and `registry.ts` refuses at build time to bind any of them to an
-// `mcp` or `external` surface. That is the static counterpart to the two
-// runtime controls the pane already enforces: every capability-bearing control
-// is wired with `addEventListener` rather than `.onclick =` (so the function is
-// not a reachable property), and every handler calls `isRealGesture(evt)`,
-// which requires a genuine `Event` with `isTrusted === true`.
+// ── WHAT THE S3c SPLIT TOOK OUT OF THIS FILE ────────────────────────────────
 //
-// Two structural facts this inventory depends on are asserted by its test
-// rather than assumed, because both are load-bearing and neither was checked
-// by anything before:
+// The ACCEPT PERIMETER left, whole, for
+// `packages/governor/src/kernel/operations/inventory-authority.ts`. What went:
+// `ACCEPT_PERIMETER_FUNCTIONS`, `WIRING_EXPORTS`, `AuthorityRow` and
+// `AUTHORITY_SURFACES`, the `authorityAction` projector and its nine authored
+// `AUTHORITY_ACTIONS`, the one automation row for
+// `src/governor/wiring/wiring.ts`, the `internal.governance.publish-pending-index`
+// row, and the whole `NOT_SURFACES` exclusion list — every one of them
+// described a function inside `wiring.ts`, which is not host source any more.
 //
-//   • `src/governor/wiring/` registers ZERO Obsidian commands. Every command is
-//     agent-invocable through `obsidian_run_command`'s `executeCommandById`,
-//     so an accept command would be a self-approval primitive one
-//     prompt-injection away.
-//   • none of the ten accept-perimeter functions is exported, and the file's
-//     export set is pinned. Export is what would make one reachable from a
-//     plugin instance, a view instance, or any other object an agent-facing
-//     path can obtain — and pinning the whole set closes the class rather than
-//     the ten instances.
+// What that changed here, item by item, because none of it is cosmetic:
+//
+//   • `nonMcpActions()` no longer returns the authored authority actions; it
+//     is commands + automation, and the provider's `authorityActions()` is the
+//     other half. Both halves project their own rows exactly as the combined
+//     function did.
+//   • `nonMcpBindings()` no longer emits the authority bindings, so nothing
+//     host-side binds a `governorOnly` action any more. The registry fence
+//     (`authority_agent_surface`) is still HOST code and still the thing that
+//     refuses; what moved is the only set of actions it has to refuse for, so
+//     the test proving the fence is live moved with them.
+//   • `AutomationRow.touchesAuthority` survives with no `true` left to carry.
+//     It is now a claim every host row must make FALSE — authority-bearing
+//     automation lives in the provider — and the host test pins that rather
+//     than the old "backed by a fenced action" cross-reference, which needed
+//     an authority list this package no longer has.
+//   • `PlainSurfaceRow.reachesAuthority` still names an action id
+//     (`settings.module-enabled` → `governance.rekey-baseline`), and the host
+//     can no longer check that the id is a DECLARED authority action, because
+//     the declaration is in the other package. The claim is not dropped: the
+//     provider's test imports `PLAIN_SURFACES` from here and re-asserts it
+//     there. That is the honest cost of the split — a claim about the host,
+//     checked in the provider's suite, and lost entirely if the two ever stop
+//     being able to import each other.
+//
+// The inverse-inventory property this file exists for is unchanged for what is
+// left: every declared command must be registered, every registered command
+// must be declared, every file that subscribes to an event or arms a timer
+// must have a row.
 
 import type { ActionDefinition, Distribution, SurfaceKind } from "./action.js";
 import { compatibilityAction } from "./compatibility.js";
 import type { SurfaceBinding } from "./surface-binding.js";
-
-// ── the accept perimeter ─────────────────────────────────────────────────────
-
-/**
- * The module-scope functions in `governor/wiring/wiring.ts` that can change
- * authority state. Named here so the test can assert they still exist and are
- * still unexported — an inventory that describes deleted code is worse than
- * none, and an exported one is a hole.
- *
- * `wiring.ts`'s own header gives the membership test: "A capability that
- * advances a baseline, accepts a change, adopts a baseline, or flips an
- * auto-accept class is accept-equivalent: it silences the review queue."
- * Applied literally, that is every writer of `setBaseline`, `rekey` or the
- * auto-accept allowlist. There are ten.
- *
- * The first draft of this list had seven, and the three it missed are the
- * three with NO gesture anywhere:
- *
- *   maybeAutoAccept     advances a baseline for an allowlisted mechanical
- *                       class, driven by a 2.5s poll — no click, no
- *                       isRealGesture, nothing
- *   sweepAutoAccept     its driver, over the cached pending queue
- *   reconcileBaselines  re-addresses baselines whose notes moved while the
- *                       plugin was off
- *
- * Missing them is instructive rather than embarrassing: the gesture-gated
- * capabilities are easy to find because a human clicks them, and the ones that
- * run by themselves are exactly the ones an inventory built by reading the UI
- * will overlook.
- */
-export const ACCEPT_PERIMETER_FUNCTIONS = [
-  "performAccept",
-  "performRevert",
-  "performAdopt",
-  "setClassEnabled",
-  "performRequestChanges",
-  "performWithdraw",
-  "reconcile",
-  "maybeAutoAccept",
-  "sweepAutoAccept",
-  "reconcileBaselines",
-] as const;
-
-/**
- * The exports of `governor/wiring/wiring.ts`, pinned.
- *
- * Checking that the ten perimeter functions are unexported closes those ten
- * instances. Pinning the whole export set closes the CLASS: a new export is a
- * visible decision rather than something a reviewer has to notice.
- *
- * `nudgeGovernanceQueue` is exported deliberately and does reach the
- * auto-accept chain — but only by changing WHEN the poll runs, never what it
- * may accept. Eligibility is decided inside `maybeAutoAccept` by the
- * objective-bytes, allowlist and rail checks, which no caller can influence.
- */
-export const WIRING_EXPORTS = [
-  "GovernanceWireDeps",
-  "isGovernanceMounted",
-  "nudgeGovernanceQueue",
-  "wireGovernance",
-  "renderGovernanceSettings",
-  // WP8 (each confirmed accept-closure-free): setLegacyWriteGuard REGISTERS a
-  // boolean predicate (main.ts's cutover check) consulted by the BaselineStore
-  // — it holds no accept callable. It is NOT monotone (a later call installing
-  // () => true would re-enable legacy writes post-cutover); what protects it
-  // is the module-privacy threat model — the WeakMap and this export are
-  // unreachable from `app`, same as every accept-perimeter closure (review
-  // finding: say the real reason, not a monotonicity the function lacks).
-  // baselinesOf is a read-only view of the loaded baseline records for the
-  // migration import (no store handle escapes).
-  "setLegacyWriteGuard",
-  "baselinesOf",
-] as const;
-
-export interface AuthorityRow {
-  /** Surface identity — where the human gesture or automation lives. */
-  id: string;
-  kind: Extract<SurfaceKind, "ui" | "automation" | "internal">;
-  /** Registered action id. */
-  action: string;
-  title: string;
-  postcondition: string;
-  /** The `governor/wiring/wiring.ts` function this surface ultimately calls. */
-  implementation: (typeof ACCEPT_PERIMETER_FUNCTIONS)[number];
-  paths?: string[];
-  /** Change classes beyond `authority`, when the act also alters content. */
-  alsoChanges?: Array<"content" | "structural">;
-  /** How reachability is restricted, in one phrase. */
-  reachability: string;
-}
-
-export const AUTHORITY_SURFACES: AuthorityRow[] = [
-  {
-    id: "governance.pane.accept",
-    kind: "ui",
-    action: "governance.accept",
-    title: "Accept a proposal",
-    postcondition: "Stamp the accepted family on one note and advance its baseline to the exact reviewed content.",
-    implementation: "performAccept",
-    paths: ["path"],
-    reachability: "pane detail-view and Proposed-section buttons, wired with addEventListener + isRealGesture",
-  },
-  {
-    id: "governance.context-menu.accept",
-    kind: "ui",
-    action: "governance.accept",
-    title: "Accept a proposal from the file menu",
-    postcondition: "Open a confirmation modal whose own confirm button performs the accept.",
-    implementation: "performAccept",
-    paths: ["path"],
-    // Obsidian renders file-menu items natively and delivers no trusted Event
-    // to the menu callback, so `isRealGesture` there was permanently inert and
-    // was removed. The menu item can therefore only OPEN a modal; the accept
-    // happens from that modal's own click, which restores both gesture layers.
-    // Worst case for a forged menu trigger is that a dialog appears.
-    reachability: "menu item opens a ConfirmModal only; the write happens from the modal's gesture-gated confirm",
-  },
-  {
-    id: "governance.pane.revert",
-    kind: "ui",
-    action: "governance.revert",
-    title: "Revert to the admitted baseline",
-    postcondition: "Restore one note's prior admitted content, creating new history rather than erasing the admission.",
-    implementation: "performRevert",
-    paths: ["path"],
-    alsoChanges: ["content"],
-    reachability: "pane detail-view button, addEventListener + isRealGesture",
-  },
-  {
-    id: "governance.pane.adopt-baseline",
-    kind: "ui",
-    action: "governance.adopt-baseline",
-    title: "Adopt current content as the baseline",
-    postcondition: "Advance every pending note's baseline to its current content in one act.",
-    implementation: "performAdopt",
-    reachability: "pane button, addEventListener + isRealGesture + a confirm step",
-  },
-  {
-    id: "governance.settings.adopt-baseline",
-    kind: "ui",
-    action: "governance.adopt-baseline",
-    title: "Adopt current content as the baseline (settings tab)",
-    postcondition: "The same mass advance, reached from the settings tab.",
-    implementation: "performAdopt",
-    reachability: "settings-tab button sharing the pane's wireAdoptButton, same two gesture layers",
-  },
-  {
-    id: "governance.pane.auto-accept-class",
-    kind: "ui",
-    action: "governance.set-auto-accept-class",
-    title: "Enable or disable an auto-accept class",
-    postcondition: "Change which mechanical change classes Governor may admit without a further gesture.",
-    implementation: "setClassEnabled",
-    reachability: "pane allowlist checkboxes, addEventListener + isRealGesture",
-  },
-  {
-    id: "governance.settings.auto-accept-class",
-    kind: "ui",
-    action: "governance.set-auto-accept-class",
-    title: "Enable or disable an auto-accept class (settings tab)",
-    postcondition: "The same policy change, reached from the settings tab.",
-    implementation: "setClassEnabled",
-    reachability: "settings-tab checkboxes sharing the pane's renderAllowlist",
-  },
-  {
-    id: "governance.pane.request-changes",
-    kind: "ui",
-    action: "governance.request-changes",
-    title: "Request changes on a proposal",
-    postcondition: "Move a proposal to revising and record the human's feedback, conferring no standing.",
-    implementation: "performRequestChanges",
-    paths: ["path"],
-    alsoChanges: ["content"],
-    reachability: "pane button and modal, addEventListener + isRealGesture",
-  },
-  {
-    id: "governance.pane.withdraw",
-    kind: "ui",
-    action: "governance.withdraw",
-    title: "Withdraw a proposal",
-    postcondition: "Remove a proposal from review without accepting it.",
-    implementation: "performWithdraw",
-    paths: ["path"],
-    alsoChanges: ["content"],
-    reachability: "pane button, addEventListener + isRealGesture",
-  },
-  {
-    // The one baseline advance with NO click anywhere. It is gated instead on
-    // a POSITIVE signal — `recentGenuineHumanInput`, derived from real
-    // `beforeinput`/`paste` DOM events — which is exactly the
-    // "local-human-observed" origin class: observed, not cryptographically
-    // proven, and trusted within the documented same-user threat model.
-    id: "governance.automation.reconcile-observed-edit",
-    kind: "automation",
-    action: "governance.reconcile-observed-human-edit",
-    title: "Reconcile an observed human edit",
-    postcondition:
-      "Advance a note's baseline silently when the edit is attributable to recent genuine human input in the editor.",
-    implementation: "reconcile",
-    paths: ["path"],
-    reachability: "vault 'modify' event, debounced; gated on recentGenuineHumanInput rather than on any gesture",
-  },
-  {
-    // No gesture anywhere. Driven by the 2.5s journal poll and by
-    // `nudgeGovernanceQueue` after every journal append.
-    id: "governance.automation.auto-accept-sweep",
-    kind: "automation",
-    action: "governance.auto-accept",
-    title: "Auto-accept sweep",
-    postcondition:
-      "Advance the baseline of every pending note whose diff is confined to an enabled mechanical change class.",
-    // `maybeAutoAccept`, not `sweepAutoAccept`: the sweep is only the driver
-    // that walks the pending queue, and the act — the baseline advance and its
-    // audit record — happens one level down. Attributing the row to the driver
-    // made the audit claim come out wrong, which is how the distinction
-    // surfaced.
-    implementation: "maybeAutoAccept",
-    reachability:
-      "sweepAutoAccept over the cached pending queue, driven by the journal poll and the post-append nudge; safety comes from the objective-bytes comparison, the mechanical-class allowlist and the rail check inside maybeAutoAccept, NOT from a gesture",
-  },
-  {
-    id: "governance.automation.rekey-on-rename",
-    kind: "automation",
-    action: "governance.rekey-baseline",
-    title: "Follow a renamed note",
-    postcondition: "Re-address a baseline when Governor witnesses the rename.",
-    // The call is an inline closure inside the vault 'rename' handler rather
-    // than a named function, so the perimeter entry it is attributed to is
-    // `reconcileBaselines`, which owns the same rekey contract.
-    implementation: "reconcileBaselines",
-    paths: ["from", "to"],
-    reachability: "vault 'rename' event; rekey carries acceptance across verbatim and never routes through setBaseline",
-  },
-  {
-    id: "governance.automation.reconcile-baselines",
-    kind: "automation",
-    action: "governance.rekey-baseline",
-    title: "Repair baselines orphaned while the plugin was off",
-    postcondition:
-      "Re-address baselines whose notes moved unwitnessed, matching on the uid inside the stored baseline content.",
-    implementation: "reconcileBaselines",
-    reachability: "one-shot metadataCache 'resolved' event at mount",
-  },
-];
-
-interface AuthoritySpec {
-  id: string;
-  title: string;
-  postcondition: string;
-  paths: string[];
-  alsoChanges?: Array<"content" | "structural">;
-  /**
-   * Whether this act reaches `appendLog` and therefore leaves a durable
-   * operation record. VERIFIED against source by the test, not asserted here —
-   * the previous draft claimed all seven were logged and two were not.
-   */
-  audited: boolean;
-  /**
-   * Targets found at runtime rather than received as arguments. `none` is only
-   * correct for an act on one named note.
-   */
-  discovered: "none" | "bounded" | "unbounded";
-}
-
-/** One native authority action per distinct `action` id above. */
-function authorityAction({
-  id,
-  title,
-  postcondition,
-  paths,
-  alsoChanges = [],
-  audited,
-  discovered,
-}: AuthoritySpec): ActionDefinition {
-  return {
-    id,
-    version: 1,
-    title,
-    postcondition,
-    owner: "acceptance",
-    // Never public in the MCP sense — there is no client-facing door at all.
-    // `private` here means "operator/human surface", not "operator pack".
-    distribution: "private",
-    modes: ["authority"],
-    // Canonical order: content before authority.
-    changeClasses: [...alsoChanges, "authority"],
-    // Deliberately the weakest capture, and deliberately NOT `replayable`.
-    //
-    // The target contract says authority inputs are replayable — but no
-    // observation substrate exists yet, so declaring `replayable` here would
-    // assert a guarantee no code provides. Raised in WP2, when there is
-    // something to raise it to.
-    observations: { defaultCapture: "ephemeral", supportsProposal: false },
-    effects: { direct: ["standing", "accepted-frontmatter", "baseline"], discovered },
-    authority: { governorOnly: true, automaticAdmission: "never" },
-    scope: {
-      argumentKeys: paths,
-      resolvesAddresses: false,
-      enumeration: paths.length > 0 ? "not-applicable" : "filter-before-read",
-      whenScoped: "available",
-    },
-    // `durable` ONLY where the act actually reaches `appendLog`. Two do not,
-    // and saying otherwise would claim an audit trail that does not exist —
-    // see the AUTHORITY_ACTIONS entries and the test that verifies each
-    // `audited` flag against source.
-    retention: { operation: audited ? "durable" : "ephemeral" },
-    inputs: paths,
-    // Authored against this registry rather than derived from a registration —
-    // there IS no registration metadata to derive from, because the accept
-    // path is deliberately a set of module-scope closures with no tool, no
-    // command and no exported symbol.
-    //
-    // `native` means the CONTRACT was authored. It does NOT mean the action is
-    // routed through the operation executor — nothing is, yet. WP1 does that.
-    native: true,
-  };
-}
-
-const AUTHORITY_ACTIONS: ActionDefinition[] = [
-  authorityAction({
-    id: "governance.accept",
-    title: "Accept a proposal",
-    postcondition: "Stamp the accepted family on one note and advance its baseline to the exact reviewed content.",
-    paths: ["path"],
-    audited: true, // reaches appendLog through acceptNote's injected deps
-    discovered: "none",
-  }),
-  authorityAction({
-    id: "governance.revert",
-    title: "Revert to the admitted baseline",
-    postcondition: "Restore one note's prior admitted content, creating new history rather than erasing the admission.",
-    paths: ["path"],
-    alsoChanges: ["content"],
-    audited: true, // through revertNote
-    discovered: "none",
-  }),
-  authorityAction({
-    id: "governance.adopt-baseline",
-    title: "Adopt current content as the baseline",
-    postcondition: "Advance every governed note's baseline to its current content in one act.",
-    paths: [],
-    // NOT audited. `performAdopt` loops over `governedMarkdownFiles(plugin)`
-    // calling `setBaseline` and never reaches `appendLog` — so the single most
-    // consequential capability in the product, the one its own source calls
-    // "mass-silence", leaves NO operation record. That is a real gap in the
-    // predecessor, surfaced by declaring it honestly rather than smoothed over
-    // by a blanket `durable`. WP8's cutover is where it gets fixed; recording
-    // it now is what makes it impossible to forget.
-    audited: false,
-    // It receives no path and discovers its entire target set at runtime —
-    // every governed markdown file in the vault. This is the same shape as
-    // `obsidian_repoint_link`, the case `action.ts` cites as the reason the
-    // field exists.
-    discovered: "unbounded",
-  }),
-  authorityAction({
-    id: "governance.set-auto-accept-class",
-    title: "Set an auto-accept class",
-    postcondition: "Change which mechanical change classes Governor may admit without a further gesture.",
-    paths: [],
-    // NOT audited either: `setClassEnabled` writes the allowlist through
-    // `saveAllowlist` and appends nothing. Changing what may be admitted
-    // without review is a policy change with no record of who changed it.
-    audited: false,
-    discovered: "none",
-  }),
-  authorityAction({
-    id: "governance.request-changes",
-    title: "Request changes on a proposal",
-    postcondition: "Move a proposal to revising and record the human's feedback, conferring no standing.",
-    paths: ["path"],
-    alsoChanges: ["content"],
-    audited: true,
-    discovered: "none",
-  }),
-  authorityAction({
-    id: "governance.withdraw",
-    title: "Withdraw a proposal",
-    postcondition: "Remove a proposal from review without accepting it.",
-    paths: ["path"],
-    alsoChanges: ["content"],
-    audited: true,
-    discovered: "none",
-  }),
-  authorityAction({
-    id: "governance.reconcile-observed-human-edit",
-    title: "Reconcile an observed human edit",
-    postcondition: "Advance a note's baseline silently when the edit is attributable to recent genuine human input in the editor.",
-    paths: ["path"],
-    audited: true,
-    discovered: "none",
-  }),
-  authorityAction({
-    // The eighth capability, and the one an inventory built by reading the UI
-    // will miss: it advances a baseline with NO gesture anywhere, driven by a
-    // 2.5s poll and by every journal append. Its safety comes from a different
-    // place than the pane's — the objective-bytes comparison, the mechanical-
-    // class allowlist and the rail check inside `maybeAutoAccept` — not from
-    // `isRealGesture`. Declaring it as its own authority action is what lets
-    // the registry fence it at all; folded into a generic automation row, it
-    // was classified as an ordinary non-authority mutation.
-    id: "governance.auto-accept",
-    title: "Auto-accept an allowlisted mechanical change",
-    postcondition:
-      "Advance a note's baseline without any gesture when its diff is confined to an enabled mechanical change class.",
-    paths: ["path"],
-    audited: true,
-    // The sweep iterates the cached pending queue rather than a named target.
-    discovered: "unbounded",
-  }),
-  authorityAction({
-    // Re-addressing, NOT acceptance: `rekey` carries content, hash, acceptedAt
-    // and acceptedBy across verbatim and deliberately does not route through
-    // `setBaseline`, which would stamp a fresh acceptance nobody gave. It is
-    // still an authority act, because it decides which note an existing
-    // acceptance now applies to.
-    id: "governance.rekey-baseline",
-    title: "Re-address a baseline to follow its note",
-    postcondition:
-      "Move an existing baseline to a renamed note's path, carrying its acceptance across without stamping a new one.",
-    paths: ["from", "to"],
-    audited: true,
-    discovered: "unbounded",
-  }),
-];
 
 // ── Obsidian commands ────────────────────────────────────────────────────────
 
@@ -552,18 +146,13 @@ export interface AutomationRow {
 }
 
 export const AUTOMATION_SURFACES: AutomationRow[] = [
-  {
-    id: "automation.governance.events",
-    file: "src/governor/wiring/wiring.ts",
-    title: "Governance event subscriptions and journal poll",
-    postcondition:
-      "Keep the review queue current from vault modify/rename/delete events, a 2.5s journal poll and a layout-ready paint.",
-    owner: "acceptance",
-    // The poll drives sweepAutoAccept -> maybeAutoAccept, which CAN advance a
-    // baseline for an allowlisted mechanical class; the modify handler drives
-    // reconcile, which can advance one silently. Both are authority-bearing.
-    touchesAuthority: true,
-  },
+  // `automation.governance.events` — the governance event subscriptions and
+  // the 2.5s journal poll — was the FIRST row here until S3c, and it was the
+  // only one that ever set `touchesAuthority: true`. It moved to the
+  // provider's `inventory-authority.ts` with the file it names. Every row left
+  // is `false`, and the test pins that: an authority-bearing automation entry
+  // point in this package would now be a row claiming something no host action
+  // can back.
   {
     id: "automation.core.uid-index",
     file: "src/main.ts",
@@ -591,8 +180,10 @@ export function commandActionId(id: string): string {
   return `${COMMAND_ACTION_PREFIX}${id}`;
 }
 
-/** Every non-MCP action: derived ones for commands and automation, authored
- * ones for the authority perimeter. */
+/** Every non-MCP action the HOST declares: derived ones for its commands and
+ * its automation. The authored authority actions were the third member of this
+ * list until S3c; they are the provider's `authorityActions()` now, and each
+ * half projects its own rows exactly as the combined function did. */
 export function nonMcpActions(): ActionDefinition[] {
   const commands = COMMAND_SURFACES.map((row) =>
     compatibilityAction({
@@ -617,7 +208,7 @@ export function nonMcpActions(): ActionDefinition[] {
       reason: "pre-registry automation entry point; runs with no caller",
     })
   );
-  return [...commands, ...automation, ...AUTHORITY_ACTIONS];
+  return [...commands, ...automation];
 }
 
 export function nonMcpBindings(): SurfaceBinding[] {
@@ -635,15 +226,13 @@ export function nonMcpBindings(): SurfaceBinding[] {
     actionVersion: 1,
     source: row.file,
   }));
-  const authority: SurfaceBinding[] = AUTHORITY_SURFACES.map((row) => ({
-    kind: row.kind,
-    id: row.id,
-    action: row.action,
-    actionVersion: 1,
-    source: "src/governor/wiring/wiring.ts",
-    note: row.reachability,
-  }));
-  return [...commands, ...automation, ...authority];
+  // The thirteen authority bindings were emitted here until S3c. Nothing
+  // host-side binds a `governorOnly` action any more, which is why the "every
+  // authority binding is ui or automation" and "binding one to MCP fails the
+  // build" tests moved to the provider's suite: the fence is still this
+  // package's code, but the only actions it can refuse for are declared in the
+  // other one.
+  return [...commands, ...automation];
 }
 
 // ── bridge, settings, and internal surfaces ──────────────────────────────────
@@ -860,18 +449,13 @@ export const SETTINGS_SURFACES: PlainSurfaceRow[] = [
 ];
 
 export const INTERNAL_SURFACES: PlainSurfaceRow[] = [
-  {
-    id: "internal.governance.publish-pending-index",
-    kind: "internal",
-    file: "src/governor/wiring/wiring.ts",
-    title: "Publish the pending-review index",
-    postcondition:
-      "Write the review queue to pending-index.json so obsidian_pending_review can report it — or report it unavailable.",
-    owner: "acceptance",
-    distribution: "public-default",
-    readOnly: false,
-    note: "the producer behind the agent-visible read surface; absence must read as unavailable, never as an empty queue",
-  },
+  // `internal.governance.publish-pending-index` — the producer behind
+  // `obsidian_pending_review` — was the first row here until S3c. It is not
+  // authority-bearing, and it moved for the plainest possible reason: it lives
+  // in `wiring.ts`, so a row here would name a file this package does not
+  // have. It is declared in the provider's `inventory-authority.ts` and
+  // projected by `authorityActions()` there, so the surface is still counted,
+  // just counted somewhere else.
   {
     id: "internal.core.save-settings",
     kind: "internal",
@@ -932,23 +516,14 @@ export function outsideVaultSurfaces(): Array<{ id: string; network: boolean }> 
   ].sort((a, b) => a.id.localeCompare(b.id));
 }
 
-/**
- * Functions that are the BODY of an already-declared action rather than doors
- * of their own. Listed so "why isn't this in the inventory?" has an answer that
- * is written down instead of remembered.
- */
-export const NOT_SURFACES = [
-  { name: "stampAcceptedFrontmatter", partOf: "governance.accept" },
-  { name: "buildAcceptDeps", partOf: "governance.accept" },
-  { name: "appendLog", partOf: "every audited authority action" },
-  { name: "saveAllowlist", partOf: "governance.set-auto-accept-class" },
-  // Shared infrastructure, not one action's helper: `performAdopt` uses it,
-  // and so do `refresh()` and `listRevising()`.
-  { name: "governedMarkdownFiles", partOf: "shared queue and listing infrastructure" },
-  { name: "scheduleReconcile", partOf: "governance.reconcile-observed-human-edit" },
-  { name: "quarantineWrite", partOf: "governance.accept" },
-  { name: "persistRenameRecords", partOf: "governance.rekey-baseline" },
-] as const;
+// `NOT_SURFACES` — the eight functions that are the BODY of an already-declared
+// action rather than doors of their own — was here until S3c. All eight are
+// inside `wiring.ts`, and an exclusion list is only checkable next to the file
+// it excludes from, so it went whole to the provider's `inventory-authority.ts`
+// along with the test that scans for each name. The host has no equivalent list
+// yet, and that is a gap rather than a decision: the same "why isn't this
+// listed?" question can be asked of this package's own helpers, and nothing
+// here answers it.
 
 export function plainActions(): ActionDefinition[] {
   return PLAIN_SURFACES.map((row) =>

@@ -3,7 +3,7 @@
 // logic; the silent-advance ACTION it gates on folds in with the accept path in cycle 2.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyModify, shouldAdvanceBaselineSilently } from "../src/governor/kernel/classify.ts";
+import { classifyModify, shouldAdvanceBaselineSilently } from "../src/kernel/classify.ts";
 
 test("recent agent journal write → agent (regardless of human-input signal)", () => {
   assert.equal(classifyModify({ recentAgentWrite: true, recentGenuineHumanInput: false }), "agent");

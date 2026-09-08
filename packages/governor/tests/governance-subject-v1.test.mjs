@@ -30,11 +30,11 @@ import {
   SubjectDuplicateError,
   SubjectUnsupportedVersionError,
   PROPOSAL_ITEM_SCHEMA,
-} from "../src/governor/kernel/contracts/subject-v1.ts";
-import { sortClasses, governingClass, escalate, CHANGE_CLASSES } from "../src/governor/kernel/contracts/change-class.ts";
-import { mintId, isUuidV7 } from "../src/governor/kernel/contracts/ids.ts";
-import { ORIGIN_CONFIDENCE, originRecord } from "../src/governor/kernel/contracts/origin.ts";
-import { STATE_AXES } from "../src/governor/kernel/contracts/states.ts";
+} from "../src/kernel/contracts/subject-v1.ts";
+import { sortClasses, governingClass, escalate, CHANGE_CLASSES } from "../src/kernel/contracts/change-class.ts";
+import { mintId, isUuidV7 } from "../src/kernel/contracts/ids.ts";
+import { ORIGIN_CONFIDENCE, originRecord } from "../src/kernel/contracts/origin.ts";
+import { STATE_AXES } from "../src/kernel/contracts/states.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 

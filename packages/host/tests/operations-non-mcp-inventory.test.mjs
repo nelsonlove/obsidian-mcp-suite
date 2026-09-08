@@ -1,32 +1,38 @@
 /**
- * operations-non-mcp-inventory.test.mjs — WP0's second half.
+ * operations-non-mcp-inventory.test.mjs — WP0's second half, HOST side.
  *
- * MCP is one door onto Governor. It is not the only one, and it is not the
- * important one: the accept gesture has NO MCP surface by design, so an
- * inventory that stopped at the bridge would omit precisely the operations
- * that create standing.
+ * MCP is one door onto the host. It is not the only one: `obsidian_run_command`
+ * makes every registered command agent-reachable through `executeCommandById`,
+ * automation runs with no caller at all, and the bridge writes outside the
+ * vault on every load whether or not the socket is enabled. This file
+ * inventories those doors in both directions — declared rows must exist in the
+ * source, and registered surfaces must have a row.
  *
- * This file inventories the rest — Obsidian commands, the review-pane
- * authority perimeter, and the automation entry points that run with no caller
- * at all — and pins the two structural properties the acceptance model rests
- * on:
+ * ── WHAT LEFT THIS FILE AT S3c ──────────────────────────────────────────────
  *
- *   1. governance contributes ZERO Obsidian commands. `obsidian_run_command`
- *      makes every command agent-reachable through `executeCommandById`, so an
- *      accept command would be a self-approval primitive one prompt-injection
- *      away. The absence is load-bearing, so it is asserted rather than
- *      assumed.
- *   2. the seven authority-bearing functions are module-scope and NOT
- *      exported. Export is what would make one reachable from a plugin
- *      instance, a view instance, or any other object an agent-facing path can
- *      get hold of.
+ * The accept perimeter's assertions are in
+ * `packages/governor/tests/operations-authority-inventory.test.mjs` now, with
+ * the rows they check. Every one of them scanned `src/governor/wiring/wiring.ts`,
+ * which is not in this package's tree any more, so leaving them here would have
+ * produced two failure modes and no honest outcome: the file-reading scans
+ * (`scanModuleScopeOnly`, `scanExports`, `scanFunctionReaches`) would throw
+ * ENOENT, and the governance-command scan — an EMPTINESS claim — would have
+ * filtered a prefix that can no longer match and passed VACUOUSLY, which is the
+ * worse of the two because it looks like success.
  *
- * Both are true today. Neither was checked by anything before this file.
+ * Specifically gone from here: the perimeter presence/export checks, the export
+ * pinning of `wiring.ts`, the `audited` verification against `appendLog`, the
+ * two-unaudited-acts pin, the authority half of the registry checks, the
+ * "binding an authority action to MCP fails the build" fence test, and the
+ * `NOT_SURFACES` exclusion checks. The registry FENCE itself is still host code
+ * — only the actions it refuses for moved.
  *
- * The registry adds a third, at build time: an action marked `governorOnly`
- * cannot be bound to an agent-reachable surface. That is the static
- * counterpart to the pane's two runtime gesture layers (`addEventListener`
- * rather than `.onclick =`, plus `isRealGesture(evt)` requiring `isTrusted`).
+ * One claim is now checked in the other package and is worth naming rather than
+ * leaving to be discovered: `settings.module-enabled` declares
+ * `reachesAuthority: "governance.rekey-baseline"`, and whether that id is a
+ * DECLARED authority action can only be answered where the authority actions
+ * live. The host still pins that exactly one settings control makes the claim;
+ * the provider's test pins that the id it names is real.
  */
 
 import { test, describe, after } from "node:test";
@@ -34,23 +40,11 @@ import assert from "node:assert/strict";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { resolve as resolvePath } from "node:path";
 
-import {
-  scanCommands,
-  scanGovernanceCommands,
-  scanModuleScopeOnly,
-  scanAutomationSites,
-  scanFunctionReaches,
-  scanExports,
-  PLUGIN_SRC,
-} from "./surface-scan.mjs";
+import { scanCommands, scanAutomationSites, PLUGIN_SRC } from "./surface-scan.mjs";
 import {
   COMMAND_SURFACES,
-  AUTHORITY_SURFACES,
   AUTOMATION_SURFACES,
-  ACCEPT_PERIMETER_FUNCTIONS,
-  WIRING_EXPORTS,
   PLAIN_SURFACES,
-  NOT_SURFACES,
   outsideVaultSurfaces,
   nonMcpActions,
   nonMcpBindings,
@@ -58,7 +52,6 @@ import {
   plainBindings,
 } from "../src/kernel/operations/inventory-non-mcp.ts";
 import { createActionRegistry } from "../src/kernel/operations/registry.ts";
-import { MCP_SURFACE_INVENTORY } from "../src/kernel/operations/inventory-mcp.ts";
 
 const commands = await scanCommands();
 
@@ -89,107 +82,21 @@ describe("non-MCP inventory — Obsidian commands", () => {
 });
 
 // ── the property the acceptance model rests on ───────────────────────────────
+//
+// "The accept path registers ZERO Obsidian commands" is asserted in the
+// provider's suite now, over the provider's tree. It cannot be asserted here:
+// the subtree it is about left, and a filter over a prefix this package no
+// longer contains returns `[]` whatever the provider does.
+//
+// What remains host-side is the other half of the same property, and it is not
+// redundant: a command declared HERE may never bind an authority action,
+// because a command is agent-invocable by id.
 
-describe("non-MCP inventory — governance contributes no command", () => {
-  test("src/governor/wiring registers zero Obsidian commands", async () => {
-    const found = await scanGovernanceCommands();
-    assert.deepEqual(
-      found,
-      [],
-      "a governance command would be reachable through obsidian_run_command's executeCommandById, " +
-        "making the accept path agent-invocable:\n" + found.map((f) => `  ${f.id} in ${f.file}`).join("\n")
-    );
-  });
-
+describe("non-MCP inventory — no host command binds authority", () => {
   test("no declared command's action is Governor-only", () => {
     for (const row of COMMAND_SURFACES) {
       assert.notEqual(row.authority, "governor-only", `command '${row.id}' must not bind an authority action`);
     }
-  });
-});
-
-// ── the accept perimeter is unreachable by construction ──────────────────────
-
-describe("non-MCP inventory — the accept perimeter stays module-scope", () => {
-  test("every authority function named in the perimeter is present in wiring.ts", async () => {
-    const { present } = await scanModuleScopeOnly("governor/wiring/wiring.ts", ACCEPT_PERIMETER_FUNCTIONS);
-    assert.deepEqual(
-      [...present].sort(),
-      [...ACCEPT_PERIMETER_FUNCTIONS].sort(),
-      "a function named in the accept perimeter no longer exists — the inventory is describing code that is gone"
-    );
-  });
-
-  test("none of them is exported", async () => {
-    const { exported } = await scanModuleScopeOnly("governor/wiring/wiring.ts", ACCEPT_PERIMETER_FUNCTIONS);
-    assert.deepEqual(
-      [...exported],
-      [],
-      "exporting an accept-equivalent function is what would let it be reached from a plugin instance, a view " +
-        "instance, or any object an agent-facing path can obtain:\n" + [...exported].join(", ")
-    );
-  });
-  test("the export set of wiring.ts is exactly the pinned list", async () => {
-    // Checking the ten perimeter names closes ten instances. Pinning the whole
-    // export set closes the CLASS: a new export — including one that captures
-    // an accept-capable closure without being named after it — becomes a
-    // visible decision rather than something a reviewer must happen to notice.
-    const actual = await scanExports("governor/wiring/wiring.ts");
-    assert.deepEqual(
-      [...actual].sort(),
-      [...WIRING_EXPORTS].sort(),
-      "governor/wiring/wiring.ts's exports changed; confirm the new one carries no accept-capable closure, then update WIRING_EXPORTS"
-    );
-  });
-
-  test("each action's `audited` claim matches whether its implementation reaches appendLog", async () => {
-    // The previous draft asserted "the acceptance log records these" in a
-    // comment and applied `retention: durable` to every authority action. Two
-    // were wrong. A claim about existing behaviour belongs in a scan.
-    //
-    // `performAccept` and `performRevert` append through their delegates
-    // (`acceptNote` / `revertNote`, which call an injected `appendLog`), so
-    // those two names count as reaching the log. Each delegate is listed
-    // explicitly rather than followed automatically.
-    const reaches = await scanFunctionReaches(
-      "governor/wiring/wiring.ts",
-      ACCEPT_PERIMETER_FUNCTIONS,
-      ["appendLog", "acceptNote", "revertNote"]
-    );
-    const registry = createActionRegistry();
-    for (const action of nonMcpActions()) registry.register(action);
-    for (const b of nonMcpBindings()) registry.bind(b);
-
-    const wrong = [];
-    for (const row of AUTHORITY_SURFACES) {
-      const found = reaches.get(row.implementation);
-      assert.ok(found !== null && found !== undefined, `could not delimit ${row.implementation} in wiring.ts`);
-      const logs = found.size > 0;
-      const action = registry.get(row.action, 1);
-      const claimsDurable = action.retention.operation === "durable";
-      if (logs !== claimsDurable) {
-        wrong.push(
-          `  ${row.action} (via ${row.implementation}): declares retention=${action.retention.operation}, ` +
-            `but it ${logs ? "DOES" : "does NOT"} reach the acceptance log`
-        );
-      }
-    }
-    assert.deepEqual(wrong, [], "an audit claim that does not match the code is worse than no claim:\n" + wrong.join("\n"));
-  });
-
-  test("the two unaudited authority acts are named, so the gap cannot be forgotten", async () => {
-    // This is a real product gap, not an inventory quirk: `performAdopt` is
-    // the mass-silence capability and it writes no operation record at all,
-    // and `setClassEnabled` changes what may be admitted without review with
-    // no record of who changed it. Pinning the set means fixing either one
-    // fails this test and forces the inventory to be updated with it.
-    const registry = createActionRegistry();
-    for (const action of nonMcpActions()) registry.register(action);
-    for (const b of nonMcpBindings()) registry.bind(b);
-    const unaudited = [...new Set(AUTHORITY_SURFACES.map((r) => r.action))]
-      .filter((id) => registry.get(id, 1)?.retention.operation !== "durable")
-      .sort();
-    assert.deepEqual(unaudited, ["governance.adopt-baseline", "governance.set-auto-accept-class"]);
   });
 });
 
@@ -208,32 +115,34 @@ describe("non-MCP inventory — automation entry points", () => {
     }
   });
 
-  test("`touchesAuthority` is enforced, not decoration", async () => {
+  test("no host automation claims `touchesAuthority`", () => {
     // The field was dead data in the first draft: declared, set, and read by
     // nothing. A flag that records "this automation can change authority
     // state" and then changes nothing is worse than no flag, because it reads
-    // as a control.
-    const authorityAutomationFiles = new Set(
-      nonMcpBindings()
-        .filter((b) => b.kind === "automation" && b.source)
-        .filter((b) => AUTHORITY_SURFACES.some((r) => r.action === b.action))
-        .map((b) => b.source)
-    );
+    // as a control. It used to be enforced by cross-referencing the authority
+    // bindings emitted from this same file — "the claim is backed by a fenced
+    // action, in the file the row names".
+    //
+    // After S3c there is nothing here to cross-reference: the one row that
+    // claimed it, and every authority action that could back it, are in the
+    // provider. So the host's half of the claim is now the STRONGER, simpler
+    // one — no host automation may claim it at all, because no host action can
+    // back it. The positive case (the governance row's claim IS backed) is
+    // asserted in the provider's suite, against the provider's bindings.
     for (const row of AUTOMATION_SURFACES) {
-      if (row.touchesAuthority) {
-        assert.ok(
-          authorityAutomationFiles.has(row.file),
-          `automation row '${row.id}' claims touchesAuthority but no authority action is bound to an automation ` +
-            `surface in ${row.file} — the claim is not backed by a fenced action`
-        );
-      } else {
-        assert.ok(
-          !authorityAutomationFiles.has(row.file),
-          `automation row '${row.id}' does NOT claim touchesAuthority, but an authority action is bound to an ` +
-            `automation surface in ${row.file}`
-        );
-      }
+      assert.equal(
+        row.touchesAuthority,
+        false,
+        `automation row '${row.id}' claims touchesAuthority, but authority-bearing automation lives in the ` +
+          `governance provider — nothing this package declares can back the claim`
+      );
     }
+    // Belt and braces on the other side: no binding this file emits may point
+    // at an authority action, whatever the rows say.
+    const registry = createActionRegistry();
+    for (const action of nonMcpActions()) registry.register(action);
+    const authorityBound = nonMcpBindings().filter((b) => registry.get(b.action, b.actionVersion)?.authority.governorOnly);
+    assert.deepEqual(authorityBound.map((b) => b.id), []);
   });
 
   test("every file containing an automation entry point is represented", async () => {
@@ -262,57 +171,34 @@ describe("non-MCP inventory — builds a valid action registry", () => {
     assert.deepEqual(problems.map((p) => `${p.code}: ${p.message}`), []);
   });
 
-  test("every authority action is Governor-only and carries the authority class", () => {
-    for (const row of AUTHORITY_SURFACES) {
-      const action = registry.get(row.action, 1);
-      assert.ok(action, `${row.action} is not registered`);
-      assert.equal(action.authority.governorOnly, true, `${row.action} must be Governor-only`);
-      assert.ok(action.changeClasses.includes("authority"), `${row.action} must carry the authority class`);
-    }
-  });
-
-  test("every authority binding is ui or automation — never agent-reachable", () => {
-    for (const b of nonMcpBindings()) {
-      const action = registry.get(b.action, b.actionVersion);
-      if (!action?.authority.governorOnly) continue;
-      assert.ok(
-        b.kind === "ui" || b.kind === "automation" || b.kind === "internal",
-        `authority surface '${b.id}' is bound as '${b.kind}', which an agent can reach`
-      );
-    }
-  });
-
-  test("no authority ACTION id appears in the MCP inventory", () => {
-    // `row.action`, not `row.id`. Checking the surface id would be vacuous:
-    // surface ids are dotted (`governance.pane.accept`) and MCP tool names are
-    // snake_case, so they cannot collide by construction and the assertion
-    // would pass no matter what. The action id is the thing that could
-    // plausibly be exposed as a tool, which is the mistake worth catching.
-    const mcpTools = new Set(MCP_SURFACE_INVENTORY.map((r) => r.tool));
-    for (const row of AUTHORITY_SURFACES) {
-      assert.ok(!mcpTools.has(row.action), `authority action '${row.action}' also appears as an MCP tool`);
+  test("no host action is Governor-only", () => {
+    // The inverse of what this block used to assert. It listed the nine
+    // authority actions and checked each was `governorOnly` with the
+    // `authority` class; those nine are the provider's now, and what is
+    // checkable here is that this package declares NONE — a host action that
+    // acquired `governorOnly` would be an authority contract on the wrong side
+    // of the split, and it would be bound to a command or a timer that an
+    // agent can reach.
+    for (const action of nonMcpActions()) {
+      assert.equal(action.authority.governorOnly, false, `${action.id} must not be Governor-only`);
+      assert.ok(!action.changeClasses.includes("authority"), `${action.id} must not carry the authority class`);
     }
   });
 });
 
-// ── the registry REFUSES the thing it exists to refuse ───────────────────────
-
-describe("non-MCP inventory — binding an authority action to MCP fails the build", () => {
-  test("the fence is live, not merely documented", () => {
-    const registry = createActionRegistry();
-    for (const action of nonMcpActions()) registry.register(action);
-    for (const b of nonMcpBindings()) registry.bind(b);
-    // The exact mistake a future contributor might make: exposing accept as a tool.
-    registry.bind({ kind: "mcp", id: "obsidian_accept_proposal", action: AUTHORITY_SURFACES[0].action, actionVersion: 1 });
-    const codes = registry.validate().map((p) => p.code);
-    assert.ok(
-      codes.includes("authority_agent_surface"),
-      `binding an authority action to an MCP surface must fail validation; got: ${codes.join(", ") || "(no problems)"}`
-    );
-  });
-});
-
-// ── the command scan is proven, not assumed ──────────────────────────────────
+// ── the scans are proven, not assumed ────────────────────────────────────────
+//
+// Two source scans survive in this file after S3c, and both are now proven the
+// same way. The command scan always was. The automation scan was not: its
+// presence direction ("every declared row's file contains an entry point")
+// does fail loudly if the scanner breaks, but its OTHER direction is an
+// emptiness claim over files nobody declared, and the split is exactly the
+// event that teaches how quietly an emptiness claim rots. So it gets a planted
+// violation too.
+//
+// Order matters and is load-bearing: these blocks run AFTER the ones that
+// assert over the real tree, because a planted file is a real file to every
+// scan in the process until its `after` hook removes it.
 
 describe("non-MCP inventory — the command scan is proven against a planted command", () => {
   const planted = resolvePath(PLUGIN_SRC, "__command-scan-scratch.ts");
@@ -338,6 +224,34 @@ describe("non-MCP inventory — the command scan is proven against a planted com
   });
 });
 
+describe("non-MCP inventory — the automation scan is proven against a planted subscription", () => {
+  const planted = resolvePath(PLUGIN_SRC, "__automation-scan-scratch.ts");
+  after(() => rm(planted, { force: true }));
+
+  test("a newly added event subscription is caught and reported as unrepresented", async () => {
+    await writeFile(
+      planted,
+      [
+        "// [test artifact — safe to delete] planted by operations-non-mcp-inventory.test.mjs",
+        "export function armPlanted(plugin: { registerEvent: (e: unknown) => void }, ref: unknown) {",
+        "  plugin.registerEvent(ref);",
+        "}",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+    const scanned = await scanAutomationSites();
+    const declaredFiles = new Set(AUTOMATION_SURFACES.map((r) => r.file));
+    const unrepresented = [...new Set(scanned.map((s) => s.file))].filter((f) => !declaredFiles.has(f));
+    assert.deepEqual(
+      unrepresented,
+      ["src/__automation-scan-scratch.ts"],
+      "the automation scan no longer matches a registerEvent call — work that starts with no caller would go " +
+        "undeclared and nothing would say so"
+    );
+  });
+});
+
 // ── bridge, settings, and internal surfaces ──────────────────────────────────
 
 describe("non-MCP inventory — bridge, settings and internal surfaces", () => {
@@ -357,7 +271,9 @@ describe("non-MCP inventory — bridge, settings and internal surfaces", () => {
     const rows = [
       ...AUTOMATION_SURFACES.map((r) => ({ id: r.id, file: r.file })),
       // Command bindings carry no `source` (their file is COMMAND_SURFACES' own scan); the
-      // automation and authority bindings do, and those are the ones that name a path.
+      // automation bindings do, and those are the ones that name a path. The authority
+      // bindings used to be the other half of this check and are pinned the same way in the
+      // provider's suite, against the provider's tree.
       ...nonMcpBindings().filter((b) => b.source).map((b) => ({ id: b.id, file: b.source })),
     ];
     assert.ok(rows.length > 0, "nothing scanned — the inventory is empty or the shape changed");
@@ -368,11 +284,14 @@ describe("non-MCP inventory — bridge, settings and internal surfaces", () => {
     }
   });
 
+  // Uniqueness is what makes the inverse inventory a lookup rather than a
+  // search, and after S3c the surface ids live in two packages — so this check
+  // covers the host's half only, and the provider's test checks the union
+  // (its own ids, plus these, in one set). Neither package can do it alone.
   test("no duplicate surface ids across the whole non-MCP inventory", () => {
     const ids = [
       ...COMMAND_SURFACES.map((r) => `command:${r.id}`),
       ...AUTOMATION_SURFACES.map((r) => r.id),
-      ...AUTHORITY_SURFACES.map((r) => r.id),
       ...PLAIN_SURFACES.map((r) => r.id),
     ];
     assert.equal(new Set(ids).size, ids.length);
@@ -427,47 +346,26 @@ describe("non-MCP inventory — bridge, settings and internal surfaces", () => {
     // Exactly one today: enabling the acceptance module mounts governance,
     // which arms the one-shot reconcileBaselines handler.
     assert.deepEqual(reaching.map((r) => r.id), ["settings.module-enabled"]);
-    const authorityActionIds = new Set(AUTHORITY_SURFACES.map((r) => r.action));
+    // Every row making the claim must name SOMETHING action-shaped. Whether
+    // the id it names is a DECLARED authority action is asked in the
+    // provider's suite, which is where the authority actions now are. Half a
+    // check here beats the appearance of a whole one: this catches an empty or
+    // accidental value, and the provider catches a wrong one.
     for (const row of reaching) {
+      assert.equal(typeof row.reachesAuthority, "string");
       assert.ok(
-        authorityActionIds.has(row.reachesAuthority),
-        `'${row.id}' names '${row.reachesAuthority}', which is not a declared authority action`
+        row.reachesAuthority.startsWith("governance."),
+        `'${row.id}' names '${row.reachesAuthority}', which is not an action id`
       );
     }
   });
 
-  test("the NOT_SURFACES exclusions each name a real function and the action they belong to", async () => {
-    // An inventory is only trustworthy if "why isn't this listed?" has a
-    // written answer. Each exclusion must be a function that actually exists
-    // and must name a declared action as its owner.
-    const declaredActions = new Set(AUTHORITY_SURFACES.map((r) => r.action));
-    const { present } = await scanModuleScopeOnly(
-      "governor/wiring/wiring.ts",
-      NOT_SURFACES.map((n) => n.name)
-    );
-    for (const n of NOT_SURFACES) {
-      assert.ok(n.partOf?.length > 5, `${n.name} needs a stated owner`);
-      // `appendLog` is owned by "every audited authority action" rather than
-      // one id, so only single-id owners are checked against the registry.
-      // An owner is either a declared action id, or an explicit statement that
-      // the helper is shared rather than one action's. Both are acceptable
-      // answers to "why isn't this listed"; a name that is neither is not.
-      const shared = /shared|every/.test(n.partOf);
-      assert.ok(
-        declaredActions.has(n.partOf) || shared,
-        `${n.name} names owner '${n.partOf}', which is neither a declared action nor an explicit shared-infrastructure note`
-      );
-    }
-    // EXACT set, not a size check. `present.size > 0` would still pass with
-    // seven of the eight renamed or deleted — which is precisely the
-    // "describing gone code" failure this is supposed to catch. Same pattern
-    // the accept-perimeter check already uses.
-    assert.deepEqual(
-      [...present].sort(),
-      NOT_SURFACES.map((n) => n.name).sort(),
-      "an excluded helper named here no longer exists in wiring.ts — the exclusion list is describing gone code"
-    );
-  });
+  // The `NOT_SURFACES` exclusion check — "why isn't this listed?" answered for
+  // each of the eight helpers inside `wiring.ts`, and each name proven still to
+  // exist — was here until S3c. All eight are the provider's, so the list and
+  // its test went there together. This package has no exclusion list of its
+  // own, which is a gap rather than a decision: the same question can be asked
+  // of the host's helpers and nothing here answers it.
 
   test("the whole non-MCP inventory builds a valid registry together", () => {
     const registry = createActionRegistry();

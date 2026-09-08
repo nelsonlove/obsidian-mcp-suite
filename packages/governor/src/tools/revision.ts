@@ -33,11 +33,24 @@
 // adapter in server.ts touches `app`.
 
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { acceptTransitionReason, parseGuardFrontmatter, AcceptForbiddenError } from "@vault-mcp/core";
-import { ok, codedError } from "./helpers.js";
-import { planSubmitRevision } from "../governor/kernel/revision.js";
-import { SUBMIT_REVISION_TOOL } from "../governor/kernel/dispositions.js";
+import type { SdkToolSpec } from "vault-mcp-api";
+import { acceptTransitionReason, parseGuardFrontmatter, AcceptForbiddenError, isVisible, type GuardSettings } from "@vault-mcp/core";
+import { refuse } from "./refusal.js";
+import { planSubmitRevision, parseRevisionRequestCallouts, splitNote } from "../kernel/revision.js";
+import { SUBMIT_REVISION_TOOL } from "../kernel/dispositions.js";
+
+const REVISIONS_CAP = 100;
+
+/** Enumeration seam for the `governance_revisions` listing: every markdown
+ * note's path plus its cached frontmatter. */
+export interface RevisionListSource {
+  /** All markdown notes with their (metadata-cache) frontmatter; order unspecified. */
+  listNotes(): Promise<Array<{ path: string; frontmatter: Record<string, unknown> | null }>>;
+  /** Full note text, or null when the path names no note. */
+  read(path: string): Promise<string | null>;
+  /** Settings for the allowlist read boundary (absent ⇒ everything visible). Dormant — see below. */
+  getSettings?: () => GuardSettings;
+}
 
 /** What the tool needs from the world — a read and a write, nothing else. */
 export interface RevisionSource {
@@ -49,7 +62,6 @@ export interface RevisionSource {
   now(): Date;
 }
 
-const RW = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
 
 /**
  * The note's acceptance-status as a trimmed string, however the key is cased/underscored.
@@ -89,11 +101,10 @@ export function revisionWriteRefusalReason(before: string, after: string): strin
   }
 }
 
-export function registerGovernanceRevisionTool(server: McpServer, source: RevisionSource): void {
-  server.registerTool(
-    SUBMIT_REVISION_TOOL,
+export function buildRevisionTools(source: RevisionSource, listing: RevisionListSource): SdkToolSpec[] {
+  return [
     {
-      title: "Submit a revised note back for human review",
+      name: SUBMIT_REVISION_TOOL,
       description:
         "Resubmit a note a human sent back for changes (`acceptance-status: revising`). THE REVISING AGENT'S " +
         "CONTRACT: the human's feedback lives in the NOTE BODY — read the `[!revision-request]` callout(s) below " +
@@ -119,14 +130,23 @@ export function registerGovernanceRevisionTool(server: McpServer, source: Revisi
               "below the H1. Omit to resubmit without a report."
           ),
       },
-      annotations: RW,
-    },
-    async ({ path, summary }: { path: string; summary?: string }) => {
+      readOnly: false,
+      handler: async (raw: Record<string, unknown>) => {
+      const path = raw.path;
+      const summary = raw.summary;
+      // The publishing boundary drops zod min/max, so both bounds are
+      // re-applied here (the vault_skills_release semver lesson).
+      if (typeof path !== "string" || path.length === 0) {
+        refuse("invalid_argument", "'path' must be a non-empty string");
+      }
+      if (summary !== undefined && (typeof summary !== "string" || summary.length < 1 || summary.length > 4000)) {
+        refuse("invalid_argument", "'summary' must be a string of 1 to 4000 characters when given");
+      }
       if (!path.toLowerCase().endsWith(".md")) {
-        return codedError("invalid_path", `not a markdown note: ${path}`);
+        refuse("invalid_path", `not a markdown note: ${path}`);
       }
       const before = await source.read(path);
-      if (before === null) return codedError("not_found", `no note at ${path}`);
+      if (before === null) refuse("not_found", `no note at ${path}`);
 
       // The status gate — read through the guard's own strict frontmatter reader, which fails
       // CLOSED (refuses) on YAML it cannot confidently classify rather than guessing.
@@ -134,11 +154,11 @@ export function registerGovernanceRevisionTool(server: McpServer, source: Revisi
       try {
         fmBefore = parseGuardFrontmatter(before);
       } catch (e) {
-        return codedError("accept_forbidden", (e as Error).message);
+        refuse("accept_forbidden", (e as Error).message);
       }
       const status = acceptanceStatusOf(fmBefore);
       if (status !== "revising") {
-        return codedError(
+        refuse(
           "not_revising",
           `${path} has acceptance-status ${status === null ? "(none)" : `'${status}'`} — nothing to submit. ` +
             "Only a note a human marked 'revising' (via the review pane's Request changes) can be resubmitted."
@@ -149,15 +169,15 @@ export function registerGovernanceRevisionTool(server: McpServer, source: Revisi
       const plan = planSubmitRevision(before, { summary, date });
       if (plan === null) {
         // Unreachable after the status gate above except on a malformed-frontmatter race; fail closed.
-        return codedError("not_revising", `${path} carries no acceptance-status to transition`);
+        refuse("not_revising", `${path} carries no acceptance-status to transition`);
       }
 
       // Belt-and-suspenders: the (before, after) transition through the SHARED accept guard.
       const refusal = revisionWriteRefusalReason(before, plan.content);
-      if (refusal !== null) return codedError("accept_forbidden", refusal);
+      if (refusal !== null) refuse("accept_forbidden", refusal);
 
       await source.write(path, plan.content);
-      return ok({
+      return {
         path,
         acceptance_status: "proposed",
         removed_requests: plan.removedRequests,
@@ -165,78 +185,65 @@ export function registerGovernanceRevisionTool(server: McpServer, source: Revisi
         // The guarded.ts effects convention: the journal records what actually changed.
         filesChanged: 1,
         files: [path],
-      });
-    }
-  );
-}
+      };
+      },
+    },
 
-// ── governance_revisions: the read-side discovery listing ─────────────────────
-//
-// The submit tool above closes the round-trip; this tool OPENS it: a dispatcher
-// asks "what revision work is waiting, and what did the human ask for?" without
-// reading every note. Read-only, always-on beside obsidian_pending_review
-// (server.ts), allowlist-filtered with the SAME isVisible rule every read
-// surface uses. It confers nothing: the listing is derived from frontmatter the
-// pane's request-changes gesture wrote and callouts in agent-readable bodies.
-
-import { isVisible, type GuardSettings } from "../guard.js";
-import { parseRevisionRequestCallouts, splitNote } from "../governor/kernel/revision.js";
-
-const RO = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
-const REVISIONS_CAP = 100;
-
-/** Enumeration seam for the listing: every markdown note's path + cached frontmatter. */
-export interface RevisionListSource {
-  /** All markdown notes with their (metadata-cache) frontmatter; order unspecified. */
-  listNotes(): Promise<Array<{ path: string; frontmatter: Record<string, unknown> | null }>>;
-  /** Full note text, or null when the path names no note. */
-  read(path: string): Promise<string | null>;
-  /** Settings for the allowlist read boundary (absent ⇒ everything visible). */
-  getSettings?: () => GuardSettings;
-}
-
-export function registerGovernanceRevisionsListTool(server: McpServer, source: RevisionListSource): void {
-  server.registerTool(
-    "governance_revisions",
     {
-      title: "List notes awaiting revision",
+      // ── governance_revisions: the read-side discovery listing ──────────────
+      //
+      // The submit tool above closes the round-trip; this tool OPENS it: a
+      // dispatcher asks "what revision work is waiting, and what did the human
+      // ask for?" without reading every note. It confers nothing — the listing
+      // is derived from frontmatter the pane's request-changes gesture wrote
+      // and callouts in agent-readable bodies.
+      //
+      // Its allowlist filter is the same DORMANT SEAM the other published tools
+      // keep: a satellite cannot reach the host's guard settings, and under an
+      // active allowlist the host blocks this tool wholesale anyway (no
+      // recognized path key, so nothing to scope). Kept because an apiVersion-2
+      // SDK carrying the caller's scope wakes it with no code change, and
+      // because the tests supply it so it cannot rot.
+      name: "governance_revisions",
       description:
         "Notes a human sent back for changes (`acceptance-status: revising`), with the `[!revision-request]` " +
         "callout text parsed out of each note's body — the request, its date, and the note's path — so a " +
         "dispatcher can read the human's asks at a glance and route the work. THE REVISING AGENT'S CONTRACT: " +
         "the feedback lives in the NOTE BODY (the callout plus anything else the human left inline); finish with " +
-        "governance_submit_revision. Read-only; allowlist-filtered; capped at " + REVISIONS_CAP + ".",
+        "governance_submit_revision. Read-only; capped at " + REVISIONS_CAP + ". Under a path allowlist this tool " +
+        "is unavailable: `folder` is not a path key the host recognizes, so it cannot scope the call and blocks it.",
       inputSchema: {
         folder: z.string().optional().describe("Only notes under this vault-relative folder prefix."),
       },
-      annotations: RO,
+      readOnly: true,
+      handler: async (raw: Record<string, unknown>) => {
+        const folder = typeof raw.folder === "string" && raw.folder.length > 0 ? raw.folder : undefined;
+        const settings = listing.getSettings?.();
+        const all = await listing.listNotes();
+        const prefix = folder ? folder.replace(/\/+$/, "") + "/" : null;
+        const revising = all.filter(
+          (n) =>
+            acceptanceStatusOf(n.frontmatter) === "revising" &&
+            (!prefix || n.path.startsWith(prefix) || n.path === prefix.slice(0, -1)) &&
+            (!settings || isVisible(n.path, settings))
+        );
+        const capped = revising.slice(0, REVISIONS_CAP);
+        const items = [];
+        for (const n of capped) {
+          const text = await listing.read(n.path);
+          // A cache/disk race (note deleted between list and read) drops the row
+          // rather than failing the listing.
+          if (text === null) continue;
+          const requests = parseRevisionRequestCallouts(splitNote(text).body);
+          items.push({ path: n.path, requests });
+        }
+        return {
+          count: items.length,
+          total_revising: revising.length,
+          truncated: revising.length > capped.length,
+          items,
+        };
+      },
     },
-    async ({ folder }: { folder?: string }) => {
-      const settings = source.getSettings?.();
-      const all = await source.listNotes();
-      const prefix = folder ? folder.replace(/\/+$/, "") + "/" : null;
-      const revising = all.filter(
-        (n) =>
-          acceptanceStatusOf(n.frontmatter) === "revising" &&
-          (!prefix || n.path.startsWith(prefix) || n.path === prefix.slice(0, -1)) &&
-          (!settings || isVisible(n.path, settings))
-      );
-      const capped = revising.slice(0, REVISIONS_CAP);
-      const items = [];
-      for (const n of capped) {
-        const text = await source.read(n.path);
-        // A cache/disk race (note deleted between list and read) drops the row
-        // rather than failing the listing.
-        if (text === null) continue;
-        const requests = parseRevisionRequestCallouts(splitNote(text).body);
-        items.push({ path: n.path, requests });
-      }
-      return ok({
-        count: items.length,
-        total_revising: revising.length,
-        truncated: revising.length > capped.length,
-        items,
-      });
-    }
-  );
+  ];
 }

@@ -167,9 +167,10 @@ test("annotated legacy contexts stay allowed for the 0.12.0 rename rules (no ove
       "a legacy `modules.governance` row is adopted once by the settings shim",
       "migrated from `modules.governance` in 0.12.0",
     ]],
-    ["retired-path: ~/.claude/vault-mcp asserted as the canonical state dir", [
-      "a grace-period compat surface at the old `~/.claude/vault-mcp/` state dir",
-      "writes a legacy discovery copy into `~/.claude/vault-mcp/`",
+    ["retired-path: ~/.claude/governor asserted as the canonical state dir", [
+      "a grace-period compat surface at the old `~/.claude/governor/` state dir",
+      "writes a legacy discovery copy into `~/.claude/governor/`",
+      "the provider's history repository stays at `~/.claude/governor/history/<vault-slug>/`, unmoved",
     ]],
   ];
   for (const [id, lines] of cases) {
@@ -448,7 +449,7 @@ test("the invariant-claims check covers EVERY docs file — the retired vision-d
 // promotions decrement it; zero retires the section), and every pending entry carries its
 // evidence note.
 const PENDING_SECTION_HEADING = "## Imported documentation corpus (2026-08-23)";
-const PENDING_IMPORT_ENTRIES = 51; // 48 imported 2026-08-23 + 3 from the coherence-audit fix pass (C-006 alignment + install-id path correction reworded flagged spans — see the section's dated note). Decrement as the operator promotes entries; delete section + pins at zero
+const PENDING_IMPORT_ENTRIES = 50; // 48 imported 2026-08-23 + 3 from the coherence-audit fix pass (C-006 alignment + install-id path correction reworded flagged spans — see the section's dated note) − 1 at S3c: docs/settings.md's `Acceptance` module row was DELETED, because acceptance left the host's module registry with the governance provider and the row now describes nothing. Decrement as the operator promotes entries; delete section + pins at zero
 
 function parsePendingSection(raw) {
   const at = raw.indexOf(PENDING_SECTION_HEADING);

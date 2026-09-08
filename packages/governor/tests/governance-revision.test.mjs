@@ -31,7 +31,7 @@ import {
   insertRevisionRequest,
   withdrawRevisionRequests,
   planSubmitRevision,
-} from "../src/governor/kernel/revision.ts";
+} from "../src/kernel/revision.ts";
 
 const BOM = String.fromCharCode(0xfeff);
 const FM = "---\nacceptance-status: revising\nuid: abc\n---\n";

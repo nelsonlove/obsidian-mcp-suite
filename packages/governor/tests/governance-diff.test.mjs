@@ -3,7 +3,7 @@
 // src/governor/kernel/diff.ts. Read-only display data; nothing here writes.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { diffFrontmatter, diffLines, wordDiff, diffNote, toHunks } from "../src/governor/kernel/diff.ts";
+import { diffFrontmatter, diffLines, wordDiff, diffNote, toHunks } from "../src/kernel/diff.ts";
 
 function sameLines(n, prefix = "l") {
   return Array.from({ length: n }, (_, i) => ({ status: "same", text: `${prefix}${i}` }));

@@ -13,7 +13,7 @@ import {
   evaluateLinkHeal,
   isValidUuidV7,
   isValidTimestamp,
-} from "../src/governor/kernel/auto-accept/detectors.ts";
+} from "../src/kernel/auto-accept/detectors.ts";
 
 const UID = "019fea8c-2093-758a-8da2-e8dbcddda6b4"; // valid UUIDv7 (version nibble 7, variant 8)
 

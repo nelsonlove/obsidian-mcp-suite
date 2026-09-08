@@ -144,6 +144,12 @@ const QUEUE_DELETE_TIMER = "\u0000queue-delete";
 export interface GovernanceWireDeps {
   getConfig: () => Record<string, unknown>;
   /**
+   * The HOST's journal directory (`<host plugin dir>/journal`). Required since
+   * the host/provider split: the write journal is the host's, the review queue
+   * is derived from it, and nothing else in this plugin can compute where it is.
+   */
+  journalDir: string;
+  /**
    * The governed-proposals surface (WP6b-2), built in main.ts's closure scope
    * and handed through as an ARGUMENT — never a plugin/view property (§9).
    * Absent ⇒ the pane simply has no governed-proposals section.
@@ -1269,9 +1275,13 @@ export async function wireGovernance(plugin: Plugin, deps: GovernanceWireDeps): 
     baseDir: `${govDir}/baselines`,
     quarantineDir: `${govDir}/quarantine`,
     logPath: `${govDir}/acceptance-log.jsonl`,
-    // The vault-mcp write journal — the SAME journal the kernel appends to. The pending queue is
-    // derived from it, so an agent's MCP content-write is what surfaces a note for review.
-    journalDir: `${pluginDir}/journal`,
+    // THE HOST'S write journal — the same file the kernel appends to, which since the
+    // host/provider split lives in the HOST's plugin directory rather than this one. The pending
+    // queue is DERIVED from it: an agent's MCP content-write is what surfaces a note for review,
+    // so a provider pointed at the wrong directory shows a permanently empty queue and says
+    // nothing about why. `deps.journalDir` is therefore required, not optional, and main.ts
+    // resolves it from the host plugin's own `manifest.dir`.
+    journalDir: deps.journalDir,
     allowlistPath: `${govDir}/auto-accept-allowlist.json`,
     pendingIndexPath: `${govDir}/pending-index.json`,
     renameRecordsPath: `${govDir}/rename-records.json`,

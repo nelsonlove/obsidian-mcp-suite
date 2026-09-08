@@ -5,7 +5,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pendingIndex, serializePendingIndex } from "../src/governor/kernel/pending-index.ts";
+import { pendingIndex, serializePendingIndex } from "../src/kernel/pending-index.ts";
 
 const item = (overrides = {}) => ({
   path: "Notes/A.md",

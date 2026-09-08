@@ -25,11 +25,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { planLegacyImport, createLegacyEvidenceStore } from "../src/governor/kernel/migration/legacy-import.ts";
-import { performCutover, rollbackCutover, CutoverRefusedError, LegacyWriterDisabledError, CUTOVER_DEFAULT } from "../src/governor/kernel/migration/cutover.ts";
-import { BaselineStore } from "../src/governor/kernel/baseline-store.ts";
-import { buildMigration } from "../src/governor/wiring/migration-wiring.ts";
-import { standingHealth } from "../src/governor/kernel/admission/standing-health.ts";
+import { planLegacyImport, createLegacyEvidenceStore } from "../src/kernel/migration/legacy-import.ts";
+import { performCutover, rollbackCutover, CutoverRefusedError, LegacyWriterDisabledError, CUTOVER_DEFAULT } from "../src/kernel/migration/cutover.ts";
+import { BaselineStore } from "../src/kernel/baseline-store.ts";
+import { buildMigration } from "../src/wiring/migration-wiring.ts";
+import { standingHealth } from "../src/kernel/admission/standing-health.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const T0 = 1_800_000_000_000;
@@ -627,7 +627,7 @@ describe("the migration section's own fixes are pinned — eleventh-instance clo
 
 describe("cutover gate — the legacy baseline repair paths must not run post-cutover", () => {
   const wiringSource = () =>
-    fs.readFileSync(new URL("../src/governor/wiring/wiring.ts", import.meta.url), "utf8");
+    fs.readFileSync(new URL("../src/wiring/wiring.ts", import.meta.url), "utf8");
 
   /** Strip `//` comments. Without this the pin indexes PROSE: the gate's own
    *  explanatory comment names `getMarkdownFiles()`, so an ordering check found
