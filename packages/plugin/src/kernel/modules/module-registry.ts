@@ -5,7 +5,7 @@
 // Discipline mirrors the vocab registry's: settings and module lists are
 // user-shaped inputs, so every defect — duplicate id, unknown id in settings,
 // governance posture, tool-name collision, forbidden tool name, a throwing
-// register() — is SKIPPED AND REPORTED via `problems`, never thrown. One bad
+// register() — is SKIPPED AND REPORTED via `problems` — with one carve-out: a settings row naming an EXTRACTED module id (see EXTRACTED_MODULE_IDS below) is skipped SILENTLY, because those rows are the satellites' preserved adoption sources, not defects, never thrown. One bad
 // module must not take the tool surface down, and a bad tool must not take
 // its module down.
 //
