@@ -55,6 +55,58 @@ export function sanitizeOwnerId(id: string): string {
   return id.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 }
 
+/**
+ * THE GRANDFATHER TABLE — the five tool names that shipped BEFORE the suite
+ * split and keep their exact spellings after it (S3c).
+ *
+ * The publishing rule is `<sanitized owner id>_<bare name>`, and the whole
+ * suite has paid that rename tax deliberately at every satellite extraction:
+ * the plugin id IS the tool namespace, and a satellite's names change with it.
+ * These five cannot, because renaming a SHIPPED tool name breaks every agent
+ * session for zero semantic gain — the same locked decision that keeps
+ * `governance_revisions` and `governance_submit_revision` spelled as they are,
+ * and that forced the seven `obsidian_jd_*` renames to be recorded as a
+ * BOUNDARY rather than a choice. Under the split these five leave the host for
+ * the governance provider (§6 assigns them there), so without this table
+ * `governance_revisions` would become `governor_governance_revisions` and
+ * `obsidian_pending_review` could not be published at all.
+ *
+ * WHY A HOST-HELD TABLE AND NOT A FLAG ON THE SPEC. An `exactName: true` flag
+ * would be publisher-controlled, so any plugin could claim any name — including
+ * squatting the built-in `obsidian_*` namespace F1 exists to protect. This
+ * table is checked in, enumerable, and names the OWNER as well as the name, so
+ * only `governor` can publish these five and nobody can publish anything else
+ * unprefixed. It is the "documented F1 carve-out gated on the registered
+ * provider id", narrowed one step further: gated on the id the table names,
+ * not on whoever happens to hold a seam registration (gating on
+ * `seam.providerIds()` would let ANY plugin that registers a write observer
+ * claim `obsidian_pending_review`, which is strictly worse).
+ *
+ * IT IS CLOSED. Nothing is added here. A new tool takes the ordinary namespaced
+ * form; this table exists solely for continuity of names that were already on
+ * the wire when the split happened.
+ */
+export const GRANDFATHERED_TOOL_NAMES: ReadonlyMap<string, string> = new Map([
+  ["obsidian_pending_review", "governor"],
+  ["governance_revisions", "governor"],
+  ["governance_submit_revision", "governor"],
+  ["governance_mandate_draft", "governor"],
+  ["governance_mandates", "governor"],
+]);
+
+/**
+ * The name a spec publishes under, and whether the F1 `obsidian_*` refusal
+ * applies to it. Exported so the SDK contract test and the provider's own
+ * publication test can assert the same answer this registry computes.
+ */
+export function publishedToolName(ownerPluginId: string, bareName: string): { toolName: string; grandfathered: boolean } {
+  if (GRANDFATHERED_TOOL_NAMES.get(bareName) === ownerPluginId) {
+    return { toolName: bareName, grandfathered: true };
+  }
+  const owner = sanitizeOwnerId(ownerPluginId);
+  return { toolName: `${owner}_${bareName}`, grandfathered: false };
+}
+
 export class ExternalToolRegistry {
   private byName = new Map<string, ExternalToolEntry>();
 
@@ -68,9 +120,13 @@ export class ExternalToolRegistry {
         throw new TypeError(`governor: invalid tool name '${spec.name}' (must match ${NAME_RE})`);
       if (typeof spec.handler !== "function")
         throw new TypeError(`governor: tool '${spec.name}' handler is not a function`);
-      const toolName = `${owner}_${spec.name}`;
+      const { toolName, grandfathered } = publishedToolName(ownerPluginId, spec.name);
       // F1: reject names that collide with the built-in obsidian_* namespace.
-      if (toolName.startsWith("obsidian_"))
+      // The ONE exception is the grandfather table above, which names both the
+      // spelling and the single owner allowed to publish it — so
+      // `obsidian_pending_review` survives the split under its shipped name and
+      // nothing else gains a way into the reserved namespace.
+      if (!grandfathered && toolName.startsWith("obsidian_"))
         throw new TypeError(`governor: tool name '${toolName}' collides with the reserved obsidian_* namespace`);
       // F4: reject cross-owner clobbering (same-owner replace is by design).
       const existing = this.byName.get(toolName);
@@ -95,7 +151,7 @@ export class ExternalToolRegistry {
     }
     const added: ExternalToolEntry[] = [];
     for (const spec of tools) {
-      const entry: ExternalToolEntry = { ownerId: ownerPluginId, toolName: `${owner}_${spec.name}`, spec };
+      const entry: ExternalToolEntry = { ownerId: ownerPluginId, toolName: publishedToolName(ownerPluginId, spec.name).toolName, spec };
       this.byName.set(entry.toolName, entry); // replace-on-re-register, by design
       added.push(entry);
     }
