@@ -55,7 +55,7 @@ registrar is never called outside the mount.
 `ModuleRegistry` (`kernel/modules/module-registry.ts`) treats module lists and settings as
 user-shaped input: every defect — a duplicate id, a settings row naming an unknown module, a
 governance posture, a tool-name collision, a forbidden tool name, a throwing `register()` or
-`validate()` — is **skipped and reported** via a `problems` array, **never thrown**. One bad
+`validate()` — is **skipped and reported** via a `problems` array, **never thrown**. (One carve-out since 2026-09-07: a settings row naming an EXTRACTED module id — the satellites' preserved one-shot adoption sources, `EXTRACTED_MODULE_IDS` in module-registry.ts — is skipped silently; it is designed-in state, not a defect.) One bad
 module must not take the tool surface down; a bad tool must not take its module down. (`server.ts`
 logs `problems` per connection.)
 
