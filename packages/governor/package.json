@@ -1,0 +1,26 @@
+{
+  "name": "@vault-mcp/governor",
+  "version": "0.19.0",
+  "private": true,
+  "description": "The Governor governance provider: proposals, admission, mandates, the standing chain and the human-only review pane, plugged into the Vault MCP host through the governance seam.",
+  "type": "module",
+  "scripts": {
+    "build": "node esbuild.config.mjs production",
+    "dev": "node esbuild.config.mjs",
+    "test": "tsc --noEmit && node --import tsx --test 'tests/*.test.mjs'",
+    "pretest": "npm --prefix ../core run build"
+  },
+  "dependencies": {
+    "@vault-mcp/core": "*",
+    "isomorphic-git": "^1.41.7",
+    "vault-mcp-api": "*",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.24.0",
+    "obsidian": "^1.6.6",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
