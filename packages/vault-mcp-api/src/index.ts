@@ -289,19 +289,40 @@ export function registerGovernance(plugin: Plugin, hooks: GovernanceHooks): () =
     }
   };
 
+  /** Revoke every hook this SDK currently holds. Safe to call repeatedly. */
+  const disposeAll = () => {
+    for (const d of disposers) { try { d(); } catch { /* seam may already be gone */ } }
+    disposers = [];
+  };
+
   register(); // the host may already be loaded
-  // On host reload the old seam died with the old plugin instance — DROP the
-  // stale disposers (never call them: they close over a dead WeakMap entry) and
-  // register into the new one. Subscribing to both ready events means a single
-  // host load can run this twice, which is why the previous set is dropped
-  // rather than accumulated.
+  // CALL the old disposers before re-registering — do not merely drop them.
+  //
+  // This is where the governance seam differs from `publishTools` above, and
+  // copying that function's reasoning here was a real bug (fixed 2026-09-08).
+  // `registerTools` REPLACES by tool name, so a second registration by the same
+  // owner supersedes the first and dropping the stale disposer is correct. The
+  // seam has NO replace-by-id: `registerWriteObserver` / `registerSessionRefusal`
+  // APPEND an entry to a list, and `id` addresses nothing. So a dropped-but-live
+  // registration is not superseded, it is ORPHANED — and the host fires BOTH
+  // `vault-mcp:ready` and `governor:ready` on every single load, so the bug
+  // fired on every ordinary load: two write observers (two proposals per write,
+  // and a DOUBLE mandate-budget charge), two session-refusal hooks, and one
+  // un-disposable ghost of each surviving after the human disables the provider
+  // in Obsidian's settings — because this SDK's returned disposer can only
+  // revoke the set it still holds.
+  //
+  // Calling a STALE disposer is harmless on the host-reload path too. Each
+  // disposer sets its own `disposed` flag (idempotent) and removes its entry by
+  // OBJECT IDENTITY from the list it closed over, so it can neither fire twice
+  // nor drop a successor's registration — and if the old seam is gone entirely
+  // the throw is caught here. Verified against `packages/host/src/mcp/seam.ts`.
   const refs = HOST_READY_EVENTS.map((evt) =>
-    plugin.app.workspace.on(evt as never, () => { disposers = []; register(); }),
+    plugin.app.workspace.on(evt as never, () => { disposeAll(); register(); }),
   );
 
   return () => {
     for (const ref of refs) plugin.app.workspace.offref(ref);
-    for (const d of disposers) { try { d(); } catch { /* seam may already be gone */ } }
-    disposers = [];
+    disposeAll();
   };
 }
