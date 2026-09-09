@@ -6,7 +6,7 @@
 // WHERE, and why it matters more than it looks:
 //
 // Replayable payloads contain exact note text — the material Governor returned
-// to a client. They are stored under `~/.claude/governor/observations/<vault>/`,
+// to a client. They are stored under `~/.claude/vault-mcp/observations/<vault>/`,
 // which is:
 //
 //   • OUTSIDE the vault, so Obsidian Sync never carries them. The design is
