@@ -18,7 +18,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const aaDir = path.join(here, "..", "src", "governor", "kernel", "auto-accept");
+const aaDir = path.join(here, "..", "src", "kernel", "auto-accept");
 const readRaw = (p) => fs.readFileSync(p, "utf8");
 const aaFiles = () => fs.readdirSync(aaDir).filter((f) => f.endsWith(".ts")).map((f) => path.join(aaDir, f));
 

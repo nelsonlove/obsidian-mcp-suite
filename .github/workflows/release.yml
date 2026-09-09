@@ -1,8 +1,22 @@
-name: Release Obsidian plugin
+name: Release the Obsidian plugins
 
 # Cut a release by pushing a tag that exactly matches the manifest version
 # (e.g. `git tag 0.1.0 && git push origin 0.1.0`). Obsidian + BRAT require the
 # tag to equal the version with no leading "v".
+#
+# ── TWO PLUGINS SINCE S3c, AND THIS LANE IS A STOPGAP ────────────────────────
+#
+# The suite split turned one plugin artifact into two: `packages/host` (id
+# `vault-mcp`) and `packages/governor` (id `governor`), which version together
+# for now. This workflow releases BOTH under one tag, verified against BOTH
+# manifests, because a tag that shipped only half of a matched pair would be
+# worse than one that shipped neither.
+#
+# It is NOT the per-plugin release tooling `docs/suite-split-design.md` §9 asks
+# for, and pretending otherwise is how that item gets forgotten. What is still
+# missing: independent versions per plugin, independent tags, and a story for
+# the satellites, which have manifests of their own and are released by hand.
+# Named as an open item in `docs/s3c-migration-plan.md` §9.
 on:
   push:
     tags:
@@ -29,33 +43,49 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify tag matches manifest version
+      - name: Verify the tag matches BOTH manifests
         run: |
           tag="${GITHUB_REF#refs/tags/}"
-          manifest_version="$(node -p "require('./packages/plugin/manifest.json').version")"
-          if [ "$tag" != "$manifest_version" ]; then
-            echo "::error::Tag '$tag' does not match manifest version '$manifest_version'."
-            exit 1
-          fi
+          for pkg in host governor; do
+            v="$(node -p "require('./packages/$pkg/manifest.json').version")"
+            if [ "$tag" != "$v" ]; then
+              echo "::error::Tag '$tag' does not match packages/$pkg manifest version '$v'."
+              exit 1
+            fi
+          done
 
       - name: Test
         run: npm test
 
-      - name: Build
-        run: npm run build --workspace=packages/plugin
+      - name: Build both plugins
+        run: |
+          npm run build --workspace=packages/host
+          npm run build --workspace=packages/governor
 
-      - name: Create release with plugin assets
+      - name: Create release with both plugins' assets
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           tag="${GITHUB_REF#refs/tags/}"
           # Obsidian/BRAT require manifest.json + main.js as individual assets
-          # (never zipped). styles.css is included only if the plugin ships one.
-          assets="packages/plugin/manifest.json packages/plugin/main.js"
-          [ -f packages/plugin/styles.css ] && assets="$assets packages/plugin/styles.css"
+          # (never zipped), and BRAT resolves a plugin by its manifest id — so
+          # two plugins on one release need distinct asset NAMES. The files are
+          # uploaded under `<id>-manifest.json` / `<id>-main.js`; a manual
+          # install renames them back, and the release notes say so.
+          assets=""
+          for pkg in host governor; do
+            id="$(node -p "require('./packages/$pkg/manifest.json').id")"
+            cp "packages/$pkg/manifest.json" "$RUNNER_TEMP/$id-manifest.json"
+            cp "packages/$pkg/main.js" "$RUNNER_TEMP/$id-main.js"
+            assets="$assets $RUNNER_TEMP/$id-manifest.json $RUNNER_TEMP/$id-main.js"
+            if [ -f "packages/$pkg/styles.css" ]; then
+              cp "packages/$pkg/styles.css" "$RUNNER_TEMP/$id-styles.css"
+              assets="$assets $RUNNER_TEMP/$id-styles.css"
+            fi
+          done
           gh release create "$tag" \
             --title "$tag" \
-            --notes "Release $tag" \
+            --notes "Release $tag — two plugins: \`vault-mcp\` (the MCP host) and \`governor\` (the governance provider). Install the host first. Assets are prefixed by plugin id; rename \`<id>-manifest.json\` to \`manifest.json\` and \`<id>-main.js\` to \`main.js\` inside each plugin folder. See docs/s3c-migration-plan.md if you are upgrading from 0.18.x." \
             $assets
 
   # Publish the vault-mcp-api SDK (packages/vault-mcp-api) to npm when the

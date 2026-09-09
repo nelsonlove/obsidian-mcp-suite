@@ -1,6 +1,6 @@
 // The accept-forbidden guard — the "the accept verb is in no API" invariant.
 //
-// Extracted from packages/plugin/src/mcp/write-notes-compose.ts (issue #104):
+// Extracted from packages/host/src/mcp/write-notes-compose.ts (issue #104):
 // this predicate previously lived ONLY in the plugin, so ObsidianBackend was
 // guarded but the shared filesystem write primitive (fs-backend/vault.ts,
 // wrapping VaultImpl — the implementation BOTH FilesystemBackend and
@@ -80,7 +80,7 @@ function isAcceptedKey(key: string): boolean {
 // that recognizes LESS frontmatter than the write path honors is a bypass,
 // not caution. `stripLeadingBom` + `LEADING_FRONTMATTER_RE` are THIS
 // package's copy of that same canonical shape (packages/core cannot import
-// from packages/plugin — the dependency runs the other way), kept here as
+// from the host package — the dependency runs the other way), kept here as
 // the single definition every recognizer/editor in packages/core binds to,
 // so a second, narrower copy can't quietly reappear and reopen the hole in
 // a different backend. See accept-guard.test.ts's parity suite.
@@ -129,7 +129,7 @@ export function stripLeadingBom(text: string): string {
  * frontmatter asserted acceptance behind such a closer drew no refusal from the
  * accept guard while Obsidian parsed and honored it. Do not re-narrow this
  * without re-probing the vault; the oracle table in
- * `packages/plugin/tests/frontmatter-boundary-oracle.test.mjs` is the spec and
+ * `packages/host/tests/frontmatter-boundary-oracle.test.mjs` is the spec and
  * this regex is only the implementation.
  */
 export const LEADING_FRONTMATTER_RE = /^---[ \t]*(?:\r\n|\n|\r)([\s\S]*?)(?:\r\n|\n|\r)---/;

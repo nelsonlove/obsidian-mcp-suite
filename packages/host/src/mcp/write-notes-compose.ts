@@ -33,7 +33,7 @@
 // The scar is "the accept verb is in no API": no MCP write may INTRODUCE or
 // CHANGE a note's acceptance to the accepted-family. ONE definition, in
 // packages/core/src/accept-guard.ts (issue #104) — packages/core has no
-// dependency on packages/plugin, so core is the correct home for the single
+// dependency on the host package, so core is the correct home for the single
 // definition and this module imports it, never the other way around. This
 // also carries PR #129's fix (#126): `stripLeadingBom` + the BOM-free
 // `LEADING_FRONTMATTER_RE` are the ONE recognizer of a note's leading

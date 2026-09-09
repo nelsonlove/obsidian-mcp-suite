@@ -346,13 +346,13 @@ describe("standing isolation — nothing outside the sanctioned modules touches 
     const srcDir = path.join(HERE, "..", "src");
     const offenders = [];
     const allowed = [
-      path.join("governor", "kernel", "history-store", "refs.ts"), // defines it
+      path.join("kernel", "history-store", "refs.ts"), // defines it
       // THE deliberate WP6b-2 addition: the one production module that builds
       // the standingAdvance capability (closure-held, handed to the
       // AdmissionService as a constructor argument). Anything else joining
       // this list is a design decision someone makes on purpose, per the
       // original comment.
-      path.join("governor", "wiring", "admission-wiring.ts"),
+      path.join("wiring", "admission-wiring.ts"),
     ];
     const walk = (dir) => {
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -378,7 +378,7 @@ describe("standing isolation — nothing outside the sanctioned modules touches 
   test("the scan is not vacuous: it sees refs.ts itself", () => {
     // A scan that finds zero files INCLUDING its own allowlist would be
     // scanning the wrong thing — the exact failure the first version had.
-    const refsPath = path.join(HERE, "..", "src", "governor", "kernel", "history-store", "refs.ts");
+    const refsPath = path.join(HERE, "..", "src", "kernel", "history-store", "refs.ts");
     const text = fs.readFileSync(refsPath, "utf8");
     assert.ok(/standingRef\s*\(/.test(text) || /\$\{NAMESPACE\}\/standing/.test(text), "the pattern matches the definition site");
   });

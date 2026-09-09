@@ -81,7 +81,7 @@ describe("governance_revisions tool", () => {
     const { specs, entry } = listingTool({ listNotes: async () => [], read: async () => null });
     assert.ok(specs.some((s) => s.name === "governance_revisions"));
     assert.ok(entry, "the wire name is `governance_revisions`, not `governor_governance_revisions`");
-    assert.equal(entry.grandfathered, true);
+    assert.equal(entry.bare, true);
   });
 
   test("lists only revising notes, parses requests, and CLAIMS read-only (untrusted ⇒ mutating)", async () => {

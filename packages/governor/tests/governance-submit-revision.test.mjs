@@ -84,7 +84,7 @@ describe("publication shape", () => {
     assert.deepEqual(specs.map((s) => s.name).sort(), ["governance_revisions", SUBMIT_REVISION_TOOL].sort());
     const entry = tools.get(SUBMIT_REVISION_TOOL);
     assert.ok(entry, "not `governor_governance_submit_revision`");
-    assert.equal(entry.grandfathered, true);
+    assert.equal(entry.bare, true);
     // Unlike the two read tools, this one never CLAIMED read-only, so trust
     // changes nothing about it: it is mutating on the publisher's own say-so and
     // the whole kernel perimeter binds either way.

@@ -91,7 +91,7 @@ Run the workspace test suite and plugin production build:
 
 ```bash
 npm test --workspaces --if-present
-npm --workspace packages/plugin run build
+npm --workspace packages/host run build
 ```
 
 Record live test conditions instead of writing “tested manually.”

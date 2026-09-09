@@ -1,7 +1,7 @@
 // UUIDv7 (RFC 9562) — the one implementation.
 //
-// Originated in packages/plugin/src/mcp/write-notes-compose.ts, moved to
-// packages/plugin/src/kernel/uuidv7.ts when the governance contracts became
+// Originated in packages/host/src/mcp/write-notes-compose.ts, moved to
+// packages/host/src/kernel/uuidv7.ts when the governance contracts became
 // its second consumer (WP3 requires UUIDv7 for newly minted session, mandate,
 // proposal, cohort, replica, and key-registration ids), and promoted here into
 // @vault-mcp/core (S3, condition 9) because the governance provider imported

@@ -1,7 +1,7 @@
 // The declared AUTHORITY SURFACE INVENTORY — Gate 0, WP0, provider half.
 //
 // This is the half of the old `inventory-non-mcp.ts` that declares the ACCEPT
-// PERIMETER. It moved here at S3c, when `packages/plugin` became
+// PERIMETER. It moved here at S3c, when the old `packages/plugin` became
 // `packages/host` plus `packages/governor` and the functions this file
 // describes stopped being host source: they live in `src/wiring/wiring.ts` of
 // THIS package now, so a file in the host that claimed to describe them was

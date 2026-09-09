@@ -925,7 +925,7 @@ describe("publication: names, flags, and what the host's guard can scope", () =>
   });
 
   test("no bare name could have kept its `obsidian_jd_` spelling — the host REFUSES a published `obsidian_*` name", () => {
-    // packages/plugin/src/mcp/external-tools.ts, F1:
+    // packages/host/src/mcp/external-tools.ts, F1:
     //   if (toolName.startsWith("obsidian_"))
     //     throw new TypeError(`governor: tool name '${toolName}' collides with
     //     the reserved obsidian_* namespace`);

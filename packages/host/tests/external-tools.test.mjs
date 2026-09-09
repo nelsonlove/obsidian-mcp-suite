@@ -1,4 +1,4 @@
-// packages/plugin/tests/external-tools.test.mjs
+// packages/host/tests/external-tools.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ExternalToolRegistry, sanitizeOwnerId } from "../src/mcp/external-tools.ts";

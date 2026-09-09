@@ -128,7 +128,7 @@ describe("descriptors are pure data (no callable, frozen)", () => {
 });
 
 describe("the pane renders FROM the descriptor set (source-level completeness)", () => {
-  const pane = src("governor/wiring/pane.ts");
+  const pane = src("wiring/pane.ts");
 
   test("pending-item action buttons are built by iterating dispositionsFor('pending-item')", () => {
     assert.match(pane, /for \(const d of dispositionsFor\("pending-item"\)\)/);
@@ -153,7 +153,7 @@ describe("the pane renders FROM the descriptor set (source-level completeness)",
   });
 
   test("the MCP registrar uses the table-derived tool name, not a second literal", () => {
-    const tool = src("mcp/tools-governance-revision.ts");
+    const tool = src("tools/revision.ts");
     assert.match(tool, /SUBMIT_REVISION_TOOL/);
     assert.ok(
       !/registerTool\(\s*"governance_submit_revision"/.test(tool),

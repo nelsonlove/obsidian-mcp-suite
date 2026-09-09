@@ -1,11 +1,11 @@
-// packages/plugin/src/kernel/quickadd/types.ts
+// packages/host/src/kernel/quickadd/types.ts
 //
 // Pure types for the QuickAdd-macros-as-notes transform. Covers Macro
 // choices (userscript, choice, wait, obsidian-command and editor-command
 // steps), Template choices, Capture choices, and Multi choices (a
 // folder-anchored choice whose members are resolved by the glue layer).
 // No `obsidian` import anywhere in
-// this file or transform.ts — see packages/plugin/CLAUDE.md's kernel
+// this file or transform.ts — see packages/host/CLAUDE.md's kernel
 // discipline. Wikilink resolution and folder-anchoring discovery happen in
 // the glue layer (mcp/tools-quickadd.ts); everything here works on
 // already-resolved data.

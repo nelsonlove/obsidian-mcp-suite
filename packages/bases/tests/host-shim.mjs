@@ -40,7 +40,7 @@ export function sanitizeOwnerId(id) {
 export const OWNER = sanitizeOwnerId(PLUGIN_ID);
 
 /**
- * The host's PATH_KEYS + ARRAY_PATH_KEYS (packages/plugin/src/guard.ts), copied
+ * The host's PATH_KEYS + ARRAY_PATH_KEYS (packages/host/src/guard.ts), copied
  * as DATA so this package can assert which of its own argument names are on the
  * list and which are not.
  *

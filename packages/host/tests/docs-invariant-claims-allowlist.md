@@ -227,6 +227,16 @@ leave the single-artifact rollback intact.
   in `registry.describe()`. The row is kept in the file on purpose: it is the provider's adoption
   source and part of the rollback path, which is why "reported and ignored" is the claim rather
   than "removed".
+- **The review queue's event drive (#261), which got narrower.** The host used to nudge the queue from inside its `journal.append` wrapper — every append.
+  approved 2026-09-08 (S3c): the claim is HISTORICAL and describes code that no longer exists —
+  the pre-split `packages/host/src/main.ts` wrapped `journal.append` and called
+  `nudgeGovernanceQueue` from it unconditionally. It is recorded here because the sentence
+  introduces the live-checklist item for what replaced it: the provider now nudges from the
+  seam's write observer (`packages/governor/src/main.ts`), which fires only where the host
+  produced write facts, so appends taking no queue slot and non-note-write mutations wait for
+  the 2.5s interval instead. Both sides say so — `packages/host/src/main.ts`'s journal-wrapper
+  comment and `packages/governor/src/wiring/wiring.ts`'s `nudgeGovernanceQueue` header — and the
+  gap is named rather than closed, because closing it means a journal-growth fact on the seam.
 
 ## docs/acceptance-model.md (WP10c retirement)
 
@@ -480,7 +490,7 @@ pending the operator's review like every other span in this file.
 ## docs/suite-split-design.md (mutating-tier extraction)
 
 - With no argument in `PATH_KEYS` all three see an empty path list on every call in the tier, so a `record: true` note is no longer protected from `vault_fileclass_set` or `vault_jd_scaffold_reindex_category` by that kernel check, a foreign scope claim covering the note is no longer disclosed, and the journal names no target path except where a handler reports `filesChanged`/`files` as effects.
-  approved at the mutating-tier extraction: this is a DISCLOSURE of a reduction, not a safety claim — the class of sentence this control exists to make sure gets written rather than omitted. It is mechanically checkable in one place: `collectPaths` (packages/plugin/src/guard.ts) is the single walker that feeds the allowlist check, `recordImmutableRefusal`, `locks.coveringAny` and the journal's `target.path`. The `filesChanged`/`files` carve-out is the `reportedEffects` convention in mcp/guarded.ts, which the jd-scaffold and provenance write handlers do return.
+  approved at the mutating-tier extraction: this is a DISCLOSURE of a reduction, not a safety claim — the class of sentence this control exists to make sure gets written rather than omitted. It is mechanically checkable in one place: `collectPaths` (packages/host/src/guard.ts) is the single walker that feeds the allowlist check, `recordImmutableRefusal`, `locks.coveringAny` and the journal's `target.path`. The `filesChanged`/`files` carve-out is the `reportedEffects` convention in mcp/guarded.ts, which the jd-scaffold and provenance write handlers do return.
   NOTE UPDATED 2026-09-07 (mutating-tier rounds 1 and 2): the sentence describes the state AT THE EXTRACTION and the paragraph it sits in now carries a dated bracket saying so — it is kept because it is the argument that made round 1 correct, not because it still describes shipped behaviour. What is true now: `note_path` IS in `collectPaths`' key list (round 1), so those three kernel checks are live for the tier's MUTATING note-naming tools (`vault_fileclass_set`, `vault_jd_scaffold_promote_to_folder`, `vault_jd_scaffold_reindex_category`), which is exactly the reduction this sentence warned about being closed. Round 2 then moved the tier's READS (`vault_fileclass_explain` / `_get`, `vault_provenance_check`) to a non-key spelling (`note`), because those checks bind at the mutating dequeue and buy a read nothing. **So the old note's claim that "the satellites' `publication` tests pin that none of their arguments is in its key list" is NO LONGER TRUE and has been removed from this entry** — those tests now pin WHICH arguments are keys (fileclass: `set` only; provenance: none; jd-scaffold: `promote_to_folder` + `reindex_category`), and the host-side pins are `tests/guard.test.mjs`'s two `collectPaths` cases for `note_path` (collects) and `note` (does not).
 
 
@@ -501,7 +511,7 @@ omitted, and both are checkable against code that exists.
   approved 2026-09-07 (round 2): a DISCLOSURE of a residual plus its reversal cost, not a claim
   that anything is protected. Each clause is mechanically checkable. "Live on every vault
   regardless of allowlist" — `recordImmutableRefusal`, `locks.coveringAny` and the journal's
-  `target.path` all run at the mutating dequeue with no allowlist condition (packages/plugin/src/
+  `target.path` all run at the mutating dequeue with no allowlist condition (packages/host/src/
   kernel/*), and `note_path` is in `collectPaths`' key list, pinned by tests/guard.test.mjs.
   "The leak requires an allowlist" — the sibling read is bounded only by `visiblePathsOf`, which
   is a no-op with no allowlist (`packages/jd-scaffold/src/tools.ts`, and the satellite supplies
@@ -514,7 +524,7 @@ omitted, and both are checkable against code that exists.
   cover, so it cannot fail in the dangerous direction. Substantiated: `planPromoteToFolder`
   derives `folderPath` / `newFilePath` from the note path inside the handler, so neither is a
   call argument and `collectPaths` cannot see them; the named precedent is the shipped repoint
-  containment recorded in packages/plugin/CLAUDE.md and docs/operation-contract.md ("The guard
+  containment recorded in packages/host/CLAUDE.md and docs/operation-contract.md ("The guard
   does not cover direct disk writes or every discovered side effect", already tracked in this
   file); and the mitigation is the `reportedEffects` convention in mcp/guarded.ts, which that
   handler returns as `filesChanged: 2` / `files: [folderPath, newFilePath]`, pinned by the
@@ -531,7 +541,7 @@ the extraction's "blocks each of them wholesale", which round 1 made false.
   block. Every clause is about argument names and is pinned on both sides. `note_path` is in
   `PATH_KEYS` and `note` is not: two live `collectPaths` cases in tests/guard.test.mjs. The
   three kernel consumers of that same list are `recordImmutableRefusal`, `locks.coveringAny`
-  and the journal's `target.path`, all in packages/plugin/src/kernel/ and all reached from the
+  and the journal's `target.path`, all in packages/host/src/kernel/ and all reached from the
   mutating dequeue with no allowlist condition. Which tools carry which spelling is pinned per
   package by each satellite's `publication` test (fileclass: `set` only; provenance: none;
   jd-scaffold: `promote_to_folder` + `reindex_category`), each mutation-verified by flipping an
@@ -544,7 +554,7 @@ the extraction's "blocks each of them wholesale", which round 1 made false.
 ## docs/provenance.md (mutating-tier extraction)
 
 - That last one is a scoping decision, not a spelling one: `path` is a key the host's guard recognizes, so keeping it would have let a session under a path allowlist run `check` scoped to the note it names — while the answer still lists every path that note's `derived-from` globs resolve to, including files the session cannot see.
-  approved at the mutating-tier extraction, NOTE UPDATED 2026-09-07 (rounds 1 and 2): a claim about ARGUMENT NAMES and about a result shape, both checkable in one place each. `path` is in `PATH_KEYS` (packages/plugin/src/guard.ts), which is what the sentence asserts, and `check`'s argument is NOT — the spelling that keeps it out is now `note` rather than `note_path`, because `note_path` itself joined `PATH_KEYS` at round 1 for the tier's MUTATING tools and round 2 moved the reads to a third spelling. **The old note read "`note_path` is not [in PATH_KEYS]"; that is now false and has been corrected here.** Pinned on the host side by two live `collectPaths` cases in tests/guard.test.mjs (`note_path` collects, `note` does not) and on the satellite side by packages/provenance's `publication` test, whose vacuity guard asserts `path` and `note_path` ARE keys while `note` is not. The `sources` list is `checkFreshness`' resolved source set, returned verbatim by the check handler and unfiltered by anything (the satellite has no allowlist to filter by). It states what the old spelling would have permitted, not that the new one guarantees anything further.
+  approved at the mutating-tier extraction, NOTE UPDATED 2026-09-07 (rounds 1 and 2): a claim about ARGUMENT NAMES and about a result shape, both checkable in one place each. `path` is in `PATH_KEYS` (packages/host/src/guard.ts), which is what the sentence asserts, and `check`'s argument is NOT — the spelling that keeps it out is now `note` rather than `note_path`, because `note_path` itself joined `PATH_KEYS` at round 1 for the tier's MUTATING tools and round 2 moved the reads to a third spelling. **The old note read "`note_path` is not [in PATH_KEYS]"; that is now false and has been corrected here.** Pinned on the host side by two live `collectPaths` cases in tests/guard.test.mjs (`note_path` collects, `note` does not) and on the satellite side by packages/provenance's `publication` test, whose vacuity guard asserts `path` and `note_path` ARE keys while `note` is not. The `sources` list is `checkFreshness`' resolved source set, returned verbatim by the check handler and unfiltered by anything (the satellite has no allowlist to filter by). It states what the old spelling would have permitted, not that the new one guarantees anything further.
 
 ## Imported documentation corpus (2026-08-23) — tracked, not approved-as-true, PENDING OPERATOR REVIEW
 
