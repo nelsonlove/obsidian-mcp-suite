@@ -704,6 +704,54 @@ describe("the plugin tools refuse a registered governance provider", async () =>
     assert.equal(world.ran.length, 1);
   });
 
+  // ── NAME protection, beside the registration protection (the review's F5) ──
+  //
+  // `id-migration.ts`'s LEGACY_PLUGIN_ID header has always claimed the host
+  // refuses to "disable or uninstall" that id. Until 2026-09-08 only the
+  // uninstall half was true. The toggle now matches, which is what makes the
+  // comment true — and it buys two things the seam check above cannot: the
+  // window during the provider's own onload, before it has registered anything;
+  // and a rollback vault where the pre-split single-plugin build IS the host
+  // under the `governor` id and registers on no seam because it IS the seam.
+  test("obsidian_plugin_toggle name-protects the legacy id even with NO seam registration", async () => {
+    const { LEGACY_PLUGIN_ID, PLUGIN_ID } = await import("../src/id-migration.ts");
+    const { consult } = createGovernanceSeam(); // a live seam with nothing registered
+    const world = toggleWorld(consult);
+    assert.deepEqual(consult.providerIds(), [], "nothing is registered — the seam check cannot fire");
+
+    const refused = await world.call({ plugin_id: LEGACY_PLUGIN_ID, enabled: false });
+    assert.ok(refused.isError, "the legacy id is refused by NAME");
+    assert.match(text(refused), new RegExp(`refusing to disable '${LEGACY_PLUGIN_ID}'`));
+    assert.deepEqual(world.disabled, [], "nothing was disabled");
+
+    // The host's own id, unchanged, and an ordinary plugin as the vacuity check.
+    assert.ok((await world.call({ plugin_id: PLUGIN_ID, enabled: false })).isError);
+    assert.ok(!(await world.call({ plugin_id: "dataview", enabled: false })).isError);
+    assert.deepEqual(world.disabled, ["dataview"]);
+  });
+
+  test("the legacy id is name-protected with no seam wired at all", async () => {
+    const world = toggleWorld(undefined);
+    const { LEGACY_PLUGIN_ID } = await import("../src/id-migration.ts");
+    assert.ok((await world.call({ plugin_id: LEGACY_PLUGIN_ID, enabled: false })).isError);
+    assert.deepEqual(world.disabled, []);
+  });
+
+  test("ENABLING the legacy id is still allowed — protective, never a lockout", async () => {
+    // The posture is mistake-protection. A refusal that also blocked ENABLING
+    // would make the host an obstacle to putting the provider back.
+    const { LEGACY_PLUGIN_ID } = await import("../src/id-migration.ts");
+    const res = await toggleWorld(undefined).call({ plugin_id: LEGACY_PLUGIN_ID, enabled: true });
+    assert.ok(!res.isError);
+  });
+
+  test("the toggle and the uninstall now agree on the legacy id — the comment is true", async () => {
+    // The mismatch F5 named: id-migration.ts claimed both, only uninstall did it.
+    const { LEGACY_PLUGIN_ID } = await import("../src/id-migration.ts");
+    assert.ok((await toggleWorld(undefined).call({ plugin_id: LEGACY_PLUGIN_ID, enabled: false })).isError);
+    assert.ok((await uninstallWorld(undefined).call({ plugin_id: LEGACY_PLUGIN_ID })).isError);
+  });
+
   test("a host with no seam at all keeps the old behaviour exactly", async () => {
     // `ctx.seam` is optional, and a build without one (tests, bare embeds, a
     // host with no provider installed) must not start refusing plugin

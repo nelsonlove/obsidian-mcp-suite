@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PLUGIN_ID } from "../id-migration.js";
+import { PLUGIN_ID, LEGACY_PLUGIN_ID } from "../id-migration.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { type App, MarkdownView } from "obsidian";
 import { ok, fail, codedError } from "./helpers.js";
@@ -463,7 +463,7 @@ export function registerNavTools(server: McpServer, app: App, ctx: ServerCtx) {
       title: "Enable or disable a community plugin",
       description:
         "Enable or disable a community plugin by its ID. Returns {plugin_id, enabled}. " +
-        "Refuses to disable this host plugin or a registered governance provider — do that from Obsidian settings.",
+        "Refuses to disable this host plugin, its pre-split id `governor`, or a registered governance provider — do that from Obsidian settings.",
       inputSchema: {
         plugin_id: z.string().min(1).describe("Community plugin ID, e.g. 'dataview'."),
         enabled:   z.boolean().describe("true to enable, false to disable."),
@@ -478,6 +478,35 @@ export function registerNavTools(server: McpServer, app: App, ctx: ServerCtx) {
         // kind of rename a hardcoded "vault-mcp" here silently survives.)
         if (!enabled && plugin_id === PLUGIN_ID) {
           return fail(new Error(`refusing to disable ${PLUGIN_ID} via MCP (it hosts this connection); use Obsidian settings`));
+        }
+        // LEGACY_PLUGIN_ID is name-protected too, matching the uninstall
+        // precedent in tools-cli-dedicated.ts. `id-migration.ts`'s header has
+        // always CLAIMED this ("a plugin the host must refuse to disable or
+        // uninstall through MCP, which the self-preservation rules already
+        // do"); until 2026-09-08 only the uninstall half was true, and a
+        // comment that overstates a protection is worse than no comment.
+        //
+        // It buys two things the seam-registration check below cannot.
+        // **Ordering:** the provider registers on the seam during ITS onload,
+        // so between the host coming up and the provider finishing there is a
+        // window in which `providerIds()` is empty and the provider is
+        // switch-off-able. **Rollback:** on a vault where the pre-split
+        // single-plugin build is still installed under `governor`, that plugin
+        // is the HOST — disabling it severs the connection, and it registers on
+        // no seam because it IS the seam.
+        //
+        // PROTECTIVE ONLY, and the posture is mistake-protection, not defence.
+        // An id is a name, and a name refusal stops an agent doing cleanup, not
+        // an adversary — anyone who can call `app.plugins.disablePlugin` is
+        // past this. It costs a human nothing: Obsidian's own settings are one
+        // click away and are where the decision belongs.
+        if (!enabled && plugin_id === LEGACY_PLUGIN_ID) {
+          return fail(new Error(
+            `refusing to disable '${LEGACY_PLUGIN_ID}' via MCP: that id is either the governance provider for ` +
+              `${PLUGIN_ID} or a pre-split ${PLUGIN_ID} host still installed under its old id — disabling it ` +
+              `would remove the review perimeter this session writes under, or sever this connection. ` +
+              `Use Obsidian settings.`
+          ));
         }
         // The SAME rule, extended to a registered governance provider (suite
         // split, S2, condition 6 — the condition that most earns its keep under

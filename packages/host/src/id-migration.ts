@@ -83,9 +83,15 @@ export const PLUGIN_ID = "vault-mcp";
  *   • it is the folder the host adopts its journal, install id and settings
  *     FROM, and
  *   • it is a plugin the host must refuse to disable or uninstall through MCP,
- *     which the self-preservation rules already do — so the provider is
- *     protected by name even before it registers on the seam and earns the
- *     `providerIds()` refusal.
+ *     which the self-preservation rules do at BOTH sites — `obsidian_plugin_toggle`
+ *     (`mcp/tools-nav.ts`, disable branch) and `obsidian_plugin_uninstall`
+ *     (`mcp/tools-cli-dedicated.ts`) — so the provider is protected by name even
+ *     before it registers on the seam and earns the `providerIds()` refusal.
+ *     (The toggle half was MISSING until 2026-09-08; this sentence claimed both
+ *     and only uninstall did it. Pinned now by `tests/seam.test.mjs`.) The name
+ *     refusal is PROTECTIVE ONLY — it stops an agent doing cleanup, not an
+ *     adversary, who can call `app.plugins.disablePlugin` directly. Enabling is
+ *     never refused.
  */
 export const LEGACY_PLUGIN_ID = "governor";
 
