@@ -17,7 +17,7 @@
 //    (b) a registered Obsidian command (vault-mcp ships an ungated `obsidian_run_command`, so a
 //        command IS agent-reachable via executeCommandById) — or
 //    (c) an MCP tool (the governance module contributes ZERO accept/baseline tools to the
-//        transport; obsidian_pending_review, the one MCP read surface, is read-only).
+//        transport; governance_pending_review, the one MCP read surface, is read-only).
 //  Every such capability MUST be a closure captured only by a genuine-user-gesture UI handler,
 //  and that handler MUST be wired with `addEventListener('click', …)` — never `el.onclick = …`.
 //  An onclick property is itself renderer-reachable: `btn.onclick({isTrusted:true})` forge-calls
@@ -221,7 +221,7 @@ interface PluginPaths {
   journalDir: string;
   allowlistPath: string;
   /** Where refresh() PUBLISHES the pending-review index (#261) — the file
-   * obsidian_pending_review reads. Beside the acceptance log; vault-mcp-owned. */
+   * governance_pending_review reads. Beside the acceptance log; vault-mcp-owned. */
   pendingIndexPath: string;
   /** Durable rename captures for the link-heal oracle (#261). */
   renameRecordsPath: string;
@@ -1027,7 +1027,7 @@ async function refresh(plugin: Plugin): Promise<void> {
   cachedPending.set(plugin, pending);
   // #261: PUBLISH the pending index — the governance module owns the queue, so it owns the
   // published view of it too (`<plugin dir>/governance/pending-index.json`, the file
-  // obsidian_pending_review reads; the retired standalone's stewardship path is dead since
+  // governance_pending_review reads; the retired standalone's stewardship path is dead since
   // #164). Same read-only DATA shape the standalone published (kernel pending-index.ts).
   // A publish failure must never break the refresh: log + continue. Gated on the LIVE mount
   // so a refresh still in flight when the module unmounts cannot re-create the file the
@@ -1102,9 +1102,20 @@ async function pollJournal(plugin: Plugin): Promise<void> {
  * is occluded or unfocused, so the 2.5s poll interval above simply DOES NOT TICK during
  * unattended sessions — which is exactly when agents write. (Observed live: interval armed,
  * journal grown, zero ticks and zero refreshes for minutes with the window in the
- * background.) The journal only grows through this plugin's own kernel, so main.ts nudges
- * here right after every journal append — request handling is not throttled, so the sweep
- * runs even with the window buried. The interval stays as the foreground catch-up.
+ * background.) Request handling is not throttled, so an event-driven nudge makes the sweep
+ * run even with the window buried. The interval stays as the foreground catch-up.
+ *
+ * WHERE THE NUDGE COMES FROM CHANGED AT THE HOST/PROVIDER SPLIT, and it got NARROWER. The
+ * journal was this plugin's own file, growing only through its own kernel, so `main.ts` could
+ * nudge from inside the `journal.append` wrapper — every append, whatever it was. The journal
+ * is the HOST's now, and no journal-growth hook was added to the seam, so this plugin's
+ * `main.ts` nudges from the seam's WRITE OBSERVER instead: the host dispatches it immediately
+ * after its own journal append, so it is the same event through an existing hook. What it does
+ * not cover is appends that produced no write facts — idempotent replays, deduped waiters, key
+ * mismatches, and mutating operations that are not native note-writes. Those wait for the
+ * interval. The queue's own reason to exist is proposals, and proposals come from write facts,
+ * so the drive still reaches what it is for; the gap is real and is recorded in
+ * docs/s3c-migration-plan.md rather than glossed.
  *
  * Reachability: this changes WHEN the poll runs, never what it may accept — the decision
  * remains the eligibility engine over objective bytes (agents could already schedule the
@@ -1423,7 +1434,7 @@ export async function wireGovernance(plugin: Plugin, deps: GovernanceWireDeps): 
     if (!isFolder && !(file instanceof TFile && file.extension === "md")) return;
     // TWO reasons to recompute, with different reach — the pane shows three lists, not one:
     //  - the PENDING queue is cached and PUBLISHED (ribbon badge + pending-index.json, which
-    //    obsidian_pending_review reads), so a delete that hits it must refresh even with the pane
+    //    governance_pending_review reads), so a delete that hits it must refresh even with the pane
     //    closed. That is the precise, cheap check.
     //  - the Proposed and Revising sections are LIVE reads (listProposed/listRevising, straight
     //    off the metadata cache), so their data is never stale — they simply never REPAINT. With a
@@ -1570,7 +1581,7 @@ export async function wireGovernance(plugin: Plugin, deps: GovernanceWireDeps): 
     const timers = silentTimers.get(plugin);
     if (timers) { for (const t of timers.values()) clearTimeout(t); timers.clear(); }
     // #261: retract the published pending index on unmount — an unmounted governance module
-    // must read as NOT-published (obsidian_pending_review's explicit `published: false`), never
+    // must read as NOT-published (governance_pending_review's explicit `published: false`), never
     // as a stale-but-plausible queue. Best-effort + fire-and-forget: teardown is synchronous,
     // and a failed removal only leaves a stale file whose generatedAt betrays its age.
     void plugin.app.vault.adapter.remove(paths(plugin).pendingIndexPath).catch(() => {});

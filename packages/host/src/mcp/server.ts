@@ -434,7 +434,7 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   registerUidTools(server, ctx);
   // ── THE GOVERNANCE PROVIDER'S FIVE TOOLS ARE NOT REGISTERED HERE ──────────
   //
-  // `obsidian_pending_review`, `governance_revisions`,
+  // `governance_pending_review`, `governance_revisions`,
   // `governance_submit_revision`, `governance_mandate_draft` and
   // `governance_mandates` were hand-registered at this point until S3c. §6 of
   // the split design always assigned them to the provider; they published from

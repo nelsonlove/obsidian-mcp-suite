@@ -451,7 +451,7 @@ export const SETTINGS_SURFACES: PlainSurfaceRow[] = [
 
 export const INTERNAL_SURFACES: PlainSurfaceRow[] = [
   // `internal.governance.publish-pending-index` — the producer behind
-  // `obsidian_pending_review` — was the first row here until S3c. It is not
+  // `governance_pending_review` — was the first row here until S3c. It is not
   // authority-bearing, and it moved for the plainest possible reason: it lives
   // in `wiring.ts`, so a row here would name a file this package does not
   // have. It is declared in the provider's `inventory-authority.ts` and

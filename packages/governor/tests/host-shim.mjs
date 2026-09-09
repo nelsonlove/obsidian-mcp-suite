@@ -22,11 +22,16 @@
 //      allowed to publish it unprefixed, so `governance_revisions` stays
 //      `governance_revisions` and `obsidian_pending_review` survives the F1
 //      `obsidian_*` refusal. The table below is a SNAPSHOT of the host's
-//      (`packages/host/src/mcp/external-tools.ts`), carried as DATA — THE LIVE
-//      PIN IS THE HOST'S OWN TEST over its real `GRANDFATHERED_TOOL_NAMES` and
-//      `publishedToolName`, never this copy. What this copy buys is that a
-//      provider-side rename shows up as a red test here rather than as five
-//      silently-renamed tools on the wire.
+//      (`packages/host/src/mcp/external-tools.ts`), carried as DATA. The pin that
+//      SHOULD fire when the host's table changes is the host's own test over the
+//      live `GRANDFATHERED_TOOL_NAMES` / `publishedToolName`, never this copy —
+//      and as of 2026-09-08 THAT TEST DOES NOT EXIST: `packages/host/tests/
+//      external-tools.test.mjs` covers F1 only through the ungrandfathered case
+//      (owner `obsidian-read` + name `note`), and neither it nor
+//      `packages/vault-mcp-api/tests/` names any of the five spellings. So this
+//      snapshot is currently the ONLY place the five names are asserted, which
+//      makes it a review aid doing a tripwire's job. Named here rather than
+//      quietly relied on: the host owes the live pin.
 //   2. THE ENVELOPE. `ok` / `fail`, including `fail`'s coded rendering and its
 //      lowercase-snake gate (a Node error's UPPERCASE `.code` renders plain), so
 //      a `GovernanceRefusal` is asserted as the agent-visible
@@ -42,11 +47,13 @@
 //      SHARED_ANNOTATIONS RO/RW, reproduced literally — note `destructiveHint`
 //      defaults to FALSE on both, and only an explicit `destructive` on the spec
 //      overrides it.
-//   4. THE F1 REFUSAL, but only far enough to prove the carve-out. A published
-//      name beginning `obsidian_` is refused unless the table grandfathers it for
-//      that exact owner. Reproduced because "obsidian_pending_review survives the
-//      split under its shipped name" is not an assertion you can make without an
-//      instrument that would refuse it otherwise.
+//   4. THE F1 REFUSAL, but only far enough to keep the carve-out honest. A
+//      PUBLISHED name beginning `obsidian_` is refused unless the table
+//      grandfathers it for that exact owner. Note what that does and does not
+//      mean, because it is easy to overstate: an ungrandfathered `obsidian_x`
+//      from owner `governor` publishes as `governor_obsidian_x` and is never
+//      refused — F1 only bites when the OWNER ID itself sanitizes into the
+//      reserved namespace. The tests plant both cases.
 //
 // It deliberately does NOT reproduce the F3 pathless-tool block, the path
 // allowlist, the write queue, the write journal, read-only mode, the kernel

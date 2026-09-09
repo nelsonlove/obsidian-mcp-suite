@@ -100,7 +100,7 @@ Its properties are deliberately narrow:
   record carries it and the Acceptance pane's per-note rows each show it.
 - **Degrades quietly** when the kernel is absent (bare embeds, tests).
 
-## B3 — `obsidian_pending_review`
+## B3 — `governance_pending_review`
 
 A **read-only** view of the notes currently pending human review, so a well-behaved agent can
 **avoid stepping on a note a human is about to review**
@@ -138,7 +138,7 @@ directly by the host as a plain read tool.
   content can redirect the read.
 
 ```jsonc
-// obsidian_pending_review  (no arguments)
+// governance_pending_review  (no arguments)
 → { "published": true,
     "pending": [{"path":"Projects/alpha.md","status":"pending","agent":"claude-code/1.0.0",
                  "op":"obsidian_write_note","when":"…","writeCount":2}, …],

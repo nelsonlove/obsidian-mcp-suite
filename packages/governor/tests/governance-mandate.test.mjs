@@ -413,7 +413,39 @@ describe("the mandate store — append-only events, one fold", () => {
 
 const { buildMandateUi } = await import("../src/wiring/mandate-wiring.ts");
 const { createSessionStore } = await import("../src/kernel/sessions/session-store.ts");
-const { openSession } = await import("../src/kernel/sessions/session.ts");
+const { SESSION_TTL_MS } = await import("@vault-mcp/core");
+
+/**
+ * A session RECORD as a literal — S3c.
+ *
+ * `openSession` is the HOST's now (condition 7: the host mints, and the session
+ * contract is a published one). Nothing in this package may import it, so the
+ * records below are built to core's `SessionV1` shape directly. That is honest
+ * rather than lossy: everything here cares that the store's fold and the mandate
+ * UI handle a well-formed record, never how the host arrived at one. The minting
+ * contract itself is exercised — or, today, is NOT exercised anywhere — on the
+ * host's side; see governance-session.test.mjs's header.
+ */
+let sessionSeq = 0;
+function sessionRecord(over = {}, at = T0) {
+  const id = `0190${String(++sessionSeq).padStart(4, "0")}-0000-7000-8000-00000000mand`.replace("mand", "0000");
+  return {
+    schema: "governor.session/v1",
+    id,
+    vaultId: "v",
+    replicaId: "r",
+    actor: { connection: "c1", clientClaim: null },
+    baseState: { journalHead: null },
+    scopeDigest: "d".repeat(64),
+    openedAt: at,
+    expiresAt: at + SESSION_TTL_MS,
+    mandateId: null,
+    continuedFrom: null,
+    relatedSessions: [],
+    status: "open",
+    ...over,
+  };
+}
 
 function wiredWorld() {
   const mandateIo = memoryIo();
@@ -432,11 +464,7 @@ function wiredWorld() {
 describe("buildMandateUi — the pane's three verbs", () => {
   test("activate grants, attaches the session, and refuses without a gesture", async () => {
     const { store, sessions, ui } = wiredWorld();
-    const sess = openSession(
-      { vaultId: "v", replicaId: "r", actor: { connection: "c1", clientClaim: null }, journalHead: null, scopeDigest: "d" },
-      T0,
-      RAND_A
-    );
+    const sess = sessionRecord();
     await sessions.open(sess, T0);
     const d = openDraft(
       { authoredBy: { sessionId: sess.id, client: "claude" }, terms: terms({ delegate: { kind: "session", value: sess.id } }) },
@@ -518,44 +546,66 @@ describe("buildMandateUi — the pane's three verbs", () => {
 });
 
 describe("session ⇄ mandate binding (session-store 'mandated' event)", () => {
-  test("attachMandate refuses non-open and already-mandated sessions, writing nothing on refusal", async () => {
+  test("over a session this store HAS a record for, attachMandate keeps the full kernel check", async () => {
+    // NARROWED AT S3c, deliberately. This describe used to also assert that an
+    // attach to an UNKNOWN id refuses. It does not any more, and that is the
+    // change rather than a regression: the provider stopped witnessing session
+    // OPEN when the host took the lifecycle record, so requiring a folded record
+    // would have made every mandate attachment a no-op the moment the two
+    // plugins separated. The unknown-id path — set-once by id, with the lost
+    // expired-session warning named — is covered in
+    // governance-session.test.mjs's authority-fold describe. What survives HERE
+    // is the record path, which historical sessions still take unchanged.
     const io = memoryIo();
     const sessions = createSessionStore(io);
-    const s = openSession(
-      { vaultId: "v", replicaId: "r", actor: { connection: "c", clientClaim: null }, journalHead: null, scopeDigest: "d" },
-      T0,
-      RAND_A
-    );
+    const s = sessionRecord();
     await sessions.open(s, T0);
     await sessions.attachMandate(s.id, "m-1", T0 + 1);
     assert.equal((await sessions.get(s.id)).mandateId, "m-1");
     const before = io.lines.length;
     await assert.rejects(() => sessions.attachMandate(s.id, "m-2", T0 + 2), /set once/);
-    await assert.rejects(() => sessions.attachMandate("no-such", "m-1", T0 + 2));
-    assert.equal(io.lines.length, before, "refused attaches appended no event");
-    await sessions.close(s.id, T0 + 3);
-    const closed = openSession(
-      { vaultId: "v", replicaId: "r", actor: { connection: "c2", clientClaim: null }, journalHead: null, scopeDigest: "d" },
-      T0,
-      RAND_B
-    );
+    assert.equal(io.lines.length, before, "the refused attach appended no event");
+
+    const closed = sessionRecord({ actor: { connection: "c2", clientClaim: null } });
     await sessions.open(closed, T0);
     await sessions.close(closed.id, T0 + 1);
     await assert.rejects(() => sessions.attachMandate(closed.id, "m-3", T0 + 4), /session_not_live|is closed/);
   });
 });
 
-// ── The MCP surface: tools-governance-mandate.ts (review of #356: the
-// allowlist gate and the no-session default were shipped untested — a
-// neutered scopeRefusal survived the full suite. These legs close that.) ────
+// ── The MCP surface: src/tools/mandate.ts ────────────────────────────────────
+//
+// Review of #356: the allowlist gate and the session default were shipped
+// untested — a neutered `scopeRefusal` survived the full suite. These legs close
+// that, and S3c added a second thing worth the same discipline.
+//
+// SINCE S3c THESE ARE PUBLISHED TOOLS, not registrations on the host's
+// `McpServer`. `buildMandateTools(source)` returns `SdkToolSpec[]` and the host
+// publishes them through `vault-mcp-api`, so the specs run through
+// `tests/host-shim.mjs` and every assertion below reads the envelope an agent
+// actually sees. The typed refusals are byte-compatible with the pre-split
+// `codedError` — `fail()` renders a lowercase-snake `code` as
+// `Error [code]: message` — which is why `/out_of_allowlist/` and `/no_session/`
+// still match unchanged.
+//
+// AND `sessionId()` IS NULL IN PRODUCTION NOW. A published tool receives
+// arguments and nothing else; the host does not tell a publisher which
+// connection is calling. `main.ts` therefore wires `sessionId: () => null`, and
+// a draft that omits `delegate` is REFUSED rather than bound to a guess. The
+// source seam is kept for the apiVersion-2 item that would carry caller context,
+// so the tests below drive BOTH: the shipped configuration (null) and the seam
+// (a supplied id), and pin which one main.ts actually wires.
 
-const { registerMandateTools } = await import("../src/tools/mandate.ts");
+const { buildMandateTools } = await import("../src/tools/mandate.ts");
+const { publishInto } = await import("./host-shim.mjs");
 
-function mountedTools({ sessionId = "sess-1", allowlist } = {}) {
-  const tools = new Map();
-  const server = { registerTool: (name, def, handler) => tools.set(name, { def, handler }) };
-  const { store } = { store: createMandateStore(memoryIo()) };
-  registerMandateTools(server, {
+/**
+ * `sessionId` defaults to NULL — the shipped configuration. A test that wants
+ * the dormant caller-context seam passes one explicitly and says why.
+ */
+function mountedTools({ sessionId = null, allowlist } = {}) {
+  const store = createMandateStore(memoryIo());
+  const specs = buildMandateTools({
     draft: (d, now) => store.draft(d, now),
     allDrafts: () => store.allDrafts(),
     allMandates: () => store.allMandates(),
@@ -565,7 +615,8 @@ function mountedTools({ sessionId = "sess-1", allowlist } = {}) {
     now: () => T0,
     getSettings: allowlist ? () => ({ readOnly: false, allowlist }) : undefined,
   });
-  return { tools, store };
+  const { tools } = publishInto(specs);
+  return { specs, tools, store };
 }
 
 /** The draft tool's args, matching the baseline terms() shape. */
@@ -586,56 +637,141 @@ function structured(res) {
   return res.structuredContent ?? JSON.parse(res.content[0].text);
 }
 
+const DELEGATE = { delegate: { kind: "role", value: "curator" } };
+
 describe("MCP mandate tools — draft-and-list only, allowlist-disciplined", () => {
-  test("exactly two tools register; draft is mutating, the listing read-only; no verb grants", () => {
-    const { tools } = mountedTools();
+  test("exactly two specs; draft is mutating, the listing CLAIMS read-only; no verb grants", () => {
+    const { specs, tools } = mountedTools();
+    assert.deepEqual(specs.map((s) => s.name).sort(), ["governance_mandate_draft", "governance_mandates"]);
     assert.deepEqual([...tools.keys()].sort(), ["governance_mandate_draft", "governance_mandates"]);
     assert.equal(tools.get("governance_mandate_draft").def.annotations.readOnlyHint, false);
-    assert.equal(tools.get("governance_mandates").def.annotations.readOnlyHint, true);
+    // The listing's `readOnly: true` is now a CLAIM the host distrusts by
+    // default: registered mutating unless the operator lists `governor` in
+    // `trustedReadOnlyPlugins`. Both halves are asserted so the gap between
+    // them — which is why the tool is unavailable under a path allowlist — is
+    // pinned rather than implied.
+    assert.equal(tools.get("governance_mandates").def.claimsReadOnly, true);
+    assert.equal(tools.get("governance_mandates").def.annotations.readOnlyHint, false);
+    const trusted = publishInto(specs, { trusted: true }).tools;
+    assert.equal(trusted.get("governance_mandates").def.annotations.readOnlyHint, true);
     for (const name of tools.keys()) {
       assert.ok(!/activate|grant|revoke|decline/.test(name), "no agent verb may look like a grant");
     }
   });
 
-  test("drafting lands in the store bound to the calling session; kernel refusals surface as coded errors", async () => {
+  test("drafting lands in the store bound to the NAMED delegate; kernel refusals surface as coded errors", async () => {
     const { tools, store } = mountedTools();
-    const res = await tools.get("governance_mandate_draft").handler(draftArgs());
-    assert.notEqual(res.isError, true);
+    const res = await tools.get("governance_mandate_draft").handler(draftArgs(DELEGATE));
+    assert.notEqual(res.isError, true, res.content?.[0]?.text);
     const body = structured(res);
     const d = await store.getDraft(body.draft_id);
     assert.equal(d.status, "open");
-    assert.deepEqual(d.terms.delegate, { kind: "session", value: "sess-1" }, "the default delegate is the calling session");
+    assert.deepEqual(d.terms.delegate, { kind: "role", value: "curator" });
     assert.equal(d.authoredBy.client, "claude");
+    assert.equal(d.authoredBy.sessionId, null, "a published tool does not learn who is calling — recorded honestly as null");
 
-    const bad = await tools.get("governance_mandate_draft").handler(draftArgs({ allowed_classes: ["authority"] }));
+    const bad = await tools.get("governance_mandate_draft").handler(draftArgs({ ...DELEGATE, allowed_classes: ["authority"] }));
     assert.equal(bad.isError, true);
     assert.match(bad.content[0].text, /never delegable/);
     assert.equal((await store.allDrafts()).length, 1, "a refused draft wrote nothing");
   });
 
-  test("no session and no explicit delegate: refuses rather than minting an unbound delegation", async () => {
-    const { tools, store } = mountedTools({ sessionId: null });
+  test("S3c: THE SESSION DEFAULT IS GONE — an omitted delegate refuses no_session in the SHIPPED configuration", async () => {
+    // The real behaviour change, pinned rather than papered over. While these
+    // tools were registered inside the host, each per-connection registrar was
+    // handed that connection's session id, so `delegate` could default to "this
+    // session". A published external tool receives arguments and nothing else,
+    // so the default became a guess — and a guess about WHO A DELEGATION BINDS
+    // is the last place to guess. It refuses instead, and says why.
+    const { tools, store } = mountedTools();
     const res = await tools.get("governance_mandate_draft").handler(draftArgs());
     assert.equal(res.isError, true);
-    assert.match(res.content[0].text, /no_session/);
-    assert.equal((await store.allDrafts()).length, 0);
-    // An explicit delegate unblocks it.
-    const ok2 = await tools.get("governance_mandate_draft").handler(draftArgs({ delegate: { kind: "role", value: "curator" } }));
+    assert.match(res.content[0].text, /^Error \[no_session\]: /);
+    assert.match(res.content[0].text, /pass `delegate` explicitly/);
+    assert.equal((await store.allDrafts()).length, 0, "nothing unbound was minted");
+
+    // An explicit delegate unblocks it — the refusal is about the missing
+    // binding, not about drafting.
+    const ok2 = await tools.get("governance_mandate_draft").handler(draftArgs(DELEGATE));
     assert.notEqual(ok2.isError, true);
+  });
+
+  test("the caller-context seam is DORMANT, not deleted: a supplied session id still defaults the delegate", async () => {
+    // `MandateToolsSource.sessionId` is kept so the apiVersion-2 item that
+    // carries caller context to a publisher lands as a wiring change rather than
+    // a redesign. Exercised here so it cannot rot — the skills / triage /
+    // cross-session precedent for a dormant seam.
+    const { tools, store } = mountedTools({ sessionId: "sess-1" });
+    const res = await tools.get("governance_mandate_draft").handler(draftArgs());
+    assert.notEqual(res.isError, true, res.content?.[0]?.text);
+    const d = await store.getDraft(structured(res).draft_id);
+    assert.deepEqual(d.terms.delegate, { kind: "session", value: "sess-1" });
+  });
+
+  test("and main.ts wires the NULL one — the seam is dormant in the artifact that ships", async () => {
+    const fs = await import("node:fs");
+    const main = fs.readFileSync(new URL("../src/main.ts", import.meta.url), "utf8");
+    const buildAt = main.indexOf("buildMandateTools({");
+    assert.ok(buildAt > 0, "the mandate tools are built in the composition root");
+    const block = main.slice(buildAt, main.indexOf("})", buildAt));
+    assert.match(block, /sessionId: \(\) => null/, "no guessed session reaches a delegation");
+    assert.match(block, /client: \(\) => null/);
+  });
+
+  test("the delegate argument is VALIDATED BY HAND — the nested object shape does not survive publication", async () => {
+    // The SDK converts zod to JSON Schema and the host converts it back through
+    // a subset where an object-typed property degrades to `z.unknown()`: it
+    // validates nothing and strips nothing, so `delegate` reaches the handler
+    // exactly as the caller sent it. Same for `transformation`, `budgets` and
+    // the two {id, version} arrays. This is the `vault_skills_release` semver
+    // bug avoided rather than repeated.
+    const { tools, store } = mountedTools();
+    const draftTool = tools.get("governance_mandate_draft");
+    const cases = [
+      [{ delegate: { kind: "everyone", value: "x" } }, /'delegate\.kind'/],
+      [{ delegate: { kind: "session", value: "" } }, /'delegate\.value'/],
+      [{ ...DELEGATE, transformation: { id: "x" } }, /'transformation'/],
+      [{ ...DELEGATE, predicates: [] }, /'predicates'/],
+      [{ ...DELEGATE, eligible_actions: [{ id: "note.write" }] }, /'eligible_actions\[0\]'/],
+      [{ ...DELEGATE, scope_include: [] }, /'scope_include'/],
+      [{ ...DELEGATE, scope_include: ["Projects", ""] }, /'scope_include'/],
+      [{ ...DELEGATE, budgets: { ...draftArgs().budgets, max_items: 0 } }, /'budgets\.max_items'/],
+      [{ ...DELEGATE, budgets: { ...draftArgs().budgets, max_bytes: 1.5 } }, /'budgets\.max_bytes'/],
+      [{ ...DELEGATE, budgets: "lots" }, /'budgets'/],
+      [{ ...DELEGATE, purpose: "" }, /'purpose'/],
+      [{ ...DELEGATE, purpose: "p".repeat(2001) }, /'purpose'/],
+    ];
+    for (const [over, expected] of cases) {
+      const res = await draftTool.handler(draftArgs(over));
+      assert.equal(res.isError, true, JSON.stringify(over).slice(0, 60));
+      assert.match(res.content[0].text, /^Error \[invalid_argument\]: /, JSON.stringify(over).slice(0, 60));
+      assert.match(res.content[0].text, expected);
+    }
+    assert.equal((await store.allDrafts()).length, 0, "not one malformed draft was minted");
+
+    // VACUITY: the same args WITHOUT the mutation are accepted, so each refusal
+    // above is attributable to the field it names rather than to the fixture.
+    assert.notEqual((await draftTool.handler(draftArgs(DELEGATE))).isError, true);
+    // `max_failures` is the one budget whose floor is 0, not 1 — the bound is
+    // re-applied per field, not with one blanket rule.
+    const zeroFailures = await draftTool.handler(
+      draftArgs({ ...DELEGATE, budgets: { ...draftArgs().budgets, max_failures: 0 } }),
+    );
+    assert.notEqual(zeroFailures.isError, true);
   });
 
   test("THE ALLOWLIST GATE RUNS: a sandboxed session cannot draft over hidden territory, in include OR exclude position", async () => {
     const { tools, store } = mountedTools({ allowlist: ["Projects"] });
-    const hidden = await tools.get("governance_mandate_draft").handler(draftArgs({ scope_include: ["Secrets"] }));
+    const hidden = await tools.get("governance_mandate_draft").handler(draftArgs({ ...DELEGATE, scope_include: ["Secrets"] }));
     assert.equal(hidden.isError, true);
     assert.match(hidden.content[0].text, /out_of_allowlist/);
     assert.equal((await store.allDrafts()).length, 0, "the refused draft wrote nothing");
     // A broader-than-allowlist prefix refuses too — 'Projects' under allowlist ['Projects/Sub'] is not visible.
     const { tools: narrow } = mountedTools({ allowlist: ["Projects/Sub"] });
-    const broad = await narrow.get("governance_mandate_draft").handler(draftArgs());
+    const broad = await narrow.get("governance_mandate_draft").handler(draftArgs(DELEGATE));
     assert.equal(broad.isError, true);
     // And the fitting case passes (vacuity: the gate is the only variable).
-    const ok2 = await tools.get("governance_mandate_draft").handler(draftArgs());
+    const ok2 = await tools.get("governance_mandate_draft").handler(draftArgs(DELEGATE));
     assert.notEqual(ok2.isError, true);
   });
 

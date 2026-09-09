@@ -162,7 +162,7 @@ const CORE_DIRECT: McpSurfaceRow[] = [
 
 // ── THE FIVE ACCEPTANCE ROWS WERE HERE UNTIL THE HOST/PROVIDER SPLIT (S3c) ──
 //
-// `obsidian_pending_review`, `governance_revisions`, `governance_submit_revision`,
+// `governance_pending_review`, `governance_revisions`, `governance_submit_revision`,
 // `governance_mandate_draft` and `governance_mandates` are published by the
 // governance PROVIDER now (`packages/governor`, plugin id `governor`), through
 // the external-tool registry like every satellite's tools — so, like every

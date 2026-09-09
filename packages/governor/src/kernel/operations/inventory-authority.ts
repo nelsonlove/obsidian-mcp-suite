@@ -570,7 +570,7 @@ export const AUTHORITY_INTERNAL_SURFACES: AuthorityInternalRow[] = [
     file: WIRING_FILE,
     title: "Publish the pending-review index",
     postcondition:
-      "Write the review queue to pending-index.json so obsidian_pending_review can report it — or report it unavailable.",
+      "Write the review queue to pending-index.json so governance_pending_review can report it — or report it unavailable.",
     owner: "acceptance",
     distribution: "public-default",
     readOnly: false,

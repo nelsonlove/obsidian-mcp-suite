@@ -1,7 +1,7 @@
 // Ported from obsidian-stewardship/tests/pending-index.test.mjs (#83, cycle 1) —
 // pendingIndex/serializePendingIndex, the pure read-only pending-index serializer,
 // now at src/governor/kernel/pending-index.ts. Derived entirely from PendingItem[];
-// no I/O, no obsidian runtime. The bytes it emits are what obsidian_pending_review parses.
+// no I/O, no obsidian runtime. The bytes it emits are what governance_pending_review parses.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";

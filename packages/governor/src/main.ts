@@ -320,17 +320,46 @@ export default class GovernorPlugin extends Plugin {
     // hooks — a stale observer holding a dead provider's stores is worse than no
     // observer, and after the split "dead" is a real state a human reaches with
     // one click in Obsidian's settings.
+    // #261's DRIVE, re-established on this side of the split. Chromium
+    // throttles and suspends renderer timers while the Obsidian window is
+    // occluded, so the review queue's 2.5s poll simply does not tick during
+    // unattended sessions — which is exactly when agents write. Before the
+    // split the host solved that by nudging the queue from inside its
+    // `journal.append` wrapper: a timer-free event that fires precisely when
+    // there is new work.
+    //
+    // The host cannot do that any more, and no journal-growth hook was added to
+    // the seam for it. The signal it uses instead is the one the seam ALREADY
+    // carries: the write observer fires after the host's own journal append, for
+    // every completed write, so nudging from there is the same event arriving
+    // through an existing hook rather than a new one.
+    //
+    // THE NARROWING, stated because it is real: the old nudge fired on EVERY
+    // journal append, including ones that take no queue slot (idempotent
+    // replays, deduped waiters, key mismatches) and mutating operations that
+    // are not native note-writes. The observer fires only where the host
+    // produced write facts. So an occluded window now sees the queue driven by
+    // note-writes alone, and everything else waits for the poll. That covers
+    // what the queue is for — proposals come from write facts, and the
+    // mandated-admission sweep acts on proposals — but it is less than before,
+    // and closing it properly means a journal-growth fact on the seam, which is
+    // a design conversation and not a patch.
+    const observer = this.buildProposalObserver({ proposalStore, sessionStore, mandateStore, lazyHistoryRepo, vaultName });
+
     this.register(
       registerGovernance(this, {
         // WHAT CROSSES OUTWARD: the exact bytes of a completed write, turned
         // into a proposal by the WP6b-1 machinery, verbatim.
-        writeObserver: this.buildProposalObserver({
-          proposalStore,
-          sessionStore,
-          mandateStore,
-          lazyHistoryRepo,
-          vaultName,
-        }),
+        writeObserver: async (facts) => {
+          try {
+            await observer(facts);
+          } finally {
+            // AFTER the producer, and in a `finally`: a proposal that failed to
+            // open is still a journal record the queue should surface, and a
+            // nudge is a no-op while the pane is unmounted.
+            nudgeGovernanceQueue(this);
+          }
+        },
         // WHAT CROSSES INWARD: a refusal, and only a refusal. Revocation is a
         // human act landing in this plugin's own session store, so this plugin
         // is what notices it, and the host learns only "refused, and here is the
