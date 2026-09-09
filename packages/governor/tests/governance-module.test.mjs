@@ -159,7 +159,7 @@ describe("governance module: config keys match what the pane actually reads", ()
       governanceAcceptanceSettings,
       DEFAULT_GOVERNANCE_SETTINGS,
       DEFAULT_ACCEPTANCE_SETTINGS,
-    } = await import("../src/governor/kernel/settings.ts");
+    } = await import("../src/kernel/settings.ts");
     const gov = governanceModule();
     const keys = gov.manifest.config.fields.map((f) => f.key).sort();
     // The pane derives its settings from exactly these keys — so a field key that drifted from
@@ -480,7 +480,7 @@ describe("governance module: THE TRIPWIRE — source reachability (accept surfac
     assert.match(m[1], /finally/, "the clear runs in finally — a partially-failed accept has still written");
   });
 
-  test("the MCP transport imports nothing from src/governor/wiring/ (the accept pane), and pending-review stays always-on read-only", () => {
+  test("the MCP transport imports nothing from src/wiring/ (the accept pane), and pending-review stays always-on read-only", () => {
     for (const rel of ["mcp/server.ts", "mcp/modules-mount.ts", ...mcpToolFiles()]) {
       assert.ok(!/from ["'][^"']*\/governor\/wiring\/(pane|wiring)/.test(readRaw(rel)),
         `${rel} must not import the governance pane/wiring`);

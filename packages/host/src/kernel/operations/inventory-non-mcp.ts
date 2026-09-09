@@ -20,10 +20,11 @@
 // `packages/governor/src/kernel/operations/inventory-authority.ts`. What went:
 // `ACCEPT_PERIMETER_FUNCTIONS`, `WIRING_EXPORTS`, `AuthorityRow` and
 // `AUTHORITY_SURFACES`, the `authorityAction` projector and its nine authored
-// `AUTHORITY_ACTIONS`, the one automation row for
-// `src/governor/wiring/wiring.ts`, the `internal.governance.publish-pending-index`
-// row, and the whole `NOT_SURFACES` exclusion list — every one of them
-// described a function inside `wiring.ts`, which is not host source any more.
+// `AUTHORITY_ACTIONS`, the one automation row for the review pane's event
+// wiring, the `internal.governance.publish-pending-index` row, and the whole
+// `NOT_SURFACES` exclusion list — every one of them described a function inside
+// `wiring.ts`, which is `packages/governor/src/wiring/wiring.ts` now and not
+// host source at all.
 //
 // What that changed here, item by item, because none of it is cosmetic:
 //

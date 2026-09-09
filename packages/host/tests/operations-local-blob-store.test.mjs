@@ -60,7 +60,7 @@ const store = (fsImpl = fakeFs()) => ({ store: createLocalBlobStore({ vaultSlug:
 describe("local blob store — location", () => {
   test("payloads live outside the vault, under the plugin's own state namespace", () => {
     const dir = observationDir("my-vault");
-    assert.match(dir, /\.claude[\\/]governor[\\/]observations[\\/]my-vault$/);
+    assert.match(dir, /\.claude[\\/]vault-mcp[\\/]observations[\\/]my-vault$/);
     assert.ok(!dir.includes(".obsidian"), "never under .obsidian — Sync would carry note text nobody chose to sync");
   });
 

@@ -1,14 +1,27 @@
 /**
- * pending-review.test.mjs — slice B3b: the READ-ONLY `obsidian_pending_review`
+ * pending-review.test.mjs — slice B3b: the read-side `obsidian_pending_review`
  * tool over the governance module's published review-queue index (#261: the
- * index moved from the retired Stewardship standalone's path to the vault-mcp
- * plugin dir, and absence became an EXPLICIT `published: false` — never a
- * silent empty queue).
+ * index moved from the retired Stewardship standalone's path to the plugin dir,
+ * and absence became an EXPLICIT `published: false` — never a silent empty
+ * queue).
  *
- * Same fake-server pattern as scheme-tools.test.mjs / uid-index.test.mjs:
- * register against a stand-in server, invoke the captured handler directly.
- * The tool is obsidian-free (defined over an injected PendingReviewSource), so
- * everything here runs headlessly — no live Obsidian.
+ * S3c MOVED THE REGISTRATION, NOT THE TOOL. `registerPendingReviewTools(server,
+ * ctx)` is now `buildPendingReviewTools(ctx): SdkToolSpec[]`, published through
+ * `vault-mcp-api` like any third-party publisher's tool. So the tests run the
+ * specs through `tests/host-shim.mjs` rather than a fake `McpServer`: what they
+ * assert is the envelope an AGENT sees (`ok(data)` / `Error [code]: message`),
+ * which is the same shape as before precisely because the shim reproduces the
+ * host's `ok`/`fail`. The tool itself is obsidian-free (defined over an injected
+ * `PendingReviewSource`), so everything here still runs headlessly.
+ *
+ * TWO THINGS THE MOVE CHANGED, and both are asserted below rather than papered
+ * over. (1) The published NAME survives only because of the host's closed
+ * grandfather table — an ordinary external tool may not take an `obsidian_*`
+ * name at all, so this one is a carve-out and is pinned as one. (2) The
+ * `readOnly: true` CLAIM is distrusted: the host registers it as MUTATING unless
+ * the operator lists `governor` in `trustedReadOnlyPlugins`, so the old
+ * `readOnlyHint: true` assertion is now a claim-versus-conclusion pair. What
+ * that buys operationally is stated in `publication.test.mjs`.
  *
  * Covers: the pending list from a fixture index; the publish→read round-trip
  * against the REAL serializer the governance module uses; allowlist-filtering
@@ -19,9 +32,9 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { fakeServer } from "./fake-server.mjs";
+import { publishInto } from "./host-shim.mjs";
 import {
-  registerPendingReviewTools,
+  buildPendingReviewTools,
   parsePendingIndex,
   parsePendingIndexStrict,
   obsidianPendingReviewSource,
@@ -45,32 +58,74 @@ function sourceOf(raw) {
   return { read: async () => raw };
 }
 
-function toolServer({ raw = JSON.stringify(INDEX), settings = { readOnly: false, allowlist: [] } } = {}) {
-  const server = fakeServer();
-  registerPendingReviewTools(server, { source: sourceOf(raw), getSettings: () => settings });
-  const call = (name = "obsidian_pending_review", args = {}) => server.tools.get(name).handler(args, {});
-  return { server, call };
+function toolServer({ raw = JSON.stringify(INDEX), settings = { readOnly: false, allowlist: [] }, trusted = false } = {}) {
+  const specs = buildPendingReviewTools({ source: sourceOf(raw), getSettings: () => settings });
+  const { tools } = publishInto(specs, { trusted });
+  const call = (name = "obsidian_pending_review", args = {}) => tools.get(name).handler(args);
+  return { specs, tools, call };
 }
 
-// ── registration shape ────────────────────────────────────────────────────────
+// ── publication shape ─────────────────────────────────────────────────────────
 
-describe("registration", () => {
-  test("registers exactly obsidian_pending_review, read-only", () => {
-    const { server } = toolServer();
-    assert.deepEqual([...server.tools.keys()], ["obsidian_pending_review"]);
-    const { def } = server.tools.get("obsidian_pending_review");
-    assert.equal(def.annotations.readOnlyHint, true);
+describe("publication", () => {
+  test("builds exactly one spec, and it publishes UNPREFIXED as obsidian_pending_review", () => {
+    const { specs, tools } = toolServer();
+    assert.deepEqual(specs.map((s) => s.name), ["obsidian_pending_review"]);
+    assert.deepEqual([...tools.keys()], ["obsidian_pending_review"]);
+    assert.equal(tools.get("obsidian_pending_review").grandfathered, true);
+  });
+
+  test("the name is a CARVE-OUT, not the ordinary rule — proven against two planted violations", () => {
+    // Instrument discipline: the assertion above is worthless unless the shim
+    // would have said something different for a name it does NOT grandfather.
+    // Two plants, one per half of the host's rule.
+    //
+    // (a) OWNER-GATED. The table names both the spelling and the single owner
+    //     id, so the same spec published by anyone else takes the ordinary
+    //     `<sanitized owner>_<bare name>` form. It does not collide with the
+    //     reserved namespace — `some_other_plugin_obsidian_pending_review` does
+    //     not START with `obsidian_` — it simply is not this tool.
+    const { specs } = toolServer();
+    const foreign = publishInto(specs, { owner: "some-other-plugin" }).tools;
+    assert.deepEqual([...foreign.keys()], ["some_other_plugin_obsidian_pending_review"]);
+    assert.equal(foreign.get("some_other_plugin_obsidian_pending_review").grandfathered, false);
+
+    // (b) NAME-GATED, and the table is CLOSED. A sixth `obsidian_*` name, from
+    //     this very plugin, is refused outright by F1 — so "obsidian_pending_review
+    //     survives the split under its shipped name" is a statement about the
+    //     table, not about the shim being permissive.
+    assert.throws(
+      () => publishInto([{ ...specs[0], name: "obsidian_not_in_the_table" }]),
+      /collides with the reserved obsidian_\* namespace/,
+      "nothing outside the closed table gets into the reserved namespace",
+    );
+  });
+
+  test("it CLAIMS read-only; an untrusted claim registers as MUTATING", () => {
+    // The host distrusts a publisher's `readOnlyHint` unless the raw plugin id
+    // is in `trustedReadOnlyPlugins` (empty by default). So the tool that
+    // structurally cannot write is nonetheless blocked in read-only mode — the
+    // deliberate cost of the split, not an oversight. `destructiveHint` is false
+    // on both presets, so it does not move.
+    const { tools } = toolServer();
+    const def = tools.get("obsidian_pending_review").def;
+    assert.equal(def.claimsReadOnly, true);
+    assert.equal(def.annotations.readOnlyHint, false, "untrusted ⇒ mutating");
     assert.equal(def.annotations.destructiveHint, false);
+
+    const trusted = toolServer({ trusted: true }).tools.get("obsidian_pending_review").def;
+    assert.equal(trusted.annotations.readOnlyHint, true, "the operator can opt into believing the claim");
+    assert.equal(trusted.annotations.idempotentHint, true);
   });
 
   test("takes no arguments — nothing a caller could use to change state", () => {
-    const { server } = toolServer();
-    assert.deepEqual(server.tools.get("obsidian_pending_review").def.inputSchema, {});
+    const { tools } = toolServer();
+    assert.deepEqual(tools.get("obsidian_pending_review").def.inputSchema, {});
   });
 
   test("description promises read-only, no accept verb, and advisory-only", () => {
-    const { server } = toolServer();
-    const desc = server.tools.get("obsidian_pending_review").def.description.toLowerCase();
+    const { tools } = toolServer();
+    const desc = tools.get("obsidian_pending_review").def.description.toLowerCase();
     assert.match(desc, /read-only/);
     assert.match(desc, /accept/); // it says it CANNOT accept
     assert.match(desc, /advisory|blocks nothing|avoid/);
@@ -222,12 +277,16 @@ describe("absent / unreadable index is an EXPLICIT published: false, never a bar
   });
 
   test("a throwing source still degrades to published: false, never an error", async () => {
-    const server = fakeServer();
-    registerPendingReviewTools(server, {
-      source: { read: async () => { throw new Error("adapter blew up"); } },
-      getSettings: () => ({ readOnly: false, allowlist: [] }),
-    });
-    const res = await server.tools.get("obsidian_pending_review").handler({}, {});
+    // Worth restating post-split: a THROW out of a published handler is the
+    // host's refusal channel now (`fail(err)`), so this tool's blanket catch is
+    // what keeps a broken index from reaching the agent as an error envelope.
+    const { tools } = publishInto(
+      buildPendingReviewTools({
+        source: { read: async () => { throw new Error("adapter blew up"); } },
+        getSettings: () => ({ readOnly: false, allowlist: [] }),
+      }),
+    );
+    const res = await tools.get("obsidian_pending_review").handler({});
     assert.equal(res.structuredContent.published, false);
     assert.deepEqual(res.structuredContent.pending, []);
     assert.notEqual(res.isError, true);
