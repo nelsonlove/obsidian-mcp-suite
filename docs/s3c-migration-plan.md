@@ -181,6 +181,10 @@ Every item below is a claim this package makes that no test in this repository c
 - [ ] From the developer console, `app.plugins.plugins['governor']` exposes no accept-capable function, and neither does `app.plugins.plugins['vault-mcp']`.
 - [ ] `app.plugins.plugins['vault-mcp'].api` offers `registerTools`, `registerWriteObserver` and `registerSessionRefusal` and nothing else.
 
-## 9. Release tooling — the gap this package inherits and does not fully close
+## 9. Release tooling — what this package changed, and the gap it does NOT close
 
-§9 of the split design names release multiplication as a cost: "one release lane becomes several manifests… the S3 package must include per-plugin release tooling, not inherit the gap." **This package does not close it.** Both plugins build with their own `npm run build` and carry their own `manifest.json` and version, and `packages/host/versions.json` gained its `0.19.0` row — but the repository's release workflow still assumes one plugin artifact. That is named here as an open item rather than claimed done, and it does not block the cutover, because the cutover is a hand-installed build.
+§9 of the split design names release multiplication as a cost: "one release lane becomes several manifests… the S3 package must include per-plugin release tooling, not inherit the gap."
+
+**What changed.** `.github/workflows/release.yml` builds and releases BOTH plugins under one tag, verifies the tag against BOTH manifests, and uploads their assets under plugin-id-prefixed names (`vault-mcp-manifest.json`, `governor-main.js`, …) because Obsidian and BRAT resolve a plugin by its manifest id and two plugins on one release need distinct asset names. A tag that shipped only half of a matched pair would be worse than one that shipped neither, so the version check refuses rather than warns.
+
+**What that is NOT.** It is one lane releasing two artifacts that version together, not per-plugin release tooling. Still missing: independent versions per plugin, independent tags, and any story at all for the eleven satellites, which carry manifests of their own and are installed from the monorepo build by hand (that last part is deliberate — §10's satellite-release posture, "release ceremony only where there is an audience"). Naming it here rather than claiming the item is done, because a half-closed gap that reads as closed is how the other half never gets built. It does not block the cutover: the cutover is a hand-installed build.
