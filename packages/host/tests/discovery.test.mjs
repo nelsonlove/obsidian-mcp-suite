@@ -13,15 +13,19 @@ test("writeDiscovery writes canonical + legacy compat copy; removeDiscovery remo
   };
   writeDiscovery(slug, d);
 
-  // Canonical discovery in the 0.12.0 namespace — no legacy flag.
-  const canonical = path.join(os.homedir(), ".claude", "governor", `${slug}.json`);
+  // Canonical discovery in the CURRENT namespace (`~/.claude/vault-mcp/` again
+  // since the host/provider split) — no legacy flag.
+  const canonical = path.join(os.homedir(), ".claude", "vault-mcp", `${slug}.json`);
   const c = JSON.parse(fs.readFileSync(canonical, "utf8"));
   assert.equal(c.vault_name, slug);
   assert.equal(c.legacy, undefined, "the canonical copy must not be marked legacy");
 
-  // Grace-period compat copy in the pre-0.12.0 namespace: `legacy: true`,
-  // pointing at the SAME (new) socket so old registrations keep working.
-  const legacy = path.join(os.homedir(), ".claude", "vault-mcp", `${slug}.json`);
+  // Grace-period compat copy in the 0.12.0-era namespace (`~/.claude/governor/`,
+  // which the governance provider also uses for its history repository):
+  // `legacy: true`, pointing at the SAME socket, so every `claude mcp`
+  // registration made between 0.12.0 and the split keeps resolving with no
+  // re-registration.
+  const legacy = path.join(os.homedir(), ".claude", "governor", `${slug}.json`);
   const l = JSON.parse(fs.readFileSync(legacy, "utf8"));
   assert.equal(l.legacy, true);
   assert.equal(l.socket_path, d.socket_path, "legacy copy points at the new socket");

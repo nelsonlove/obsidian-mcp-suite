@@ -76,21 +76,17 @@ describe("mountModules: the built-in modules register through the registry", () 
     }
     assert.deepEqual(registry.problems, []);
     const described = registry.describe();
-    // TWO modules remain. acceptance (#83) ships DISABLED — its capability is
-    // an Obsidian pane, not a tool — so scheme is the only live one. (Triage
-    // was a tenth module until S5, cross-session a ninth until S6, vocab,
-    // health and bases went at S7, and provenance, fileclass and jd-scaffold
-    // went with the mutating tier after them; all nine are satellite plugins
-    // and mount nothing here.)
-    assert.deepEqual(described.map((d) => d.id), ["scheme", "acceptance"]);
-    for (const d of described) {
-      if (d.id === "acceptance") {
-        assert.equal(d.enabled, false);
-        assert.deepEqual(d.tools, []);
-      } else {
-        assert.ok(d.enabled && d.tools.length > 0);
-      }
-    }
+    // ONE module remains. `acceptance` (#83) left with the governance provider
+    // at the host/provider split: its capability was always an Obsidian pane
+    // rather than a tool, so all it ever carried here was an `enabled` flag and
+    // a config block for a surface `main.ts` wired somewhere else — and both
+    // halves are the provider's now, in the provider's own `data.json` and its
+    // own settings tab. (Triage was a tenth module until S5, cross-session a
+    // ninth until S6, vocab, health and bases went at S7, and provenance,
+    // fileclass and jd-scaffold went with the mutating tier after them; all
+    // nine are satellite plugins and mount nothing here.)
+    assert.deepEqual(described.map((d) => d.id), ["scheme"]);
+    for (const d of described) assert.ok(d.enabled && d.tools.length > 0);
     // Nothing provenance-, fileclass- or jd-scaffold-shaped can leak from the
     // mount now: those modules are gone, and these names are exactly what a
     // half-reverted extraction would put back.
@@ -112,17 +108,17 @@ describe("mountModules: the built-in modules register through the registry", () 
     assert.ok(!names.includes("obsidian_pending_review"));
   });
 
-  test("governance ON: contributes ZERO MCP tools (the accept surface is an Obsidian pane, not a tool)", () => {
+  test("a surviving modules.acceptance row is an UNKNOWN id, not a mount", () => {
+    // The row is the provider's adoption source and stays in the shared
+    // `data.json` for the rollback path, so the host will keep seeing it. It
+    // must be reported and ignored, never claimed: an `acceptance` module the
+    // host mounted would be a settings row with no pane behind it, silently
+    // diverging from the toggle the human actually uses in the provider's tab.
     const { server, registry } = mount({ settings: { modules: { acceptance: { enabled: true } } } });
     const names = [...server.tools.keys()];
-    // The governance module's capability is the review pane (wired in main.ts) — it puts
-    // NOTHING on the MCP transport. Enabling it adds no tool at all, and never the
-    // always-on-elsewhere obsidian_pending_review.
-    assert.ok(!names.includes("obsidian_pending_review"));
-    assert.deepEqual(registry.problems, []);
-    const gov = registry.describe().find((d) => d.id === "acceptance");
-    assert.equal(gov.enabled, true);
-    assert.deepEqual(gov.tools, []);
+    assert.ok(!names.includes("obsidian_pending_review"), "the pending-review READ is the provider's published tool now, never a module surface");
+    assert.deepEqual(registry.problems, ["settings name unknown module 'acceptance' — ignored"]);
+    assert.equal(registry.describe().find((d) => d.id === "acceptance"), undefined);
   });
 
   test("settings-toggle: modules.scheme.enabled=false unmounts the scheme surface", () => {
@@ -237,13 +233,10 @@ describe("mount gate 2: the host ctx handed to modules is minimal", () => {
     assert.deepEqual(host.visible(["Projects/a.md", "Archive/b.md"]), ["Projects/a.md"]);
   });
 
-  test("builtinModules declares the TWO remaining capability modules, and NEITHER is mutating", () => {
+  test("builtinModules declares the ONE remaining capability module, and it is not mutating", () => {
     const mods = builtinModules(deps());
     assert.deepEqual(mods.map((m) => [m.id, m.posture]), [
       ["scheme", "capability"],
-      // acceptance is posture "capability", NOT "governance" — the v1 registry refuses
-      // the governance posture (it is inert). It clears that gate by being read-only.
-      ["acceptance", "capability"],
       // WHAT LEFT, and when: skills (#292) at S4, triage (#221 phase 2) at S5,
       // cross-session (#232) at S6, vocab + health + bases (#243) at S7, and
       // provenance + fileclass (#188) + jd-scaffold as the mutating tier after
@@ -343,16 +336,26 @@ describe("#81 config-host: both built-in modules carry a manifest, drift-free", 
     );
   });
 
-  test("acceptance's manifest is the capability-directory-only case: no config fields is legal", () => {
-    // Vocab was the module this pinned until S7 — a REAL module with a
-    // manifest but no `config` block, so the renderer's "section with zero
-    // fields" path had a live subject rather than a synthetic fixture.
-    // Acceptance inherits the role: it has config fields but an EMPTY tool
-    // directory, the other half of the same "never skipped, never a crash"
-    // guarantee.
-    const acceptance = builtinModules(deps()).find((m) => m.id === "acceptance");
-    assert.ok(acceptance.manifest.config);
-    assert.deepEqual(acceptance.manifest.directory.tools, []);
+  test("NO built-in module is left to pin the empty-directory / empty-fields renderer path", () => {
+    // Vocab pinned this until S7 — a REAL module with a manifest and no
+    // `config` block, so the renderer's "section with zero fields" path had a
+    // live subject rather than a synthetic fixture. Acceptance inherited the
+    // role with the mirror case (config fields, EMPTY tool directory) and has
+    // now left too, with the host/provider split.
+    //
+    // NAMED AS A GAP RATHER THAN QUIETLY DROPPED: `scheme` is the only built-in
+    // left and it has both fields and tools, so neither degenerate path has a
+    // live subject any more. The paths themselves are still covered — by the
+    // synthetic modules in config-host.test.mjs — but a synthetic fixture
+    // cannot catch a renderer that stops handling a shape no real module
+    // happens to have. The next built-in that ships with an empty half should
+    // take this pin back.
+    const mods = builtinModules(deps());
+    assert.deepEqual(mods.map((m) => m.id), ["scheme"]);
+    assert.equal(mods.find((m) => m.id === "acceptance"), undefined, "acceptance is the governance provider's now");
+    const scheme = mods[0];
+    assert.ok(scheme.manifest.config.fields.length > 0);
+    assert.ok(scheme.manifest.directory.tools.length > 0);
   });
 
   test("drift check: every ToolDoc names a tool the module ACTUALLY contributed on registerAll, and vice versa", () => {
@@ -439,31 +442,17 @@ describe("#81 config-host: both built-in modules carry a manifest, drift-free", 
     const settings = { schemes: [{ id: "jd", provider: "johnny-decimal", config: { contentDecimalFloor: 20 } }], modules: {} };
     const mods = builtinModules(deps({ settings }));
     const hosted = collect(mods, settings.modules, settings);
-    assert.deepEqual(hosted.map((h) => h.id), ["scheme", "acceptance"]);
+    assert.deepEqual(hosted.map((h) => h.id), ["scheme"]);
     const scheme = hosted.find((h) => h.id === "scheme");
     assert.equal(scheme.fields.find((f) => f.key === "contentDecimalFloor").value, 20);
-    // The governance module renders its section too — two badge-display toggles
-    // (ribbon + pane-tab, default ON) plus the two acceptance-convergence fields
-    // (#221/#164: acceptedBy text, requiredFrontmatterKeys csv) and an EMPTY capability
-    // directory, because its capability is the Obsidian review pane (wired in main.ts),
-    // not an MCP tool. It contributes nothing to the transport and ships disabled.
-    const governance = hosted.find((h) => h.id === "acceptance");
-    assert.deepEqual(governance.fields.map((f) => f.key), [
-      "showRibbonBadge",
-      "showViewTabBadge",
-      "acceptedBy",
-      "gateMode",
-      "requiredFrontmatterKeys",
-    ]);
-    const govField = (k) => governance.fields.find((f) => f.key === k);
-    assert.ok(["showRibbonBadge", "showViewTabBadge"].every((k) => govField(k).type === "toggle" && govField(k).value === true));
-    assert.equal(govField("acceptedBy").type, "text");
-    assert.equal(govField("acceptedBy").value, "local-human");
-    assert.equal(govField("requiredFrontmatterKeys").type, "csv");
-    assert.deepEqual(govField("requiredFrontmatterKeys").value, []);
-    assert.equal(governance.enabled, false);
-    assert.equal(governance.directory.tools.length, 0);
-    // EIGHT modules rendered their own config tabs here and no longer do:
+    // The acceptance section used to render here too — two badge-display
+    // toggles plus `acceptedBy`, `gateMode` and `requiredFrontmatterKeys`, over
+    // an EMPTY capability directory because its capability was an Obsidian pane
+    // rather than an MCP tool. All five fields went to the governance provider
+    // at the host/provider split and are rendered by its own settings tab, over
+    // its own `data.json` block; that package's suite pins them. This renderer
+    // is fully generic again — no module-specific branch survives it.
+    // NINE modules rendered their own config tabs here and no longer do:
     // triage's eight fields left at S5, crosssession's three at S6, then at S7
     // health's one (`emptyChars`), bases' two (`queryTimeoutMs` / `rowCap`) and
     // vocab's bespoke LIST-shaped instance form — the one module-specific

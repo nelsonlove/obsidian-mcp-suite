@@ -23,10 +23,15 @@ import { fileURLToPath } from "node:url";
 const main = readFileSync(fileURLToPath(new URL("../src/main.ts", import.meta.url)), "utf8");
 
 describe("scheme panes: live-mount wiring (#286)", () => {
-  test("the module toggle dispatches to BOTH the acceptance pane and the scheme panes", () => {
+  test("the module toggle dispatches to the scheme panes", () => {
     const dispatch = main.slice(main.indexOf("async onModuleEnabledChanged"));
     const body = dispatch.slice(0, dispatch.indexOf("\n  }"));
-    assert.match(body, /moduleId === "acceptance"[\s\S]*setGovernanceMounted\(enabled\)/);
+    // The acceptance branch was the other half of this dispatch until the
+    // host/provider split. Its pane, its toggle and the settings row that drove
+    // it all left for `packages/governor`, which mounts it from its own
+    // settings tab — so there is exactly one branch here now, and a second one
+    // reappearing would mean the host had re-acquired a surface it does not own.
+    assert.doesNotMatch(body, /acceptance/);
     assert.match(
       body,
       /moduleId === "scheme"[\s\S]*setSchemePanesMounted\(enabled\)/,
@@ -51,9 +56,14 @@ describe("scheme panes: live-mount wiring (#286)", () => {
     );
   });
 
-  test("both mount paths decide through the idempotent mountAction helper", () => {
-    assert.match(main, /mountAction\(this\.governanceComponent !== null, enabled\)/);
+  // ONE mount path since the host/provider split: the review pane and its
+  // gavel ribbon left with `packages/governor`, which drives its own mount
+  // through the same helper in its own `main.ts`. What this pin still buys is
+  // the half that stayed — the scheme panes decide through the shared,
+  // idempotent helper rather than an ad-hoc `if (mounted)`.
+  test("the scheme mount path decides through the idempotent mountAction helper", () => {
     assert.match(main, /mountAction\(this\.schemePanesComponent !== null, enabled\)/);
+    assert.doesNotMatch(main, /governanceComponent/, "the review pane's mount left with the provider");
   });
 
   test("unmount is removeChild on the returned child Component (not a bespoke teardown)", () => {

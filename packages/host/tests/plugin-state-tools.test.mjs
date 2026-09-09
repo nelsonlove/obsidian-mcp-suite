@@ -300,9 +300,14 @@ describe("obsidian_plugin_reload", () => {
     assert.equal(res.structuredContent.version, "1.5.2", "the response reports the version now RUNNING");
   });
 
-  test("refuses to reload the governor plugin — it hosts the connection carrying the response", async () => {
-    const { app, calls } = fakeApp({ governor: { installed: "0.12.0", running: "0.12.0" } });
-    const res = await nav(app).call("obsidian_plugin_reload", { plugin_id: "governor" });
+  // The id is `vault-mcp` again since the host/provider split — and note what
+  // this test is NOT: `governor` is now a DIFFERENT plugin (the governance
+  // provider), which the toggle and uninstall tools refuse separately, by name
+  // and by seam registration. This one is about the host refusing to reload
+  // itself out from under the connection carrying the response.
+  test("refuses to reload the host plugin — it hosts the connection carrying the response", async () => {
+    const { app, calls } = fakeApp({ "vault-mcp": { installed: "0.19.0", running: "0.19.0" } });
+    const res = await nav(app).call("obsidian_plugin_reload", { plugin_id: "vault-mcp" });
 
     assert.equal(res.isError, true);
     assert.match(text(res), /Error \[reload_refused\]/);
