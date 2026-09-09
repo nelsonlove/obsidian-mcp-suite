@@ -129,14 +129,31 @@ test("still finds a pre-0.12.0 host under the legacy 'vault-mcp' id", () => {
   assert.equal(api.calls.length, 1);
 });
 
-test("the new id wins when a stale legacy install is also present", () => {
+// THE ORDER FLIPPED AT S3c, and the reason is worth carrying: `governor` is
+// the id of a plugin that is no longer a host. It is the governance PROVIDER,
+// which exposes no `api` at all, so `getApi` skips it — and on a vault that
+// carries BOTH a live pre-split host (`governor`) and a live post-split host
+// (`vault-mcp`), only this order binds the newer one.
+test("the CURRENT host id wins when a stale pre-split install is also present", () => {
   const fresh = fakeApi();
   const stale = fakeApi();
-  const { app } = fakeWorld(fresh, "governor");
-  (app.plugins.plugins as Record<string, unknown>)["vault-mcp"] = { api: stale };
+  const { app } = fakeWorld(fresh, "vault-mcp");
+  (app.plugins.plugins as Record<string, unknown>)["governor"] = { api: stale };
   publishTools(plugin(app), [{ name: "t", description: "d", handler: () => ({}) }]);
   assert.equal(fresh.calls.length, 1);
   assert.equal(stale.calls.length, 0);
+});
+
+test("a `governor` plugin with NO api is skipped, not treated as a broken host", () => {
+  // The ordinary post-split vault: the provider is loaded under that id and
+  // exposes nothing. Falling through to `vault-mcp` is what must happen — a
+  // publisher that gave up here would silently register no tools on every
+  // vault that has the provider installed.
+  const host = fakeApi();
+  const { app } = fakeWorld(host, "vault-mcp");
+  (app.plugins.plugins as Record<string, unknown>)["governor"] = {};
+  publishTools(plugin(app), [{ name: "t", description: "d", handler: () => ({}) }]);
+  assert.equal(host.calls.length, 1);
 });
 
 test("wakes on governor:ready as well as the legacy vault-mcp:ready", () => {
@@ -161,11 +178,11 @@ test("both host events firing on one load is harmless (host replaces by tool nam
   assert.equal(api.unregisteredCount(), 0); // the superseded disposer is never called
 });
 
-test("apiVersion mismatch on the new id does not fall through to a legacy entry", () => {
+test("apiVersion mismatch on the current id does not fall through to a legacy entry", () => {
   const bad = fakeApi(2);
   const good = fakeApi();
-  const { app } = fakeWorld(bad, "governor");
-  (app.plugins.plugins as Record<string, unknown>)["vault-mcp"] = { api: good };
+  const { app } = fakeWorld(bad, "vault-mcp");
+  (app.plugins.plugins as Record<string, unknown>)["governor"] = { api: good };
   publishTools(plugin(app), [{ name: "t", description: "d", handler: () => ({}) }]);
   assert.equal(bad.calls.length, 0);
   assert.equal(good.calls.length, 0);

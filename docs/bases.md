@@ -1,6 +1,6 @@
 # Bases — evaluated Base result sets for agents
 
-> **Deep reference for the shipped implementation.** Canonical concepts and the target design live in the [documentation corpus](README.md); what is shipped versus target is owned by [status-and-compatibility.md](status-and-compatibility.md). Since the S7 read-tier extraction (`suite-split-design.md` §6) this reference documents the standalone **`vault-bases`** plugin, not a module of the host plugin (`governor`).
+> **Deep reference for the shipped implementation.** Canonical concepts and the target design live in the [documentation corpus](README.md); what is shipped versus target is owned by [status-and-compatibility.md](status-and-compatibility.md). Since the S7 read-tier extraction (`suite-split-design.md` §6) this reference documents the standalone **`vault-bases`** plugin, not a module of the host plugin (`vault-mcp`).
 
 The `vault-bases` plugin (#243, shipped in PR #248 as a module; extracted at S7) gives agents the *evaluated* rows of
 an Obsidian **Bases** `.base` file — the same filtered, formula-computed, sorted result set

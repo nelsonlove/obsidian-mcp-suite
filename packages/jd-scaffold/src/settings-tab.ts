@@ -26,15 +26,31 @@ export class JdScaffoldSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    const hostLoaded = !!(this.app as unknown as {
-      plugins?: { plugins?: Record<string, unknown> };
-    }).plugins?.plugins?.["governor"];
+    // "Is the Vault MCP host loaded?" — the same two-part answer every satellite
+    // gives, and this package's only copy of it (jd-scaffold adopts no host
+    // settings, so `main.ts` has no lookup at all).
+    //
+    //   • the ids are CURRENT FIRST: `vault-mcp` is the host again since the
+    //     suite split's S3c, and `governor` is the pre-0.12.0-to-S3c host id
+    //     which is now the governance PROVIDER's id;
+    //   • a plugin counts as the host only if it exposes the plugin-to-plugin
+    //     `api` object. This line used to test bare presence of `"governor"`
+    //     alone, so on a post-split vault it reported "Governor is installed"
+    //     whenever the PROVIDER was enabled — with or without a host to publish
+    //     these seven tools to.
+    //
+    // The suite's one behavioural test of this lookup is
+    // `packages/crosssession/tests/host-lookup.test.mjs`.
+    const loaded = (this.app as unknown as {
+      plugins?: { plugins?: Record<string, { api?: unknown } | undefined> };
+    }).plugins?.plugins;
+    const hostLoaded = ["vault-mcp", "governor"].some((id) => !!loaded?.[id]?.api);
 
     containerEl.createEl("p", {
       cls: "setting-item-description",
       text: hostLoaded
-        ? "Governor is installed: the vault_jd_scaffold_standard_zeros, _ensure_category_indexes, _promote_to_folder, _reindex_category, _new_standard_zero, _new_generic_id and _new_stem MCP tools are published to it."
-        : "Governor is NOT installed. This plugin's entire surface is the seven MCP tools it publishes to the Governor host, so nothing here does anything until Governor is installed and enabled.",
+        ? "The Vault MCP host is installed: the vault_jd_scaffold_standard_zeros, _ensure_category_indexes, _promote_to_folder, _reindex_category, _new_standard_zero, _new_generic_id and _new_stem MCP tools are published to it."
+        : "The Vault MCP host is NOT installed. This plugin's entire surface is the seven MCP tools it publishes to that host, so nothing here does anything until Vault MCP is installed and enabled. (The Governor governance provider is a separate plugin and is not the host — installing it alone does not make these tools reachable.)",
     });
 
     containerEl.createEl("p", {

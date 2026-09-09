@@ -1,0 +1,582 @@
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { TFile, stringifyYaml, parseYaml, type App } from "obsidian";
+import { registerFsTools, ok } from "@vault-mcp/core";
+import { serverInfo } from "./helpers.js";
+import { registerCoreTools, type ServerCtx } from "./tools-core.js";
+import { registerVaultWriteTools } from "./tools-vault-write.js";
+import { registerSchemeWriteTools } from "./tools-scheme-write.js";
+import { registerSurveyTools } from "./tools-survey.js";
+import { registerComplementaryTools } from "./tools-complementary.js";
+import { registerNavTools } from "./tools-nav.js";
+import { registerIntegrationTools } from "./tools-integrations.js";
+import { registerImportTools, IMPORTER_PLUGIN_ID } from "./tools-import.js";
+import { registerCliTools, obsidianTemplateReader } from "./tools-cli.js";
+import { registerCliDedicatedTools } from "./tools-cli-dedicated.js";
+import { registerSnippetTools, obsidianSnippetSource } from "./tools-snippets.js";
+import { registerExternalTools, externalToolSnapshot } from "./external-tools.js";
+import { registerLockTools } from "./tools-locks.js";
+import { registerUidTools } from "./tools-uid.js";
+import { registerLinkTools, obsidianLinkSource } from "./tools-links.js";
+import { registerConformanceDebtTools, registerConformanceDebtRenderTool } from "./tools-conformance-debt.js";
+import { obsidianDebtRenderSource } from "./obsidian-debt-source.js";
+import { mountModules } from "./modules-mount.js";
+import { registerCodeModeTools, makeCaptureRegister, type CapturedRegistry } from "./tools-code-mode.js";
+import { makeGuarded, resolveGuardedPath, withKernelArgs } from "./guarded.js";
+import { reportCompletedWrite } from "./seam.js";
+import { sealUnguardedRegistration } from "./seal-registration.js";
+import { visiblePaths } from "../guard.js";
+import type { JournalActor } from "../kernel/index.js";
+import { obsidianProbe } from "../kernel/obsidian-probe.js";
+import { ObsidianBackend } from "./obsidian-backend.js";
+import { registerWriteNotesTool, type GuardedWrite } from "./tools-write-notes.js";
+import { uuidv7, formatLocalTimestamp } from "./write-notes-compose.js";
+import { makeRegistry, DEFAULT_SCHEMES } from "../kernel/scheme/registry.js";
+import { buildMcpActionRegistry } from "../kernel/operations/mcp-registry.js";
+import { createOperationExecutor } from "../kernel/operations/executor.js";
+import { createCapture } from "../kernel/observations/capture.js";
+import { openSession } from "../kernel/sessions/session.js";
+import { expiryRefusal, type SessionV1 } from "@vault-mcp/core";
+// The session scope digest is the HOST's own assertion about a connection
+// (condition 7: the host mints), so these two contracts are consulted here.
+// S3, condition 9: promoted into `@vault-mcp/core` — the seam never needed
+// them, and now both the host and the governance provider depend on the
+// published contract rather than the host reaching into the provider subtree.
+import { canonicalize, digestUtf8 } from "@vault-mcp/core";
+import { isExcludedTerritory } from "@vault-mcp/core";
+import { createObservationStore } from "../kernel/observations/store.js";
+import { createLocalBlobStore } from "../kernel/observations/local-store.js";
+import { vaultSlug } from "../paths.js";
+import { collectPaths } from "../guard.js";
+
+export interface BuildOpts {
+  /** Code Mode: expose the search/describe/call meta-tool surface instead of the full tool set. */
+  codeMode?: boolean;
+  /**
+   * Receive the captured guarded-tool registry after every registrar has run.
+   * Only meaningful with `codeMode: true` — that is the mode in which
+   * registrations are CAPTURED rather than registered on the SDK server (a
+   * full-surface build hands back an empty registry). The in-Obsidian dev
+   * tool-runner (src/tool-runner.ts) uses this to obtain, per invocation, the
+   * exact tool set + guard wrappers a fresh code-mode MCP connection would get.
+   */
+  onRegistry?: (registry: CapturedRegistry) => void;
+  /**
+   * Journal-actor `client` label for a server no MCP client will ever attach
+   * to (the tool-runner's registry-only builds). Used only as a FALLBACK: a
+   * real connection's initialize handshake still wins, so an MCP session can
+   * never be mislabeled.
+   */
+  clientLabel?: string;
+}
+
+// `BuildOpts.providerTools` and its `ProviderToolContext` are GONE (S3c).
+//
+// S2 introduced them as the shape that got the mandate tools off `ServerCtx`:
+// registrars handed in by the composition root, closed over the provider's own
+// stores, so the host's per-connection context named no provider type. That was
+// S2's exit criterion and it held. S3c retires the shape itself, because the
+// composition root no longer has a provider to compose — the provider is a
+// separate plugin, and it contributes its tools the way every other plugin
+// does, through `registerTools` on the api object. One publishing path for
+// everybody is the point of the split; a second, privileged one for the
+// provider would be the standing this design is careful never to grant it.
+
+// Per-connection id for the journal's actor block. Monotonic within a plugin
+// load; the load-time epoch keeps ids from colliding across plugin reloads.
+let connSeq = 0;
+const CONN_EPOCH = Date.now().toString(36);
+
+export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): McpServer {
+  // serverInfo, as returned by `initialize` — built by `serverInfo()` in
+  // mcp/helpers.ts, which owns the name and is reachable from a plain node
+  // test. `vault-mcp` since the S3c wire rename (2026-09-09); it was `governor`
+  // between 0.12.0 and the split, which after the split had the handshake
+  // introducing this server as the governance provider while it published the
+  // host's tools.
+  const server = new McpServer(serverInfo(ctx.pluginVersion, ctx.vaultName));
+  const connectionId = `${CONN_EPOCH}-${++connSeq}`;
+
+  // Wrap registerTool so every tool handler is guarded before registration.
+  // This monkeypatch fires for ALL registerTool calls that follow, including the
+  // 17 fs-expressible tools registered via registerFsTools below — because
+  // registerFsTools calls server.registerTool, which is this patched version.
+  // Cast origRegister to any to bypass overload signature checking on the wrapped handler.
+  //
+  // The same wrapper also routes MUTATING calls through the plugin-singleton
+  // write queue and the write journal (ctx.kernel) — one interception point, so
+  // the guarded set, the serialized set, and the journaled set are the same set
+  // by construction.
+  //
+  // In Code Mode the same interception point CAPTURES each guarded tool into a
+  // registry instead of registering it; the three meta-tools registered at the
+  // end are the only tools the session sees. The guard wrapper travels with
+  // the captured handler, so read-only/allowlist bind identically in both modes.
+  const origRegister: any = server.registerTool.bind(server);
+  // Resolved per call, not once: the MCP client's identity only exists after
+  // the initialize handshake, which happens well after the server is built.
+  // `server` is the transport's own assertion — which vault, which install,
+  // which version — and is resolved once at load, not per call.
+  // ── the connection's session (WP5, D01) ─────────────────────────────────
+  //
+  // One durable, replica-local session per connection, minted at build time
+  // and recorded in the session store. The record is evidence; the CAPABILITY
+  // is this closure — nothing serialized here lets another process act as
+  // this session. When no session machinery is wired (tests, bare embeds)
+  // the connection simply has no session, and everything downstream treats
+  // null as "no session" rather than failing.
+  let session: SessionV1 | null = null;
+  if (ctx.sessions) {
+    const st = ctx.getSettings();
+    session = openSession(
+      {
+        vaultId: ctx.sessions.vaultId,
+        replicaId: ctx.sessions.replicaId,
+        actor: { connection: connectionId, clientClaim: opts.clientLabel ?? null },
+        journalHead: ctx.sessions.journalHead(),
+        // The effective connection scope at open: read-only + allowlist are
+        // what bound this connection's reach. Digested so the record carries
+        // a comparable fingerprint, not a second copy of settings.
+        scopeDigest: digestUtf8(canonicalize({ readOnly: st.readOnly === true, allowlist: [...(st.allowlist ?? [])].sort() })).value,
+      },
+      Date.now()
+    );
+    ctx.sessions.open(session, Date.now()).catch((e) => console.error("[vault-mcp] session open failed", e));
+
+    // The session ends when the connection does. Protocol.onclose is the
+    // SDK's own close callback, invoked when the transport closes; chaining
+    // preserves anything a later assignment composes on top. A server that
+    // never connects (the dev tool-runner) never fires this — its session is
+    // bounded by the TTL instead, which is the designed fallback.
+    const sid = session.id;
+    const prevClose = (server.server as { onclose?: () => void }).onclose;
+    (server.server as { onclose?: () => void }).onclose = () => {
+      prevClose?.();
+      ctx.sessions?.close(sid, Date.now()).catch(() => undefined);
+    };
+  }
+
+  /**
+   * The dequeue refusal for this connection's session — consulted inside the
+   * kernel's queued closure, so `WRITE_TIMEOUT_MS` bounds it (condition 5).
+   *
+   * TWO refusers, and the split is the ruling (condition 7 — the host mints):
+   *
+   *   • The HOST's own floor: the session record it minted carries an expiry,
+   *     and expiry needs no writer and no store to have happened. A host with
+   *     no governance provider installed still stops acting under a session
+   *     that has run out — the TTL is transport hygiene, not governance.
+   *   • The PROVIDER's refusal, through the seam. Revocation is a human act
+   *     against the durable record, and the record's revocation state belongs
+   *     to whoever owns the review pane the human revoked in. So the host does
+   *     not re-read the store to ask permission; it asks the seam whether
+   *     anyone wants to refuse, and a `null` from an absent provider is not an
+   *     allow — it is silence, which the host's own floor has already spoken
+   *     for.
+   *
+   * The union of the two is exactly what the single store-reading check did
+   * before: expired ⇒ refused, revoked/closed ⇒ refused, otherwise proceed.
+   */
+  const sessionRefusal = async (): Promise<{ code: string; detail: string } | null> => {
+    const now = Date.now();
+    const expired = expiryRefusal(session, now);
+    if (expired) {
+      // The expiry transition is recorded, not merely observed — the durable
+      // record should not say "open" about a session nothing will honour.
+      if (expired.status === "expired" && session && ctx.sessions) {
+        ctx.sessions.markExpired(session.id, now).catch(() => undefined);
+      }
+      return { code: expired.code, detail: expired.detail };
+    }
+    return (await ctx.seam?.refuseSession(session?.id ?? null)) ?? null;
+  };
+
+  const actor = (): JournalActor => {
+    const info = (server.server as any)?.getClientVersion?.();
+    // opts.clientLabel is a fallback for builds no client ever connects to
+    // (the dev tool-runner): a real handshake identity always takes precedence.
+    const client = info?.name ? (info.version ? `${info.name}/${info.version}` : String(info.name)) : opts.clientLabel;
+    return {
+      transport: "mcp",
+      ...(client ? { client } : {}),
+      connection: connectionId,
+      ...(session ? { session: session.id } : {}),
+      ...(ctx.serverIdentity ? { server: ctx.serverIdentity } : {}),
+    };
+  };
+  // Named so obsidian_write_notes' pre-compose resolve (below) can share the
+  // IDENTICAL uid/scheme resolution + read-only/allowlist check `guarded`
+  // itself applies — not a second copy of it.
+  // The write-facts slot (WP6b-1): the backend reports each successful
+  // writeNote's exact base/proposed bytes here, and the executor's propose
+  // hook takes them immediately after the SAME operation completes. Safe
+  // without a queue of its own because the kernel serializes mutations
+  // process-wide — at most one write executes at a time, and the take happens
+  // before the next can start.
+  let writeFacts: { path: string; baseBytes: Uint8Array | null; proposedBytes: Uint8Array; created: boolean } | null = null;
+
+  // ── the operation seam (WP1) ────────────────────────────────────────────────
+  //
+  // One registry and one executor per CONNECTION, matching the lifetime of the
+  // server itself. That is not incidental: a third-party publisher's tool names
+  // are computed from whichever plugins are loaded right now, so they only
+  // exist at this moment. Binding them here keeps the executor's lookup exact
+  // for every surface — including the ones that are not in this repository.
+  //
+  // Registry problems are reported the way the module host already reports its
+  // own: loudly, to the console, without costing the connection. The declared
+  // inventory's correctness is a BUILD property with its own test; re-deciding
+  // it per connection would turn a build failure into a runtime outage.
+  const actions = buildMcpActionRegistry(externalToolSnapshot(ctx));
+  for (const p of actions.problems) console.error("[vault-mcp] action registry:", p);
+  // ── observation capture (WP2) ───────────────────────────────────────────────
+  //
+  // DEFAULT OFF. `enabled` is read live, per call, so turning the setting on
+  // takes effect without a reconnect — and turning it off stops capture
+  // immediately rather than at the end of a session.
+  //
+  // Payloads land OUTSIDE the vault, in `~/.claude/vault-mcp/observations/<slug>/`,
+  // so Obsidian Sync never carries note text a user did not choose to sync.
+  //
+  // Playback authorization reuses the SAME allowlist the read boundary already
+  // enforces. That is deliberate: a reviewer must not be able to replay their
+  // way around a path scope, and re-deriving "may this person see this note"
+  // from a second rule would be two chances to disagree.
+  const observationStore = createObservationStore({
+    blobs: createLocalBlobStore({ vaultSlug: vaultSlug(ctx.vaultName ?? "vault") }),
+    // Deliberately NOT the capture toggle.
+    //
+    // The first draft gated playback on `captureObservations`, which meant
+    // turning recording OFF also destroyed access to everything already
+    // recorded — the opposite of what someone flipping that switch wants. They
+    // are stopping new collection, not disowning the evidence they collected.
+    //
+    // What this gate is FOR is per-reader coarse refusal, and there is no
+    // reader identity yet: until sessions (WP5) land, every caller on the
+    // socket is the same principal, and the socket is already the trust
+    // boundary for live reads. So the honest answer today is "yes, and the
+    // allowlist does the scoping" — see canRead directly below. When sessions
+    // exist, this becomes a real per-reader question.
+    canReplay: () => true,
+    canRead: ({ source }) => visiblePaths([source], ctx.getSettings()).length > 0,
+  });
+  const observationCapture = createCapture({
+    store: observationStore,
+    enabled: () => ctx.getSettings().captureObservations === true,
+    maxBytes: ctx.getSettings().captureMaxBytes ?? 50 * 1024 * 1024,
+    // The same territory list the governance pane enumerates by — one list,
+    // one meaning (@vault-mcp/core territories.ts). Reads in a guarded territory
+    // stay legal; RETAINING copies of them outside the territory is what this
+    // forbids (issue #322).
+    excludedSource: isExcludedTerritory,
+  });
+
+  const executor = createOperationExecutor({
+    registry: actions.registry,
+    actor: () => {
+      const a = actor();
+      return { binding: `${a.connection}`, clientClaim: a.client ?? null };
+    },
+    sessionId: () => session?.id ?? null,
+    // Proposal production, now BEHIND THE SEAM (S2). The executor still
+    // decides WHEN — a completed operation — and the host still decides that
+    // the facts describe THIS operation. Everything after that is the
+    // governance provider's, running as a registered write observer
+    // (governor/wiring/write-observer.ts) that the host neither awaits nor
+    // reads a return value from.
+    //
+    // The write-facts slot and its attribution guard stay HERE because they
+    // protect the HOST's bookkeeping: the slot is a single-item mailbox filled
+    // by the backend and taken exactly once, and a mismatch means the facts
+    // belong to some other write. Handing mis-attributed bytes across the seam
+    // would manufacture a proposal about a write that did not happen, so the
+    // safe direction is to report NOTHING.
+    propose: async (operation, _result, sources) => {
+      const facts = writeFacts;
+      writeFacts = null; // taken exactly once, for exactly this operation
+      // Returns immediately: observers are dispatched off this path, so a
+      // provider that hangs or throws cannot cost the caller a write that has
+      // already landed (condition 5).
+      reportCompletedWrite(ctx.seam, facts, operation, sources, actor());
+    },
+    // The slot is cleared on EVERY close, completed or not — a write whose
+    // operation was later judged failed (or a timeout's late settlement) must
+    // not leave facts for a future operation to mis-attribute.
+    onClose: () => {
+      writeFacts = null;
+    },
+    capture: observationCapture,
+    // The paths a call NAMES, via the same walker the guard and the journal
+    // already use — so what a payload is attributed to is the same set the
+    // allowlist decided over, rather than a second opinion about it.
+    // Fallback only. The guard reports the RESOLVED paths through the handler
+    // context, which is what actually gets recorded; this covers the case of a
+    // handler that returns before resolution happens.
+    sourcesOf: (req) => collectPaths((req.inputs ?? {}) as Record<string, unknown>),
+  });
+
+  const guardedOpts = {
+    getSettings: () => ctx.getSettings(),
+    kernel: ctx.kernel,
+    actor,
+    executor,
+    sessionRefusal,
+    // `jd:<address>` addressing at the interception point: same per-call
+    // freshness as registerSchemeTools's own registry() below (a scheme
+    // config edit lands live), and the same notes() source it uses.
+    schemes: () => makeRegistry(ctx.getSettings().schemes ?? DEFAULT_SCHEMES),
+    schemeNotes: () => app.vault.getMarkdownFiles().map((f) => f.path),
+  };
+  const guarded = makeGuarded(guardedOpts);
+  const registry: CapturedRegistry = new Map();
+  const capture = makeCaptureRegister(registry, guarded);
+  const register = opts.codeMode
+    ? capture
+    : (name: string, def: any, handler: any) => origRegister(name, def, guarded(def, handler, name));
+  // withKernelArgs runs on the way in, so `if_rev` / `idempotency_key` are
+  // declared on every mutating tool's schema — in both modes, and for external
+  // tools too — without any registrar knowing they exist. Undeclared arguments
+  // are stripped by the SDK's own validation, so declaring here is what makes
+  // them reachable by a client at all.
+  (server as any).registerTool = (name: string, def: any, handler: any) =>
+    register(name, withKernelArgs(def), handler);
+
+  // Patching registerTool alone left FIVE other registration entry points on
+  // the SDK server unguarded (#83). Sealing them is what makes module.ts's
+  // "no module-specific bypass possible" true by construction rather than by
+  // convention — load-bearing because moduleFromRegistrar hands adapted
+  // modules the real server, and #83 mounts the accept-veto module here.
+  sealUnguardedRegistration(server);
+
+  // ── 17 fs-expressible tools — shared registry + live ObsidianBackend ────────
+  // decodeHtml: false — no HTML entities expected from in-process calls.
+  // includeIndexStatus omitted — Obsidian's cache is always live; read tools
+  // don't need an index_status block.
+  // rev: the same mtime token the journal records, so a read hands back exactly
+  // what a following write can pass as `if_rev`.
+  //
+  // The backend also carries the READ BOUNDARY (slice 3.0): six of its methods
+  // enumerate the vault with no path to guard, so they filter their own
+  // iteration through the allowlist. The filter is resolved per call, like the
+  // guard's own settings, so a settings change lands without a reconnect.
+  // Same live enforcement getter as the plugin-singleton probe in main.ts:
+  // only `.rev` is consumed here today, but a probe whose `record()` ignored
+  // the setting would be a silent bypass the moment anything reads it.
+  const probe = obsidianProbe(app, () => ctx.getSettings().enforceRecordImmutability !== false);
+  const visible = (paths: string[]) => visiblePaths(paths, ctx.getSettings());
+  // Hoisted so obsidian_write_notes can drive the same backend writeNote through
+  // its own per-item guarded dispatch (see the write-notes block below).
+  const backend = new ObsidianBackend(app, visible, (facts) => {
+    writeFacts = facts;
+  });
+  registerFsTools(server, backend, {
+    decodeHtml: false,
+    rev: (p) => probe.rev(p),
+  });
+
+  // ── remaining tools — live-only, complementary, nav, integrations ────────────
+  registerCoreTools(server, app, ctx);
+  // ctx carries the guard's settings: obsidian_repoint_link scans the vault for
+  // itself, so it must contain that scan by the allowlist on its own — no
+  // argument-level check can see a set the handler discovers.
+  registerVaultWriteTools(server, app, ctx);
+  // ── scope-provider write surface: assign/refile/renumber address ───────────
+  // Cannot go through mountModules below: that host's registerAll gate refuses
+  // any tool whose readOnlyHint !== true (its own header comment), and these
+  // three mutate by design. Registered directly, same shape as
+  // registerVaultWriteTools above. Reuses guardedOpts.schemes/schemeNotes
+  // rather than building a third `makeRegistry(...)` closure identical to the
+  // one guardedOpts already constructed above — same per-call freshness (a
+  // scheme config edit lands live, no reconnect needed), one expression.
+  registerSchemeWriteTools(server, app, {
+    registry: guardedOpts.schemes,
+    notes: guardedOpts.schemeNotes,
+    getSettings: () => ctx.getSettings(),
+  });
+  // Folded in from obsidian-jd-survey (2026-08-19). Hand-registered here, the
+  // same shape registerSchemeWriteTools above uses: modules-mount.ts's
+  // registerAll gate refuses a non-readOnlyHint tool unless its module opts
+  // in via `mutating: true` — a real path (five other modules take it), just
+  // not the one chosen for this v1's obsidian_survey_slot.
+  registerSurveyTools(server, app, {
+    getSettings: () => ctx.getSettings(),
+  });
+  // "QuickAdd choices as notes" EXTRACTED (suite-split, first satellite):
+  // it now lives in packages/quickadd-choices-compile, publishing
+  // `quickadd_choices_compile_run` through vault-mcp-api like any third-party
+  // plugin. The execution seam (running a choice) moved to `@vault-mcp/core`
+  // at S5, when triage left too: its two callers — obsidian_run_command here
+  // and the vault-triage satellite's declared choice rows — are now in
+  // different plugins, and the seam exists so they cannot drift.
+  registerComplementaryTools(server, app, ctx);
+  // ctx: obsidian_list_bookmarks enumerates paths the human bookmarked, which
+  // is another argument-less read of vault structure.
+  registerNavTools(server, app, ctx);
+  registerIntegrationTools(server, app, ctx);
+  // ── headless Apple Notes import (#252) ─────────────────────────────────────
+  // Conditional on the community Importer plugin's LOADED instance, same
+  // gate discipline as registerIntegrationTools; mutating, so it registers
+  // directly here (modules-mount.ts refuses readOnlyHint !== true). The
+  // handler re-resolves the instance per call and version-gates against the
+  // known-good importer versions — see tools-import.ts's header.
+  registerImportTools(server, app, {
+    importerPlugin: () => ((app as any).plugins?.plugins?.[IMPORTER_PLUGIN_ID] ?? null),
+    getSettings: () => ctx.getSettings(),
+  });
+  // ── advisory scope claims (kernel v0) ──────────────────────────────────────
+  // Registered here, after the interception patch, so a claim is guarded,
+  // serialized and journaled like any other mutating operation — the claim is
+  // itself an act the audit stream should record.
+  registerLockTools(server, ctx, actor);
+  // ── the uid index's read surface (identity substrate, Delivery step 2) ─────
+  // Addressing by uid needs no tool of its own — `uid:<value>` binds at the
+  // interception point above — so this is purely the lookup, in both directions.
+  registerUidTools(server, ctx);
+  // ── THE GOVERNANCE PROVIDER'S FIVE TOOLS ARE NOT REGISTERED HERE ──────────
+  //
+  // `governance_pending_review`, `governance_revisions`,
+  // `governance_submit_revision`, `governance_mandate_draft` and
+  // `governance_mandates` were hand-registered at this point until S3c. §6 of
+  // the split design always assigned them to the provider; they published from
+  // here only because that is where the tool tables lived.
+  //
+  // They now arrive through `registerExternalTools` below, like every other
+  // plugin's tools — the same guard, the same queue, the same journal, the same
+  // kernel arguments. THEIR NAMES DID NOT CHANGE: the host's grandfather table
+  // (`external-tools.ts`) lets the `governor` publisher — and only it, and only
+  // for those five names — publish unprefixed, including past the F1
+  // `obsidian_*` refusal. Every other satellite paid the rename tax; these five
+  // were on the wire when the split happened, and renaming a shipped tool name
+  // breaks agent sessions for zero semantic gain.
+  //
+  // WHAT DID CHANGE, and it is a real cost: as external tools their read-only
+  // claims are distrusted unless an operator lists `governor` in
+  // `trustedReadOnlyPlugins`, and under an active path allowlist the F3 gate
+  // blocks any external tool whose arguments carry no recognized path key — so
+  // four of the five are refused wholesale while an allowlist is active, and
+  // only `governance_submit_revision` (which takes `path`) stays scoped
+  // per-path. They also lose their in-tool `isVisible` filtering, because a
+  // satellite cannot reach the host's guard settings. Stricter, fail-closed,
+  // and the same finding every extraction since S4 has recorded.
+  //
+  // ── capability modules: scope-provider ────────────────────────────────────
+  // Ruled decision #2 realized: the capability modules register THROUGH
+  // the ModuleRegistry — settings-toggleable (`modules.<id>.enabled`), behind
+  // the accept/baseline tripwire, collision refusal, and the mount's
+  // read-only-only registrar. The registrar handed over is the PATCHED
+  // registerTool above, so module tools land at the same guard/queue/journal
+  // interception point as every hand-registered tool, in both modes.
+  const moduleRegistry = mountModules((name, def, handler) => (server as any).registerTool(name, def, handler), {
+    getSettings: () => ctx.getSettings(),
+    schemeNotes: () => app.vault.getMarkdownFiles().map((f) => f.path),
+    // Nine module adapters were wired HERE until the suite split extracted
+    // them. Vocab, health and bases went at S7; fileclass, provenance and
+    // jd-scaffold followed as the mutating tier, taking the CLI/vault-name
+    // probe, the provenance backend, and the jd-scaffold source + its
+    // parseYaml injection with them. Every one of the nine builds its own
+    // adapter inside its own plugin now, so this composition root supplies
+    // exactly what the two remaining modules need: the settings thunk and the
+    // scheme module's note listing.
+  });
+  // Skip-and-report only reports if someone reads the report: every mount
+  // defect (unknown module id in settings, a gate-refused tool, a config
+  // finding) lands loudly in the console rather than evaporating with the
+  // discarded registry. console.error, not a throw — a degraded module
+  // surface must not cost the connection (the journal's own convention).
+  for (const p of moduleRegistry.problems) console.error("[vault-mcp] module host:", p);
+  // ── link drift, reported not repaired (slice 2.2) ──────────────────────────
+  // Read-only by construction: moves already heal their own links through
+  // fileManager.renameFile, so this reports the drift that came from OUTSIDE.
+  registerLinkTools(server, obsidianLinkSource(app), ctx);
+  // ── conformance debt register (issue #211, Parts A2 + B) ────────────────────
+  // The READ tool reports the carried debt (baseline + sidecar + live run:
+  // burn-down counts, staleness, budget) — whole-vault, like the health scan
+  // (now the `vault-health` satellite's `vault_health_scan`).
+  // The RENDER tool (Part B) materializes the same report as a generated
+  // register note beside the baseline; it is mutating (readOnlyHint: false), so
+  // it rides the guard-patched registrar (read-only mode, queue, journal) and
+  // refuses under an active allowlist unless the register path is inside it.
+  // Neither has an accept verb: acceptance metadata is minted only at the
+  // human-run --rebaseline, never here, and the rendered note carries only a
+  // generated/generator derivation stamp (accept-guard-checked before writing).
+  const debtSource = obsidianDebtRenderSource(app);
+  const debtCtx = {
+    config: ctx.getSettings().modules?.["conformance-debt"]?.config,
+    getSettings: () => ctx.getSettings(),
+  };
+  registerConformanceDebtTools(server, debtSource, debtCtx);
+  registerConformanceDebtRenderTool(server, debtSource, debtCtx);
+  // ── official-CLI proxy — conditional on the CLI binary being installed ──────
+  // AND on the default-OFF "Raw CLI proxy" setting (Security tab): the
+  // dedicated pinned-subcommand tools below cover the real usage, so the
+  // free-text proxy is a surface a human opts back into.
+  // parseYaml is injected for the accept-forbidden guard's content-fence scan;
+  // readTemplate for the template guard (create template= / quickadd:run-
+  // template path= draw content from a vault note the params only NAME).
+  // Both injected so tools-cli.ts stays obsidian-free for headless tests.
+  registerCliTools(server, ctx, { parseYaml, readTemplate: obsidianTemplateReader(app) });
+  // ── dedicated pinned-subcommand CLI tools (the obsidian_cli decomposition) ──
+  // Same transport machinery (vault pinning, exec seam, deny list), one PINNED
+  // subcommand per tool with typed args — conditional on the CLI binary only,
+  // not on the raw-proxy setting. history:restore is deliberately not among
+  // them (#110).
+  registerCliDedicatedTools(server, ctx, { parseYaml });
+  // ── CSS snippet tools — live app API (app.customCss), always registered ─────
+  // The considered `.obsidian` exception: scoped to `.obsidian/snippets/*.css`
+  // and nothing else (see tools-snippets.ts's header).
+  registerSnippetTools(server, ctx, { source: obsidianSnippetSource(app as any) });
+  // ── externally-published tools (other Obsidian plugins via plugin.api) ─────
+  registerExternalTools(server, app, ctx);
+
+  // ── batch write + server-side stamping (slice B1) ───────────────────────────
+  // obsidian_write_notes is a DISPATCHER, not a single mutating op: to give each
+  // item its own journal record it drives a per-item guarded single-writer, and
+  // to avoid a reentrant queue deadlock it must not itself take a queue slot. So
+  // it registers UNGUARDED via origRegister (the obsidian_call_tool precedent)
+  // and each item runs through `guardedWrite` — a real makeGuarded wrapper, so
+  // uid/read-only/allowlist/if_rev/idempotency/queue/journal all bind per item.
+  // Not registered in Code Mode: that surface is the three meta-tools only, and
+  // a session there reaches single writes via obsidian_call_tool.
+  if (!opts.codeMode) {
+    const RW = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
+    const guardedWrite = guarded(
+      { title: "write one note", inputSchema: {}, annotations: RW },
+      async ({ path, content, overwrite }: { path: string; content: string; overwrite?: boolean }) =>
+        ok(await backend.writeNote(path, content, overwrite ?? true)),
+      "obsidian_write_notes"
+    ) as unknown as GuardedWrite;
+    registerWriteNotesTool(origRegister, guardedWrite, {
+      // Same resolution + read-only/allowlist check `guarded` applies at
+      // dispatch, shared via guardedOpts — see resolveGuardedPath's doc
+      // comment and tools-write-notes.ts for why this must run BEFORE compose.
+      resolveTarget: (path) => resolveGuardedPath(path, guardedOpts),
+      readExistingFrontmatter: (path) => {
+        const f = app.vault.getAbstractFileByPath(path);
+        return f instanceof TFile ? app.metadataCache.getFileCache(f)?.frontmatter ?? undefined : undefined;
+      },
+      revOf: (path) => probe.rev(path),
+      stringifyYaml,
+      parseYaml,
+      mintUid: (createdMs) => uuidv7(createdMs),
+      formatTs: formatLocalTimestamp,
+    });
+  }
+
+  if (opts.codeMode) {
+    // Meta-tools register through origRegister directly: they must NOT be
+    // guard-wrapped — obsidian_call_tool would otherwise be blocked wholesale
+    // in read-only mode, blocking read tools too. The captured handlers carry
+    // the guard — and the queue and journal — so enforcement happens per target
+    // call. That also keeps the queue non-reentrant: obsidian_call_tool itself
+    // never takes a queue slot, so its target can't wait on its own caller.
+    // The capture patch is
+    // deliberately LEFT INSTALLED: any post-build registration still lands in
+    // the registry, guarded — the "every registerTool call is guarded" locked
+    // invariant holds in both modes for the server's whole lifetime.
+    registerCodeModeTools(server, registry, origRegister);
+  }
+  // Hand the captured registry to the caller AFTER every registrar above has
+  // run, so a registry-only consumer (the dev tool-runner) sees the complete
+  // guarded tool set of this build — including conditional registrations.
+  opts.onRegistry?.(registry);
+  return server;
+}

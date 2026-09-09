@@ -10,8 +10,8 @@ advisory "why" that rides the journal (B2), and a read-only view of what's under
 ## B1 — `obsidian_write_notes`
 
 A batch writer: write several notes in one call, each as `{path, frontmatter?, body}`.
-(`packages/plugin/src/mcp/tools-write-notes.ts`, pure logic in
-`packages/plugin/src/mcp/write-notes-compose.ts`.)
+(`packages/host/src/mcp/tools-write-notes.ts`, pure logic in
+`packages/host/src/mcp/write-notes-compose.ts`.)
 
 The whole point of the slice is that **each item is an independent write** routed through the
 **same serialized queue + journal + `if_rev`/idempotency machinery** as a single write — so
@@ -80,12 +80,12 @@ made?"* — the PR-description of a proposed change. It is the third
 [kernel argument](kernel-v0.md#kernel-arguments) (`KERNEL_ARG_KEYS = ["if_rev",
 "idempotency_key", "intent"]`), declared on **every mutating registration** via
 `withKernelArgs` and **peeled by the guarded wrapper before any handler runs**
-(`packages/plugin/src/mcp/guarded.ts`).
+(`packages/host/src/mcp/guarded.ts`).
 
 Its properties are deliberately narrow:
 
 - **Journal-only.** It is recorded verbatim on the journal record beside `op`/`actor`
-  (`JournalRecord.intent`, `packages/plugin/src/kernel/journal.ts`) and **never reaches note
+  (`JournalRecord.intent`, `packages/host/src/kernel/journal.ts`) and **never reaches note
   content** — it is peeled before the handler, so it structurally cannot be written into a
   note's frontmatter or body.
 - **Advisory and untrusted.** Review surfaces display it per pending row as "agent says"; it is
@@ -100,53 +100,61 @@ Its properties are deliberately narrow:
   record carries it and the Acceptance pane's per-note rows each show it.
 - **Degrades quietly** when the kernel is absent (bare embeds, tests).
 
-## B3 — `obsidian_pending_review`
+## B3 — `governance_pending_review`
 
 A **read-only** view of the notes currently pending human review, so a well-behaved agent can
 **avoid stepping on a note a human is about to review**
-(`packages/plugin/src/mcp/tools-pending-review.ts`). It is registered as a plain read tool
-(after `registerUidTools` in `server.ts`), not through the module host.
+(`packages/governor/src/tools/pending-review.ts`). It is published by the governance provider
+through `vault-mcp-api` under its unchanged shipped name, via the host's closed grandfather
+table (`GRANDFATHERED_TOOL_NAMES` in `packages/host/src/mcp/external-tools.ts`) — the one
+carve-out for a tool name that predates the host/provider split — rather than registered
+directly by the host as a plain read tool.
 
-- **It exposes data the governance module published — nothing more.** The folded governance
-  module (`src/governor/wiring/wiring.ts`) rewrites a read-only index at
-  `<plugin-dir>/governance/pending-index.json` — beside the acceptance log — on every
+- **It exposes data the governance provider published — nothing more.** The provider
+  (`packages/governor/src/wiring/wiring.ts`) rewrites a read-only index at
+  `<provider plugin dir>/governance/pending-index.json` — beside the acceptance log — on every
   review-queue refresh (`refresh()`, via the pure serializer in
-  `governor/kernel/pending-index.ts`); this tool reads it. It is the same data the review
-  pane shows — **no new source of truth, and nothing here changes review state**.
+  `packages/governor/src/kernel/pending-index.ts`); this tool reads it. It is the same data the
+  review pane shows — **no new source of truth, and nothing here changes review state**.
   `readOnlyHint: true`, empty input schema, no write and no accept/baseline verb: it reports
-  pending-ness; it cannot accept ("the accept verb is in no API").
-- **Allowlist-filtered.** The index is written from the whole vault, so every returned entry is
-  filtered through the **same `isVisible` guard** the uid/read tools use, *before* it is
-  reported — a sandboxed session that could learn about pending notes in territory it cannot
-  read would have a path oracle otherwise. `count` is the filtered length.
-- **Degrade is explicit, never silent (#261).** A missing index (governance module disabled, or
-  never refreshed — the module removes the file on unmount) or an unrecognizable one reads as
-  **`published: false` with a `reason`** — still never a tool error, but **never a bare empty
-  queue** (the #133/#142 silent-zero class). A genuinely clear queue is `published: true,
-  count: 0`. Within a well-formed index, entries stay drift-tolerant: non-object items and
-  unknown fields are ignored; an entry with no `path` can't be allowlist-checked so it is
-  dropped. The path is a fixed constant relative to the plugin dir (derived from
-  `app.vault.configDir`, respecting a renamed config dir), so no index content can redirect
-  the read.
+  pending-ness; it cannot accept ("the accept verb is in no API"). As an external tool, though,
+  that `readOnlyHint: true` claim is distrusted by default — the host treats the tool as
+  mutating unless the operator lists `governor` in `trustedReadOnlyPlugins`.
+- **Filtering moved from in-tool to the host's gate.** The index is written from the whole
+  vault; the provider publishes this tool as an external tool, so it no longer has access to
+  the host's guard settings to run the old in-tool `isVisible` check itself — that per-entry
+  filtering is gone. Under an active path allowlist, the host's F3 gate refuses the whole call
+  instead, because the tool's arguments carry no recognized path key, so a sandboxed session
+  gets no entries rather than a filtered list. With no allowlist active, entries are reported
+  as before. `count` is the reported length.
+- **Degrade is explicit, never silent (#261).** A missing index (provider not installed or
+  disabled, or never refreshed — the provider removes the file on unmount) or an unrecognizable
+  one reads as **`published: false` with a `reason`** — still never a tool error, but **never a
+  bare empty queue** (the #133/#142 silent-zero class). A genuinely clear queue is
+  `published: true, count: 0`. Within a well-formed index, entries stay drift-tolerant:
+  non-object items and unknown fields are ignored; an entry with no `path` can't be
+  allowlist-checked so it is dropped. The path is a fixed constant relative to the provider's
+  plugin dir (derived from `app.vault.configDir`, respecting a renamed config dir), so no index
+  content can redirect the read.
 
 ```jsonc
-// obsidian_pending_review  (no arguments)
+// governance_pending_review  (no arguments)
 → { "published": true,
     "pending": [{"path":"Projects/alpha.md","status":"pending","agent":"claude-code/1.0.0",
                  "op":"obsidian_write_note","when":"…","writeCount":2}, …],
     "count": 2 }
-// governance module disabled / index never published:
+// governance provider not installed / index never published:
 → { "published": false, "reason": "index-not-published — …", "pending": [], "count": 0 }
 ```
 
 The descriptive fields (`status`, `agent`, `op`, `when`, `writeCount`) are the governance
-module's own, passed through verbatim when present and well-typed. See
+provider's own, passed through verbatim when present and well-typed. See
 [the review workflow](review-sop.md) (legacy name annotation: the channel was designed under the framework's former name) for how this
 closes the loop back to the human.
 
 > **Migration note (#261).** Before the #164 decommission this index was published by the
-> standalone Stewardship plugin at `<config-dir>/plugins/stewardship/pending-index.json`.
+> legacy standalone Stewardship plugin at `<config-dir>/plugins/stewardship/pending-index.json`.
 > That path is dead: nothing publishes it, and this tool no longer reads it. The governance
-> module — which owns the queue — publishes the index at the vault-mcp-owned path above, and
-> the tool's absent-index state became the explicit `published: false` rather than a silent
-> `{pending: [], count: 0}`.
+> provider — which owns the queue — publishes the index at the path above (now under the
+> provider's own plugin folder), and the tool's absent-index state became the explicit
+> `published: false` rather than a silent `{pending: [], count: 0}`.

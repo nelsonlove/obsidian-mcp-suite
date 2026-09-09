@@ -6,7 +6,7 @@
  *
  * While triage was a host module its `move` was the shared `moveOne` in
  * `tools-vault-write.ts`, covered by the host's own link-healing suite — which
- * includes a source scan globbing `packages/plugin/src/**\/*.ts`. That scan
+ * includes a source scan globbing `packages/host/src/**\/*.ts`. That scan
  * cannot see this package. So the RULE came with the module even though the
  * FUNCTION could not (see the header of src/obsidian-source.ts for why
  * `moveOne` stayed behind: it has three other host callers, and it imports

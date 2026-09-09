@@ -681,7 +681,7 @@ export function buildTriageTools(source: TriageSource, ctx: TriageToolsCtx): Sdk
 // left the host, `queryBaseRows`, `makeSerializer`, the module-scoped
 // `captureSerializer`, `withBeltDeadline` and `captureWithCleanup` MOVED into
 // `packages/bases/src/tools.ts` — a move, with no copy left behind (nothing in
-// `packages/plugin/src` references any of them). One serializer over the one
+// `packages/host/src` references any of them). One serializer over the one
 // leaf still, owned now by the `vault-bases` plugin rather than by the host. A
 // copy HERE would still be wrong for exactly the reason above: two plugins each
 // holding a serializer over the one leaf is the same race whichever two plugins

@@ -7,8 +7,8 @@ The scope provider is a [capability module](module-system.md) (id `scheme`, capa
 `["addressing", "allocation"]`) that gives an agent a **scheme-relative** way to name and place
 notes. The default configured scheme is **Johnny Decimal**, addressed `jd:`.
 
-Files: `packages/plugin/src/mcp/tools-scheme.ts` (five read tools), `packages/plugin/src/mcp/tools-scheme-write.ts`
-(three write tools), `packages/plugin/src/kernel/scheme/` (the pure engine: `registry.ts`, `jd.ts`,
+Files: `packages/host/src/mcp/tools-scheme.ts` (five read tools), `packages/host/src/mcp/tools-scheme-write.ts`
+(three write tools), `packages/host/src/kernel/scheme/` (the pure engine: `registry.ts`, `jd.ts`,
 `provider.ts`, `findings.ts`, `mutate.ts`). The five read tools and the kernel engine are
 **read-only** and Obsidian-import-free (headlessly testable); [the three write tools](#the-three-write-tools)
 are the module's mutating half and register differently — see below.
@@ -125,7 +125,7 @@ band) — distinct from a fully allocatable scope.
 
 ## Conformance findings (not a tool)
 
-`packages/plugin/src/kernel/scheme/findings.ts` is a scheme-conformance rule-pack (finding codes
+`packages/host/src/kernel/scheme/findings.ts` is a scheme-conformance rule-pack (finding codes
 `misfiled`, `duplicate_address`, `malformed_name`, `unaddressed`) that is deliberately **not
 registered as a tool** — capabilities arrive as rule packs, not as new mutating surface. It is
 available to future review/rail surfaces, not to agents as a write path.

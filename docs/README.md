@@ -2,6 +2,8 @@
 
 This documentation is deliberately layered. You should be able to learn the public product without inheriting the private operator system, while a developer or agent integrator can still reach the exact contracts they need.
 
+Governor today ships as two plugins: the host (`packages/host`, Obsidian plugin id `vault-mcp`, display name "Vault MCP") and the governance provider (`packages/governor`, Obsidian plugin id `governor`, display name "Governor"), both at 0.19.0. The host alone is a complete, honest product — audited, journaled, allowlist-scoped vault access, ungoverned; installing the provider turns that audited access into governed access. This split is built and not yet cut over on the operator's vault — see [the migration plan](s3c-migration-plan.md) for the cutover procedure.
+
 > [!note]
 > This corpus describes the coherent target product; it is not, by itself, a claim that a particular Governor build implements every described behavior. What IS shipped is owned by one section: [Current release state](status-and-compatibility.md#current-release-state) (Gate 1 shipped as 0.17.0–0.18.2; the authority cutover ran 2026-08-23 and the marker is bound — admission is the standing authority). [Documentation basis](documentation-basis.md) explains the evidence classes.
 
@@ -112,7 +114,7 @@ The documents above own the concepts and the target design. The shipped implemen
 - [Module system](module-system.md) — how capability modules register and gate (the mechanism; the [module directory](modules.md) is the inventory)
 - Module deep references: [conformance](conformance.md), [scope provider](scope-provider.md), [identity and links](identity-and-links.md)
 - Satellite plugin deep references: [skills](skills.md) — `vault-skills`, [triage](triage.md) — `vault-triage`, [cross-session](crosssession.md) — `vault-crosssession`, [vocabulary provider](vocabulary-module.md) — `vault-vocab`, [Bases](bases.md) — `vault-bases`, and [provenance](provenance.md) — `vault-provenance`, all extracted from the module list above per `docs/suite-split-design.md` §6. Three satellites have no deep reference of their own and their package READMEs are their documentation: the health scan (`packages/health/README.md`), the fileclass CLI proxy (`packages/fileclass/README.md`) and JD scaffolding (`packages/jd-scaffold/README.md`).
-- [WP8 cutover runbook](../packages/plugin/docs/wp8-cutover-runbook.md) — the operator's one-page procedure for the authority cutover
+- [WP8 cutover runbook](../packages/governor/docs/wp8-cutover-runbook.md) — the operator's one-page procedure for the authority cutover
 
 ## Documentation layers
 

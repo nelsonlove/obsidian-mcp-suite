@@ -1,6 +1,6 @@
 # Vocabulary provider — controlled vocabulary (read-only)
 
-> **Deep reference for the shipped implementation.** Canonical concepts and the target design live in the [documentation corpus](README.md); what is shipped versus target is owned by [status-and-compatibility.md](status-and-compatibility.md). Since the S7 read-tier extraction (`suite-split-design.md` §6) this reference documents the standalone **`vault-vocab`** plugin, not a module of the host plugin (`governor`).
+> **Deep reference for the shipped implementation.** Canonical concepts and the target design live in the [documentation corpus](README.md); what is shipped versus target is owned by [status-and-compatibility.md](status-and-compatibility.md). Since the S7 read-tier extraction (`suite-split-design.md` §6) this reference documents the standalone **`vault-vocab`** plugin, not a module of the host plugin (`vault-mcp`).
 
 The vocabulary provider lets an agent **check a note's tags, properties, types, and glossary
 terms against the vault's controlled vocabulary** — and validate them **without writing
@@ -79,7 +79,7 @@ name on 2026-08-19, which the default was corrected to follow).
 
 ## The four tools
 
-All declared read-only, published to the Governor host through `vault-mcp-api`. (They registered through the host's module registry until S7; see the allowlist section below for what the host now believes about that read-only declaration.)
+All declared read-only, published to the host through `vault-mcp-api`. (They registered through the host's module registry until S7; see the allowlist section below for what the host now believes about that read-only declaration.)
 
 | Tool | Input | Returns |
 | --- | --- | --- |

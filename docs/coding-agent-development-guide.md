@@ -52,7 +52,8 @@ The repository is a TypeScript ESM monorepo:
 
 | Path | Current responsibility | Target treatment |
 |---|---|---|
-| `packages/plugin/` | Community plugin, bridge, MCP tools, live Obsidian adapters, governance UI, modules | Primary implementation target |
+| `packages/host/` | Community Vault MCP host plugin (id `vault-mcp`): bridge, MCP tools, live Obsidian adapters, modules | Primary implementation target |
+| `packages/governor/` | Community governance provider plugin (id `governor`): governance UI, proposals, admission, mandates | Primary implementation target |
 | `packages/core/` | Shared guards, backend contracts, responses, tool registry | Keep narrowly shared; do not move plugin-only authority code here prematurely |
 | `packages/vault-mcp-api/` | External publisher SDK | Preserve compatibility; extend only through registered actions and the operation executor |
 | `packages/server/` | Separate remote/filesystem server | Not part of Gate 1 or the Community authority claim |
@@ -110,9 +111,9 @@ Scale and consequence are separate fields. One content word may be more conseque
 
 | Current implementation | Target owner | Migration rule |
 |---|---|---|
-| `packages/plugin/src/kernel/journal.ts` operation records | Universal operation evidence | Preserve current records as the first compatibility evidence; version and extend rather than inventing a parallel journal |
+| `packages/host/src/kernel/journal.ts` operation records | Universal operation evidence | Preserve current records as the first compatibility evidence; version and extend rather than inventing a parallel journal |
 | `Kernel.runMutation` | Shared operation executor | Route through the executor adapter first; keep mutation queue semantics while reads, plans, verification, and authority actions adopt the same lifecycle |
-| `packages/plugin/src/mcp/guarded.ts` and other surface registration | Action registry plus surface bindings | Inventory both directions, bind every surface to a versioned action, and make raw handler reachability a build failure |
+| `packages/host/src/mcp/guarded.ts` and other surface registration | Action registry plus surface bindings | Inventory both directions, bind every surface to a versioned action, and make raw handler reachability a build failure |
 | Current read handlers | Observation contracts and store | Apply scope/redaction before capture; do not claim replayability until the native action and payload tests exist |
 | Current mutation handlers | Effect contracts | Preserve existing guard/queue behavior through the adapter; add intended, attempted, and observed effects incrementally |
 | `governor/kernel/baseline-store.ts` | Git history plus standing resolver | Retain as a read-only legacy-import adapter during cutover; stop direct baseline advancement after cutover |
@@ -134,14 +135,14 @@ The legacy system remains the sole authority until the new Gate 1 path passes it
 
 ## 7. Target package map
 
-Follow the repository's existing split: pure, Obsidian-free policy under `src/kernel/`; live application wiring under `src/`; MCP adapters under `src/mcp/`; tests under `packages/plugin/tests/`.
+Follow the repository's existing split: pure, Obsidian-free policy under `src/kernel/`; live application wiring under `src/`; MCP adapters under `src/mcp/`; host tests under `packages/host/tests/`, governance provider tests under `packages/governor/tests/`.
 
 ### Action, operation, observation, and effect substrate
 
 Create before new governance feature services:
 
 ```text
-packages/plugin/src/kernel/operations/
+packages/host/src/kernel/operations/
   action.ts             action ids, versions, semantic contract references
   operation.ts          universal invocation envelope and lifecycle states
   registry.ts           canonical action registry and bidirectional validation
@@ -149,17 +150,17 @@ packages/plugin/src/kernel/operations/
   surface-binding.ts    MCP, UI, automation, module, external, and internal bindings
   compatibility.ts      conservative adapter for current handlers
 
-packages/plugin/src/kernel/observations/
+packages/host/src/kernel/observations/
   observation.ts        ephemeral, evidence, and replayable manifests
   capture-policy.ts     action/session defaults, redaction, freshness, and retention
   dependencies.ts       durable-dependency and sufficiency validation
   store.ts              content-addressed payload interface
 
-packages/plugin/src/kernel/effects/
+packages/host/src/kernel/effects/
   effect.ts             intended, attempted, and observed effect contracts
   settlement.ts         late, partial, uncertain, and correction semantics
 
-packages/plugin/src/kernel/observations/
+packages/host/src/kernel/observations/
   local-store.ts        protected replica-local replay payload adapter (HOST-side)
   retention.ts          audited expiry, export, dependency check, and deletion
 ```
@@ -173,7 +174,7 @@ The executor is not a second mutation kernel. It becomes the seam around the exi
 Create:
 
 ```text
-packages/plugin/src/governor/kernel/contracts/
+packages/governor/src/kernel/contracts/
   change-class.ts       six-class registry and escalation rules
   ids.ts                branded ids for vault, replica, session, mandate, proposal, cohort, key, predicate
   origin.ts             four origin classes and confidence
@@ -195,14 +196,14 @@ Keep exact note-content digests byte-preserving. Do not normalize the note befor
 Create:
 
 ```text
-packages/plugin/src/governor/kernel/history-store/
+packages/governor/src/kernel/history-store/
   types.ts              repository-neutral object/ref contracts
   history-scope.ts      stable human-chosen include/exclude policy
   refs.ts               internal ref names behind one service
   repository.ts         interface used by proposal and admission services
   (recovery.ts          BUILT, NEVER CALLED, DELETED — see below)
 
-packages/plugin/src/governor/wiring/history-store/
+packages/governor/src/wiring/history-store/
   git-repository.ts     live standard-Git implementation
   local-data-root.ts    platform-appropriate outside-vault storage
 ```
@@ -214,26 +215,26 @@ The Community adapter must not require the user to install Git or expose a gener
 Create:
 
 ```text
-packages/plugin/src/governor/kernel/sessions/
+packages/governor/src/kernel/sessions/
   session.ts
   session-store.ts
 
-packages/plugin/src/governor/kernel/proposals/
+packages/governor/src/kernel/proposals/
   proposal.ts
   proposal-store.ts
   proposal-builder.ts
 
-packages/plugin/src/governor/kernel/verification/
+packages/governor/src/kernel/verification/
   predicate.ts
   registry.ts
   verify.ts
 
-packages/plugin/src/governor/kernel/cohorts/
+packages/governor/src/kernel/cohorts/
   cohort.ts
   freeze.ts
   coverage.ts
 
-packages/plugin/src/governor/kernel/admission/
+packages/governor/src/kernel/admission/
   policy.ts
   service.ts
   settlement.ts
@@ -246,7 +247,7 @@ packages/plugin/src/governor/kernel/admission/
 >
 > These lines are left in the listings rather than removed because this document is a decision record: a coding agent that builds `recovery.ts` from this spec would be rebuilding something already deliberately removed. If the crash window is later judged to matter, wire it — do not re-derive it, the implementation is in git history.
 
-packages/plugin/src/governor/kernel/origins/
+packages/governor/src/kernel/origins/
   classifier.ts
   reconcile.ts
 ```
@@ -256,7 +257,7 @@ packages/plugin/src/governor/kernel/origins/
 Create only after Gate 1 is complete:
 
 ```text
-packages/plugin/src/governor/kernel/mandates/
+packages/governor/src/kernel/mandates/
   mandate.ts
   draft.ts
   policy.ts
@@ -269,18 +270,18 @@ packages/plugin/src/governor/kernel/mandates/
 Create only after the local authority path is proven:
 
 ```text
-packages/plugin/src/governor/kernel/attestations/
+packages/governor/src/kernel/attestations/
   statement.ts
   dsse.ts
   trust.ts
   ledger.ts
 
-packages/plugin/src/governor/wiring/attestations/
+packages/governor/src/wiring/attestations/
   signer.ts
   secret-store.ts
   portable-ledger-adapter.ts
 
-packages/plugin/src/governor/kernel/replicas/
+packages/governor/src/kernel/replicas/
   reconciler.ts
   completeness.ts
   conflicts.ts
@@ -293,13 +294,13 @@ Use platform cryptography; never implement signature primitives. Version 1 uses 
 Create:
 
 ```text
-packages/plugin/src/kernel/capabilities/
+packages/host/src/kernel/capabilities/
   types.ts
   projection.ts
   validate.ts
   projections.ts
 
-packages/plugin/src/distribution/
+packages/host/src/distribution/
   public-modules.ts
   operator-modules.ts
 ```
@@ -512,8 +513,8 @@ Gate 0 is complete only when WP0–WP2 merge and the compatibility path cannot o
 ### WP3 — Canonical subjects and fixtures
 
 **Decision coverage:** D08, D13  
-**Create:** contracts files listed in sections 7–8 and `packages/plugin/tests/governance-subject-v1.test.mjs`  
-**Fixture:** `packages/plugin/tests/fixtures/governance-subject-v1.json`
+**Create:** contracts files listed in sections 7–8 and `packages/governor/tests/governance-subject-v1.test.mjs`  
+**Fixture:** `packages/governor/tests/fixtures/governance-subject-v1.json`
 
 Deliver:
 
@@ -529,8 +530,8 @@ No Git, session, verifier, attestation, or authority UI package starts until WP3
 ### WP4 — History scope and Git repository service
 
 **Decision coverage:** D06, D08, D10, D11  
-**Create:** history-store files and `packages/plugin/tests/governance-history-store.test.mjs`  
-**Modify:** `packages/plugin/src/paths.ts`, settings schema/UI, privacy/status projections
+**Create:** history-store files and `packages/governor/tests/governance-history-store.test.mjs`  
+**Modify:** `packages/host/src/paths.ts`, settings schema/UI, privacy/status projections
 
 Deliver:
 
@@ -779,15 +780,17 @@ Repository commands from the monorepo root:
 
 ```bash
 npm ci
-npm --workspace packages/plugin test
+npm --workspace packages/host test
+npm --workspace packages/governor test
 npm test --workspaces --if-present
-npm --workspace packages/plugin run build
+npm --workspace packages/host run build
+npm --workspace packages/governor run build
 ```
 
 Focused plugin test:
 
 ```bash
-cd packages/plugin
+cd packages/governor
 node --import tsx --test tests/governance-subject-v1.test.mjs
 ```
 

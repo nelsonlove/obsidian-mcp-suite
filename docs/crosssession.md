@@ -1,12 +1,12 @@
 # Cross-session channels — coordination log surface (#232)
 
-> **Deep reference for the shipped implementation.** Canonical concepts and the target design live in the [documentation corpus](README.md); what is shipped versus target is owned by [status-and-compatibility.md](status-and-compatibility.md). Since the S6 satellite extraction (`suite-split-design.md` §6) this reference documents the standalone **`vault-crosssession`** plugin, not a module of the host plugin (`governor`).
+> **Deep reference for the shipped implementation.** Canonical concepts and the target design live in the [documentation corpus](README.md); what is shipped versus target is owned by [status-and-compatibility.md](status-and-compatibility.md). Since the S6 satellite extraction (`suite-split-design.md` §6) this reference documents the standalone **`vault-crosssession`** plugin, not a module of the host plugin (`vault-mcp`).
 
 
 The `vault-crosssession` plugin (default off, mutating) gives the fleet's cross-session
 coordination-log conventions a real agent surface: **channel discovery, delta reads,
 read-receipt attestation, and posting that is refused while the poster is stale**, published
-to the Governor host through `vault-mcp-api`. It mechanizes the vault convention "posting
+to the host through `vault-mcp-api`. It mechanizes the vault convention "posting
 asserts you are current with everything above your entry." There is **no human UI** in this
 plugin beyond its settings tab, deliberately: no pane, no palette command, no ribbon.
 

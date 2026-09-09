@@ -133,7 +133,7 @@ The expected output names availability; it never converts unavailable to a healt
 
 Have a new evaluator follow [Getting started](getting-started.md) in a clean vault without maintainer help. Capture:
 
-- installation and first connection;
+- installation of both plugins (Vault MCP, then Governor) and first connection;
 - Looking only success;
 - scope selection;
 - first preview and scoped append;
@@ -188,33 +188,36 @@ From the monorepo root:
 
 ```bash
 npm test --workspaces --if-present
-npm --workspace packages/plugin run build
+npm --workspace packages/host run build
+npm --workspace packages/governor run build
 ```
 
-The release record stores command, commit, environment, exit status, and artifact digest. It must not rely on a prose statement that tests passed.
+`packages/host` (the Vault MCP plugin) and `packages/governor` (the Governor plugin) build independently; a release build runs both. The release record stores command, commit, environment, exit status, and artifact digest for each. It must not rely on a prose statement that tests passed.
 
 ## Version integrity
 
-Before building, verify all version owners agree:
+Before building, verify all version owners agree — now doubled across both plugins:
 
-- plugin `manifest.json`;
-- plugin package version where used;
+- each plugin's `manifest.json` (`packages/host` and `packages/governor`);
+- each plugin's package version where used;
 - version mapping file if present;
 - release tag;
 - GitHub release assets; and
 - documentation status record.
 
-Semantic versions use `x.y.z`. The release tag must match the manifest version exactly as required by the official submission process.
+Keep the two plugins' versions in step: a release should not ship one at 0.19.0 and the other at a different version without an explicit compatibility note.
+
+Semantic versions use `x.y.z`. The release tag must match each plugin's manifest version exactly as required by the official submission process.
 
 ## Community release artifacts
 
-Attach to the matching GitHub release:
+There are now two release bundles, one per plugin. Attach to the matching GitHub release, for each of `packages/host` and `packages/governor`:
 
 - `main.js`;
 - `manifest.json`; and
 - `styles.css` only when the plugin uses one.
 
-Do not commit the built `main.js` to the source repository merely to satisfy release packaging. Inspect the minified bundle for:
+Whether the two bundles ship under one GitHub release with six assets or as two separate releases is not decided here; this page only records that the artifact count doubled. Do not commit either built `main.js` to the source repository merely to satisfy release packaging. Inspect each minified bundle for:
 
 - secrets and personal paths;
 - undeclared hosts or network calls;
@@ -229,10 +232,10 @@ Do not commit the built `main.js` to the source repository merely to satisfy rel
 
 ## Manifest review
 
-Verify:
+Two manifests now need this check: `packages/host/manifest.json` (id `vault-mcp`, name `Vault MCP`) and `packages/governor/manifest.json` (id `governor`, name `Governor`). For each, verify:
 
-- id `governor` remains unique and policy-valid;
-- name `Governor` follows naming rules;
+- its id remains unique and policy-valid;
+- its name follows naming rules;
 - description is at most 250 characters, ends with a period, and states an outcome;
 - `version` is semantic and matches the release;
 - `minAppVersion` is the minimum actually tested version, not an aspirational floor;
@@ -257,7 +260,7 @@ Commit the lock file used for release.
 
 ## Documentation and disclosure review
 
-Check README, SECURITY, PRIVACY, data flow, threat model, action registry, capability projection and directory, settings, status, migration, and submission packet against the runtime registry and bundle.
+Check README, SECURITY, PRIVACY, data flow, threat model, action registry, capability projection and directory, settings, status, migration, and submission packet against both plugins' runtime registries and bundles.
 
 Verify that network use, outside-vault access, account/payment requirements, server telemetry, closed-source components, desktop-only status, and private packs are disclosed exactly where current Obsidian policy requires.
 
@@ -272,6 +275,8 @@ Before release:
 - state any irreversible format or authority change;
 - verify uninstall leaves notes readable; and
 - complete the closure record in [Migration and deprecation](migration-and-deprecation.md).
+
+For the host/Governor plugin split specifically, treat [the migration plan](s3c-migration-plan.md) as the closure record's source of truth for the cutover procedure, the state-dir moves, and the grace-period bridge left behind at the legacy `~/.claude/governor` location.
 
 ## Release decision
 

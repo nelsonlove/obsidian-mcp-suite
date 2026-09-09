@@ -10,7 +10,7 @@ Read-heavy, scope-first, preview-first, with human review. Use this profile unle
 
 ### Advanced governed
 
-Adds configured schemes, vocabulary, Bases evaluation, the health scan, and conformance. (Only schemes and conformance are still this plugin's own modules. Triage and cross-session coordination ship as the separate `vault-triage` and `vault-crosssession` satellite plugins; since the S7 read-tier extraction, vocabulary, health and Bases ship as the separate `vault-vocab`, `vault-health` and `vault-bases` satellite plugins. Each is installed, enabled and configured on its own, and publishes its tools to Governor through `vault-mcp-api`.) These remain bounded and observable but require maintenance of their declarations and baselines.
+Adds configured schemes, vocabulary, Bases evaluation, the health scan, and conformance. (Only schemes and conformance are still the host's own modules — since the host/Governor plugin split, the `acceptance` module has left the host's registry entirely and its settings now live in the Governor plugin's own `data.json` and settings tab. Triage and cross-session coordination ship as the separate `vault-triage` and `vault-crosssession` satellite plugins; since the S7 read-tier extraction, vocabulary, health and Bases ship as the separate `vault-vocab`, `vault-health` and `vault-bases` satellite plugins. Each is installed, enabled and configured on its own, and publishes its tools to the host, Vault MCP, through `vault-mcp-api`.) These remain bounded and observable but require maintenance of their declarations and baselines.
 
 ### Private high-authority
 
@@ -42,7 +42,7 @@ An agent may report and perform bounded work. It does not become the operator be
 
 ## Initial deployment
 
-1. Install the public core in a test vault.
+1. Install the public core — the Vault MCP host plugin and the Governor provider plugin — in a test vault.
 2. Verify Looking only and empty-scope behavior.
 3. Register one client and one narrow scope.
 4. Test read, preview, scoped append, revision conflict, uncertain timeout procedure, receipt, individual review, and Governor admission.
@@ -54,6 +54,8 @@ An agent may report and perform bounded work. It does not become the operator be
 10. Capture compatibility and degraded-mode evidence.
 11. Configure each additional Sync replica deliberately.
 12. Add private packs last, through separate change records.
+
+If you are upgrading an existing deployment across the host/Governor plugin split rather than deploying fresh, see [the migration plan](s3c-migration-plan.md) for the cutover procedure. The Claude Code MCP server name moves back to `vault-mcp` at the split, so tool prefixes become `mcp__vault-mcp__*`. An existing `governor` registration keeps working through the grace period (the bridge resolves the socket through discovery, never through the registration name), so the client change is not urgent — but it is the one operator action the split does not do for you, and any `mcp__governor__*` permission entry needs re-adding under the new prefix. Steps 11–12 of the migration plan are the whole procedure.
 
 ## Scope design
 
@@ -77,7 +79,7 @@ Revoke stale connections.
 
 ## Controlled vocabulary
 
-The vocabulary tools are no longer part of this plugin: since the S7 satellite extraction they ship as the separate `vault-vocab` plugin, which publishes its four tools to Governor through `vault-mcp-api` (see [vocabulary-module.md](vocabulary-module.md)). The requirements below are unchanged and are that plugin's to satisfy; what changes for an operator is that it is installed and configured separately, and that its tools are named `vault_vocab_*`. The vocabulary rule core itself lives in `@vault-mcp/core`, shared with this plugin's conformance rail, so one vault keeps one vocabulary.
+The vocabulary tools are no longer part of this plugin: since the S7 satellite extraction they ship as the separate `vault-vocab` plugin, which publishes its four tools to the host, Vault MCP, through `vault-mcp-api` (see [vocabulary-module.md](vocabulary-module.md)). The requirements below are unchanged and are that plugin's to satisfy; what changes for an operator is that it is installed and configured separately, and that its tools are named `vault_vocab_*`. The vocabulary rule core itself lives in `@vault-mcp/core`, shared with the host's conformance rail, so one vault keeps one vocabulary.
 
 Use controlled vocabulary only when a term changes validation, permission, lifecycle, filing, retrieval, receipt, or recovery. Every vocabulary source has:
 
@@ -148,7 +150,7 @@ Opaque macro-backed dispositions belong in a private profile. Their effects rema
 
 Coordination channels provide discovery, delta reads, read-position attestation, and guarded posting. Handles are cooperative assertions, not authentication.
 
-This capability is no longer part of this plugin: since the S6 satellite extraction it ships as the separate `vault-crosssession` plugin, which publishes its four tools to Governor through `vault-mcp-api` (see [crosssession.md](crosssession.md)). The requirements below are unchanged and are that plugin's to satisfy; what changes for an operator is that it is installed and configured separately, and that its tools are named `vault_crosssession_*`.
+This capability is no longer part of this plugin: since the S6 satellite extraction it ships as the separate `vault-crosssession` plugin, which publishes its four tools to the host, Vault MCP, through `vault-mcp-api` (see [crosssession.md](crosssession.md)). The requirements below are unchanged and are that plugin's to satisfy; what changes for an operator is that it is installed and configured separately, and that its tools are named `vault_crosssession_*`.
 
 Operational requirements:
 

@@ -86,7 +86,7 @@ Read tools blocked wholesale under an allowlist is the documented posture, not a
 
 ### 3. Issue #381's whole-vault-read question is RESOLVED for these two tools
 
-Issue **#381**, "The whole-vault read exception has grown by precedent, not by decision", names exactly three tools that scan the entire vault with no allowlist filtering — **`obsidian_health`**, `provenance_reconcile` and `obsidian_conformance_debt` — each with an inline comment arguing a partial scan would be misleading, and none of them enumerated in `packages/plugin/CLAUDE.md`'s exception list. It asks for one of two things: enumerate them as accepted exceptions, or decide one or more should filter.
+Issue **#381**, "The whole-vault read exception has grown by precedent, not by decision", names exactly three tools that scan the entire vault with no allowlist filtering — **`obsidian_health`**, `provenance_reconcile` and `obsidian_conformance_debt` — each with an inline comment arguing a partial scan would be misleading, and none of them enumerated in `packages/host/CLAUDE.md`'s exception list. It asks for one of two things: enumerate them as accepted exceptions, or decide one or more should filter.
 
 For this satellite's two tools the question is now moot, and the honest framing is:
 

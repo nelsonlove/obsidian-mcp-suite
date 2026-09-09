@@ -104,9 +104,9 @@ export interface FsHandlerOpts {
 // ── FS-mode write gate + write kernel (issue #92) ───────────────────────────
 //
 // FS-fallback mode used to have no journal and no serialized write queue:
-// those live in the plugin's kernel (packages/plugin/src/kernel/), and
+// those live in the plugin's kernel (packages/host/src/kernel/), and
 // packages/server depends on @vault-mcp/core + third-party only — it does not,
-// and must not, depend on packages/plugin. That gap is now closed at the
+// and must not, depend on the host plugin package. That gap is now closed at the
 // queue+journal level by fs-write-kernel.ts, a lean server-local counterpart:
 // every FS-mode mutation runs through one process-wide FIFO queue and appends
 // exactly one JSONL record to the server-side journal

@@ -6,7 +6,7 @@
  *
  * `promote_to_folder` is this package's only move, and while jd-scaffold was a
  * host module the rule was covered by the host's own link-healing suite — whose
- * source scan globs `packages/plugin/src/**\/*.ts` and CANNOT SEE THIS PACKAGE.
+ * source scan globs `packages/host/src/**\/*.ts` and CANNOT SEE THIS PACKAGE.
  * So the rule came with the code, in the same two halves the host uses and the
  * triage satellite already copied:
  *

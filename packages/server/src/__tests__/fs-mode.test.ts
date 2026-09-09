@@ -351,7 +351,7 @@ describe("obsidian_write_note — accept-forbidden guard reaches the real fs-fai
  * Issue #92 — FS-mode writes bypass the plugin kernel's serialized write
  * queue and append-only write journal entirely (FS mode has no kernel to
  * route through; packages/server does not, and must not, depend on
- * packages/plugin). Rather than silently shipping unaudited writes under
+ * packages/host). Rather than silently shipping unaudited writes under
  * the same tool names as the journaled LIVE path, FS-mode writes are
  * refused by default and require an explicit opt-in — this suite is the
  * regression test for that gate.
