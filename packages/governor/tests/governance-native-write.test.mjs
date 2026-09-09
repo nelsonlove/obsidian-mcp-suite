@@ -1,36 +1,68 @@
 /**
- * governance-native-write.test.mjs — WP6b-1: the first native mutation and
- * its proposal production.
+ * governance-native-write.test.mjs — WP6b-1: the first native mutation and its
+ * proposal production, as the PROVIDER still owns it after S3c.
  *
- * The vertical slice's write half: `note.write@1` bound to
- * `obsidian_write_note`, the class firewall proving the content claim against
- * the actual diff (classification rule 5 — never solely from the
- * declaration), the `content-diff@1` predicate proving the subject describes
- * the actual bytes, and the executor's propose hook turning a completed write
- * into a durable proposal without ever costing the caller their result.
+ * The vertical slice's write half: the class firewall proving the content claim
+ * against the actual diff (classification rule 5 — never solely from the
+ * declaration), the `content-diff@1` predicate proving the subject describes the
+ * actual bytes, and the observer turning a completed write into a durable
+ * proposal.
+ *
+ * ── WHAT THE SPLIT TOOK, AND WHERE IT WENT ──────────────────────────────────
+ *
+ * The seam has TWO sides and this file used to drive both, because both lived in
+ * one tree: the host's operation executor, its write-facts slot with the
+ * take-once discipline and the attribution guard, `createGovernanceSeam` and
+ * `reportCompletedWrite`; and the provider's `createProposalObserver`. Only the
+ * second is in this package now, so only the second is driven here. What is NOT
+ * reproduced, deliberately:
+ *
+ *   • THE ATTRIBUTION GUARD (facts whose path does not match the operation's
+ *     sources are dropped) — host `reportCompletedWrite`. COVERED host-side:
+ *     `packages/host/tests/seam.test.mjs`, "MIS-ATTRIBUTED facts are dropped — a
+ *     proposal about a write that did not happen is worse than none".
+ *   • OFF-THE-RESULT-PATH DISPATCH (a hanging, throwing or rejecting observer
+ *     costs the caller nothing). COVERED host-side: the same file's four
+ *     observer-dispatch cases.
+ *   • THE TAKE-ONCE SLOT (a following read cannot inherit a write's facts) —
+ *     host `main.ts`'s `writeFacts` closure. **NOT COVERED ANYWHERE as of
+ *     2026-09-08**: `seam.test.mjs` drives `reportCompletedWrite` as a pure
+ *     function and never the slot that calls it. Named as a gap.
+ *   • A PROPOSE HOOK THAT THROWS never costing the caller their result —
+ *     `createOperationExecutor`, host code. **ALSO NOT COVERED**: no host test
+ *     passes `propose` into the executor at all. Named as a gap. What this
+ *     package CAN still say about the same risk is asserted below, one layer in:
+ *     a recording failure inside the observer skips the proposal rather than
+ *     opening a dead one, and an unfit diff produces nothing.
+ *   • THE MCP BINDING (`obsidian_write_note` → `note.write@1` through
+ *     `buildMcpActionRegistry`) — the host's per-connection action registry.
+ *     Dropped; which SURFACE maps to the action is the host's inventory
+ *     question, and the producer below gates on the action id, not the surface.
+ *
+ * A mirror of the host's half here would be worse than a named gap: the value of
+ * the old round trip was that it drove the REAL executor, and a local
+ * re-implementation would stay green while the real one drifted.
+ *
+ * ── WHAT STAYS ───────────────────────────────────────────────────────────────
+ *
+ * `note.write@1`'s contract (now `NOTE_WRITE_ACTION`, published from
+ * `@vault-mcp/core` so both halves read one definition), the class firewall, the
+ * authority-key and uid helpers, `content-diff@1` through the real predicate
+ * registry, and the producer itself — driven directly, with a `WriteFacts`
+ * object, which is exactly what the seam hands it.
  */
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 
-import { NOTE_WRITE_V1 } from "../src/kernel/operations/actions/note-write.ts";
+import { NOTE_WRITE_ACTION as NOTE_WRITE_V1, digestBytes } from "@vault-mcp/core";
 import { deriveClasses, requireClassesCovered, ClassMismatchError, authorityKeysDiffer, frontmatterUid } from "../src/kernel/proposals/class-firewall.ts";
-import { CONTENT_DIFF_V1, createDefaultPredicateRegistry } from "../src/kernel/verification/predicates.ts";
+import { createDefaultPredicateRegistry } from "../src/kernel/verification/predicates.ts";
 import { buildProposalSubjectFromOperation } from "../src/kernel/proposals/proposal-builder.ts";
-import { openProposal } from "../src/kernel/proposals/proposal.ts";
 import { createProposalStore } from "../src/kernel/proposals/proposal-store.ts";
 import { verifySubject } from "../src/kernel/verification/verify.ts";
-import { digestBytes } from "@vault-mcp/core";
-import { createActionRegistry } from "../src/kernel/operations/registry.ts";
-import { createOperationExecutor } from "../src/kernel/operations/executor.ts";
-import { buildMcpActionRegistry } from "../src/kernel/operations/mcp-registry.ts";
-import { createGovernanceSeam, reportCompletedWrite } from "../src/mcp/seam.ts";
 import { createProposalObserver } from "../src/wiring/write-observer.ts";
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
 const enc = (s) => new TextEncoder().encode(s);
 const T0 = 1_700_000_000_000;
 
@@ -41,7 +73,7 @@ function memoryIo() {
 
 // ── the action contract ──────────────────────────────────────────────────────
 
-describe("note.write@1 — the contract", () => {
+describe("note.write@1 — the contract, now read from @vault-mcp/core", () => {
   test("native, content-classed, proposal-mutation mode, durable operation record", () => {
     assert.equal(NOTE_WRITE_V1.native, true);
     assert.deepEqual(NOTE_WRITE_V1.changeClasses, ["content"]);
@@ -55,23 +87,18 @@ describe("note.write@1 — the contract", () => {
   });
 
   test("exactly one path-shaped input — the contract that makes pathChanged:false TRUE", () => {
-    // The producer hardcodes pathChanged: false, which is correct because
-    // this action has ONE path and no destination. Nothing pinned that
-    // contract (governor-lead's finding — third literal-true-by-untested-
-    // contract in three days): the day someone adds a `to`/`destination`
-    // input, the literal silently becomes a lie and a move classifies as
-    // content-only. This makes that day a red test instead.
+    // The producer hardcodes pathChanged: false, which is correct because this
+    // action has ONE path and no destination. Nothing pinned that contract
+    // (governor-lead's finding — third literal-true-by-untested-contract in
+    // three days): the day someone adds a `to`/`destination` input, the literal
+    // silently becomes a lie and a move classifies as content-only. This makes
+    // that day a red test instead.
+    //
+    // The action moved to core at the split; the pin followed it, because the
+    // consumer that would be lied to — `createProposalObserver` — is here.
     const pathShaped = NOTE_WRITE_V1.inputs.filter((k) => /path|^to$|dest|target|from/i.test(k));
     assert.deepEqual(pathShaped, ["path"], "one path-shaped input; a destination means a NEW action, not a wider write");
     assert.deepEqual(NOTE_WRITE_V1.scope.argumentKeys, ["path"]);
-  });
-
-  test("obsidian_write_note resolves to the native action through the real registry", () => {
-    const { registry, problems } = buildMcpActionRegistry([]);
-    assert.deepEqual(problems, []);
-    const binding = registry.binding("obsidian_write_note");
-    assert.equal(binding.action, "note.write");
-    assert.equal(binding.actionVersion, 1);
   });
 });
 
@@ -191,277 +218,3 @@ describe("content-diff@1 — the subject describes the actual bytes", () => {
   });
 });
 
-// ── the seam round trip, through the real executor and the real observer ─────
-//
-// S2 turned this path into two halves that meet at the seam, so the test drives
-// BOTH real halves rather than a mirror of either: server.ts's host-side slot
-// take + attribution guard + `notifyWrite`, and the provider's real
-// `createProposalObserver`. A mirror of the producer here is exactly how a
-// producer and its test drift apart while both stay green.
-//
-// One consequence is visible in every test below: observers are dispatched OFF
-// the caller's result path (condition 5), so the write returns BEFORE the
-// proposal exists and each test settles the microtask queue before asserting.
-// That ordering is the property, not an inconvenience.
-
-describe("proposal production — a completed write becomes a durable proposal", () => {
-  const settle = () => new Promise((r) => setTimeout(r, 0));
-
-  function harness({ enabled = true, untracked = false, recordFails = false } = {}) {
-    const r = createActionRegistry();
-    r.register(NOTE_WRITE_V1);
-    r.bind({ kind: "mcp", id: "obsidian_write_note", action: NOTE_WRITE_V1.id, actionVersion: NOTE_WRITE_V1.version });
-    r.validate();
-
-    const store = createProposalStore(memoryIo());
-    const recordings = [];
-    const { seam, consult } = createGovernanceSeam();
-
-    // THE PROVIDER's half: the real producer, registered through the real seam.
-    seam.registerWriteObserver(
-      "governor",
-      createProposalObserver({
-        historyEnabled: () => enabled,
-        proposals: {
-          open: (proposal, now) => store.open(proposal, now),
-          uidOf: () => null,
-          vaultId: "vault-1",
-          record: async (proposalId, path, baseBytes, proposedBytes) => {
-            if (recordFails) throw new Error("gitdir on fire");
-            if (untracked) return null;
-            recordings.push({ proposalId, path, baseBytes, proposedBytes });
-            return `refs/governor/proposals/${proposalId}`;
-          },
-        },
-        now: () => T0,
-      })
-    );
-
-    // THE HOST's half, mirroring mcp/server.ts exactly: the slot the backend
-    // fills, taken exactly once, guarded by attribution, and reported across.
-    let writeFacts = null;
-    const executor = createOperationExecutor({
-      registry: r,
-      actor: () => ({ binding: "c", clientClaim: null }),
-      sessionId: () => "sess-1",
-      sourcesOf: (req) => (req.inputs?.path ? [req.inputs.path] : []),
-      propose: async (operation, _result, sources) => {
-        const facts = writeFacts;
-        writeFacts = null;
-        // The REAL host-side reporter, not a copy of it — the take-once slot is
-        // the only part server.ts keeps to itself, because it is a closure
-        // variable rather than a decision.
-        reportCompletedWrite(consult, facts, operation, sources, { transport: "mcp", connection: "c" });
-      },
-      onClose: () => {
-        writeFacts = null;
-      },
-    });
-    const setFacts = (f) => (writeFacts = f);
-    return { executor, store, setFacts, recordings, settle };
-  }
-
-  const WRITE = { surface: { id: "obsidian_write_note" }, inputs: { path: "A.md", content: "new" } };
-
-  test("a completed write opens a proposal carrying the operation id and real digests", async () => {
-    const { executor, store, setFacts } = harness();
-    const { operation } = await executor.run(WRITE, async (mark) => {
-      mark("attempted");
-      setFacts({ path: "A.md", baseBytes: enc("old"), proposedBytes: enc("new"), created: false });
-      return { path: "A.md", created: false };
-    });
-    await settle();
-    const pending = await store.pending();
-    assert.equal(pending.length, 1);
-    const p = pending[0];
-    assert.equal(p.subject.producingOperation.id, operation.id, "the proposal names the REAL operation");
-    assert.equal(p.subject.proposed.value, digestBytes(enc("new")).value);
-    assert.equal(p.subject.base.value, digestBytes(enc("old")).value);
-    assert.equal(p.sessionId, "sess-1");
-    assert.equal(p.authority, "proposed");
-    assert.match(p.recordingRef ?? "", /refs\/governor\/proposals\//, "the proposal carries its recording — admission evidence exists");
-  });
-
-  test("no recording, no proposal — an untracked path is ungoverned, never a dead proposal", async () => {
-    const { executor, store, setFacts } = harness({ untracked: true });
-    await executor.run(WRITE, async (mark) => {
-      mark("attempted");
-      setFacts({ path: "A.md", baseBytes: enc("old"), proposedBytes: enc("new"), created: false });
-      return "ok";
-    });
-    await settle();
-    assert.equal((await store.all()).length, 0);
-  });
-
-  test("a recording failure skips the proposal and never costs the write", async () => {
-    const { executor, store, setFacts } = harness({ recordFails: true });
-    const { result } = await executor.run(WRITE, async (mark) => {
-      mark("attempted");
-      setFacts({ path: "A.md", baseBytes: enc("old"), proposedBytes: enc("new"), created: false });
-      return "written";
-    });
-    await settle();
-    assert.equal(result, "written");
-    assert.equal((await store.all()).length, 0);
-  });
-
-  test("facts whose path does not match the operation's sources are DROPPED — attribution over production", async () => {
-    const { executor, store, setFacts } = harness();
-    await executor.run(WRITE, async (mark) => {
-      mark("attempted");
-      setFacts({ path: "SOMEWHERE-ELSE.md", baseBytes: enc("a"), proposedBytes: enc("b"), created: false });
-      return "ok";
-    });
-    await settle();
-    assert.equal((await store.all()).length, 0, "a mis-attributed proposal is worse than none");
-  });
-
-  test("an authority-touching diff refuses production — the write stands, the legacy queue governs it", async () => {
-    // Removal of accepted keys passes the accept guard (it refuses introduce/
-    // change, not removal) — the firewall catches what the guard permits.
-    const { executor, store, setFacts } = harness();
-    const { result } = await executor.run(WRITE, async (mark) => {
-      mark("attempted");
-      setFacts({
-        path: "A.md",
-        baseBytes: enc("---\naccepted-by: Nelson\n---\nbody"),
-        proposedBytes: enc("---\n---\nbody"),
-        created: false,
-      });
-      return "ok";
-    });
-    await settle();
-    assert.equal(result, "ok");
-    assert.equal((await store.all()).length, 0, "an authority-class diff cannot ride a content declaration");
-  });
-
-  test("the uid from the written bytes wins over the (lagging) cache path fallback", async () => {
-    const { executor, store, setFacts } = harness();
-    await executor.run({ surface: { id: "obsidian_write_note" }, inputs: { path: "New.md", content: "x" } }, async (mark) => {
-      mark("attempted");
-      setFacts({ path: "New.md", baseBytes: null, proposedBytes: enc("---\nuid: 0190-fresh\n---\nbody"), created: true });
-      return "ok";
-    });
-    await settle();
-    const all = await store.all();
-    assert.equal(all[0].subject.noteId, "0190-fresh", "a freshly-stamped uid is the identity from the first proposal");
-  });
-
-  test("disabled ⇒ no proposal; the write is untouched either way", async () => {
-    const { executor, store, setFacts } = harness({ enabled: false });
-    const { result } = await executor.run(WRITE, async (mark) => {
-      mark("attempted");
-      setFacts({ path: "A.md", baseBytes: null, proposedBytes: enc("x"), created: true });
-      return "ok";
-    });
-    await settle();
-    assert.equal(result, "ok");
-    assert.equal((await store.pending()).length, 0);
-  });
-
-  test("a byte-identical rewrite proposes nothing — there is no change to govern", async () => {
-    const { executor, store, setFacts } = harness();
-    await executor.run(WRITE, async (mark) => {
-      mark("attempted");
-      setFacts({ path: "A.md", baseBytes: enc("same"), proposedBytes: enc("same"), created: false });
-      return "ok";
-    });
-    await settle();
-    assert.equal((await store.pending()).length, 0);
-  });
-
-  test("a propose failure never costs the caller — the write stands", async () => {
-    const r = createActionRegistry();
-    r.register(NOTE_WRITE_V1);
-    r.bind({ kind: "mcp", id: "obsidian_write_note", action: NOTE_WRITE_V1.id, actionVersion: NOTE_WRITE_V1.version });
-    r.validate();
-    const executor = createOperationExecutor({
-      registry: r,
-      actor: () => ({ binding: "c", clientClaim: null }),
-      propose: async () => {
-        throw new Error("proposal store on fire");
-      },
-    });
-    const { result, operation } = await executor.run(WRITE, async () => "written");
-    assert.equal(result, "written");
-    assert.equal(operation.outcome, "completed");
-  });
-
-  test("the slot is taken exactly once — a following read cannot inherit a write's facts", async () => {
-    const { executor, store, setFacts, settle } = harness();
-    setFacts({ path: "A.md", baseBytes: enc("a"), proposedBytes: enc("b"), created: false });
-    await executor.run(WRITE, async () => "one");
-    await executor.run(WRITE, async () => "two"); // no new facts set
-    await settle();
-    assert.equal((await store.all()).length, 1, "the second operation produced nothing from stale facts");
-  });
-});
-
-// ── the production wiring, pinned at the source ──────────────────────────────
-
-describe("wiring pins — the mechanism-exists-but-unwired lesson, again", () => {
-  const read = (rel) => fs.readFileSync(path.join(HERE, "..", "src", rel), "utf8");
-
-  test("server.ts reports write facts across the seam — and produces nothing itself", () => {
-    // S2 split this pin in two. The HOST keeps the slot and its attribution
-    // guard, because they protect the host's own bookkeeping; everything that
-    // decides what a write MEANS moved behind the seam.
-    const server = read("mcp/server.ts");
-    assert.match(server, /new ObsidianBackend\(app, visible, \(facts\) => \{/, "the backend reports write facts");
-    assert.match(server, /writeFacts = null; \/\/ taken exactly once/, "the slot is take-once");
-    assert.match(server, /onClose: \(\) => \{\s*writeFacts = null;/, "the slot clears on EVERY close, not only completed ones");
-    // The attribution guard and the report itself are `reportCompletedWrite`
-    // (mcp/seam.ts), driven directly by this file's harness above and by
-    // tests/seam.test.mjs — so what is pinned here is only that server.ts calls
-    // it, which is the one line a source scan is the right instrument for.
-    assert.match(server, /reportCompletedWrite\(ctx\.seam, facts, operation, sources, actor\(\)\)/, "the facts cross the seam rather than becoming a proposal here");
-    // The negative half, which is the actual S2 claim: the transport no longer
-    // knows what a proposal is.
-    for (const gone of ["openProposal", "requireClassesCovered", "buildProposalSubjectFromOperation", "productionStampOf", "ctx.proposals"]) {
-      assert.ok(!server.includes(gone), `mcp/server.ts still names '${gone}' — proposal production moved behind the seam`);
-    }
-  });
-
-  test("the observer holds the gate, the firewall, and the store", () => {
-    const obs = read("governor/wiring/write-observer.ts");
-    assert.match(obs, /deps\.historyEnabled\(\) !== true/, "production is gated on the human's setting");
-    assert.match(obs, /requireClassesCovered\(NOTE_WRITE_V1\.changeClasses, derived\)/, "the firewall runs in production");
-    assert.match(obs, /deps\.proposals\.open\(/, "the proposal reaches the durable store");
-    assert.match(obs, /touchesAuthorityKeys: authorityKeysDiffer\(/, "authority classification is derived from the bytes, never hardcoded");
-    assert.match(obs, /frontmatterUid\(proposedText\)/, "identity comes from the written bytes before the lagging cache");
-  });
-
-  test("the observer records snapshots BEFORE opening the proposal — no dead proposals", () => {
-    const obs = read("governor/wiring/write-observer.ts");
-    const recordAt = obs.indexOf("deps.proposals.record(");
-    const openAt = obs.indexOf("deps.proposals.open(");
-    assert.ok(recordAt > 0 && openAt > 0 && recordAt < openAt, "record precedes open in the producer");
-    assert.match(obs, /if \(recordingRef === null\) return;/, "an out-of-scope or failed recording skips the proposal");
-  });
-
-  test("main.ts registers the producer as a seam write observer", () => {
-    const main = read("main.ts");
-    assert.match(main, /registerWriteObserver\(/, "the producer arrives through the seam, not through ServerCtx");
-    assert.match(main, /createProposalObserver\(\{/, "and it is the real producer, not a stub");
-  });
-
-  test("main.ts wires the history repository behind the effective scope", () => {
-    const main = read("main.ts");
-    assert.match(main, /effectiveScope\(this\.settings\.historyScope, EXCLUDED_PREFIXES\)/, "the composed scope gates recording — the WP4 contract consumed");
-    assert.match(main, /openGitRepository\(/, "the real history store is the recording target");
-    assert.match(main, /proposalRef\(proposalId\)/, "snapshots land on the proposal's own ref");
-  });
-
-  test("main.ts wires the proposal store and the uid lookup", () => {
-    const main = read("main.ts");
-    assert.match(main, /createProposalStore\(/);
-    assert.match(main, /proposals\.jsonl/);
-    assert.match(main, /uidOf: \(path: string\)/);
-  });
-
-  test("the backend reads base bytes BEFORE the modify", () => {
-    const backend = read("mcp/obsidian-backend.ts");
-    assert.match(backend, /const baseText = this\.onWriteNote \? await this\.app\.vault\.read\(existing\) : null;\n\s*await this\.app\.vault\.modify/, "base is captured before it is gone");
-    assert.match(backend, /reportWrite/, "the hook fires through the never-throws wrapper");
-  });
-});

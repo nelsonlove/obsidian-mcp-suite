@@ -90,14 +90,23 @@ describe("publication", () => {
     assert.deepEqual([...foreign.keys()], ["some_other_plugin_obsidian_pending_review"]);
     assert.equal(foreign.get("some_other_plugin_obsidian_pending_review").grandfathered, false);
 
-    // (b) NAME-GATED, and the table is CLOSED. A sixth `obsidian_*` name, from
-    //     this very plugin, is refused outright by F1 — so "obsidian_pending_review
-    //     survives the split under its shipped name" is a statement about the
-    //     table, not about the shim being permissive.
+    // (b) NAME-GATED, and the table is CLOSED. An ungrandfathered name never
+    //     KEEPS its spelling — `obsidian_not_in_the_table` from this plugin
+    //     publishes as `governor_obsidian_not_in_the_table`, which is a rename,
+    //     not a refusal. So the shim's F1 branch is proven with the plant that
+    //     actually reaches it: an owner whose SANITIZED id already begins
+    //     `obsidian`, which is the only way a published name can land in the
+    //     reserved namespace without the table. (This mirrors the host's own
+    //     `external-tools.test.mjs` F1 case, owner `obsidian-read` + name `note`.)
+    assert.deepEqual(
+      [...publishInto([{ ...specs[0], name: "obsidian_not_in_the_table" }]).tools.keys()],
+      ["governor_obsidian_not_in_the_table"],
+      "a sixth obsidian_* name from this plugin is RENAMED, never grandfathered",
+    );
     assert.throws(
-      () => publishInto([{ ...specs[0], name: "obsidian_not_in_the_table" }]),
+      () => publishInto([{ ...specs[0], name: "note" }], { owner: "obsidian-read" }),
       /collides with the reserved obsidian_\* namespace/,
-      "nothing outside the closed table gets into the reserved namespace",
+      "the shim's F1 branch fires — the carve-out above is not the shim simply never refusing",
     );
   });
 

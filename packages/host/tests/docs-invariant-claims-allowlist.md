@@ -219,6 +219,14 @@ leave the single-artifact rollback intact.
 - Note the draft said the provider "registers the fuller transition veto" — it does not, because `registerWriteVeto` was never built (condition 8's YAGNI-at-a-perimeter ruling); the fuller guard is host-side in `@vault-mcp/core` and the legacy-writer guard is provider-internal |
 - The four also lose their in-tool visibility filtering, because a satellite cannot reach the host's guard settings; what replaces it is the host's gate refusing the whole call rather than trimming the answer.
 - **Fourth, the journal is ADOPTED BY COPY, never by move.** The provider keeps `.obsidian/plugins/governor/` and everything under `governance/` — zero moves for the authority state, which is the whole reason the provider took the old id rather than the host.
+- **The host's module registry declares ONE built-in module (`scheme`).** A surviving `modules.acceptance` row in either `data.json` is an unknown id: reported by skip-and-report, never mounted.
+  approved 2026-09-08 (S3c): `builtinModules` in packages/host/src/mcp/modules-mount.ts returns
+  the `scheme` module alone, and `packages/host/tests/modules-mount.test.mjs` pins both halves —
+  the declared list is exactly `["scheme"]`, and mounting with a `modules.acceptance` row present
+  produces the problem line "settings name unknown module 'acceptance' — ignored" with no entry
+  in `registry.describe()`. The row is kept in the file on purpose: it is the provider's adoption
+  source and part of the rollback path, which is why "reported and ignored" is the claim rather
+  than "removed".
 
 ## docs/acceptance-model.md (WP10c retirement)
 

@@ -201,7 +201,7 @@ describe("full tool inventory lock (TOOL-INVENTORY.md)", () => {
     // "every idiom", with scheme (registerTool), write_notes (register) and
     // call_tool (reg) covering all three.
     //
-    // "obsidian_pending_review" was the fourth pin here until S3c. It moved to
+    // "governance_pending_review" was the fourth pin here until S3c. It moved to
     // the governance provider package (packages/governor/src/tools/pending-
     // review.ts) and is published back into this host through vault-mcp-api
     // under its unchanged shipped name, via the closed GRANDFATHERED_TOOL_NAMES

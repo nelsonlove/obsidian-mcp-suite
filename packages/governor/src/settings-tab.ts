@@ -49,7 +49,7 @@ export class GovernorSettingTab extends PluginSettingTab {
       .setName("Review pane")
       .setDesc(
         "Mounts or unmounts the review pane and gavel ribbon live — no plugin reload needed. Off by default: the " +
-          "accept surface is opt-in. The read-only obsidian_pending_review tool is published regardless of this " +
+          "accept surface is opt-in. The read-only governance_pending_review tool is published regardless of this " +
           "toggle, so an agent can always see what is waiting; only a human at the pane can accept."
       )
       .addToggle((t) =>

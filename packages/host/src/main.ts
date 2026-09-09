@@ -47,7 +47,7 @@ interface VaultMcpSettings {
    *
    * SINCE THE HOST/PROVIDER SPLIT this list is also how an operator restores
    * read-only-mode availability to the governance provider's three read tools
-   * (`obsidian_pending_review`, `governance_revisions`, `governance_mandates`),
+   * (`governance_pending_review`, `governance_revisions`, `governance_mandates`),
    * by listing `governor` here. It does NOT restore them under a path
    * allowlist: the F3 gate blocks any external tool whose arguments carry no
    * recognized path key, trusted or not, and that is the documented posture
@@ -511,10 +511,18 @@ export default class VaultMcpPlugin extends Plugin {
     // operation instead of leaving it holding the queue in an occluded window.
     //
     // #261's second consumer — nudging the governance review queue's poll — left
-    // with the provider. The provider polls the journal DIRECTORY it is told to
-    // read and no longer needs the host to tell it the file grew; renderer timer
-    // throttling is a real problem, and it is now the provider's to solve on its
-    // own side rather than a hook the host holds for it.
+    // with the provider, and it is worth being exact about what that cost.
+    // Renderer timer throttling is real: Chromium suspends the 2.5s poll while
+    // the window is occluded, which is when agents write. The host used to fix
+    // that from right here, by nudging the queue on every append. It cannot
+    // now, and NO journal-growth hook was added to the seam for it — the
+    // provider drives its queue from the write observer instead, which is the
+    // same event arriving through a hook that already exists. That is
+    // NARROWER: the observer fires only where write facts were produced, so
+    // appends that take no queue slot and mutations that are not native
+    // note-writes no longer drive it. Documented on the provider's
+    // registration and in docs/s3c-migration-plan.md; closing it properly is a
+    // journal-growth fact on the seam, which is a design conversation.
     const writeQueue = new WriteQueue();
     const journal = new WriteJournal(this.app.vault.adapter, `${pluginDir}/journal`);
     // A cheap monotonic head marker for session base states (WP5): the count

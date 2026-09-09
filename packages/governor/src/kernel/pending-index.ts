@@ -1,5 +1,5 @@
 // Read-only pending-index serializer — a pure, obsidian-free view of the review queue
-// (PendingItem[]) so the vault-mcp READ tool (obsidian_pending_review, #75) can let agents
+// (PendingItem[]) so the vault-mcp READ tool (governance_pending_review, #75) can let agents
 // SEE which notes have unaccepted changes, without granting any accept/revert/adopt capability.
 //
 // This is a DATA publish only: every field below is already shown in the review pane. It is
@@ -12,7 +12,7 @@
 //
 // Ported verbatim from obsidian-stewardship/src/pending-index.ts (#83, cycle 1); its only
 // dependency, the PendingItem type, now lives in ./pending-types.js (queue.ts was not folded
-// this cycle). The bytes it produces are the exact bytes obsidian_pending_review parses.
+// this cycle). The bytes it produces are the exact bytes governance_pending_review parses.
 
 import type { PendingItem } from "./pending-types.js";
 

@@ -44,7 +44,7 @@ Code mode changes discovery cost, not authority. The selected surface still reso
 | Risk | Trusting a compromised or mistaken plugin restores its untracked-mutation surface |
 | Recovery | Remove the plugin id and reconnect clients |
 
-Listing `governor` here is what restores read-only treatment to the governance provider's four read-only tools (`obsidian_pending_review`, `governance_revisions`, `governance_mandates`, `governance_mandate_draft`); without it they register as mutating and, under an active path allowlist, are refused wholesale.
+Listing `governor` here is what restores read-only treatment to the governance provider's four read-only tools (`governance_pending_review`, `governance_revisions`, `governance_mandates`, `governance_mandate_draft`); without it they register as mutating and, under an active path allowlist, are refused wholesale.
 
 ## Posture
 

@@ -12,7 +12,7 @@
 //  DISPLAY-ONLY, and it CONFERS NOTHING: this module takes log TEXT in and puts
 //  entries into TEXT NODES out. It holds no accept callable, no store, no log
 //  writer — reading the log grants no capability (same boundary as
-//  obsidian_pending_review). Like intent-view.ts it is obsidian-free (the narrow
+//  governance_pending_review). Like intent-view.ts it is obsidian-free (the narrow
 //  ElFactory structural interface) so the EXACT render path the pane calls is
 //  driven headlessly by tests.
 //

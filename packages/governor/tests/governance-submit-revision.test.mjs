@@ -2,74 +2,100 @@
  * governance-submit-revision.test.mjs — the ONE agent-expressible disposition
  * (#101): `governance_submit_revision`.
  *
- * Fake-server pattern (tools-pending-review.test.mjs) for the handler, PLUS
- * the real makeGuarded wrapper + a real Kernel (change-intent.test.mjs
- * harness) for the interception-point properties — so read-only mode, the
- * path allowlist, the queue and the journal are proven at the exact wrapper a
- * live client goes through.
+ * S3c PUBLISHED IT, AND THAT MOVED HALF THIS FILE OUT OF THE PACKAGE. The tool
+ * is now a `SdkToolSpec` from `buildRevisionTools`, registered by the host
+ * through `vault-mcp-api`, so the handler is exercised through
+ * `tests/host-shim.mjs` (the published name, `ok()`/`fail()`, and the
+ * annotations the host derives from an untrusted `readOnly` claim). Its typed
+ * refusals are byte-compatible with the pre-split `codedError` envelope —
+ * `fail()` renders a lowercase-snake `code` as `Error [code]: message`, which is
+ * exactly what the old helper produced — so every `Error [not_revising]`
+ * assertion below reads unchanged, and that is the point of asserting through
+ * the shim rather than against the raw return value.
  *
- * The acceptance perimeter, pinned from every direction it could regress:
- *   • happy path: revising → proposed + [!revision-request] removed +
- *     [!revision-report] inserted + journal record (intent carried);
- *   • not-revising refusal (typed), not-found, non-md path — nothing written;
- *   • accepted-family can NEVER ride through: a hostile summary lands quoted
- *     in the body (never as frontmatter), and the shared accept guard
- *     re-checks the (before, after) transition — the refusing branch is
- *     driven directly via revisionWriteRefusalReason;
- *   • unclassifiable frontmatter fails CLOSED (no write);
- *   • read-only mode + allowlist scoping refuse at the guard.
+ * WHAT LEFT, and where it went. The file used to construct a real `Kernel` +
+ * `makeGuarded` and prove read-only mode, allowlist scoping, the journal record
+ * and `withKernelArgs` at the exact wrapper a live client goes through. That was
+ * only possible because this suite lived in the host's tree; those are host
+ * machinery with host tests, and a re-implementation here could only drift into
+ * asserting a posture the host does not enforce. `packages/host/tests/
+ * kernel.test.mjs`, `operations-guarded-seam.test.mjs`, `change-intent.test.mjs`
+ * and `link-healing.test.mjs` cover read-only mode, `out_of_allowlist`,
+ * `withKernelArgs`, the `intent` peel and the `effects` derivation over the live
+ * wrapper. Two things they do NOT cover are named in this repo's S3c report
+ * rather than silently dropped: the "exactly one journal record for an isError
+ * return" cardinality, and `makeGuarded`'s `sessionRefusal` option.
+ *
+ * What STAYS, because it is provider logic: the revision plan and its byte-exact
+ * output, every typed refusal, the accept perimeter (`revisionWriteRefusalReason`
+ * and the shared guard), `acceptanceStatusOf`'s spelling tolerance, and the
+ * source tripwire that the guard hook runs BEFORE the write.
+ *
+ * The one property the split makes newly assertable HERE is that
+ * `governance_submit_revision` is the only one of the five published tools whose
+ * argument the host recognizes as a path — see publication.test.mjs.
  */
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { z } from "zod";
-import { fakeServer } from "./fake-server.mjs";
 import {
-  registerGovernanceRevisionTool,
+  buildRevisionTools,
   revisionWriteRefusalReason,
   acceptanceStatusOf,
 } from "../src/tools/revision.ts";
 import { SUBMIT_REVISION_TOOL } from "../src/kernel/dispositions.ts";
 import { parseGuardFrontmatter } from "@vault-mcp/core";
-import { makeGuarded } from "../src/mcp/guarded.ts";
-import { Kernel, WriteQueue, WriteJournal, IdempotencyStore, LockStore } from "../src/kernel/index.ts";
+import { publishInto } from "./host-shim.mjs";
 
 const NOW = new Date("2026-08-18T12:00:00Z");
 const REVISING =
   "---\nacceptance-status: revising\nuid: abc\n---\n" +
   "# Note\n\n> [!revision-request] Requested changes (2026-08-17)\n> tighten the intro\n\nBody text\n";
 
-/** In-memory note store standing in for the vault. */
+const EMPTY_LISTING = { listNotes: async () => [], read: async () => null };
+
+/** In-memory note store standing in for the vault, published through the host shim. */
 function toolServer(files = {}) {
   const notes = new Map(Object.entries(files));
   const writes = [];
-  const server = fakeServer();
-  registerGovernanceRevisionTool(server, {
-    read: async (p) => notes.get(p) ?? null,
-    write: async (p, content) => {
-      writes.push([p, content]);
-      notes.set(p, content);
+  const specs = buildRevisionTools(
+    {
+      read: async (p) => notes.get(p) ?? null,
+      write: async (p, content) => {
+        writes.push([p, content]);
+        notes.set(p, content);
+      },
+      now: () => NOW,
     },
-    now: () => NOW,
-  });
-  const call = (args) => server.tools.get(SUBMIT_REVISION_TOOL).handler(args, {});
-  return { server, call, notes, writes };
+    EMPTY_LISTING,
+  );
+  const { tools } = publishInto(specs);
+  const call = (args) => tools.get(SUBMIT_REVISION_TOOL).handler(args);
+  return { specs, tools, call, notes, writes };
 }
 
-// ── registration shape ────────────────────────────────────────────────────────
+// ── publication shape ─────────────────────────────────────────────────────────
 
-describe("registration shape", () => {
-  test("registers exactly governance_submit_revision, MUTATING (readOnlyHint: false)", () => {
-    const { server } = toolServer();
-    assert.deepEqual([...server.tools.keys()], [SUBMIT_REVISION_TOOL]);
-    const { def } = server.tools.get(SUBMIT_REVISION_TOOL);
-    assert.equal(def.annotations.readOnlyHint, false, "must be mutating so the whole kernel perimeter binds");
-    assert.equal(def.annotations.destructiveHint, false);
+describe("publication shape", () => {
+  test("publishes UNPREFIXED as governance_submit_revision, MUTATING (readOnlyHint: false)", () => {
+    const { specs, tools } = toolServer();
+    // buildRevisionTools returns BOTH revision specs; the submit verb is one of
+    // them and keeps its shipped spelling through the host's grandfather table.
+    assert.deepEqual(specs.map((s) => s.name).sort(), ["governance_revisions", SUBMIT_REVISION_TOOL].sort());
+    const entry = tools.get(SUBMIT_REVISION_TOOL);
+    assert.ok(entry, "not `governor_governance_submit_revision`");
+    assert.equal(entry.grandfathered, true);
+    // Unlike the two read tools, this one never CLAIMED read-only, so trust
+    // changes nothing about it: it is mutating on the publisher's own say-so and
+    // the whole kernel perimeter binds either way.
+    assert.equal(entry.def.claimsReadOnly, false);
+    assert.equal(entry.def.annotations.readOnlyHint, false, "must be mutating so the whole kernel perimeter binds");
+    assert.equal(entry.def.annotations.destructiveHint, false);
   });
 
   test("the description documents the agents' contract: feedback lives in the NOTE BODY, not frontmatter", () => {
-    const { server } = toolServer();
-    const desc = server.tools.get(SUBMIT_REVISION_TOOL).def.description;
+    const { tools } = toolServer();
+    const desc = tools.get(SUBMIT_REVISION_TOOL).def.description;
     assert.match(desc, /NOTE BODY/);
     assert.match(desc, /\[!revision-request\]/);
     assert.match(desc, /no\s+.?requested-changes.?\s+property/i);
@@ -78,9 +104,9 @@ describe("registration shape", () => {
     assert.match(desc, /proposed/);
   });
 
-  test("args are path + optional summary only (kernel args arrive via withKernelArgs, not here)", () => {
-    const { server } = toolServer();
-    assert.deepEqual(Object.keys(server.tools.get(SUBMIT_REVISION_TOOL).def.inputSchema).sort(), ["path", "summary"]);
+  test("args are path + optional summary only (kernel args are the host's, added at ITS interception point)", () => {
+    const { tools } = toolServer();
+    assert.deepEqual(Object.keys(tools.get(SUBMIT_REVISION_TOOL).def.inputSchema).sort(), ["path", "summary"]);
   });
 });
 
@@ -226,17 +252,82 @@ describe("accepted-family payloads cannot ride through the tool", () => {
   });
 
   test("the handler actually calls the guard hook before writing (source tripwire)", async () => {
+    // RETARGETED at S3c: the module was `src/mcp/tools-governance-revision.ts`
+    // in the host's tree and is `src/tools/revision.ts` in this plugin's. The
+    // slice anchor moved with it — a published spec's handler takes one `raw`
+    // bag rather than a destructured `({ path, summary })`, because the host
+    // hands over whatever JSON arrived.
     const fs = await import("node:fs");
-    const path = await import("node:path");
-    const { fileURLToPath } = await import("node:url");
-    const here = path.dirname(fileURLToPath(import.meta.url));
-    const src = fs.readFileSync(path.join(here, "..", "src", "mcp", "tools-governance-revision.ts"), "utf8");
-    const handlerBody = src.slice(src.indexOf("async ({ path, summary }"));
+    const src = fs.readFileSync(new URL("../src/tools/revision.ts", import.meta.url), "utf8");
+    const anchor = src.indexOf("name: SUBMIT_REVISION_TOOL");
+    const start = src.indexOf("handler: async (raw", anchor);
+    const end = src.indexOf('name: "governance_revisions"', start);
+    assert.ok(anchor > 0 && start > anchor && end > start, "the two specs are found in order — the scan reads the file it thinks it does");
+    const handlerBody = src.slice(start, end);
+
+    const ordered = (text) => {
+      const guardAt = text.indexOf("revisionWriteRefusalReason");
+      const writeAt = text.indexOf("source.write");
+      return guardAt >= 0 && writeAt >= 0 && guardAt < writeAt;
+    };
     assert.match(handlerBody, /revisionWriteRefusalReason\(before, plan\.content\)/);
-    assert.ok(
-      handlerBody.indexOf("revisionWriteRefusalReason") < handlerBody.indexOf("source.write"),
-      "the guard check must run BEFORE the write",
+    assert.ok(ordered(handlerBody), "the guard check must run BEFORE the write");
+
+    // VACUITY, against a planted violation: the same predicate over a copy with
+    // the two lines swapped must FAIL. Without this the ordering assertion is
+    // indistinguishable from a scan that always says yes.
+    const guardLine = handlerBody.match(/^.*revisionWriteRefusalReason\(before, plan\.content\).*$/m)[0];
+    const writeLine = handlerBody.match(/^.*await source\.write\(path, plan\.content\);.*$/m)[0];
+    const planted = handlerBody.replace(guardLine + "\n", "").replace(writeLine, writeLine + "\n" + guardLine);
+    assert.ok(planted.includes(writeLine) && planted.includes(guardLine), "the plant kept both lines");
+    assert.ok(!ordered(planted), "the scan catches a write placed before its guard");
+  });
+});
+
+// ── the bounds the publishing boundary drops ─────────────────────────────────
+
+describe("re-applied schema bounds — the boundary keeps `type`, not `min`/`max`", () => {
+  // The SDK converts zod to JSON Schema and the host converts it back through a
+  // subset (`packages/host/src/mcp/json-schema-to-zod.ts`): `type`,
+  // `description` and string `enum` survive; `min`, `max`, `default` and NESTED
+  // OBJECT SHAPES do not. So `z.string().min(1)` validates nothing once
+  // published, and every bound has to run again in the handler. This is the
+  // `vault_skills_release` semver bug avoided rather than repeated — and it is
+  // pinned here because a schema that LOOKS constrained is the failure mode.
+  test("an empty `path` refuses invalid_argument rather than reaching the read", async () => {
+    let reads = 0;
+    const specs = buildRevisionTools(
+      { read: async () => { reads++; return null; }, write: async () => {}, now: () => NOW },
+      EMPTY_LISTING,
     );
+    const { tools } = publishInto(specs);
+    const res = await tools.get(SUBMIT_REVISION_TOOL).handler({ path: "" });
+    assert.equal(res.isError, true);
+    assert.match(res.content[0].text, /^Error \[invalid_argument\]: /);
+    assert.match(res.content[0].text, /'path'/);
+    assert.equal(reads, 0, "the bound refuses before the source is touched");
+  });
+
+  test("a non-string `path` refuses invalid_argument — z.string() no longer guards it", async () => {
+    const { call } = toolServer();
+    const res = await call({ path: 42 });
+    assert.equal(res.isError, true);
+    assert.match(res.content[0].text, /Error \[invalid_argument\]/);
+  });
+
+  test("`summary` bounds run again: empty and over-4000 both refuse, nothing written", async () => {
+    const { call, writes } = toolServer({ "n.md": REVISING });
+    for (const summary of ["", "x".repeat(4001)]) {
+      const res = await call({ path: "n.md", summary });
+      assert.equal(res.isError, true, JSON.stringify(summary.slice(0, 12)));
+      assert.match(res.content[0].text, /Error \[invalid_argument\]/);
+      assert.match(res.content[0].text, /'summary'/);
+    }
+    assert.equal(writes.length, 0);
+    // The boundary at 4000 is inclusive — the refusal is a bound, not an off-by-one.
+    const ok = await call({ path: "n.md", summary: "x".repeat(4000) });
+    assert.notEqual(ok.isError, true, ok.content?.[0]?.text);
+    assert.equal(writes.length, 1);
   });
 });
 
@@ -272,137 +363,45 @@ describe("acceptanceStatusOf — key spelling tolerance", () => {
   });
 });
 
-// ── through the REAL guard wrapper + kernel ──────────────────────────────────
-
-const ACTOR = { transport: "mcp", client: "test-client/1.0.0", connection: "conn-1" };
-
-function fakeAdapter() {
-  const files = new Map();
-  const dirs = new Set();
-  return {
-    files,
-    async exists(p) { return files.has(p) || dirs.has(p); },
-    async mkdir(p) { dirs.add(p); },
-    async write(p, d) { files.set(p, d); },
-    async append(p, d) { files.set(p, (files.get(p) ?? "") + d); },
-  };
-}
-
-function journalRecords(adapter) {
-  const out = [];
-  for (const [p, data] of adapter.files) {
-    if (!p.endsWith(".jsonl")) continue;
-    out.push(...data.split("\n").filter(Boolean).map((l) => JSON.parse(l)));
-  }
-  return out;
-}
-
-function guardedHarness({ settings = { readOnly: false, allowlist: [] }, files = {} } = {}) {
-  const { server, notes, writes } = (() => {
-    const notes = new Map(Object.entries(files));
-    const writes = [];
-    const server = fakeServer();
-    registerGovernanceRevisionTool(server, {
-      read: async (p) => notes.get(p) ?? null,
-      write: async (p, content) => { writes.push([p, content]); notes.set(p, content); },
-      now: () => NOW,
-    });
-    return { server, notes, writes };
-  })();
-  const adapter = fakeAdapter();
-  const kernel = new Kernel(
-    new WriteQueue(1000),
-    new WriteJournal(adapter, "dir/journal"),
-    null,
-    new IdempotencyStore(),
-    new LockStore(),
-  );
-  const { def, handler } = server.tools.get(SUBMIT_REVISION_TOOL);
-  const guarded = makeGuarded({ getSettings: () => settings, kernel, actor: () => ACTOR })(
-    def,
-    handler,
-    SUBMIT_REVISION_TOOL,
-  );
-  return { call: (args) => guarded(args, {}), notes, writes, adapter };
-}
-
-const flush = () => new Promise((r) => setTimeout(r, 10));
-
-describe("through the REAL makeGuarded wrapper (read-only mode / allowlist / journal)", () => {
-  test("read-only mode refuses at the guard — the handler and the note are never touched", async () => {
-    const { call, writes } = guardedHarness({
-      settings: { readOnly: true, allowlist: [] },
-      files: { "Projects/n.md": REVISING },
-    });
-    const res = await call({ path: "Projects/n.md", summary: "x" });
-    assert.equal(res.isError, true);
-    assert.match(res.content[0].text, /Error \[read_only\]/);
-    assert.equal(writes.length, 0);
-  });
-
-  test("allowlist scoping: a path outside the allowlist refuses out_of_allowlist, no write", async () => {
-    const { call, writes } = guardedHarness({
-      settings: { readOnly: false, allowlist: ["Projects"] },
-      files: { "Archive/n.md": REVISING },
-    });
-    const res = await call({ path: "Archive/n.md" });
-    assert.equal(res.isError, true);
-    assert.match(res.content[0].text, /Error \[out_of_allowlist\]/);
-    assert.equal(writes.length, 0);
-  });
-
-  test("allowlist scoping: a path INSIDE the allowlist proceeds", async () => {
-    const { call, writes } = guardedHarness({
-      settings: { readOnly: false, allowlist: ["Projects"] },
-      files: { "Projects/n.md": REVISING },
-    });
-    const res = await call({ path: "Projects/n.md" });
-    assert.notEqual(res.isError, true, res.content?.[0]?.text);
-    assert.equal(writes.length, 1);
-  });
-
-  test("the write journals like any mutating op — op, target, outcome ok, intent carried", async () => {
-    const { call, adapter } = guardedHarness({ files: { "Projects/n.md": REVISING } });
-    const res = await call({ path: "Projects/n.md", summary: "reworked", intent: "addressing the revision request" });
-    assert.notEqual(res.isError, true, res.content?.[0]?.text);
-    await flush();
-    const [rec] = journalRecords(adapter);
-    assert.ok(rec, "a journal record must exist");
-    assert.equal(rec.op, SUBMIT_REVISION_TOOL);
-    assert.equal(rec.outcome, "ok");
-    assert.equal(rec.target.path, "Projects/n.md");
-    assert.equal(rec.intent, "addressing the revision request");
-    // The effects convention: the record names what actually changed.
-    assert.deepEqual(rec.effects, { filesChanged: 1, paths: ["Projects/n.md"] });
-  });
-
-  test("a refused call (not_revising) still journals with outcome ok=false side: isError result", async () => {
-    // Typed tool-level refusals RETURN an isError envelope (they are not guard throws), so the
-    // kernel journals the operation with its error outcome semantics for returned envelopes:
-    // the record exists and the note was never written.
-    const { call, writes, adapter } = guardedHarness({
-      files: { "Projects/n.md": "---\nacceptance-status: proposed\n---\nbody" },
-    });
-    const res = await call({ path: "Projects/n.md" });
-    assert.equal(res.isError, true);
-    assert.equal(writes.length, 0);
-    await flush();
-    const [rec] = journalRecords(adapter);
-    assert.ok(rec, "the refused mutating call still lands one journal record");
-    assert.equal(rec.op, SUBMIT_REVISION_TOOL);
-  });
-
-  test("kernel args are declared on the registered schema via the interception point", async () => {
-    // withKernelArgs is applied by server.ts's patched registerTool; here we assert the def is
-    // mutating so that patch WILL declare if_rev/idempotency_key/intent on it — and that the
-    // wrapper peels intent (the handler saw only path/summary; proven by the record above).
-    const { withKernelArgs } = await import("../src/mcp/guarded.ts");
-    const server = fakeServer();
-    registerGovernanceRevisionTool(server, { read: async () => null, write: async () => {}, now: () => NOW });
-    const def = withKernelArgs(server.tools.get(SUBMIT_REVISION_TOOL).def);
-    for (const k of ["if_rev", "idempotency_key", "intent"]) {
-      assert.ok(def.inputSchema[k], `kernel arg ${k} must be declared on the mutating schema`);
-    }
-    assert.ok(def.inputSchema.path instanceof z.ZodType);
-  });
-});
+// ── WHAT MOVED TO THE HOST, RECORDED RATHER THAN DELETED SILENTLY ────────────
+//
+// Everything below this line used to be a `guardedHarness` in this file: a real
+// `Kernel` (WriteQueue + WriteJournal + IdempotencyStore + LockStore) wrapped by
+// the real `makeGuarded`, driving THIS tool through the exact interception point
+// a live client reaches. It proved five things, and none of them is a property
+// of this plugin:
+//
+//   1. read-only mode refuses the call (`Error [read_only]`), handler untouched
+//        → packages/host/tests/kernel.test.mjs, "the guard still runs first — a
+//          blocked call never reaches the queue or journal".
+//   2. a path outside an active allowlist refuses (`Error [out_of_allowlist]`)
+//      and a path inside proceeds
+//        → packages/host/tests/operations-guarded-seam.test.mjs, "a mutation
+//          refused by the allowlist records neither queued nor attempted".
+//   3. a successful mutating call journals op / outcome / target.path / intent /
+//      effects
+//        → packages/host/tests/link-healing.test.mjs, "the record names what
+//          actually changed, not just the target that was asked for" (op,
+//          outcome, target.path, effects) + change-intent.test.mjs, "the handler
+//          never sees intent; the journal record carries it".
+//   4. `withKernelArgs` declares if_rev / idempotency_key / intent on a mutating
+//      definition
+//        → packages/host/tests/kernel.test.mjs, "withKernelArgs declares both on
+//          mutating tools only" + change-intent.test.mjs's intent case.
+//   5. a REFUSED mutating call (an isError envelope, not a throw) still lands
+//      exactly ONE journal record.
+//
+// FIVE IS A GAP, and it is recorded here because dropping an assertion quietly
+// is how coverage evaporates during a split. The host's kernel.test.mjs case
+// "records outcome=error when a handler returns an isError envelope" asserts the
+// record's OUTCOME but destructures `const [rec] = records()`, which tolerates
+// zero-plus-throw or a duplicate; the cardinality this file used to assert is
+// pinned nowhere. It belongs in the host's suite — the behaviour is entirely
+// `Kernel.runMutation`'s — and cannot be written here, because constructing a
+// Kernel means importing host code across the package boundary.
+//
+// The reason none of this is reproduced with a local mock: a mock of the guard
+// asserts what we think the host does, and the entire value of the original
+// harness was that it asserted what the host ACTUALLY does. A second copy would
+// go green while the real posture drifted, which is strictly worse than a named
+// gap.

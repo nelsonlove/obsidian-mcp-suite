@@ -31,7 +31,7 @@ const SRC = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src")
 const NOTES = ["00-09 System/06 Agent tooling/06.20 obsidian-vault-mcp-plugin.md"];
 
 /** A no-op pending-review source for the governance module — the module registers
- * obsidian_pending_review over it without ever calling the handler in these tests. */
+ * governance_pending_review over it without ever calling the handler in these tests. */
 const pendingReviewSource = { read: async () => null };
 
 // Inert `vocabSource`, `healthSource` and `basesSource` fixtures lived here
@@ -102,10 +102,10 @@ describe("mountModules: the built-in modules register through the registry", () 
     assert.ok(!names.some((n) => n.startsWith("obsidian_vocab") || n === "obsidian_resolve_term" || n === "obsidian_validate_terms" || n === "obsidian_list_vocabulary"));
     assert.ok(!names.includes("obsidian_health") && !names.includes("obsidian_lint"));
     assert.ok(!names.some((n) => n.startsWith("base_") || n.startsWith("vault_bases_")));
-    // obsidian_pending_review is NEVER on the MODULE surface (#83 cycle 2): it is
+    // governance_pending_review is NEVER on the MODULE surface (#83 cycle 2): it is
     // registered always-on in server.ts, decoupled from the governance toggle, so the
     // mount never contributes it whether governance is on or off.
-    assert.ok(!names.includes("obsidian_pending_review"));
+    assert.ok(!names.includes("governance_pending_review"));
   });
 
   test("a surviving modules.acceptance row is an UNKNOWN id, not a mount", () => {
@@ -116,7 +116,7 @@ describe("mountModules: the built-in modules register through the registry", () 
     // diverging from the toggle the human actually uses in the provider's tab.
     const { server, registry } = mount({ settings: { modules: { acceptance: { enabled: true } } } });
     const names = [...server.tools.keys()];
-    assert.ok(!names.includes("obsidian_pending_review"), "the pending-review READ is the provider's published tool now, never a module surface");
+    assert.ok(!names.includes("governance_pending_review"), "the pending-review READ is the provider's published tool now, never a module surface");
     assert.deepEqual(registry.problems, ["settings name unknown module 'acceptance' — ignored"]);
     assert.equal(registry.describe().find((d) => d.id === "acceptance"), undefined);
   });

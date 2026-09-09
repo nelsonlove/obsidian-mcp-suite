@@ -1,23 +1,48 @@
 /**
- * governance-module.test.mjs — the governance (Acceptance) module (#83). THE ACCEPT-
- * UNREACHABILITY TRIPWIRE. Cycle 1 asserted this trivially (no accept surface existed yet);
- * cycle 2 folds in the actual human-only Accept gesture + review pane, so this test is now
- * LOAD-BEARING: it asserts, with the accept surface actually present in the source tree, that
- * NONE of performAccept / setBaseline / runGuardedAdopt / setClassEnabled / stampAcceptance is
+ * governance-module.test.mjs — THE ACCEPT-UNREACHABILITY TRIPWIRE, now inside the provider.
+ *
+ * It asserts, with the accept surface actually present in the source tree, that NONE of
+ * performAccept / setBaseline / runGuardedAdopt / setClassEnabled / stampAcceptedFrontmatter is
  * reachable from any of:
- *   - the governance module's MCP tool list (it contributes ZERO tools),
- *   - the whole mounted MCP surface,
  *   - the plugin instance (no instance method / no this.<member>),
  *   - the view/tab instance (controller held in a module-private WeakMap),
- *   - the mount host ctx handed to modules ({getSettings, visible} only),
- *   - the MCP transport layer (server.ts + mcp/tools-*.ts never import/reference them),
- * and that every pane Accept/Revert/Adopt/allowlist button is addEventListener-wired (so its
- * `.onclick` stays null) and gates on isRealGesture. The DEFINITIVE proof is the deploy-time LIVE
- * reachability walk (pane.ts/wiring.ts import the obsidian runtime, types-only in the test env, so
- * the classes cannot be instantiated headlessly); this source-level tripwire is what catches a
- * regression BEFORE that live check.
+ *   - the settings tab (it hands over a container and receives nothing),
+ *   - this plugin's published agent-facing tool surface (src/tools/*.ts + main.ts's publishTools
+ *     call), which never names an accept-path callable,
+ * and that every pane Accept/Revert/Adopt/allowlist/authority button is addEventListener-wired (so
+ * its `.onclick` stays null) and gates on isRealGesture. The DEFINITIVE proof is the deploy-time
+ * LIVE reachability walk (pane.ts/wiring.ts import the obsidian runtime, types-only in the test
+ * env, so the classes cannot be instantiated headlessly); this source-level tripwire is what
+ * catches a regression BEFORE that live check.
  *
- * Headless: modules-mount.ts imports nothing from `obsidian`.
+ * ── WHAT S3c DID TO THIS FILE, AND WHY EACH DELETION IS NOT A THINNING ──────────────────────
+ *
+ * THE ACCEPTANCE MODULE NO LONGER EXISTS. It left the host's module registry entirely: it never
+ * contributed an MCP tool (its registrar was a no-op on the transport), and all it ever carried
+ * was an `enabled` flag and a config block for a pane that lived somewhere else. Both halves are
+ * this package's own now — `src/settings.ts` (`GovernorSettings.enabled` / `.config`, read from
+ * the same `data.json` the pre-split plugin wrote) and `src/settings-tab.ts`.
+ *
+ * So the module-registry half of the old tripwire — "declared as a capability module, default off",
+ * "contributes ZERO MCP tools when enabled", "collect() renders a config section", "the registry
+ * REFUSES a governance-shaped module", "mountHost's ctx is {getSettings, visible} only" — is not
+ * weakened here, it is UNSTATEABLE here: there is no module row, no manifest, no `collect()`, no
+ * mount host and no `fake-server.mjs` in this package. The host's side of the fact is pinned where
+ * it belongs, in `packages/host/tests/modules-mount.test.mjs`: a surviving `modules.acceptance` row
+ * is an UNKNOWN id, reported as a problem and never mounted. Reproducing a host assertion from a
+ * package that cannot import the host is how a suite grows two copies of one claim that drift.
+ *
+ * Each removed block carries its reason inline below, at the point where it used to sit, so a
+ * reader diffing against the pre-split file finds the accounting rather than a hole.
+ *
+ * ── INSTRUMENT DISCIPLINE ───────────────────────────────────────────────────────────────────
+ *
+ * Every scan in this file is exercised against a planted violation before it is trusted against
+ * the real tree. A source scan that silently matches nothing is worse than no scan: it reads as
+ * coverage in the suite output while asserting the empty set.
+ *
+ * Headless: this file imports only pure provider modules (`kernel/settings.ts`,
+ * `kernel/dispositions.ts`, `tools/pending-review.ts`) — none of which needs the obsidian runtime.
  */
 
 import { test, describe } from "node:test";
@@ -25,12 +50,10 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { fakeServer } from "./fake-server.mjs";
-import { mountModules, mountHost, builtinModules } from "../src/mcp/modules-mount.ts";
-import { collect, ModuleRegistry } from "../src/kernel/modules/index.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const srcDir = path.join(here, "..", "src");
+const pkgDir = path.join(here, "..");
+const srcDir = path.join(pkgDir, "src");
 const readRaw = (rel) => fs.readFileSync(path.join(srcDir, rel), "utf8");
 // Strip comments so identifiers named only in the (extensive) invariant docs don't false-match.
 function code(rel) {
@@ -39,209 +62,127 @@ function code(rel) {
     .replace(/([^:])\/\/[^\n]*/g, "$1")
     .replace(/^\/\/[^\n]*/gm, "");
 }
-function mcpToolFiles() {
-  const dir = path.join(srcDir, "mcp");
-  return fs.readdirSync(dir).filter((f) => f.startsWith("tools-") && f.endsWith(".ts")).map((f) => `mcp/${f}`);
+
+/**
+ * The provider's AGENT-FACING TOOL LAYER — the successor to the old `mcp/server.ts` +
+ * `mcp/tools-*.ts` sweep. Those were host files; this package's equivalent is `src/tools/`, whose
+ * specs main.ts hands to `publishTools`. It is the only source in this package an agent's request
+ * can reach, so it is the tree the accept-path names must be absent from.
+ */
+function providerToolFiles() {
+  const dir = path.join(srcDir, "tools");
+  return fs.readdirSync(dir).filter((f) => f.endsWith(".ts")).map((f) => `tools/${f}`);
 }
 
-/** The forbidden-surface matcher. DELIBERATELY BROADER than the registry's own built-in tripwire
- * (accept/approve/baseline): it also names `adopt` and `setClassEnabled` — the cycle-2 accept-path
- * verbs the registry's fragment list does NOT catch. Asserting the governance module's ACTUAL
+/** The forbidden-surface matcher. DELIBERATELY BROADER than the host registry's own built-in
+ * tripwire (accept/approve/baseline): it also names `adopt` and `setClassEnabled` — the cycle-2
+ * accept-path verbs that fragment list does NOT catch. Asserting the provider's ACTUAL published
  * surface against THIS is what makes the tripwire load-bearing. */
 const FORBIDDEN = /accept|baseline|adopt|approve|setclassenabled|set_class_enabled/i;
 
-function deps(settings = {}) {
-  return {
-    getSettings: () => ({ ...settings }),
-    schemeNotes: () => [],
-    // A stale `vocabSource` stand-in sat here after the S7 extraction and did
-    // nothing (this is a .mjs file, so an excess key type-checks nowhere).
-    // MountDeps is down to these two fields; anything else is dead weight.
-  };
-}
+// ---------------------------------------------------------------------------
+// DROPPED AT S3c — `governance module: shape + default-off`
+// DROPPED AT S3c — `governance module: contributes ZERO MCP tools when enabled`
+// DROPPED AT S3c — `governance module: renders a config-tab section`
+//
+// All three asserted properties of a row in the HOST's module registry: its posture, its
+// default-off flag, its empty `tools` array on `collect()`, its rendered field list. There is no
+// such row. `builtinModules`, `collect`, `ModuleRegistry`, `mountModules` and `mountHost` are host
+// exports this package cannot import, and the flag/config they carried are now
+// `GovernorSettings.enabled` / `.config` (src/settings.ts), whose default-off and legacy-read
+// behaviour is the subject of the settings tests, not of a module manifest.
+//
+// The one fact worth keeping from them — that a stale `modules.acceptance` row in the shared
+// `data.json` must not be mounted as a module — is host-side and is pinned in
+// `packages/host/tests/modules-mount.test.mjs` ("a surviving modules.acceptance row is an UNKNOWN
+// id, not a mount"). It is not restated here.
+// ---------------------------------------------------------------------------
 
-function mount(settings = {}) {
-  const server = fakeServer();
-  const registry = mountModules((n, d, h) => server.registerTool(n, d, h), deps(settings));
-  return { server, registry };
-}
+describe("provider settings tab: config keys match what the pane actually reads", () => {
+  // RETARGETED, claim unchanged. This used to compare the module manifest's declared field keys
+  // against `governanceDisplaySettings` + `governanceAcceptanceSettings`. The manifest is gone and
+  // the fields are hand-rendered by `src/settings-tab.ts` now — which is a WEAKER arrangement than
+  // a generated section, because a hand-written control can name a key nothing reads and nothing
+  // would notice. The claim is therefore the same and matters more: every key the settings tab
+  // WRITES into `settings.config` is a key one of the two readers READS, and vice versa. A drift
+  // either way is a control that controls nothing, or a setting with no way to set it.
 
-function governanceModule() {
-  return builtinModules(deps()).find((m) => m.id === "acceptance");
-}
+  /** Keys the tab writes: the literal `settings.config.<key> =` assignments, plus the keys handed
+   * to the `toggleField` helper (which writes through a computed `config[key]`, invisible to the
+   * first pattern — the exact shape a single-pattern scan would miss). */
+  function keysWrittenByTab(src) {
+    const literal = [...src.matchAll(/this\.plugin\.settings\.config\.([A-Za-z_$][\w$]*)\s*=/g)].map((m) => m[1]);
+    const viaHelper = [...src.matchAll(/this\.toggleField\(\s*containerEl,\s*"([^"]+)"/g)].map((m) => m[1]);
+    return { literal, viaHelper, all: new Set([...literal, ...viaHelper]) };
+  }
 
-describe("governance module: shape + default-off", () => {
-  test("declared as a read-only capability module, disabled by default, NOT mutating", () => {
-    const gov = governanceModule();
-    assert.ok(gov, "governance module is not declared");
-    // Posture is "capability", NOT "governance": the v1 registry refuses the governance posture
-    // outright (it would be inert), so the fold lands as an ordinary capability module instead.
-    assert.equal(gov.posture, "capability");
-    assert.equal(gov.enabled, false);
-    assert.ok(!gov.mutating, "governance must NOT declare mutating — it contributes no MCP tool");
-    assert.deepEqual(gov.capabilities, ["acceptance"]);
+  /** Keys the coercers read out of the untrusted config record. Read from the SOURCE rather than
+   * from `Object.keys(DEFAULT_*)`, so a default declared but never read (or a key read but never
+   * defaulted) is caught rather than assumed away. */
+  function keysReadByCoercers(src) {
+    return new Set([...src.matchAll(/\bc\.([A-Za-z_$][\w$]*)/g)].map((m) => m[1]));
+  }
+
+  test("VACUITY: both scans find a planted key, and each finds the form the other cannot", () => {
+    const planted = keysWrittenByTab(`
+      this.toggleField(
+        containerEl,
+        "plantedToggle",
+        "n", "d");
+      this.plugin.settings.config.plantedLiteral = value;
+    `);
+    assert.deepEqual(planted.literal, ["plantedLiteral"]);
+    assert.deepEqual(planted.viaHelper, ["plantedToggle"]);
+    assert.deepEqual(keysWrittenByTab("nothing here"), { literal: [], viaHelper: [], all: new Set() });
+    assert.deepEqual([...keysReadByCoercers("const x = c.plantedRead;")], ["plantedRead"]);
+    assert.equal(keysReadByCoercers("no reads").size, 0);
   });
 
-  test("disabled by default: the module contributes nothing", () => {
-    const { server, registry } = mount();
-    const gov = registry.describe().find((d) => d.id === "acceptance");
-    assert.equal(gov.enabled, false);
-    assert.deepEqual(gov.tools, []);
-    // obsidian_pending_review is always-on in server.ts, NOT a module tool — never on the mount.
-    assert.ok(!server.tools.has("obsidian_pending_review"));
-  });
-});
+  test("the tab's written keys ARE the governanceDisplaySettings + governanceAcceptanceSettings keys", async () => {
+    const { DEFAULT_GOVERNANCE_SETTINGS, DEFAULT_ACCEPTANCE_SETTINGS } = await import("../src/kernel/settings.ts");
+    const written = keysWrittenByTab(code("settings-tab.ts"));
+    // Non-vacuous on the real file: both write forms are in use, so neither pattern is dead.
+    assert.ok(written.viaHelper.length >= 2, "the tab must still write badge toggles through toggleField");
+    assert.ok(written.literal.length >= 3, "the tab must still write the acceptance fields directly");
 
-describe("governance module: contributes ZERO MCP tools when enabled", () => {
-  test("enabling it adds NO tool to the surface (the accept surface is an Obsidian pane)", () => {
-    const { server, registry } = mount({ modules: { acceptance: { enabled: true } } });
-    assert.deepEqual(registry.problems, []);
-    const gov = registry.describe().find((d) => d.id === "acceptance");
-    assert.equal(gov.enabled, true);
-    assert.deepEqual(gov.tools, []);
-    // Nothing forbidden — and specifically no accept tool — reached the transport.
-    for (const name of server.tools.keys()) {
-      assert.ok(!FORBIDDEN.test(name), `a forbidden-named tool reached the surface: ${name}`);
-    }
-    assert.ok(!server.tools.has("obsidian_pending_review"));
-  });
-});
+    const readers = [...Object.keys(DEFAULT_GOVERNANCE_SETTINGS), ...Object.keys(DEFAULT_ACCEPTANCE_SETTINGS)];
+    assert.deepEqual([...written.all].sort(), [...readers].sort());
 
-describe("governance module: renders a config-tab section (badge toggles + convergence fields, empty directory)", () => {
-  test("collect() gives it a section — badge toggles + acceptedBy + requiredFrontmatterKeys, no tools, disabled", () => {
-    const settings = { modules: {} };
-    const hosted = collect(builtinModules(deps(settings)), settings.modules, settings);
-    const gov = hosted.find((h) => h.id === "acceptance");
-    assert.ok(gov, "governance not rendered by collect()");
-    assert.ok(gov.summary.length > 0, "governance summary is empty");
-    // The two badge-display toggles (ribbon + pane-tab, default ON) plus the two
-    // acceptance-convergence fields (#221/#164): the accepted-by identity (text, default
-    // "local-human") and the optional required-frontmatter conformance gate (csv, default
-    // EMPTY = no gate). All four match the exact keys the pane wiring reads through
-    // governanceDisplaySettings / governanceAcceptanceSettings.
-    assert.deepEqual(gov.fields.map((f) => f.key), [
-      "showRibbonBadge",
-      "showViewTabBadge",
-      "acceptedBy",
-      "gateMode",
-      "requiredFrontmatterKeys",
-    ]);
-    const byKey = new Map(gov.fields.map((f) => [f.key, f]));
-    for (const key of ["showRibbonBadge", "showViewTabBadge"]) {
-      assert.equal(byKey.get(key).type, "toggle");
-      assert.equal(byKey.get(key).value, true, `${key} should default ON`);
-    }
-    assert.equal(byKey.get("acceptedBy").type, "text");
-    assert.equal(byKey.get("acceptedBy").value, "local-human", "acceptedBy defaults to local-human");
-    assert.equal(byKey.get("gateMode").type, "select");
-    assert.equal(byKey.get("gateMode").value, "soft", "the gate responds softly by default");
-    assert.equal(byKey.get("requiredFrontmatterKeys").type, "csv");
-    assert.deepEqual(byKey.get("requiredFrontmatterKeys").value, [], "the conformance gate defaults EMPTY (no gate)");
-    assert.equal(gov.enabled, false);
-    assert.equal(gov.directory.tools.length, 0);
+    // And the defaults ARE read: every key the two DEFAULT_ objects declare is actually consulted
+    // by the coercers, so a default cannot become decorative.
+    const read = keysReadByCoercers(code("kernel/settings.ts"));
+    for (const key of readers) assert.ok(read.has(key), `${key} is defaulted but never read out of the config`);
   });
 
-  test("a stored `false` overrides the default-on toggle (the pane honors it)", () => {
-    const settings = { modules: { acceptance: { config: { showRibbonBadge: false } } } };
-    const hosted = collect(builtinModules(deps(settings)), settings.modules, settings);
-    const gov = hosted.find((h) => h.id === "acceptance");
-    const ribbon = gov.fields.find((f) => f.key === "showRibbonBadge");
-    const tab = gov.fields.find((f) => f.key === "showViewTabBadge");
-    assert.equal(ribbon.value, false, "stored false must override the default-on");
-    assert.equal(tab.value, true, "the untouched toggle stays default-on");
-  });
-});
-
-describe("governance module: config keys match what the pane actually reads", () => {
-  test("the field keys ARE the governanceDisplaySettings + governanceAcceptanceSettings keys", async () => {
+  test("the tab's rendered defaults are the coercers' defaults (an untouched config renders what the pane will use)", async () => {
     const {
       governanceDisplaySettings,
       governanceAcceptanceSettings,
       DEFAULT_GOVERNANCE_SETTINGS,
       DEFAULT_ACCEPTANCE_SETTINGS,
     } = await import("../src/kernel/settings.ts");
-    const gov = governanceModule();
-    const keys = gov.manifest.config.fields.map((f) => f.key).sort();
-    // The pane derives its settings from exactly these keys — so a field key that drifted from
-    // them would render a control that controls nothing.
-    assert.deepEqual(
-      keys,
-      [...Object.keys(DEFAULT_GOVERNANCE_SETTINGS), ...Object.keys(DEFAULT_ACCEPTANCE_SETTINGS)].sort(),
-    );
-    // And the manifest defaults ARE the pane's defaults, so an untouched config renders
-    // the same state the pane would use.
-    assert.deepEqual(gov.manifest.config.defaults, { ...DEFAULT_GOVERNANCE_SETTINGS, ...DEFAULT_ACCEPTANCE_SETTINGS });
-    // End-to-end: a config of {showRibbonBadge:false} the field would persist is read back by the
-    // pane's own coercion as showRibbonBadge:false.
+    const tab = code("settings-tab.ts");
+    // Toggles render `config[key] !== false`, i.e. default ON — which is what the coercer does.
+    assert.match(tab, /this\.plugin\.settings\.config\[key\] !== false/, "toggles must default ON in the tab");
+    assert.equal(DEFAULT_GOVERNANCE_SETTINGS.showRibbonBadge, true);
+    assert.equal(DEFAULT_GOVERNANCE_SETTINGS.showViewTabBadge, true);
+    // The gate-mode dropdown's own fallback literal must be the coercer's default, spelled once
+    // here and once there — the only pair in this surface where a drift would be silent.
+    assert.match(tab, /config\.gateMode as string\)\s*:\s*"soft"/, "the dropdown falls back to soft");
+    assert.equal(DEFAULT_ACCEPTANCE_SETTINGS.gateMode, "soft");
+    // The accepted-by placeholder is taken from the constant rather than retyped.
+    assert.match(tab, /DEFAULT_ACCEPTANCE_SETTINGS\.acceptedBy/, "the placeholder must come from the constant");
+
+    // End-to-end: what a field persists is what the readers read back.
     assert.equal(governanceDisplaySettings({ showRibbonBadge: false }).showRibbonBadge, false);
     assert.equal(governanceDisplaySettings({ showRibbonBadge: false }).showViewTabBadge, true);
-    // End-to-end for the convergence fields: what the text/csv fields persist is what the accept
-    // path reads back (identity + gate list).
     assert.equal(governanceAcceptanceSettings({ acceptedBy: "nelson" }).acceptedBy, "nelson");
     assert.deepEqual(
       governanceAcceptanceSettings({ requiredFrontmatterKeys: ["uid", "title"] }).requiredFrontmatterKeys,
       ["uid", "title"],
     );
-  });
-});
-
-describe("governance module: THE TRIPWIRE — structural (module + registry)", () => {
-  test("the matcher has teeth (it would catch the accept verbs, incl. ones the registry misses)", () => {
-    for (const bad of [
-      "obsidian_accept_note",
-      "obsidian_adopt_baseline",
-      "obsidian_advance_baseline",
-      "governance_setClassEnabled",
-      "obsidian_approve_change",
-    ]) {
-      assert.ok(FORBIDDEN.test(bad), `matcher failed to catch ${bad}`);
-    }
-    assert.ok(!FORBIDDEN.test("obsidian_pending_review"));
-  });
-
-  test("nothing forbidden is reachable from the module's contributed tool list or the whole surface", () => {
-    const { server, registry } = mount({ modules: { acceptance: { enabled: true } } });
-    const gov = registry.describe().find((d) => d.id === "acceptance");
-    for (const name of gov.tools) assert.ok(!FORBIDDEN.test(name), `governance contributed a forbidden tool: ${name}`);
-    for (const name of server.tools.keys()) assert.ok(!FORBIDDEN.test(name), `a forbidden-named tool reached the surface: ${name}`);
-  });
-
-  test("nothing forbidden is declared in the module's manifest directory", () => {
-    const gov = governanceModule();
-    const dir = gov.manifest.directory ?? {};
-    for (const t of dir.tools ?? []) assert.ok(!FORBIDDEN.test(t.name), `manifest ToolDoc names a forbidden surface: ${t.name}`);
-    for (const s of [...(dir.addressForms ?? []), ...(dir.rulePacks ?? []), ...(dir.kernelArgs ?? [])]) {
-      assert.ok(!FORBIDDEN.test(s.name), `manifest surface names a forbidden capability: ${s.name}`);
-    }
-  });
-
-  test("the module reaches no plugin instance / app / kernel / accept surface to mutate through", () => {
-    // The ONLY context the governance module's register() receives is mountHost's ctx — exactly
-    // {getSettings, visible}. No `app`, no plugin instance, no kernel (queue/journal/locks), no
-    // baseline/accept surface. Even if a later edit slipped an accept-shaped call into a module
-    // handler, it would have nothing to call it against.
-    const host = mountHost(deps());
-    assert.deepEqual(Object.keys(host).sort(), ["getSettings", "visible"]);
-  });
-
-  test("the registry REFUSES a governance-shaped module that tries to add an accept/baseline tool", () => {
-    const server = fakeServer();
-    const hostile = {
-      id: "acceptance",
-      posture: "capability",
-      capabilities: ["acceptance"],
-      enabled: true,
-      register(reg) {
-        reg("obsidian_accept_note", { annotations: { readOnlyHint: false } }, () => ({}));
-        reg("obsidian_advance_baseline", { annotations: { readOnlyHint: true } }, () => ({}));
-      },
-    };
-    const registry = new ModuleRegistry([hostile], { acceptance: { enabled: true } });
-    registry.registerAll((n, d, h) => server.registerTool(n, d, h), mountHost(deps()));
-    assert.ok(!server.tools.has("obsidian_accept_note"));
-    assert.ok(!server.tools.has("obsidian_advance_baseline"));
-    assert.equal(registry.problems.filter((p) => p.includes("refused")).length, 2);
-    assert.deepEqual(registry.describe().find((d) => d.id === "acceptance").tools, []);
+    // The tab writes the csv field as a string[]; the coercer accepts that shape unchanged.
+    assert.match(code("settings-tab.ts"), /requiredFrontmatterKeys = value\s*\n?\s*\.split\(","\)/);
   });
 });
 
@@ -255,18 +196,37 @@ describe("governance module: THE TRIPWIRE — source reachability (accept surfac
   }
   const referencesThisMember = (src, name) => new RegExp(`\\bthis\\.${name}\\b`).test(src);
 
-  // The accept-equivalent capabilities. None may be an instance method, a this.<member>, or an MCP
-  // reference. Each exists ONLY as a module-scope function / WeakMap value reached through a
-  // gesture-gated pane handler. `stampAcceptedFrontmatter` is the #221/#164 convergence's ONE
-  // production writer of the accepted family (processFrontMatter), replacing the retired pure
-  // stampAcceptance helper.
+  // The accept-equivalent capabilities. None may be an instance method, a this.<member>, or named
+  // by the published tool layer. Each exists ONLY as a module-scope function / WeakMap value
+  // reached through a gesture-gated pane handler. `stampAcceptedFrontmatter` is the #221/#164
+  // convergence's ONE production writer of the accepted family (processFrontMatter), replacing the
+  // retired pure stampAcceptance helper.
   const ACCEPT_EQUIVALENT = [
     "performAccept", "performRevert", "performAdopt", "setClassEnabled", "reconcile",
     "getStore", "setBaseline", "acceptNote", "revertNote", "stampAcceptedFrontmatter",
   ];
 
+  // KEPT FROM THE RETIRED `structural (module + registry)` BLOCK. The other four tests in that
+  // block were about the host registry (a hostile module's tools being refused, the mount host's
+  // two-key ctx, the manifest directory's declared names) and went with it; this one is the
+  // vacuity proof for FORBIDDEN, which is still the matcher every published-surface scan below
+  // runs. Without it a typo in the regex would silently pass every one of them.
+  test("the matcher has teeth (it would catch the accept verbs, incl. ones a fragment list misses)", () => {
+    for (const bad of [
+      "obsidian_accept_note",
+      "obsidian_adopt_baseline",
+      "obsidian_advance_baseline",
+      "governance_setClassEnabled",
+      "obsidian_approve_change",
+    ]) {
+      assert.ok(FORBIDDEN.test(bad), `matcher failed to catch ${bad}`);
+    }
+    assert.ok(!FORBIDDEN.test("governance_pending_review"));
+    assert.ok(!FORBIDDEN.test("governance_submit_revision"));
+  });
+
   test("wiring.ts: the accept-equivalent capabilities are module-scope, not instance methods or this.<member>", () => {
-    const wiring = code("governor/wiring/wiring.ts");
+    const wiring = code("wiring/wiring.ts");
     for (const name of ACCEPT_EQUIVALENT) {
       assert.ok(!isInstanceMethod(wiring, name), `${name} must NOT be an instance method`);
       assert.ok(!referencesThisMember(wiring, name), `this.${name} must not exist (would be reachable from app)`);
@@ -278,13 +238,13 @@ describe("governance module: THE TRIPWIRE — source reachability (accept surfac
   });
 
   test("wiring.ts: the baseline store lives in a module-private WeakMap, never this.store", () => {
-    const wiring = code("governor/wiring/wiring.ts");
+    const wiring = code("wiring/wiring.ts");
     assert.ok(!/\bthis\.store\b/.test(wiring), "store must not be this.store (would be reachable)");
     assert.match(wiring, /const baselineStores = new WeakMap</, "the store must be held in a module-private WeakMap");
   });
 
   test("wiring.ts: registers ZERO commands (a command is agent-invokable via obsidian_run_command)", () => {
-    const wiring = code("governor/wiring/wiring.ts");
+    const wiring = code("wiring/wiring.ts");
     assert.ok(!/\baddCommand\b/.test(wiring), "the governance wiring must register no command");
   });
 
@@ -296,7 +256,7 @@ describe("governance module: THE TRIPWIRE — source reachability (accept surfac
     // be gated on a disposed flag flipped by the child Component's register cleanup (the live-mount
     // teardown: `plugin.removeChild` on toggle-off, or the plugin's own unload — the wireUidIndex
     // disposed-flag pattern, scoped to the mount's Component).
-    const wiring = code("governor/wiring/wiring.ts");
+    const wiring = code("wiring/wiring.ts");
     assert.match(wiring, /let disposed = false;/, "must track a disposed flag");
     assert.match(wiring, /component\.register\(\(\) => \{[\s\S]*?disposed = true;/, "cleanup hook must flip disposed");
     const m = /onLayoutReady\(async \(\) => \{([\s\S]*?)\n  \}\);/.exec(wiring);
@@ -306,7 +266,7 @@ describe("governance module: THE TRIPWIRE — source reachability (accept surfac
   });
 
   test("pane.ts: the controller lives in a module-private WeakMap, never on the instance", () => {
-    const pane = code("governor/wiring/pane.ts");
+    const pane = code("wiring/pane.ts");
     assert.ok(!/\bthis\.controller\b/.test(pane), "no this.controller (would be reachable)");
     assert.ok(!/(private|readonly)\s+controller\b/.test(pane), "no controller instance field on the view");
     assert.match(pane, /const viewDeps = new WeakMap</, "deps held in a module-private WeakMap");
@@ -319,7 +279,7 @@ describe("governance module: THE TRIPWIRE — source reachability (accept surfac
     // not. The context menu was fixed first, and an independent review then
     // found the pane doing the SAME thing — rendering live Accept/Revert
     // buttons directly above its own notice saying Accept is disabled.
-    const pane = code("governor/wiring/pane.ts");
+    const pane = code("wiring/pane.ts");
 
     // The Proposed section's accept is not created at all once retired.
     assert.match(
@@ -343,7 +303,7 @@ describe("governance module: THE TRIPWIRE — source reachability (accept surfac
     // Strip the guards and every assertion above must stop matching. Without
     // this, a regex drifting to match a comment would keep the suite green
     // while the buttons went back to being live.
-    const stripped = code("governor/wiring/pane.ts")
+    const stripped = code("wiring/pane.ts")
       .replace(/if \(!\(deps\.legacyRetired\?\.\(\) \?\? false\)\) \{\s*\n\s*const proposedAcceptBtn/g, "const proposedAcceptBtn")
       .replace(/acceptBtn\.remove\(\);/g, "")
       .replace(/revertBtn\.remove\(\);/g, "");
@@ -352,7 +312,7 @@ describe("governance module: THE TRIPWIRE — source reachability (accept surfac
   });
 
   test("pane.ts: every accept-class button is addEventListener-wired, NEVER via .onclick = (so .onclick stays null)", () => {
-    const pane = code("governor/wiring/pane.ts");
+    const pane = code("wiring/pane.ts");
     // WP9's three mandate controls are on this list because activation GRANTS
     // PROSPECTIVE AUTHORITY — a stronger act than a single admission — and
     // revoke/decline are human dispositions on the same surface. (Review of
@@ -390,7 +350,7 @@ describe("governance module: THE TRIPWIRE — source reachability (accept surfac
   });
 
   test("pane.ts: every accept-class handler gates on isRealGesture (directly or via runGuardedAdopt)", () => {
-    const paneRaw = readRaw("governor/wiring/pane.ts");
+    const paneRaw = readRaw("wiring/pane.ts");
     assert.match(paneRaw, /isRealGesture/, "the pane must use the isRealGesture gate");
     // accept/revert handlers gate directly on isRealGesture — including the Proposed
     // section's converged Accept and Request-changes (#221/#164).
@@ -421,7 +381,7 @@ describe("governance module: THE TRIPWIRE — source reachability (accept surfac
   });
 
   test("wiring.ts: setClassEnabled (the auto-accept allowlist mutator) gates on isRealGesture", () => {
-    const wiringRaw = readRaw("governor/wiring/wiring.ts");
+    const wiringRaw = readRaw("wiring/wiring.ts");
     const m = /async function setClassEnabled\([^)]*\)[^{]*\{([\s\S]*?)\n\}/.exec(wiringRaw);
     assert.ok(m, "setClassEnabled must be a module-scope function");
     // The refusal may carry the popout-incident Notice (2026-08-23) — the pin
@@ -432,8 +392,8 @@ describe("governance module: THE TRIPWIRE — source reachability (accept surfac
   });
 
   test("stampAcceptedFrontmatter (the ONE writer of the accepted family, #221/#164) is module-scope, unexported, gesture-path-only", () => {
-    const wiringRaw = readRaw("governor/wiring/wiring.ts");
-    const wiring = code("governor/wiring/wiring.ts");
+    const wiringRaw = readRaw("wiring/wiring.ts");
+    const wiring = code("wiring/wiring.ts");
     // Module-scope, NEVER exported: an export would let any importer hold the accepted-family
     // writer directly, outside the gesture perimeter.
     assert.match(wiring, /\nasync function stampAcceptedFrontmatter\(/, "must be a module-scope function");
@@ -455,9 +415,10 @@ describe("governance module: THE TRIPWIRE — source reachability (accept surfac
     assert.equal(refs.length, 2, "declaration + the buildAcceptDeps thunk — no other caller may exist");
     assert.match(wiring, /stampAccepted:\s*\(p,\s*fields\)\s*=>\s*stampAcceptedFrontmatter\(plugin,\s*p,\s*fields\)/,
       "the one call site is acceptNote's injected stampAccepted dep");
-    // The MCP transport must reference NONE of the accept path.
-    const mcpLayer = ["mcp/server.ts", ...mcpToolFiles()];
-    for (const rel of mcpLayer) {
+    // The published tool layer must reference NONE of the accept path. Pre-split this loop swept
+    // the host's `mcp/server.ts` + `mcp/tools-*.ts`; the provider's equivalent agent-reachable
+    // source is `src/tools/*.ts` plus the `publishTools` call in main.ts that hands them over.
+    for (const rel of [...providerToolFiles(), "main.ts"]) {
       const src = code(rel);
       for (const name of [
         "stampAcceptedFrontmatter", "stampAccepted", "performAccept", "performAdopt",
@@ -465,7 +426,7 @@ describe("governance module: THE TRIPWIRE — source reachability (accept surfac
       ]) {
         assert.ok(!new RegExp(`\\b${name}\\b`).test(src), `${rel} must not reference the accept-path fn ${name}`);
       }
-      assert.ok(!/governor\/kernel\/accept/.test(readRaw(rel)), `${rel} must not import the accept kernel module`);
+      assert.ok(!/kernel\/accept/.test(readRaw(rel)), `${rel} must not import the accept kernel module`);
     }
   });
 
@@ -473,45 +434,264 @@ describe("governance module: THE TRIPWIRE — source reachability (accept surfac
     // The stamp is a programmatic write landing right after a human click (and possibly recent
     // typing in the same note's editor). A lingering genuine-human-input record would let the
     // debounced reconcile misattribute a subsequent unrelated agent write as a human edit.
-    const wiringRaw = readRaw("governor/wiring/wiring.ts");
+    const wiringRaw = readRaw("wiring/wiring.ts");
     const m = /async function performAccept\([^)]*\)[^{]*\{([\s\S]*?)\n\}/.exec(wiringRaw);
     assert.ok(m, "performAccept body found");
     assert.match(m[1], /humanInputMap\(plugin\)\.delete\(path\)/, "performAccept must clear the human-input record");
     assert.match(m[1], /finally/, "the clear runs in finally — a partially-failed accept has still written");
   });
+});
 
-  test("the MCP transport imports nothing from src/wiring/ (the accept pane), and pending-review stays always-on read-only", () => {
-    for (const rel of ["mcp/server.ts", "mcp/modules-mount.ts", ...mcpToolFiles()]) {
-      assert.ok(!/from ["'][^"']*\/governor\/wiring\/(pane|wiring)/.test(readRaw(rel)),
-        `${rel} must not import the governance pane/wiring`);
+// ---------------------------------------------------------------------------
+// REPLACING `the MCP transport imports nothing from src/governor/wiring/`.
+//
+// The first half of that test is now TRIVIALLY TRUE and was deleted for exactly that reason: the
+// transport is in another package, so "server.ts does not import the pane" cannot fail, and an
+// assertion that cannot fail is worse than none — it occupies a line in the suite output that a
+// reader counts as coverage. What carries the weight now is the direction the package boundary
+// does NOT enforce: `packages/governor` has no dependency on `packages/host`, but a RELATIVE
+// specifier that escapes the package resolves fine on disk in a monorepo and would bundle happily.
+// That is the scan below, and it is the provider-side half the host's own `host-layering.test.mjs`
+// says lives here.
+//
+// The second half (pending-review is always-on read-only) is asserted against this package's own
+// `buildPendingReviewTools` SPEC instead of against a `registerPendingReviewTools(server, …)` line
+// in host source — a stronger subject, because it reads the shipped flag rather than a call site.
+// ---------------------------------------------------------------------------
+describe("provider layering: no relative specifier escapes packages/governor/src", () => {
+  /** Static and dynamic import/export specifiers, including `import("…")` in type position. */
+  const SPECIFIER = /(?:\bfrom|\bimport|\bexport)\s*\(?\s*["']([^"']+)["']/g;
+
+  /**
+   * @param files Map of package-relative path → source text.
+   * @returns Map of offending file → sorted list of the escaping specifiers it uses.
+   */
+  function scanEscapingImports(files) {
+    const out = new Map();
+    for (const [rel, text] of files) {
+      for (const m of text.matchAll(SPECIFIER)) {
+        const spec = m[1];
+        if (!spec.startsWith(".")) continue; // bare = a declared dependency, the sanctioned door
+        const resolved = path.posix.normalize(path.posix.join(path.posix.dirname(rel), spec));
+        if (resolved.startsWith("src/")) continue;
+        if (!out.has(rel)) out.set(rel, new Set());
+        out.get(rel).add(resolved);
+      }
     }
-    // obsidian_pending_review is registered always-on in server.ts (read-only), decoupled from the
-    // governance module toggle — the one MCP read surface, and it is not accept-shaped.
-    const server = code("mcp/server.ts");
-    assert.match(server, /registerPendingReviewTools\(server,/, "obsidian_pending_review must be registered always-on");
-    assert.ok(!FORBIDDEN.test("obsidian_pending_review"));
+    return new Map([...out].map(([k, v]) => [k, [...v].sort()]));
+  }
+
+  function realSources() {
+    const files = new Map();
+    const walk = (dir) => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) walk(full);
+        else if (e.name.endsWith(".ts")) {
+          files.set(path.relative(pkgDir, full).split(path.sep).join("/"), fs.readFileSync(full, "utf8"));
+        }
+      }
+    };
+    walk(srcDir);
+    return files;
+  }
+
+  test("VACUITY: the scan FINDS a planted escape, and passes a clean tree", () => {
+    const planted = scanEscapingImports(new Map([
+      ["src/main.ts", 'import { Kernel } from "../../host/src/kernel/kernel.js";\n'],
+      ["src/wiring/pane.ts", 'type T = import("../../../host/src/mcp/server.js").ServerCtx;\n'],
+      ["src/kernel/ok.ts", 'import { x } from "../settings.js";\nimport { z } from "obsidian";\n'],
+    ]));
+    assert.deepEqual([...planted.keys()].sort(), ["src/main.ts", "src/wiring/pane.ts"]);
+    // Reported package-root-relative, so an escape still READS as one: the leading `../` is the
+    // package boundary being crossed, not noise to be normalized away.
+    assert.deepEqual(planted.get("src/main.ts"), ["../host/src/kernel/kernel.js"]);
+    assert.deepEqual(planted.get("src/wiring/pane.ts"), ["../host/src/mcp/server.js"]);
+    assert.equal(scanEscapingImports(new Map([["src/a.ts", 'import "./b.js";\nimport "obsidian";\n']])).size, 0);
   });
 
-  test("main.ts wires the pane ONLY via wireGovernance behind the module-enabled flag — no accept method/command/tool on the plugin", () => {
+  test("the scan sees the real tree (non-vacuous: it reads every .ts under src and finds real specifiers)", () => {
+    const files = realSources();
+    assert.ok(files.size > 60, `expected the whole provider tree, got ${files.size} files`);
+    assert.ok(files.has("src/main.ts") && files.has("src/wiring/wiring.ts"));
+    const anySpecifier = [...files.values()].some((t) => [...t.matchAll(SPECIFIER)].length > 0);
+    assert.ok(anySpecifier, "the specifier regex matched nothing anywhere — the scan is dead");
+  });
+
+  test("the ONLY file reaching outside the package is the declaration one, and nothing under src imports it", () => {
+    // ONE allowlisted crossing, and it is a declaration read by its test rather than by any shipped
+    // code path — `kernel/operations/inventory-authority.ts` type-imports `ActionDefinition` /
+    // `SurfaceBinding` and calls `compatibilityAction` from the host's operations registry. Its own
+    // header argues the case: those three do not meet the S3c bar for publication into
+    // `@vault-mcp/core` (byte-for-byte agreement between two plugins), and inventing a "contract"
+    // for a single importer would be a bigger lie than a relative path a reader can follow. The
+    // honest statement is that this is a TEST-TIME dependency on host source, and the second
+    // assertion is what makes that statement true rather than aspirational.
+    const escapes = scanEscapingImports(realSources());
+    assert.deepEqual(
+      [...escapes.keys()].sort(),
+      ["src/kernel/operations/inventory-authority.ts"],
+      "a NEW relative specifier escaped packages/governor/src — it resolves on disk in this monorepo and would " +
+        "bundle, so the package boundary will not catch it; publish the shared part into @vault-mcp/core instead",
+    );
+    for (const spec of escapes.get("src/kernel/operations/inventory-authority.ts")) {
+      assert.match(spec, /^\.\.\/host\/src\/kernel\/operations\//, `unexpected escape target: ${spec}`);
+    }
+    // The crossing costs the BUILT plugin nothing only while no shipped module imports the
+    // declaration. If one ever does, the host tree walks into the provider's bundle.
+    for (const [rel, text] of realSources()) {
+      if (rel === "src/kernel/operations/inventory-authority.ts") continue;
+      assert.ok(
+        !/inventory-authority/.test(text),
+        `${rel} imports the declaration file, dragging host source into the provider bundle`,
+      );
+    }
+  });
+});
+
+describe("pending-review: always-on, read-only, and not accept-shaped", () => {
+  test("the published spec is readOnly and carries no accept-shaped name", async () => {
+    const { buildPendingReviewTools } = await import("../src/tools/pending-review.ts");
+    const specs = buildPendingReviewTools({ source: { read: async () => null } });
+    assert.ok(specs.length > 0, "buildPendingReviewTools published nothing — the assertions below are vacuous");
+    for (const spec of specs) {
+      assert.equal(spec.readOnly, true, `${spec.name} must be published read-only`);
+      assert.ok(!FORBIDDEN.test(spec.name), `pending-review published a forbidden-named tool: ${spec.name}`);
+    }
+    // `governance_pending_review`, NOT `obsidian_pending_review` (Nelson, at S3c). The old
+    // spelling branded a provider tool as a host built-in, which after the split is an
+    // architectural lie, and keeping it would have required an `obsidian_*`-namespace carve-out in
+    // the host's refusal — a permanent hole in a namespace-integrity rule, bought for one name.
+    assert.deepEqual(specs.map((s) => s.name), ["governance_pending_review"]);
+  });
+
+  test("main.ts publishes it UNCONDITIONALLY — the review pane's toggle does not gate the read surface", () => {
+    const main = code("main.ts");
+    // One publishTools call, and buildPendingReviewTools is inside it.
+    const publish = /publishTools\(this, \[([\s\S]*?)\n      \]\)/.exec(main);
+    assert.ok(publish, "main.ts must hand its specs to publishTools");
+    assert.match(publish[1], /buildPendingReviewTools\(/, "pending-review must be in the published set");
+    // And `settings.enabled` — the pane toggle that used to be `modules.acceptance.enabled` —
+    // guards ONLY the pane mount. Every occurrence in a conditional position is checked, so a
+    // future `if (this.settings.enabled)` wrapped around the publish would fail here.
+    const guards = [...main.matchAll(/if \(this\.settings\.enabled\)([^\n]*)/g)].map((m) => m[1]);
+    assert.equal(guards.length, 1, "settings.enabled must guard exactly one thing");
+    assert.match(guards[0], /setPaneMounted\(true\)/, "the only thing it guards is the pane mount");
+  });
+
+  test("the WHOLE published tool surface is free of accept-shaped names", () => {
+    // The successor to "nothing forbidden reached the mounted MCP surface". Read from source rather
+    // than by instantiating all five builders, so it covers the mandate and revision tools without
+    // this file needing their runtime deps. Both spelling forms are collected: a string literal and
+    // the one `name: SUBMIT_REVISION_TOOL` constant reference.
+    const names = [];
+    for (const rel of providerToolFiles()) {
+      const src = code(rel);
+      for (const m of src.matchAll(/^\s*name:\s*"([^"]+)"/gm)) names.push(m[1]);
+      for (const m of src.matchAll(/^\s*name:\s*([A-Z][A-Z0-9_]*)\s*,/gm)) names.push(`<const ${m[1]}>`);
+    }
+    assert.ok(names.length >= 4, `expected the provider's published names, found ${names.length}`);
+    assert.ok(names.includes("<const SUBMIT_REVISION_TOOL>"), "the submit-revision spec must still name its constant");
+    for (const n of names) {
+      if (n.startsWith("<const ")) continue;
+      assert.ok(!FORBIDDEN.test(n), `a forbidden-named tool is published: ${n}`);
+      // NAMESPACE INTEGRITY (Nelson, at S3c). Every tool this plugin publishes is in the
+      // `governance_` family. The `obsidian_` prefix belongs to the host's own built-ins, and
+      // `obsidian_pending_review` was renamed rather than carved out of the host's refusal —
+      // an exception to a namespace rule is the precedent for the next exception.
+      assert.match(n, /^governance_/, `a published tool escapes the governance_ namespace: ${n}`);
+    }
+  });
+
+  test("SUBMIT_REVISION_TOOL's VALUE is checked too — a constant must not smuggle an accept verb past the scan", async () => {
+    const { SUBMIT_REVISION_TOOL } = await import("../src/kernel/dispositions.ts");
+    assert.equal(typeof SUBMIT_REVISION_TOOL, "string");
+    assert.ok(SUBMIT_REVISION_TOOL.length > 0);
+    assert.ok(!FORBIDDEN.test(SUBMIT_REVISION_TOOL), `the submit tool's name is accept-shaped: ${SUBMIT_REVISION_TOOL}`);
+  });
+});
+
+describe("main.ts: the pane is reached ONLY through wireGovernance, behind settings.enabled", () => {
+  // RETARGETED from the host's main.ts. The equivalent facts here are stronger, because this
+  // plugin IS the perimeter: there is no host composition root to hide behind, so anything
+  // accept-shaped on this class is directly `app.plugins.plugins.governor.<thing>`.
+  function isInstanceMethod(src, name) {
+    return new RegExp(
+      `(?:^|\\n)[ \\t]+(?:private |public |protected |readonly |static |get |set )*(?:async )?${name}\\s*\\(`,
+    ).test(src);
+  }
+
+  test("the pane mounts only via wireGovernance, gated on this.settings.enabled", () => {
     const main = code("main.ts");
     assert.match(main, /wireGovernance\(this,/, "main.ts wires the pane via wireGovernance");
-    assert.match(main, /modules\?\.acceptance\?\.enabled === true/, "gated on the acceptance module enabled flag");
-    // The plugin exposes no accept-equivalent method and registers no accept command.
-    for (const name of ["performAccept", "performAdopt", "setBaseline", "acceptNote", "stampAcceptedFrontmatter"]) {
+    assert.match(main, /if \(this\.settings\.enabled\) void this\.setPaneMounted\(true\)/,
+      "the mount at load is gated on the (default-off) enabled flag");
+    // wireGovernance is CALLED in exactly one place — the reconciled mount path — so there is no
+    // second, ungated route to a live controller. (Counted on the call form `wireGovernance(`;
+    // the named import carries no parenthesis and is not counted.)
+    assert.equal((main.match(/wireGovernance\(/g) ?? []).length, 1, "exactly one call site");
+    assert.match(main, /import \{ wireGovernance,[^}]*\} from "\.\/wiring\/wiring\.js"/,
+      "and it comes from the wiring module, not from a re-export that could widen");
+  });
+
+  test("the plugin class exposes no accept-shaped method and registers no command", () => {
+    const main = code("main.ts");
+    for (const name of [
+      "performAccept", "performAdopt", "performRevert", "setBaseline", "acceptNote", "revertNote",
+      "stampAcceptedFrontmatter", "setClassEnabled", "runGuardedAdopt", "getStore", "adopt", "accept",
+    ]) {
       assert.ok(!isInstanceMethod(main, name), `${name} must not be a plugin instance method`);
     }
-    assert.ok(!/addCommand\([^)]*accept/i.test(readRaw("main.ts")), "no accept command on the plugin");
+    assert.ok(!/addCommand\(/.test(readRaw("main.ts")), "the provider plugin registers no command at all");
+  });
+
+  test("the UI-deps factories live in module-level WeakMaps, never as plugin properties (§9)", () => {
+    const main = code("main.ts");
+    // Each factory builds an admit-/mandate-/promotion-capable deps object. Held on the instance,
+    // renderer JS walking `app.plugins.plugins.governor` would find one and call it.
+    for (const map of ["admissionFactories", "mandateUiFactories", "promotionUiFactories", "migrations"]) {
+      assert.match(main, new RegExp(`^const ${map} = new WeakMap<`, "m"), `${map} must be a module-level WeakMap`);
+      assert.ok(!new RegExp(`\\bthis\\.${map}\\b`).test(main), `this.${map} must not exist`);
+      assert.ok(!new RegExp(`export\\s+(?:const|function)\\s+${map}\\b`).test(main), `${map} must not be exported`);
+    }
+    // They are read back only to build the argument object handed to wireGovernance — never
+    // assigned onto the plugin or handed to anything else.
+    assert.match(main, /admission: admissionFactories\.get\(this\)\?\.\(\)/);
+    assert.match(main, /mandates: mandateUiFactories\.get\(this\)\?\.\(\)/);
+    assert.match(main, /promotion: promotionUiFactories\.get\(this\)\?\.\(\)/);
+    // The only exports are the settings default and the plugin class Obsidian must load.
+    const exports = [...code("main.ts").matchAll(/^export\s+(?:default\s+)?(?:class|const|function)?\s*\{?\s*([A-Za-z_$][\w$]*)/gm)]
+      .map((m) => m[1]);
+    assert.deepEqual(exports.sort(), ["DEFAULT_GOVERNOR_SETTINGS", "GovernorPlugin"]);
+  });
+
+  test("the seam registration passes an observer and a refusal — nothing accept-shaped crosses", () => {
+    // §3 of docs/suite-split-design.md: candidates flow outward, refusals flow inward, and the
+    // type of the inward hook cannot express permission. Pinned as the shape of the registration
+    // literal, because the two keys ARE the two classes.
+    const main = code("main.ts");
+    const reg = /registerGovernance\(this, \{([\s\S]*?)\n      \}\)/.exec(main);
+    assert.ok(reg, "registerGovernance must be called with an object literal");
+    const keys = [...reg[1].matchAll(/^\s{8}([A-Za-z][\w]*):/gm)].map((m) => m[1]);
+    assert.deepEqual(keys.sort(), ["sessionRefusal", "writeObserver"],
+      "the seam must carry exactly the observer and the refusal — a third key is a new hook class");
+    for (const name of ["performAccept", "performAdopt", "setBaseline", "acceptNote", "setClassEnabled"]) {
+      assert.ok(!new RegExp(`\\b${name}\\b`).test(reg[1]), `the seam registration must not name ${name}`);
+    }
+    // The registration is revocable: a plugin unload must drop both hooks, or a dead provider's
+    // stores stay wired into a live host.
+    assert.match(main, /this\.register\(\s*\n?\s*registerGovernance\(this,/, "the disposer goes to this.register");
   });
 });
 
 describe("history browser (#135): a READ-ONLY surface that confers nothing", () => {
   // The history browser reads the acceptance log and renders it. It must add NO accept surface:
-  // no command, no MCP tool, no log-write path, and the MCP transport must not grow a way to
+  // no command, no published tool, no log-write path, and the tool layer must not grow a way to
   // reach the log reader. (The render path's text-node-only discipline is pinned behaviorally in
   // governance-history.test.mjs.)
 
   test("wiring.ts: readAcceptanceLog is module-scope, read-only (adapter.read), never a this.<member> or export", () => {
-    const wiring = code("governor/wiring/wiring.ts");
+    const wiring = code("wiring/wiring.ts");
     assert.match(wiring, /\nasync function readAcceptanceLog\(/, "readAcceptanceLog must be a module-scope function");
     assert.ok(!/\bthis\.readAcceptanceLog\b/.test(wiring), "must not be an instance member");
     assert.ok(!/export\s+(?:async\s+)?function\s+readAcceptanceLog\b/.test(wiring), "must not be exported");
@@ -521,34 +701,32 @@ describe("history browser (#135): a READ-ONLY surface that confers nothing", () 
     assert.ok(!/\.append\(|\.write\(/.test(m[0]), "the history reader must not write the log");
   });
 
-  test("the kernel history module is import-reachable from the pane ONLY — never from the MCP layer", () => {
-    for (const rel of ["mcp/server.ts", "mcp/modules-mount.ts", ...mcpToolFiles()]) {
-      assert.ok(
-        !/governor\/kernel\/history/.test(readRaw(rel)),
-        `${rel} must not import the governance history module`,
-      );
+  test("the kernel history module is import-reachable from the pane ONLY — never from the published tool layer", () => {
+    for (const rel of [...providerToolFiles(), "main.ts"]) {
+      assert.ok(!/kernel\/history\.js/.test(readRaw(rel)), `${rel} must not import the governance history module`);
       assert.ok(!/\breadAcceptanceLog\b/.test(code(rel)), `${rel} must not reference readAcceptanceLog`);
     }
-    // The positive leg — without it the loop above would pass in a world where NOBODY imports
-    // the reader. Asserted on the pane's actual import SPECIFIER, not on the segment
-    // `governor/kernel/history`: inside src/governor/ the pane's import is relative
-    // (`../kernel/history.js`), so that segment survives only in prose, and a comment pinning
-    // itself is not a pin.
+    // The positive leg — without it the loop above would pass in a world where NOBODY imports the
+    // reader. Asserted on the pane's actual import SPECIFIER: the pane's import is relative
+    // (`../kernel/history.js`), so a path segment would survive only in prose, and a comment
+    // pinning itself is not a pin.
     assert.match(
-      readRaw("governor/wiring/pane.ts"),
+      readRaw("wiring/pane.ts"),
       /from ["']\.\.\/kernel\/history\.js["']/,
       "the pane renders the history",
     );
   });
 
-  test("history adds no command and no forbidden-named tool (the module still contributes ZERO tools)", () => {
-    const { server, registry } = mount({ modules: { acceptance: { enabled: true } } });
-    assert.deepEqual(registry.describe().find((d) => d.id === "acceptance").tools, []);
-    for (const name of server.tools.keys()) {
-      assert.ok(!/history/i.test(name), `no history tool may reach the MCP surface: ${name}`);
-      assert.ok(!FORBIDDEN.test(name), `a forbidden-named tool reached the surface: ${name}`);
+  test("history adds no command and no history-named published tool", () => {
+    // The pre-split form asserted this against the mounted MCP surface (the module contributed
+    // zero tools). With no module there is no such surface to sweep; the equivalent subject is the
+    // provider's own published names, which is where a history tool would have to appear.
+    for (const rel of providerToolFiles()) {
+      for (const m of code(rel).matchAll(/^\s*name:\s*"([^"]+)"/gm)) {
+        assert.ok(!/history/i.test(m[1]), `no history tool may be published: ${m[1]}`);
+      }
     }
-    assert.ok(!/\baddCommand\b/.test(code("governor/wiring/pane.ts")), "the pane registers no command");
+    assert.ok(!/\baddCommand\b/.test(code("wiring/pane.ts")), "the pane registers no command");
   });
 });
 
@@ -557,19 +735,19 @@ describe("#101 dispositions-as-data: THE TRIPWIRE — the wrap adds no reachable
   // two new human dispositions (request-changes, withdraw) plus ONE agent tool
   // (governance_submit_revision). These tests pin that the refactor changed reachability NOWHERE:
   // descriptors are pure data, the new human verbs are gesture-only, and the only new agent
-  // surface is the guarded MCP tool registered in server.ts.
+  // surface is the published tool built in src/tools/revision.ts.
 
   test("dispositions.ts is a pure-data leaf: no accept import, no accept-path reference, no obsidian import", () => {
-    const d = code("governor/kernel/dispositions.ts");
-    assert.ok(!/^\s*import /m.test(readRaw("governor/kernel/dispositions.ts")), "dispositions.ts must import nothing");
+    const d = code("kernel/dispositions.ts");
+    assert.ok(!/^\s*import /m.test(readRaw("kernel/dispositions.ts")), "dispositions.ts must import nothing");
     for (const name of ["performAccept", "performAdopt", "acceptNote", "revertNote", "stampAcceptedFrontmatter", "setBaseline", "runGuardedAdopt"]) {
       assert.ok(!new RegExp(`\\b${name}\\b`).test(d), `dispositions.ts must not reference ${name}`);
     }
-    assert.ok(!/from ["']obsidian["']/.test(readRaw("governor/kernel/dispositions.ts")));
+    assert.ok(!/from ["']obsidian["']/.test(readRaw("kernel/dispositions.ts")));
   });
 
   test("wiring.ts: performRequestChanges / performWithdraw are module-scope, never instance methods, this.<members>, or exports", () => {
-    const wiring = code("governor/wiring/wiring.ts");
+    const wiring = code("wiring/wiring.ts");
     for (const fn of ["performRequestChanges", "performWithdraw", "listRevising", "listProposed"]) {
       assert.match(wiring, new RegExp(`\\n(?:async )?function ${fn}\\s*\\(`), `${fn} must be a module-scope function`);
       assert.ok(!new RegExp(`\\bthis\\.${fn}\\b`).test(wiring), `this.${fn} must not exist`);
@@ -579,8 +757,8 @@ describe("#101 dispositions-as-data: THE TRIPWIRE — the wrap adds no reachable
   });
 
   test("pane.ts: the request-changes and withdraw buttons are addEventListener-wired and isRealGesture-gated", () => {
-    const paneRaw = readRaw("governor/wiring/pane.ts");
-    const pane = code("governor/wiring/pane.ts");
+    const paneRaw = readRaw("wiring/pane.ts");
+    const pane = code("wiring/pane.ts");
     for (const el of ["requestBtn", "withdrawBtn"]) {
       assert.ok(!new RegExp(`\\b${el}\\.onclick\\s*=`).test(pane), `${el}.onclick = … is the forgeable wiring`);
       const lines = paneRaw.split("\n");
@@ -602,7 +780,7 @@ describe("#101 dispositions-as-data: THE TRIPWIRE — the wrap adds no reachable
     // then calls it with a real, trusted MouseEvent kept from an earlier unrelated click. So the
     // menu path must reach the accept only THROUGH a modal whose own confirm button carries both
     // layers (pane.ts ConfirmModal: addEventListener + isRealGesture).
-    const wiring = code("governor/wiring/wiring.ts");
+    const wiring = code("wiring/wiring.ts");
     const lines = wiring.split("\n");
     for (const evt of ['"file-menu"', '"files-menu"']) {
       assert.match(wiring, new RegExp(`workspace\\.on\\(${evt}`), `${evt} must be registered via plugin.app.workspace.on`);
@@ -640,7 +818,7 @@ describe("#101 dispositions-as-data: THE TRIPWIRE — the wrap adds no reachable
   });
 
   test("pane.ts: confirmMenuAccept routes through the addEventListener+isRealGesture ConfirmModal", () => {
-    const pane = code("governor/wiring/pane.ts");
+    const pane = code("wiring/pane.ts");
     assert.match(pane, /export function confirmMenuAccept\(/, "the menu-accept confirmation must live in the pane");
     const fn = pane.match(/export function confirmMenuAccept\([\s\S]{0,900}/);
     assert.match(fn[0], /new ConfirmModal\(/, "it must reuse the gesture-gated ConfirmModal, not a bespoke dialog");
@@ -650,7 +828,7 @@ describe("#101 dispositions-as-data: THE TRIPWIRE — the wrap adds no reachable
   });
 
   test("pane.ts: the request-changes modal's confirm button is gesture-gated like the adopt confirm", () => {
-    const paneRaw = readRaw("governor/wiring/pane.ts");
+    const paneRaw = readRaw("wiring/pane.ts");
     // Both modal confirm buttons are named `confirm`; every one must be addEventListener-wired
     // (the shared .onclick tripwire above covers the forgeable form) and each addEventListener
     // handler must gate on isRealGesture within its opening lines.
@@ -666,7 +844,7 @@ describe("#101 dispositions-as-data: THE TRIPWIRE — the wrap adds no reachable
   });
 
   test("descriptors drive the render but carry NO callable: the pane reads only labels/ids from them", () => {
-    const pane = code("governor/wiring/pane.ts");
+    const pane = code("wiring/pane.ts");
     // The pane renders from the declared set …
     assert.match(pane, /dispositionsFor\("pending-item"\)/);
     // … and never invokes anything ON a descriptor (data in, no capability out).
@@ -674,12 +852,12 @@ describe("#101 dispositions-as-data: THE TRIPWIRE — the wrap adds no reachable
     assert.ok(!/\bd\.(run|handler|action|perform)\b/.test(pane), "descriptors must carry no handler-shaped member");
   });
 
-  test("the MCP layer never references the revision GESTURE path (the two human verbs stay pane-only)", () => {
-    for (const rel of ["mcp/server.ts", "mcp/modules-mount.ts", ...mcpToolFiles()]) {
+  test("the published tool layer never references the revision GESTURE path (the two human verbs stay pane-only)", () => {
+    for (const rel of [...providerToolFiles(), "main.ts"]) {
       const src = code(rel);
       // The module-scope gesture callables + the modal prompt — the names that would indicate the
-      // MCP layer had grown a way to reach the human dispositions. (Prose like the module
-      // summary's "withdraw a revision request" is fine; these identifiers are not.)
+      // tool layer had grown a way to reach the human dispositions. (Prose like a tool description's
+      // "withdraw a revision request" is fine; these identifiers are not.)
       for (const name of ["performRequestChanges", "performWithdraw", "promptRequestChanges", "listRevising", "listProposed", "buildProposedList"]) {
         assert.ok(!new RegExp(`\\b${name}\\b`).test(src), `${rel} must not reference the gesture-path name ${name}`);
       }
@@ -691,7 +869,7 @@ describe("#101 dispositions-as-data: THE TRIPWIRE — the wrap adds no reachable
     // is also the active editor tab, that typing recorded genuine human input for the path, and
     // reconcile would misread the programmatic write as a human edit — silently baseline-advancing
     // the agent's unreviewed content without an Accept. Both writes must clear the record.
-    const wiringRaw = readRaw("governor/wiring/wiring.ts");
+    const wiringRaw = readRaw("wiring/wiring.ts");
     for (const fn of ["performRequestChanges", "performWithdraw"]) {
       const m = new RegExp(`async function ${fn}\\([^)]*\\)[^{]*\\{([\\s\\S]*?)\\n\\}`).exec(wiringRaw);
       assert.ok(m, `${fn} body found`);
@@ -700,29 +878,25 @@ describe("#101 dispositions-as-data: THE TRIPWIRE — the wrap adds no reachable
   });
 
   test("no command reaches the new dispositions (wiring/pane register zero commands — re-asserted post-#101)", () => {
-    assert.ok(!/\baddCommand\b/.test(code("governor/wiring/wiring.ts")));
-    assert.ok(!/\baddCommand\b/.test(code("governor/wiring/pane.ts")));
+    assert.ok(!/\baddCommand\b/.test(code("wiring/wiring.ts")));
+    assert.ok(!/\baddCommand\b/.test(code("wiring/pane.ts")));
   });
 
-  test("governance_submit_revision is the ONE new agent surface — NOT a governance-module tool, not accept-shaped", () => {
-    // It registers in server.ts (the registerVaultWriteTools shape); the governance MODULE still
-    // contributes ZERO tools, and the mounted module surface never sees it.
-    const { server, registry } = mount({ modules: { acceptance: { enabled: true } } });
-    assert.deepEqual(registry.describe().find((d) => d.id === "acceptance").tools, []);
-    assert.ok(!server.tools.has("governance_submit_revision"));
-    // The name deliberately does NOT match the forbidden matcher: submit-revision supplies a
-    // candidate; it is not an accept/adopt/baseline verb.
-    assert.ok(!FORBIDDEN.test("governance_submit_revision"));
-    // And server.ts registers it through the ORDINARY patched registrar (guard/queue/journal).
-    assert.match(code("mcp/server.ts"), /registerGovernanceRevisionTool\(server,/);
-    // The tool module reaches ONLY the pure kernel machinery — never the pane/wiring gesture path.
-    const tool = readRaw("mcp/tools-governance-revision.ts");
-    assert.ok(!/from ["'][^"']*\/governor\/wiring\/(pane|wiring)/.test(tool));
-    assert.match(tool, /governor\/kernel\/revision/);
+  test("governance_submit_revision is the ONE agent-expressible disposition, and it is not accept-shaped", () => {
+    // Pre-split this asserted that the tool registered in the host's server.ts rather than through
+    // the governance module (which contributed zero tools). Post-split there is no module to
+    // contrast with, so the surviving claim is the one that always mattered: the submit tool is
+    // built in the tool layer, published like any other, and reaches ONLY the pure kernel
+    // machinery — never the pane/wiring gesture path.
+    const main = code("main.ts");
+    assert.match(main, /buildRevisionTools\(/, "the revision tools are published from main.ts");
+    const tool = readRaw("tools/revision.ts");
+    assert.ok(!/from ["']\.\.\/wiring\/(pane|wiring)\.js["']/.test(tool), "the tool must not import the pane/wiring");
+    assert.match(tool, /from ["']\.\.\/kernel\/revision\.js["']/, "it reaches the pure kernel revision module");
   });
 
   test("the submit tool structurally cannot write acceptance: only setAcceptanceStatusProposed writes status", () => {
-    const revision = code("governor/kernel/revision.ts");
+    const revision = code("kernel/revision.ts");
     // The one status writer takes NO value parameter and hard-codes `proposed`.
     assert.match(revision, /export function setAcceptanceStatusProposed\(content: string\)/);
     assert.match(revision, /: proposed`/);
@@ -734,13 +908,21 @@ describe("#101 dispositions-as-data: THE TRIPWIRE — the wrap adds no reachable
 
 describe("governance settings-tab surface: the accept path stays module-private across the NEW home", () => {
   // The settings tab is a SECOND gesture-gated home for adopt-baseline + the auto-accept allowlist.
-  // The invariant is unchanged: connection-ui.ts (the settings tab) must never hold, receive, or be
-  // able to walk an accept-capable callable. It does so by calling a render function the governance
-  // module EXPOSES, handing it only a container — the controls are built INSIDE the module from its
-  // own module-private controller. These tests pin that arrangement at the source level.
+  // The invariant is unchanged: the file rendering the tab must never hold, receive, or be able to
+  // walk an accept-capable callable. It does so by calling a render function `wiring.ts` exposes,
+  // handing it only a container — the controls are built INSIDE that module from its own
+  // module-private controller.
+  //
+  // WHAT THE SPLIT DID TO THIS ARGUMENT, stated plainly rather than as an upgrade: pre-split the
+  // renderer was `connection-ui.ts`, in a different LAYER of the same plugin. It is now
+  // `settings-tab.ts`, in the SAME PACKAGE as the controller — so the argument is weaker than it
+  // was, not stronger. `settings-tab.ts`'s own header says the same thing. What holds the boundary
+  // is what always held it: the module-private WeakMaps in wiring.ts and pane.ts, and the fact
+  // that nothing accept-capable is exported. The tests below pin exactly that, and claim nothing
+  // from the package layout.
 
   test("wiring.ts exposes renderGovernanceSettings as a module-scope function (not an accept export)", () => {
-    const wiring = code("governor/wiring/wiring.ts");
+    const wiring = code("wiring/wiring.ts");
     assert.match(wiring, /export function renderGovernanceSettings\(\s*plugin[^,]*,\s*containerEl/,
       "renderGovernanceSettings(plugin, containerEl) must be the exposed entry point");
     // The accept-capable controller + its callables must NOT be exported — only the render fn and
@@ -755,7 +937,7 @@ describe("governance settings-tab surface: the accept path stays module-private 
   });
 
   test("renderGovernanceSettings builds its accept controls via the SHARED gesture-gated helpers", () => {
-    const wiring = code("governor/wiring/wiring.ts");
+    const wiring = code("wiring/wiring.ts");
     // It uses wireAdoptButton + renderAllowlist (the one addEventListener-gated implementation),
     // never a second inline `.addEventListener('click')` accept path or an `.onclick =` handler.
     assert.match(wiring, /wireAdoptButton\(/, "adopt must go through the shared wireAdoptButton");
@@ -769,7 +951,7 @@ describe("governance settings-tab surface: the accept path stays module-private 
   });
 
   test("renderGovernanceSettings renders only when governance is MOUNTED, else a hint (no live accept controls)", () => {
-    const wiring = code("governor/wiring/wiring.ts");
+    const wiring = code("wiring/wiring.ts");
     assert.match(wiring, /if\s*\(!isGovernanceMounted\(plugin\)\)/,
       "must gate the controls on the live-mount predicate");
     // The mount flag is a plain WeakSet membership — it holds NO callable, so it cannot itself be an
@@ -778,23 +960,34 @@ describe("governance settings-tab surface: the accept path stays module-private 
     assert.match(wiring, /mountedPlugins\.delete\(plugin\)/, "the mount flag is dropped on teardown");
   });
 
-  test("connection-ui.ts renders governance by handing the module a CONTAINER, receiving nothing back", () => {
-    const ui = code("connection-ui.ts");
-    // It calls the module's render fn with (this.plugin, section) — a container — and does NOT
-    // capture a return value (renderGovernanceSettings returns void; there is nothing to capture).
-    assert.match(ui, /if\s*\(mod\.id === "acceptance"\)\s*renderGovernanceSettings\(this\.plugin,\s*\w+\)/,
-      "the governance branch passes only a container, mirroring the vocab branch");
+  test("settings-tab.ts renders governance by handing the module a CONTAINER, receiving nothing back", () => {
+    // RETARGETED from connection-ui.ts (host source since S3c). Same three assertions, same
+    // reasoning, new subject.
+    const ui = code("settings-tab.ts");
+    assert.match(ui, /renderGovernanceSettings\(this\.plugin,\s*containerEl\)/,
+      "the settings tab passes only the plugin and a container");
     assert.ok(!/=\s*renderGovernanceSettings\(/.test(ui),
-      "connection-ui must not assign renderGovernanceSettings' result to anything");
-    // And it never references any accept-equivalent callable directly (its only governance touch is
-    // the render fn + the module-enabled toggle).
-    for (const name of ["performAccept", "performAdopt", "runGuardedAdopt", "setClassEnabled", "acceptNote", "revertNote", "buildController", "confirmAdopt"]) {
-      assert.ok(!new RegExp(`\\b${name}\\b`).test(ui), `connection-ui must not reference the accept-path fn ${name}`);
+      "settings-tab must not assign renderGovernanceSettings' result to anything");
+    assert.ok(!/\breturn\s+renderGovernanceSettings\(/.test(ui),
+      "settings-tab must not propagate a return value it is not supposed to have");
+    // And it never references any accept-equivalent callable directly — its only governance touch
+    // is the render fn, the pane-mount toggle, and the plain config fields.
+    for (const name of [
+      "performAccept", "performAdopt", "performRevert", "runGuardedAdopt", "setClassEnabled",
+      "acceptNote", "revertNote", "buildController", "confirmAdopt", "wireAdoptButton", "renderAllowlist",
+      "setBaseline", "stampAcceptedFrontmatter", "baselinesOf", "setLegacyWriteGuard",
+    ]) {
+      assert.ok(!new RegExp(`\\b${name}\\b`).test(ui), `settings-tab must not reference the accept-path fn ${name}`);
     }
+    // Its imports are the whole story: obsidian's UI primitives, the plain settings defaults, the
+    // render fn, and a type. Pinning the SET closes the class rather than the fourteen instances —
+    // a new import of anything accept-capable fails here even if it is spelled differently.
+    const specifiers = [...readRaw("settings-tab.ts").matchAll(/from\s+["']([^"']+)["']/g)].map((m) => m[1]);
+    assert.deepEqual(specifiers.sort(), ["./kernel/settings.js", "./settings.js", "./wiring/wiring.js", "obsidian"]);
   });
 
   test("the fuller auto-accept text is a SHARED constant (both surfaces render the same one, not two literals)", () => {
-    const pane = code("governor/wiring/pane.ts");
+    const pane = code("wiring/pane.ts");
     // The constant exists and the pane's allowlist renderer uses it (not an inline string that a
     // settings-tab copy could drift from).
     assert.match(pane, /export const AUTO_ACCEPT_DESC\s*=/, "AUTO_ACCEPT_DESC must be exported from pane.ts");
@@ -804,9 +997,9 @@ describe("governance settings-tab surface: the accept path stays module-private 
     // one definition. The RUNTIME value's fuller phrasing (spanning the source's string-concat
     // boundary) is pinned behaviorally in governance-settings-tab.test.mjs against the imported
     // constant; here we only pin the single-source STRUCTURE.
-    // The adopt description is likewise a shared constant the settings tab imports.
+    // The adopt description is likewise a shared constant the settings tab reaches through wiring.
     assert.match(pane, /export const ADOPT_BASELINE_DESC\s*=/, "ADOPT_BASELINE_DESC must be exported from pane.ts");
-    const wiring = code("governor/wiring/wiring.ts");
+    const wiring = code("wiring/wiring.ts");
     assert.match(wiring, /ADOPT_BASELINE_DESC/, "the settings tab must reference the shared ADOPT_BASELINE_DESC");
   });
 });
@@ -815,37 +1008,57 @@ describe("governance settings-tab surface: the accept path stays module-private 
 // #261 — the event-driven sweep drive + the published pending index.
 // Live-diagnosed: Chromium throttles/suspends renderer timers while the
 // Obsidian window is occluded, so the 2.5s poll interval does not tick during
-// unattended sessions — exactly when agents write. The journal-append nudge is
-// the throttling-immune drive; these pins keep it (and the index publisher)
-// from silently regressing back to timer-only.
+// unattended sessions — exactly when agents write. The journal-append nudge was
+// the throttling-immune drive.
+//
+// ⚠ WHAT S3c TOOK AWAY, AND WHAT NOTHING NOW ASSERTS. Pre-split, `main.ts`
+// wrapped the kernel's `journal.append` so every append called
+// `nudgeGovernanceQueue`, and the test below pinned that wrapper. The journal is
+// the HOST's file in the HOST's directory now, and the host's own main.ts
+// wrapper (packages/host/src/main.ts) nudges only its own write queue — it makes
+// no seam call to the provider, deliberately: its comment says the provider
+// "watches the journal file it already read and no longer needs the host to tell
+// it the file grew". THE PROVIDER DOES NOT DO THAT. `nudgeGovernanceQueue` has
+// exactly one caller in this package (`refreshProjections`, on the admission
+// path), and `wiring.ts` registers no watcher over `deps.journalDir`. So #261's
+// throttling-immune drive is NOT HELD BY EITHER PACKAGE, and the review queue is
+// back to the timer-only refresh whose failure #261 exists to fix. The pin was
+// therefore deleted rather than retargeted — there is no true fact to retarget it
+// to — and this comment is the record. What survives below is the nudge's own
+// shape (exported, mount-gated) so the entry point does not rot while the drive
+// is missing.
 // ---------------------------------------------------------------------------
 describe("governance module: #261 — journal nudge + pending-index publisher", () => {
   test("wiring.ts exports nudgeGovernanceQueue, gated on the mounted set (no-op unmounted)", () => {
-    const wiring = code("governor/wiring/wiring.ts");
+    const wiring = code("wiring/wiring.ts");
     assert.match(wiring, /export function nudgeGovernanceQueue\s*\(/, "the nudge must be exported for main.ts");
     const body = wiring.slice(wiring.indexOf("export function nudgeGovernanceQueue"));
     assert.match(body.slice(0, 300), /mountedPlugins\.has\(plugin\)/, "the nudge must check the live-mount set first");
   });
 
-  test("main.ts nudges the governance queue after every journal append", () => {
+  test("main.ts still calls the nudge (the entry point is live, NOT that the journal drives it)", () => {
+    // Deliberately narrow, and labelled so it is not misread as the retired journal-append pin:
+    // this asserts only that the export has a caller, so it cannot rot into dead code while the
+    // event-driven drive is missing. It asserts NOTHING about throttling immunity.
     const main = code("main.ts");
-    assert.match(main, /nudgeGovernanceQueue/, "main.ts must import and call the nudge");
-    assert.match(main, /journal\.append\s*=/, "the kernel journal's append must be wrapped with the nudge");
+    assert.match(main, /nudgeGovernanceQueue\(this\)/, "main.ts must still reach the nudge");
+    assert.ok(!/journal\.append\s*=/.test(main),
+      "the journal is the host's file now — a wrapper here would be writing another plugin's audit path");
   });
 
   test("refresh() publishes the pending index at the plugin-dir governance path", () => {
-    const wiring = code("governor/wiring/wiring.ts");
+    const wiring = code("wiring/wiring.ts");
     assert.match(wiring, /serializePendingIndex\(pending/, "refresh must serialize the freshly computed queue");
     assert.match(wiring, /pendingIndexPath: `\$\{govDir\}\/pending-index\.json`/, "the index lives beside the acceptance log");
   });
 
   test("unmount retracts the published index (absent index ⇒ the tool's explicit not-published state)", () => {
-    const wiring = code("governor/wiring/wiring.ts");
+    const wiring = code("wiring/wiring.ts");
     assert.match(wiring, /adapter\.remove\(paths\(plugin\)\.pendingIndexPath\)/, "teardown must remove the published index");
   });
 
   test("the poll interval callback contains the rejection guard (no unhandled rejection into the interval)", () => {
-    const wiring = code("governor/wiring/wiring.ts");
+    const wiring = code("wiring/wiring.ts");
     assert.match(wiring, /pollJournal\(plugin\)\.catch\(/, "poll rejections must die in a console.error, never escape");
   });
 });
