@@ -334,7 +334,7 @@ function formatViolation(v) {
     `${relative(REPO_ROOT, v.file)}:${v.line} — unapproved invariant+security claim:\n` +
     `    "${v.text}"\n` +
     `  → verify the current implementation and perimeter tests substantiate this claim, then add\n` +
-    `    it deliberately to packages/plugin/tests/docs-invariant-claims-allowlist.md — or narrow/\n` +
+    `    it deliberately to packages/host/tests/docs-invariant-claims-allowlist.md — or narrow/\n` +
     `    qualify the sentence in the doc instead.`
   );
 }

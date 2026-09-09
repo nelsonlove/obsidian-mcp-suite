@@ -283,7 +283,7 @@ export interface JdScaffoldSource {
   createFolder(path: string): Promise<void>;
   /** Link-healing rename — must go through app.fileManager.renameFile in the
    *  live adapter, never vault.rename. The host's own link-healing source scan
-   *  globs `packages/plugin/src/**` and can no longer see this code, so this
+   *  globs `packages/host/src/**` and can no longer see this code, so this
    *  package carries its own pin (tests/link-healing.test.mjs). */
   renameFile(fromPath: string, toPath: string): Promise<void>;
   /** Today's date, `YYYY-MM-DD`. Injected (not `new Date()` inline) so tests

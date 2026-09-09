@@ -1,12 +1,28 @@
 /**
- * pending-review.test.mjs — slice B3b: the read-side `obsidian_pending_review`
- * tool over the governance module's published review-queue index (#261: the
- * index moved from the retired Stewardship standalone's path to the plugin dir,
- * and absence became an EXPLICIT `published: false` — never a silent empty
- * queue).
+ * pending-review.test.mjs — slice B3b: the read-side review-queue tool over the
+ * index the review pane publishes (#261: the index moved from the retired
+ * Stewardship standalone's path to the plugin dir, and absence became an
+ * EXPLICIT `published: false` — never a silent empty queue).
  *
- * S3c MOVED THE REGISTRATION, NOT THE TOOL. `registerPendingReviewTools(server,
- * ctx)` is now `buildPendingReviewTools(ctx): SdkToolSpec[]`, published through
+ * ── THE TOOL WAS RENAMED, AND THAT IS THE FIRST THING TO KNOW ───────────────
+ *
+ * `obsidian_pending_review` is `governance_pending_review` since 2026-09-08
+ * (Nelson's ruling). The first S3c draft kept the old spelling by grandfathering
+ * it, which would have made the host's exact-name table an exception to **F1** —
+ * the refusal of any published external tool name beginning `obsidian_`. The
+ * ruling: an F1 exception, even one gated on a provider id, permanently weakens
+ * a namespace-integrity rule and becomes the precedent for the next one; the
+ * locked decision forbids renames "for zero semantic gain" and this rename HAS
+ * gain, because after the split the `obsidian_` prefix branded a governance tool
+ * as a host built-in, which is an architectural lie; and the breakage is near
+ * zero, since MCP tools are discovered per session. **The tool is off the
+ * do-not-rename list; `governance_revisions` and `governance_submit_revision`
+ * stay on it.** The tests below therefore pin the PREFIXING carve-out (the table
+ * lets the bare name through) and, separately and by planted violation, that F1
+ * itself has no bypass left.
+ *
+ * S3c ALSO MOVED THE REGISTRATION. `registerPendingReviewTools(server, ctx)` is
+ * now `buildPendingReviewTools(ctx): SdkToolSpec[]`, published through
  * `vault-mcp-api` like any third-party publisher's tool. So the tests run the
  * specs through `tests/host-shim.mjs` rather than a fake `McpServer`: what they
  * assert is the envelope an AGENT sees (`ok(data)` / `Error [code]: message`),
@@ -14,25 +30,28 @@
  * host's `ok`/`fail`. The tool itself is obsidian-free (defined over an injected
  * `PendingReviewSource`), so everything here still runs headlessly.
  *
- * TWO THINGS THE MOVE CHANGED, and both are asserted below rather than papered
- * over. (1) The published NAME survives only because of the host's closed
- * grandfather table — an ordinary external tool may not take an `obsidian_*`
- * name at all, so this one is a carve-out and is pinned as one. (2) The
- * `readOnly: true` CLAIM is distrusted: the host registers it as MUTATING unless
- * the operator lists `governor` in `trustedReadOnlyPlugins`, so the old
- * `readOnlyHint: true` assertion is now a claim-versus-conclusion pair. What
- * that buys operationally is stated in `publication.test.mjs`.
+ * ONE MORE THING THE MOVE CHANGED: the `readOnly: true` CLAIM is distrusted. The
+ * host registers this tool as MUTATING unless the operator lists `governor` in
+ * `trustedReadOnlyPlugins`, so the old `readOnlyHint: true` assertion is now a
+ * claim-versus-conclusion pair. What that buys operationally — refused wholesale
+ * under an active allowlist, because it carries no path key — is stated in
+ * `publication.test.mjs`.
+ *
+ * NOTE what did NOT move: the on-disk index. It is still read from
+ * `<governor plugin dir>/governance/pending-index.json`, because this plugin
+ * kept the id `governor` and its authority state stayed put. The adapter tests
+ * at the bottom pin exactly that, and they are the reason the rename is a tool
+ * NAME change and nothing more.
  *
  * Covers: the pending list from a fixture index; the publish→read round-trip
- * against the REAL serializer the governance module uses; allowlist-filtering
- * drops paths outside the caller's visible set; explicit not-published /
- * unreadable states; schema-drift tolerance; and the plugin-dir-relative
- * adapter path.
+ * against the REAL serializer the review pane uses; allowlist-filtering drops
+ * paths outside the caller's visible set; explicit not-published / unreadable
+ * states; schema-drift tolerance; and the plugin-dir-relative adapter path.
  */
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { publishInto } from "./host-shim.mjs";
+import { publishInto, HOST_GRANDFATHERED_TOOL_NAMES } from "./host-shim.mjs";
 import {
   buildPendingReviewTools,
   parsePendingIndex,
@@ -61,53 +80,68 @@ function sourceOf(raw) {
 function toolServer({ raw = JSON.stringify(INDEX), settings = { readOnly: false, allowlist: [] }, trusted = false } = {}) {
   const specs = buildPendingReviewTools({ source: sourceOf(raw), getSettings: () => settings });
   const { tools } = publishInto(specs, { trusted });
-  const call = (name = "obsidian_pending_review", args = {}) => tools.get(name).handler(args);
+  const call = (name = "governance_pending_review", args = {}) => tools.get(name).handler(args);
   return { specs, tools, call };
 }
 
 // ── publication shape ─────────────────────────────────────────────────────────
 
 describe("publication", () => {
-  test("builds exactly one spec, and it publishes UNPREFIXED as obsidian_pending_review", () => {
+  test("builds exactly one spec, and it publishes BARE as governance_pending_review", () => {
     const { specs, tools } = toolServer();
-    assert.deepEqual(specs.map((s) => s.name), ["obsidian_pending_review"]);
-    assert.deepEqual([...tools.keys()], ["obsidian_pending_review"]);
-    assert.equal(tools.get("obsidian_pending_review").grandfathered, true);
+    assert.deepEqual(specs.map((s) => s.name), ["governance_pending_review"]);
+    assert.deepEqual([...tools.keys()], ["governance_pending_review"]);
+    assert.equal(tools.get("governance_pending_review").bare, true);
+    // The rename, pinned as such: the old spelling must not survive anywhere in
+    // the published surface, because its whole problem was that an agent reading
+    // the tool list could not tell a governance tool from a host built-in.
+    assert.ok(!specs.some((s) => s.name.startsWith("obsidian_")), "no obsidian_-prefixed spec is built any more");
   });
 
-  test("the name is a CARVE-OUT, not the ordinary rule — proven against two planted violations", () => {
+  test("the bare name is a CARVE-OUT OF THE PREFIX RULE ONLY — proven against two planted violations", () => {
     // Instrument discipline: the assertion above is worthless unless the shim
-    // would have said something different for a name it does NOT grandfather.
-    // Two plants, one per half of the host's rule.
+    // would say something different for a name the table does NOT list. Two
+    // plants, one per rule, because the whole point of Nelson's ruling is that
+    // these are TWO rules and the table touches only the first.
     //
-    // (a) OWNER-GATED. The table names both the spelling and the single owner
-    //     id, so the same spec published by anyone else takes the ordinary
-    //     `<sanitized owner>_<bare name>` form. It does not collide with the
-    //     reserved namespace — `some_other_plugin_obsidian_pending_review` does
-    //     not START with `obsidian_` — it simply is not this tool.
+    // (a) THE PREFIX RULE, owner-gated. The table names both the spelling and
+    //     the single owner id, so the same spec published by anyone else takes
+    //     the ordinary `<sanitized owner>_<bare name>` form.
     const { specs } = toolServer();
     const foreign = publishInto(specs, { owner: "some-other-plugin" }).tools;
-    assert.deepEqual([...foreign.keys()], ["some_other_plugin_obsidian_pending_review"]);
-    assert.equal(foreign.get("some_other_plugin_obsidian_pending_review").grandfathered, false);
-
-    // (b) NAME-GATED, and the table is CLOSED. An ungrandfathered name never
-    //     KEEPS its spelling — `obsidian_not_in_the_table` from this plugin
-    //     publishes as `governor_obsidian_not_in_the_table`, which is a rename,
-    //     not a refusal. So the shim's F1 branch is proven with the plant that
-    //     actually reaches it: an owner whose SANITIZED id already begins
-    //     `obsidian`, which is the only way a published name can land in the
-    //     reserved namespace without the table. (This mirrors the host's own
-    //     `external-tools.test.mjs` F1 case, owner `obsidian-read` + name `note`.)
+    assert.deepEqual([...foreign.keys()], ["some_other_plugin_governance_pending_review"]);
+    assert.equal(foreign.get("some_other_plugin_governance_pending_review").bare, false);
+    // …and a name this plugin owns but the table does not list is prefixed too,
+    // so "bare" is a property of the table rather than of being `governor`.
     assert.deepEqual(
-      [...publishInto([{ ...specs[0], name: "obsidian_not_in_the_table" }]).tools.keys()],
-      ["governor_obsidian_not_in_the_table"],
-      "a sixth obsidian_* name from this plugin is RENAMED, never grandfathered",
+      [...publishInto([{ ...specs[0], name: "governance_not_in_the_table" }]).tools.keys()],
+      ["governor_governance_not_in_the_table"],
+      "the table is CLOSED — a new tool takes the ordinary namespaced form",
+    );
+
+    // (b) F1, WHICH THE TABLE DOES NOT TOUCH. The reserved-namespace refusal is
+    //     unconditional again: there is no branch that lets a listed name
+    //     through it, which is exactly why the tool was renamed instead of
+    //     grandfathered. The plant that reaches F1 is an owner whose SANITIZED
+    //     id already begins `obsidian` (the host's own `external-tools.test.mjs`
+    //     uses owner `obsidian-read` + name `note`) — a bare `obsidian_*` SPEC
+    //     name from this plugin would merely be prefixed away, which is the
+    //     asymmetry worth reading twice.
+    assert.deepEqual(
+      [...publishInto([{ ...specs[0], name: "obsidian_anything" }]).tools.keys()],
+      ["governor_obsidian_anything"],
+      "an obsidian_* spec name from this plugin is renamed by the prefix rule, never refused by F1",
     );
     assert.throws(
       () => publishInto([{ ...specs[0], name: "note" }], { owner: "obsidian-read" }),
       /collides with the reserved obsidian_\* namespace/,
-      "the shim's F1 branch fires — the carve-out above is not the shim simply never refusing",
+      "F1 fires — the bare-name assertions above are not a shim that simply never refuses",
     );
+    // And the table itself may not smuggle one in: no listed name begins
+    // `obsidian_`, so F1 has nothing to make an exception for.
+    for (const name of HOST_GRANDFATHERED_TOOL_NAMES.keys()) {
+      assert.ok(!name.startsWith("obsidian_"), `${name} would be an F1 exception by the back door`);
+    }
   });
 
   test("it CLAIMS read-only; an untrusted claim registers as MUTATING", () => {
@@ -117,24 +151,24 @@ describe("publication", () => {
     // deliberate cost of the split, not an oversight. `destructiveHint` is false
     // on both presets, so it does not move.
     const { tools } = toolServer();
-    const def = tools.get("obsidian_pending_review").def;
+    const def = tools.get("governance_pending_review").def;
     assert.equal(def.claimsReadOnly, true);
     assert.equal(def.annotations.readOnlyHint, false, "untrusted ⇒ mutating");
     assert.equal(def.annotations.destructiveHint, false);
 
-    const trusted = toolServer({ trusted: true }).tools.get("obsidian_pending_review").def;
+    const trusted = toolServer({ trusted: true }).tools.get("governance_pending_review").def;
     assert.equal(trusted.annotations.readOnlyHint, true, "the operator can opt into believing the claim");
     assert.equal(trusted.annotations.idempotentHint, true);
   });
 
   test("takes no arguments — nothing a caller could use to change state", () => {
     const { tools } = toolServer();
-    assert.deepEqual(tools.get("obsidian_pending_review").def.inputSchema, {});
+    assert.deepEqual(tools.get("governance_pending_review").def.inputSchema, {});
   });
 
   test("description promises read-only, no accept verb, and advisory-only", () => {
     const { tools } = toolServer();
-    const desc = tools.get("obsidian_pending_review").def.description.toLowerCase();
+    const desc = tools.get("governance_pending_review").def.description.toLowerCase();
     assert.match(desc, /read-only/);
     assert.match(desc, /accept/); // it says it CANNOT accept
     assert.match(desc, /advisory|blocks nothing|avoid/);
@@ -295,7 +329,7 @@ describe("absent / unreadable index is an EXPLICIT published: false, never a bar
         getSettings: () => ({ readOnly: false, allowlist: [] }),
       }),
     );
-    const res = await tools.get("obsidian_pending_review").handler({});
+    const res = await tools.get("governance_pending_review").handler({});
     assert.equal(res.structuredContent.published, false);
     assert.deepEqual(res.structuredContent.pending, []);
     assert.notEqual(res.isError, true);

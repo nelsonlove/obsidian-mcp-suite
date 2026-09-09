@@ -2,7 +2,7 @@
 
 ## Changes Made
 
-### `packages/plugin/CLAUDE.md`
+### `packages/host/CLAUDE.md`
 Appended one bullet to the "Locked decisions" list documenting the external tool registry: the `src/mcp/external-tools.ts` location, the `plugin.api` surface (`apiVersion: 1`, `registerTools`/`unregisterTools`), the `vault-mcp:ready` event, the JSON-Schema→zod boundary via `json-schema-to-zod.ts`, the mutating-unless-`readOnlyHint: true` polarity (inverse of built-ins), guarded registration through `buildMcpServer`, snapshot-per-connection semantics, and the `vault-mcp-api` SDK reference.
 
 ### `README.md` (repo root)

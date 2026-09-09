@@ -65,7 +65,7 @@ export async function claudeRemove(bin: string): Promise<void> {
 
 // ── #38: auto-provision the vault-mcp-connect Claude Code plugin ──────────────
 // The connect plugin (SessionStart health hook + /vault-mcp-status) ships from
-// the nelsonlove/claude-code-plugins marketplace at packages/plugin/cc-plugin.
+// the nelsonlove/claude-code-plugins marketplace at packages/host/cc-plugin.
 // The MCP server itself stays a DIRECT `claude mcp add` registration — bundling
 // it into a CC plugin would rename the tools to mcp__plugin_*, breaking every
 // mcp__governor__* allowlist reference (decision 2026-07-10; prefix was mcp__vault-mcp__* before the 0.12.0 id migration).

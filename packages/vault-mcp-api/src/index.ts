@@ -3,7 +3,7 @@ import type { Plugin } from "obsidian";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
-// ── Boundary types (mirror packages/plugin/src/mcp/external-tools.ts) ────────
+// ── Boundary types (mirror packages/host/src/mcp/external-tools.ts) ────────
 
 export interface JsonSchemaObject {
   type: "object";
@@ -21,7 +21,7 @@ export interface ExternalToolSpec {
 
 /**
  * The host's tool-publishing api, mirrored from
- * packages/plugin/src/mcp/external-tools.ts and pinned against it by
+ * packages/host/src/mcp/external-tools.ts and pinned against it by
  * tests/contract.test.ts.
  *
  * `unregisterTools(ownerPluginId)` was REMOVED from both sides by S2 of the

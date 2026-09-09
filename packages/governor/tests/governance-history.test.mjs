@@ -181,7 +181,7 @@ describe("renderHistoryEntries — display-only, text nodes only", () => {
 test("history.ts references no accept/baseline/log-write capability and imports no obsidian runtime", () => {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const src = fs
-    .readFileSync(path.join(here, "..", "src", "governor", "kernel", "history.ts"), "utf8")
+    .readFileSync(path.join(here, "..", "src", "kernel", "history.ts"), "utf8")
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/([^:])\/\/[^\n]*/g, "$1")
     .replace(/^\/\/[^\n]*/gm, "");

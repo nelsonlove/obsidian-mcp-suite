@@ -16,7 +16,7 @@
 //
 // SHAPE: this module is a PURE function over text, and the git plumbing lives
 // in `.githooks/pre-commit`. That split is what makes the detection testable —
-// `packages/plugin/tests/secret-scan.test.mjs` drives `findSecrets` against
+// `packages/host/tests/secret-scan.test.mjs` drives `findSecrets` against
 // fixtures directly, including a planted positive per rule, so the scan is
 // proven to fire BEFORE it is trusted to stay silent. A scanner that silently
 // matches nothing is worse than no scanner, because it is believed.

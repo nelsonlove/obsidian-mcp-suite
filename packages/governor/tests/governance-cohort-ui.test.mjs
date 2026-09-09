@@ -219,7 +219,7 @@ describe("§15 — the cohort gesture is gated identically", () => {
   });
 
   test("the pane wires Group & admit AND the successor through the shared gate; one gesture covers one claim — pinned", () => {
-    const raw = fs.readFileSync(path.join(HERE, "..", "src", "governor", "wiring", "pane.ts"), "utf8");
+    const raw = fs.readFileSync(path.join(HERE, "..", "src", "wiring", "pane.ts"), "utf8");
     const lines = raw.split("\n");
     for (const el of ["groupBtn", "sucBtn"]) {
       let found = false;
@@ -244,7 +244,7 @@ describe("§15 — the cohort gesture is gated identically", () => {
   });
 
   test("vacuity: the one-admission-per-gate scan CATCHES the violation it exists to catch", () => {
-    const raw = fs.readFileSync(path.join(HERE, "..", "src", "governor", "wiring", "pane.ts"), "utf8");
+    const raw = fs.readFileSync(path.join(HERE, "..", "src", "wiring", "pane.ts"), "utf8");
     const body = extractMethodBody(raw, "async decideCohort");
     assert.ok(scanOneAdmissionPerGate(body), "the real body passes");
     // The exact regression the review demonstrated: auto-admitting the split
@@ -272,7 +272,7 @@ describe("§15 — the cohort gesture is gated identically", () => {
   });
 
   test("vacuity: the pins match real wiring sites", () => {
-    const raw = fs.readFileSync(path.join(HERE, "..", "src", "governor", "wiring", "pane.ts"), "utf8");
+    const raw = fs.readFileSync(path.join(HERE, "..", "src", "wiring", "pane.ts"), "utf8");
     assert.ok(/groupBtn\.addEventListener\(/.test(raw));
     assert.ok(/sucBtn\.addEventListener\(/.test(raw));
   });

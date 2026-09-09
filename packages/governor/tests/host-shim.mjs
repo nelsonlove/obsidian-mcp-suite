@@ -15,18 +15,18 @@
 // three are `packages/crosssession/tests/host-shim.mjs`'s, verbatim in intent;
 // the fourth is this package's alone.
 //
-//   1. THE PUBLISHED NAME, including THE GRANDFATHER TABLE. The ordinary rule is
+//   1. THE PUBLISHED NAME, including THE EXACT-NAME TABLE. The ordinary rule is
 //      `<sanitized owner id>_<bare name>` and this plugin's id is `governor`, so
 //      a new tool would publish as `governor_<name>`. These five do not: the host
 //      carries a closed table naming both the spelling AND the single owner id
-//      allowed to publish it unprefixed, so `governance_revisions` stays
-//      `governance_revisions` and `obsidian_pending_review` survives the F1
-//      `obsidian_*` refusal. The table below is a SNAPSHOT of the host's
-//      (`packages/host/src/mcp/external-tools.ts`), carried as DATA. The pin that
-//      SHOULD fire when the host's table changes is the host's own test over the
-//      live `GRANDFATHERED_TOOL_NAMES` / `publishedToolName`, never this copy —
-//      and as of 2026-09-08 THAT TEST DOES NOT EXIST: `packages/host/tests/
-//      external-tools.test.mjs` covers F1 only through the ungrandfathered case
+//      allowed to publish it bare, so `governance_revisions` stays
+//      `governance_revisions` rather than becoming
+//      `governor_governance_revisions`. The table below is a SNAPSHOT of the
+//      host's (`packages/host/src/mcp/external-tools.ts`), carried as DATA. The
+//      pin that SHOULD fire when the host's table changes is the host's own test
+//      over the live `GRANDFATHERED_TOOL_NAMES` / `publishedToolName`, never this
+//      copy — and as of 2026-09-08 THAT TEST DOES NOT EXIST: the host's
+//      `external-tools.test.mjs` covers F1 only through the ungrandfathered case
 //      (owner `obsidian-read` + name `note`), and neither it nor
 //      `packages/vault-mcp-api/tests/` names any of the five spellings. So this
 //      snapshot is currently the ONLY place the five names are asserted, which
@@ -41,21 +41,36 @@
 //      cannot inspect, so it is believed only when the RAW plugin id is listed in
 //      `trustedReadOnlyPlugins` (empty by default). Untrusted ⇒ registered as
 //      MUTATING, which is why `governance_mandates`, `governance_revisions` and
-//      `obsidian_pending_review` are blocked in read-only mode despite reading
+//      `governance_pending_review` are blocked in read-only mode despite reading
 //      nothing. `trusted: true` opts into believing the claim, for the tests that
 //      pin the difference. The base presets are `@vault-mcp/core`'s
 //      SHARED_ANNOTATIONS RO/RW, reproduced literally — note `destructiveHint`
 //      defaults to FALSE on both, and only an explicit `destructive` on the spec
 //      overrides it.
-//   4. THE F1 REFUSAL, but only far enough to keep the carve-out honest. A
-//      PUBLISHED name beginning `obsidian_` is refused unless the table
-//      grandfathers it for that exact owner. Note what that does and does not
-//      mean, because it is easy to overstate: an ungrandfathered `obsidian_x`
-//      from owner `governor` publishes as `governor_obsidian_x` and is never
-//      refused — F1 only bites when the OWNER ID itself sanitizes into the
-//      reserved namespace. The tests plant both cases.
+//   4. F1 — THE `obsidian_*` NAMESPACE REFUSAL, UNCONDITIONAL, WITH NO BYPASS.
 //
-// It deliberately does NOT reproduce the F3 pathless-tool block, the path
+// ── WHY POINT 4 SAYS "NO BYPASS", AND WHY THAT SENTENCE MATTERS ─────────────
+//
+// The first draft of this shim reproduced an F1 CARVE-OUT, because the first
+// draft of the host's table held `obsidian_pending_review` and let that one name
+// through the reserved namespace. **Nelson ruled against it on 2026-09-08 and
+// the tool was RENAMED to `governance_pending_review` instead.** The reasoning
+// binds anything that comes here next: an F1 exception, even one gated on a
+// provider id, permanently weakens a namespace-integrity rule and becomes the
+// precedent for the next exception; the locked decision forbids renames "for
+// zero semantic gain" and this rename HAS gain, because the `obsidian_` prefix
+// branded a governance tool as a host built-in, which after the split is an
+// architectural lie; and the breakage is near zero, since MCP tools are
+// discovered per session.
+//
+// So the table below and F1 are TWO SEPARATE RULES and this shim keeps them
+// separate: the table carves out the OWNER-PREFIXING rule only, and F1 refuses a
+// published `obsidian_*` name whoever asks, including a name the table lists.
+// There is deliberately no dormant exception branch to reactivate. A test plants
+// a violation against each half, because a carve-out assertion that would pass
+// under a shim that never refuses anything asserts nothing.
+//
+// This shim deliberately does NOT reproduce the F3 pathless-tool block, the path
 // allowlist, the write queue, the write journal, read-only mode, the kernel
 // arguments, or the record-immutability guard. Those are host code with host
 // tests, and a second copy could drift into asserting a posture the host does
@@ -76,15 +91,22 @@ export const OWNER = sanitizeOwnerId(PLUGIN_ID);
 /**
  * A SNAPSHOT of the host's `GRANDFATHERED_TOOL_NAMES` — bare name → the one
  * owner id allowed to publish it unprefixed. Carried as data for the reason
- * stated in the header: the live pin is the host's own test, this copy exists so
- * a change on either side surfaces as a diff in review.
+ * stated in the header.
+ *
+ * Four of the five are here for CONTINUITY (they were on the wire when the split
+ * happened). `governance_pending_review` is here for FAMILY CONSISTENCY: it is
+ * the rename, and four bare names beside one `governor_governance_pending_review`
+ * would recreate, in the tool list an agent reads, exactly the incoherence the
+ * rename removed.
  *
  * IT IS CLOSED on the host's side and must stay closed here. A sixth entry in
  * this file would assert a carve-out the host does not grant, which is exactly
- * the drift a shim is supposed to make visible rather than hide.
+ * the drift a shim is supposed to make visible rather than hide. NO ENTRY MAY
+ * BEGIN `obsidian_` — F1 is asked of grandfathered names too, so such an entry
+ * would be unpublishable rather than privileged.
  */
 export const HOST_GRANDFATHERED_TOOL_NAMES = new Map([
-  ["obsidian_pending_review", "governor"],
+  ["governance_pending_review", "governor"],
   ["governance_revisions", "governor"],
   ["governance_submit_revision", "governor"],
   ["governance_mandate_draft", "governor"],
@@ -96,7 +118,9 @@ export const HOST_GRANDFATHERED_TOOL_NAMES = new Map([
  * copied as DATA so this package can assert which of its own argument names the
  * host would recognize. The host owns the enforcement; this is only the list the
  * assertion reads against, spelled out so a host addition (or removal) shows up
- * as a diff in review rather than silently changing this package's posture.
+ * as a diff in review rather than silently changing this package's posture. The
+ * pin that actually fires when the host changes the list is its own
+ * `guard.test.mjs` over the live `collectPaths`.
  *
  * `note_path` joined the host's list on 2026-09-07 (the mutating tier's round
  * one). No tool in THIS package names it — `governance_submit_revision` has
@@ -110,10 +134,8 @@ export const HOST_PATH_KEYS = [
 
 /** The host's `publishedToolName` (`external-tools.ts`), verbatim over the snapshot. */
 export function publishedToolName(ownerPluginId, bareName) {
-  if (HOST_GRANDFATHERED_TOOL_NAMES.get(bareName) === ownerPluginId) {
-    return { toolName: bareName, grandfathered: true };
-  }
-  return { toolName: `${sanitizeOwnerId(ownerPluginId)}_${bareName}`, grandfathered: false };
+  if (HOST_GRANDFATHERED_TOOL_NAMES.get(bareName) === ownerPluginId) return bareName;
+  return `${sanitizeOwnerId(ownerPluginId)}_${bareName}`;
 }
 
 /** The host's `ok()` (from `@vault-mcp/core` via `mcp/helpers.ts`). */
@@ -139,22 +161,25 @@ const RW = { readOnlyHint: false, destructiveHint: false, idempotentHint: false,
  * Publish SDK tool specs the way the host does.
  *
  * `owner` defaults to this plugin's id; a test passes another to prove the
- * grandfather carve-out is gated on the owner as well as on the name.
+ * exact-name carve-out is gated on the owner as well as on the name.
  *
- * Returns `{ tools }`, a Map from the PUBLISHED name to `{ def, spec, handler }`
- * — the same shape the host's own `fakeServer` produces, so assertions read the
- * same on both sides of the split. `def.claimsReadOnly` records the publisher's
- * raw assertion beside the host's conclusion, because the gap between them IS
- * this package's allowlist posture.
+ * Returns `{ tools }`, a Map from the PUBLISHED name to
+ * `{ def, spec, bare, handler }` — the same shape the host's own `fakeServer`
+ * produces, so assertions read the same on both sides of the split. `bare` is
+ * true when the table let the name through unprefixed; `def.claimsReadOnly`
+ * records the publisher's raw assertion beside the host's conclusion, because
+ * the gap between them IS this package's allowlist posture.
  *
- * Throws on an F1 collision, exactly as `ExternalToolRegistry.registerTools`
- * does — see the header's point 4.
+ * Throws on an F1 collision, unconditionally, exactly as
+ * `ExternalToolRegistry.registerTools` does.
  */
 export function publishInto(specs, { trusted = false, owner = PLUGIN_ID } = {}) {
   const tools = new Map();
   for (const spec of specs) {
-    const { toolName, grandfathered } = publishedToolName(owner, spec.name);
-    if (!grandfathered && toolName.startsWith("obsidian_")) {
+    const toolName = publishedToolName(owner, spec.name);
+    // F1, asked of EVERY name including a listed one — see the header. There is
+    // no `grandfathered &&` guard here and there must never be one again.
+    if (toolName.startsWith("obsidian_")) {
       throw new TypeError(`vault-mcp: tool name '${toolName}' collides with the reserved obsidian_* namespace`);
     }
     const claimsReadOnly = spec.readOnly === true;
@@ -168,7 +193,7 @@ export function publishInto(specs, { trusted = false, owner = PLUGIN_ID } = {}) 
     tools.set(toolName, {
       def,
       spec,
-      grandfathered,
+      bare: toolName === spec.name,
       handler: async (args) => {
         try {
           // F5: the host normalizes a handler's return value to a plain object
@@ -184,9 +209,4 @@ export function publishInto(specs, { trusted = false, owner = PLUGIN_ID } = {}) 
     });
   }
   return { tools };
-}
-
-/** The agent-visible text of a result envelope — the string a refusal actually reads as. */
-export function errText(res) {
-  return res?.content?.[0]?.text ?? "";
 }

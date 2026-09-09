@@ -8,7 +8,7 @@
 // `app.fileManager.renameFile`, Obsidian's link-updating rename, and NEVER
 // `app.vault.rename`, which moves the bytes and orphans every backlink. While
 // this was a host module that rule was covered by the host's own link-healing
-// suite — including a source scan that globs `packages/plugin/src/**/*.ts`,
+// suite — including a source scan that globs `packages/host/src/**/*.ts`,
 // which can no longer see this file. The RULE came with the code, so this
 // package carries its own pin: tests/link-healing.test.mjs drives this adapter
 // against a fake app whose `vault.rename` THROWS, and globs this package's own

@@ -10,7 +10,7 @@
  * and `stale` when they disagree.
  *
  * `enabled` and `loaded` are kept apart for the same reason, and this is the
- * plugin's standing rule (packages/plugin/CLAUDE.md): `enabledPlugins` can name
+ * plugin's standing rule (packages/host/CLAUDE.md): `enabledPlugins` can name
  * a configured-but-uninstalled plugin, so any decision about what is actually
  * running reads the loaded instance. `obsidian_plugin_reload` refusing exactly
  * that stale-entry case is pinned below.

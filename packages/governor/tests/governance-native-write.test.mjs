@@ -73,32 +73,48 @@ function memoryIo() {
 
 // ── the action contract ──────────────────────────────────────────────────────
 
-describe("note.write@1 — the contract, now read from @vault-mcp/core", () => {
-  test("native, content-classed, proposal-mutation mode, durable operation record", () => {
-    assert.equal(NOTE_WRITE_V1.native, true);
-    assert.deepEqual(NOTE_WRITE_V1.changeClasses, ["content"]);
-    assert.deepEqual(NOTE_WRITE_V1.modes, ["proposal-mutation"]);
-    assert.equal(NOTE_WRITE_V1.retention.operation, "durable-for-mutation");
+describe("note.write@1 — the part of the contract @vault-mcp/core publishes", () => {
+  // S3c PUBLISHED A TRIPLE, NOT THE WHOLE ACTION. `NOTE_WRITE_ACTION` in
+  // `packages/core/src/action-contract.ts` carries exactly `{id, version,
+  // changeClasses}` — the part two plugins must agree on byte-for-byte, because
+  // the observer skips a write whose `operation.action` is not this id and
+  // checks derived classes against these declared ones. The FULL action
+  // definition (`native`, `modes`, `retention`, `observations`, `inputs`,
+  // `scope.argumentKeys`) stayed with the host's registry
+  // (`packages/host/src/kernel/operations/actions/note-write.ts`) and is not
+  // importable from here.
+  //
+  // TWO ASSERTIONS WERE LOST TO THAT, and neither is covered on the host's side
+  // — no host test names `NOTE_WRITE` at all as of 2026-09-08:
+  //
+  //   • the capture/retention contract (`defaultCapture: "ephemeral"`,
+  //     `supportsProposal: false`, `retention.operation: "durable-for-mutation"`,
+  //     `modes: ["proposal-mutation"]`, `native: true`);
+  //   • **the one that matters here** — EXACTLY ONE PATH-SHAPED INPUT. The
+  //     producer hardcodes `pathChanged: false`, which is only true because this
+  //     action has one path and no destination. The day someone adds a
+  //     `to`/`destination` input the literal silently becomes a lie and a move
+  //     classifies as content-only. That was a red-test-instead pin
+  //     (governor-lead's finding, the third literal-true-by-untested-contract in
+  //     three days) and it now guards nothing. It belongs in the host's suite
+  //     over its own action definition; it cannot be written here.
+  //
+  // What CAN be asserted here is the agreement itself, which is the reason the
+  // triple was published in the first place.
+
+  test("the published triple is what the producer speaks for: note.write, v1, content-classed", () => {
+    assert.equal(NOTE_WRITE_V1.id, "note.write");
+    assert.equal(NOTE_WRITE_V1.version, 1);
+    assert.deepEqual([...NOTE_WRITE_V1.changeClasses], ["content"]);
   });
 
-  test("its observation contract claims nothing — a result envelope supports no proposal", () => {
-    assert.equal(NOTE_WRITE_V1.observations.defaultCapture, "ephemeral");
-    assert.equal(NOTE_WRITE_V1.observations.supportsProposal, false);
-  });
-
-  test("exactly one path-shaped input — the contract that makes pathChanged:false TRUE", () => {
-    // The producer hardcodes pathChanged: false, which is correct because this
-    // action has ONE path and no destination. Nothing pinned that contract
-    // (governor-lead's finding — third literal-true-by-untested-contract in
-    // three days): the day someone adds a `to`/`destination` input, the literal
-    // silently becomes a lie and a move classifies as content-only. This makes
-    // that day a red test instead.
-    //
-    // The action moved to core at the split; the pin followed it, because the
-    // consumer that would be lied to — `createProposalObserver` — is here.
-    const pathShaped = NOTE_WRITE_V1.inputs.filter((k) => /path|^to$|dest|target|from/i.test(k));
-    assert.deepEqual(pathShaped, ["path"], "one path-shaped input; a destination means a NEW action, not a wider write");
-    assert.deepEqual(NOTE_WRITE_V1.scope.argumentKeys, ["path"]);
+  test("the declaration is exactly what the firewall is asked to cover — no wider, no narrower", () => {
+    // The failure the shared triple exists to prevent: if the host widened the
+    // declared classes and this side's copy did not, coverage would be asserted
+    // against a stale declaration. One definition means the question cannot
+    // arise; this pins that the producer really is defined over it.
+    requireClassesCovered(NOTE_WRITE_V1.changeClasses, ["content"]);
+    assert.throws(() => requireClassesCovered(NOTE_WRITE_V1.changeClasses, ["content", "authority"]), ClassMismatchError);
   });
 });
 
@@ -218,3 +234,199 @@ describe("content-diff@1 — the subject describes the actual bytes", () => {
   });
 });
 
+// ── proposal production, driven straight at the producer ─────────────────────
+//
+// The seam hands the observer a `WriteFacts` object and ignores what comes back
+// (condition 5: observers are dispatched off the caller's result path). So the
+// honest local harness is a `WriteFacts` literal — not a fake executor pretending
+// to be the host's. Everything the host decides upstream of this call (WHEN a
+// write completed, whether the facts describe THIS operation's path, that the
+// slot is taken once) is asserted on the host's side, or named as a gap in this
+// file's header.
+
+describe("proposal production — a completed write becomes a durable proposal", () => {
+  function harness({ enabled = true, untracked = false, recordFails = false } = {}) {
+    const store = createProposalStore(memoryIo());
+    const recordings = [];
+    const observe = createProposalObserver({
+      historyEnabled: () => enabled,
+      proposals: {
+        open: (proposal, now) => store.open(proposal, now),
+        uidOf: () => null,
+        vaultId: "vault-1",
+        record: async (proposalId, path, baseBytes, proposedBytes) => {
+          if (recordFails) throw new Error("gitdir on fire");
+          if (untracked) return null;
+          recordings.push({ proposalId, path, baseBytes, proposedBytes });
+          return `refs/governor/proposals/${proposalId}`;
+        },
+      },
+      now: () => T0,
+    });
+    return { observe, store, recordings };
+  }
+
+  /** The exact shape the seam delivers — `WriteFacts` from `vault-mcp-api`. */
+  const facts = (over = {}) => ({
+    path: "A.md",
+    baseBytes: enc("old"),
+    proposedBytes: enc("new"),
+    operation: { id: "op-1", action: NOTE_WRITE_V1.id, actionVersion: NOTE_WRITE_V1.version, sessionId: "sess-1" },
+    actor: { transport: "mcp", connection: "c", client: null },
+    ...over,
+  });
+
+  test("a completed write opens a proposal carrying the operation id and real digests", async () => {
+    const { observe, store } = harness();
+    await observe(facts());
+    const pending = await store.pending();
+    assert.equal(pending.length, 1);
+    const p = pending[0];
+    assert.equal(p.subject.producingOperation.id, "op-1", "the proposal names the REAL operation");
+    assert.equal(p.subject.proposed.value, digestBytes(enc("new")).value);
+    assert.equal(p.subject.base.value, digestBytes(enc("old")).value);
+    assert.equal(p.sessionId, "sess-1");
+    assert.equal(p.authority, "proposed");
+    assert.match(p.recordingRef ?? "", /refs\/governor\/proposals\//, "the proposal carries its recording — admission evidence exists");
+  });
+
+  test("this producer speaks for ONE action — another action's write is silence, not an unstamped proposal", async () => {
+    // The gate the dropped `buildMcpActionRegistry` test used to approach from
+    // the other end. The producer keys on the ACTION id in the facts, so it does
+    // not care which surface the host bound to it; a different action's write is
+    // somebody else's contract.
+    const { observe, store } = harness();
+    await observe(facts({ operation: { id: "op-2", action: "note.move", actionVersion: 1, sessionId: "s" } }));
+    assert.equal((await store.all()).length, 0);
+  });
+
+  test("no recording, no proposal — an untracked path is ungoverned, never a dead proposal", async () => {
+    const { observe, store } = harness({ untracked: true });
+    await observe(facts());
+    assert.equal((await store.all()).length, 0);
+  });
+
+  test("a recording failure opens NO proposal — the failure surfaces, it does not half-land", async () => {
+    // The provider-side half of "a propose failure never costs the caller their
+    // write". The seam's dispatcher is what swallows this rejection off the
+    // result path (host-side, covered there); what THIS package owes is that the
+    // failure leaves no dead proposal behind, because `record` precedes `open`.
+    const { observe, store } = harness({ recordFails: true });
+    await assert.rejects(() => observe(facts()), /gitdir on fire/);
+    assert.equal((await store.all()).length, 0);
+  });
+
+  test("an authority-touching diff refuses production — the write stands, the legacy queue governs it", async () => {
+    // Removal of accepted keys passes the accept guard (it refuses introduce/
+    // change, not removal) — the firewall catches what the guard permits.
+    const { observe, store } = harness();
+    await assert.rejects(
+      () => observe(facts({ baseBytes: enc("---\naccepted-by: Nelson\n---\nbody"), proposedBytes: enc("---\n---\nbody") })),
+      ClassMismatchError,
+      "an authority-class diff cannot ride a content declaration",
+    );
+    assert.equal((await store.all()).length, 0);
+  });
+
+  test("the uid from the written bytes wins over the (lagging) cache path fallback", async () => {
+    const { observe, store } = harness();
+    await observe(facts({ path: "New.md", baseBytes: null, proposedBytes: enc("---\nuid: 0190-fresh\n---\nbody") }));
+    const all = await store.all();
+    assert.equal(all[0].subject.noteId, "0190-fresh", "a freshly-stamped uid is the identity from the first proposal");
+  });
+
+  test("disabled ⇒ no proposal, and nothing is even recorded", async () => {
+    const { observe, store, recordings } = harness({ enabled: false });
+    await observe(facts({ baseBytes: null, proposedBytes: enc("x") }));
+    assert.equal((await store.pending()).length, 0);
+    assert.equal(recordings.length, 0, "the human's history switch gates the recording too, not only the proposal");
+  });
+
+  test("a byte-identical rewrite proposes nothing — there is no change to govern", async () => {
+    const { observe, store, recordings } = harness();
+    await observe(facts({ baseBytes: enc("same"), proposedBytes: enc("same") }));
+    assert.equal((await store.pending()).length, 0);
+    assert.equal(recordings.length, 0);
+  });
+
+  test("a sessionless write still proposes, recorded honestly as `no-session`", async () => {
+    const { observe, store } = harness();
+    await observe(facts({ operation: { id: "op-3", action: NOTE_WRITE_V1.id, actionVersion: 1, sessionId: null } }));
+    const [p] = await store.all();
+    assert.equal(p.sessionId, "no-session", "never invented, never omitted");
+  });
+});
+
+// ── the production wiring, pinned at the source ──────────────────────────────
+
+describe("wiring pins — the mechanism-exists-but-unwired lesson, again", async () => {
+  const fs = await import("node:fs");
+  const read = (rel) => fs.readFileSync(new URL(`../src/${rel}`, import.meta.url), "utf8");
+
+  // RETARGETED at S3c. The pins over `mcp/server.ts` and `mcp/obsidian-backend.ts`
+  // are GONE: those files belong to the host package now, and a scan reaching
+  // across the boundary would pin a claim this plugin does not own. They covered
+  // the write-facts slot, its take-once discipline, the `reportCompletedWrite`
+  // call, the negative "the transport no longer knows what a proposal is", and
+  // the backend's read-base-bytes-before-modify ordering. **None of the five is
+  // pinned in the host's suite today** — reported as a gap rather than dropped
+  // quietly. The pins below are the halves this plugin genuinely owns.
+
+  test("the observer holds the gate, the firewall, and the store", () => {
+    const obs = read("wiring/write-observer.ts");
+    assert.match(obs, /deps\.historyEnabled\(\) !== true/, "production is gated on the human's setting");
+    assert.match(obs, /requireClassesCovered\(NOTE_WRITE_V1\.changeClasses, derived\)/, "the firewall runs in production");
+    assert.match(obs, /deps\.proposals\.open\(/, "the proposal reaches the durable store");
+    assert.match(obs, /touchesAuthorityKeys: authorityKeysDiffer\(/, "authority classification is derived from the bytes, never hardcoded");
+    assert.match(obs, /frontmatterUid\(proposedText\)/, "identity comes from the written bytes before the lagging cache");
+  });
+
+  test("the observer records snapshots BEFORE opening the proposal — no dead proposals", () => {
+    const obs = read("wiring/write-observer.ts");
+    const recordAt = obs.indexOf("deps.proposals.record(");
+    const openAt = obs.indexOf("deps.proposals.open({ ...proposal, recordingRef }");
+    assert.ok(recordAt > 0 && openAt > 0 && recordAt < openAt, "record precedes open in the producer");
+    assert.match(obs, /if \(recordingRef === null\) return;/, "an out-of-scope or failed recording skips the proposal");
+  });
+
+  test("main.ts registers the producer through the SEAM, and it is the real producer", () => {
+    const main = read("main.ts");
+    // The registration verb changed with the boundary: in-tree this was
+    // `seam.registerWriteObserver(id, …)` called by the host's composition root;
+    // it is now `registerGovernance(this, { writeObserver })` from the SDK,
+    // called by this plugin's own onload.
+    assert.match(main, /registerGovernance\(this, \{/, "the producer arrives through the SDK's seam registration");
+    assert.match(main, /writeObserver: async \(facts\)/, "and it is wired as the write observer");
+    assert.match(main, /this\.buildProposalObserver\(\{/, "over the real producer's builder");
+    assert.match(main, /createProposalObserver\(\{/, "which is the real producer, not a stub");
+    assert.ok(!main.includes("ctx.proposals"), "nothing reaches the producer through a host context object");
+  });
+
+  test("main.ts wires the history repository behind the effective scope", () => {
+    const main = read("main.ts");
+    assert.match(main, /effectiveScope\(this\.settings\.historyScope, EXCLUDED_PREFIXES\)/, "the composed scope gates recording — the WP4 contract consumed");
+    assert.match(main, /openGitRepository\(/, "the real history store is the recording target");
+    assert.match(main, /proposalRef\(proposalId\)/, "snapshots land on the proposal's own ref");
+  });
+
+  test("main.ts wires the proposal store and the uid lookup", () => {
+    const main = read("main.ts");
+    assert.match(main, /createProposalStore\(/);
+    assert.match(main, /proposals\.jsonl/);
+    assert.match(main, /uidOf: \(path: string\)/);
+  });
+
+  test("VACUITY: the scan reads real files, and a pin that should NOT match does not", () => {
+    // Instrument discipline. A source scan over a file that failed to load reads
+    // "" and passes nothing — but a scan over the WRONG file passes whatever it
+    // happens to contain, which is how a retargeted pin goes quietly vacuous.
+    assert.ok(read("wiring/write-observer.ts").length > 3000);
+    assert.ok(read("main.ts").length > 5000);
+    assert.ok(!read("main.ts").includes("reportCompletedWrite"), "the host's reporter is not in this plugin — the retarget was real");
+    // The producer does not register ITSELF: `write-observer.ts` names the hook
+    // in prose (its header explains where it plugs in) but never CALLS it —
+    // composition is the composition root's job. Matched on the call form, not
+    // the bare identifier, so a doc comment cannot fail the pin.
+    assert.ok(!/\.registerWriteObserver\(/.test(read("wiring/write-observer.ts")), "the producer does not register itself");
+  });
+});
