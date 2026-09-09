@@ -83,6 +83,36 @@ const RULES = [
     // as documentation rather than as an escape hatch someone has to remember.
     allowIf: /legacy|grace|compat|historical|history|old |pre-0\.12|pre-0\.19/,
   },
+  {
+    id: "retired-prefix: mcp__governor__ asserted as the live tool prefix",
+    pattern: /mcp__governor__/,
+    // The S3c WIRE RENAME (Nelson's ruling, 2026-09-09) moved the Claude Code
+    // MCP server name back to `vault-mcp` with the host's plugin id, so the
+    // live prefix is `mcp__vault-mcp__*`. `mcp__governor__*` survives in three
+    // shapes and no others: the grace-period registration that still resolves
+    // until an operator runs `claude mcp remove governor`, historical
+    // discussion of the 0.12–0.18 era, and the permission entries the migration
+    // plan tells an operator to RE-ADD under the new prefix. Each of those says
+    // so on its own line, which is why the allowIf reads as documentation
+    // rather than as an escape hatch someone has to remember.
+    allowIf: /legacy|grace|compat|historical|old |before|between 0\.12|pre-0\.12|pre-0\.19|re-add|rewritten|rewriting|stop matching|no longer/,
+  },
+  {
+    id: "wrong-spelling: mcp__vault_mcp__ (Claude Code does not sanitize the hyphen)",
+    pattern: /mcp__vault_mcp__/,
+    // The tool prefix keeps the server name's hyphen — `mcp__vault-mcp__*`,
+    // the same spelling this server used before 0.12.0 and the one any live
+    // session shows for other hyphenated servers. An underscored spelling in
+    // the docs would send an operator's permission-entry rewrite to a string
+    // that never matches, which fails silently.
+    //
+    // The one legitimate mention is the warning itself — naming the wrong
+    // spelling in order to reject it — so the allowIf requires the negation to
+    // sit IMMEDIATELY before the string (`not `mcp__vault_mcp__*``), not merely
+    // somewhere on the line. A line that asserts the underscored form is still
+    // a violation however much hedging surrounds it.
+    allowIf: /\bnot\*{0,2}[\s—-]*`?mcp__vault_mcp/i,
+  },
 ];
 
 function mdFiles(dir) {
@@ -130,6 +160,10 @@ test("every rule detects its own violation class (self-check)", () => {
       "the pane reads its config from `modules.governance.config`",
     "retired-path: ~/.claude/governor asserted as the canonical state dir":
       "the plugin listens on a per-vault socket in `~/.claude/governor/`",
+    "retired-prefix: mcp__governor__ asserted as the live tool prefix":
+      "call `mcp__governor__obsidian_doctor` to check the connection",
+    "wrong-spelling: mcp__vault_mcp__ (Claude Code does not sanitize the hyphen)":
+      "the tools appear as mcp__vault_mcp__* in a fresh session",
   };
   for (const rule of RULES) {
     const fixture = fixtures[rule.id];

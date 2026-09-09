@@ -51,7 +51,10 @@ export function writeDiscovery(slug: string, d: Discovery): void {
   // the legacy bridge copy in `writeBridge`, the legacy unlink in
   // `removeDiscovery`, the bridge's + health probe's second-dir read, and the
   // `vault-mcp:ready` event together, once both Macs are re-registered under
-  // the `governor` server name.
+  // the `vault-mcp` server name (the S3c wire rename, 2026-09-09) and no
+  // `claude mcp` entry named `governor` survives. NOTE the provider's
+  // `history/` repository lives in the same directory and is NOT part of this
+  // cleanup — the dir stays, only the host's files in it go.
   try {
     fs.mkdirSync(legacyStateDir(), { recursive: true });
     fs.writeFileSync(

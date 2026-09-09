@@ -16,17 +16,21 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 const verbose = process.argv.includes("--verbose");
-// 0.12.0 id migration: the canonical state dir is ~/.claude/governor/; the old
-// ~/.claude/vault-mcp/ is still read so a pre-migration plugin is seen too.
-// Entries marked `legacy: true` in the old dir are the new plugin's own compat
-// copies of files already present in the new dir — skipped, or one vault would
-// count twice.
-const DIR = path.join(os.homedir(), ".claude", "governor");
-const LEGACY_DIR = path.join(os.homedir(), ".claude", "vault-mcp");
+// Both state dirs are read, because which one is canonical has flipped twice:
+// `vault-mcp` before 0.12.0, `governor` from 0.12.0 to the host/provider split,
+// `vault-mcp` again after it. The `legacy: true` FLAG — not the directory — is
+// what marks a duplicate: a plugin writes its real discovery unflagged into its
+// canonical dir and a flagged copy of the same `socket_path` into the other, so
+// a flagged entry always has an unflagged twin on disk. Skipping flagged
+// entries in BOTH dirs is correct whichever way round the era is. (This was
+// per-dir until the S3c wire rename, keyed on `governor` being canonical, so
+// post-split one open vault counted twice.)
+const DIR = path.join(os.homedir(), ".claude", "vault-mcp");
+const LEGACY_DIR = path.join(os.homedir(), ".claude", "governor");
 const FIX =
-  "open Obsidian and enable the 'Governor' plugin (Settings → Community plugins), then run /mcp and reconnect (server name 'governor'; pre-0.12.0 registrations were named 'vault-mcp')";
+  "open Obsidian and enable the 'Vault MCP' plugin (Settings → Community plugins), then run /mcp and reconnect (server name 'vault-mcp'; registrations made between 0.12.0 and the host/provider split were named 'governor')";
 
-function readDiscoveryDir(dir, skipLegacy) {
+function readDiscoveryDir(dir) {
   let files = [];
   try {
     files = fs.readdirSync(dir).filter((f) => f.endsWith(".json"));
@@ -37,7 +41,7 @@ function readDiscoveryDir(dir, skipLegacy) {
   for (const f of files) {
     try {
       const d = JSON.parse(fs.readFileSync(path.join(dir, f), "utf8"));
-      if (skipLegacy && d.legacy === true) continue;
+      if (d.legacy === true) continue;
       out.push(d);
     } catch {
       /* skip malformed discovery */
@@ -47,7 +51,7 @@ function readDiscoveryDir(dir, skipLegacy) {
 }
 
 function readDiscoveries() {
-  return [...readDiscoveryDir(DIR, false), ...readDiscoveryDir(LEGACY_DIR, true)];
+  return [...readDiscoveryDir(DIR), ...readDiscoveryDir(LEGACY_DIR)];
 }
 
 // A socket file on disk isn't proof of life — probe it for a real connection.
@@ -90,7 +94,7 @@ async function main() {
     // Never installed / plugin has never run — not our place to nag a session.
     return report({
       ok: false,
-      plain: `vault-mcp: no vault discovery found in ${DIR} (or the legacy ${LEGACY_DIR}) — the Obsidian 'Governor' plugin hasn't run yet.`,
+      plain: `vault-mcp: no vault discovery found in ${DIR} (or the legacy ${LEGACY_DIR}) — the Obsidian 'Vault MCP' plugin hasn't run yet.`,
       context: null,
     });
   }
@@ -104,7 +108,7 @@ async function main() {
   if (live.length > 0) {
     return report({
       ok: true,
-      plain: `vault-mcp: live ✓  vault(s): ${live.join(", ")} — tools are available (mcp__governor__*, or mcp__vault-mcp__* on a pre-0.12.0 registration).`,
+      plain: `vault-mcp: live ✓  vault(s): ${live.join(", ")} — tools are available (mcp__vault-mcp__*, or mcp__governor__* on a registration made between 0.12.0 and the host/provider split).`,
       context: null, // healthy → stay silent in the session
     });
   }
@@ -114,7 +118,7 @@ async function main() {
   return report({
     ok: false,
     plain: `vault-mcp: DOWN — discovery exists (${dead.join(", ") || "unknown"}) but no socket is accepting. Fix: ${FIX}.`,
-    context: `vault-mcp is not serving a socket right now (Obsidian closed or the 'Governor' plugin disabled), so every mcp__governor__* (or legacy mcp__vault-mcp__*) tool call will fail this session. To use them, ${FIX}. Stale discovery: ${dead.join(", ") || "none"}.`,
+    context: `vault-mcp is not serving a socket right now (Obsidian closed or the 'Vault MCP' plugin disabled), so every mcp__vault-mcp__* (or legacy mcp__governor__*) tool call will fail this session. To use them, ${FIX}. Stale discovery: ${dead.join(", ") || "none"}.`,
   });
 }
 

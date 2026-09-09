@@ -2,7 +2,13 @@ import { App, Modal, PluginSettingTab, Setting, Notice } from "obsidian";
 import type VaultMcpPlugin from "./main.js";
 import { buildRegisterCommand } from "./register-command.js";
 import { bridgeDestPath } from "./paths.js";
-import { findClaudeBinary, claudeIsRegistered } from "./claude-cli.js";
+import {
+  findClaudeBinary,
+  claudeIsRegistered,
+  claudeLegacyIsRegistered,
+  MCP_SERVER_NAME,
+  LEGACY_MCP_SERVER_NAME,
+} from "./claude-cli.js";
 import { DANGEROUS_LIST_DESC } from "./mcp/tools-cli.js";
 import { OPAQUE_ACCEPT_CLI_COMMANDS, OPAQUE_ACCEPT_COMMAND_IDS } from "./mcp/cli-policy.js";
 import { CommandSuggest } from "./command-suggest.js";
@@ -353,8 +359,19 @@ export class VaultMcpSettingTab extends PluginSettingTab {
     if (!bin) {
       statusEl.setText("Registered with Claude Code: claude CLI not found — use the manual command below.");
     } else {
-      claudeIsRegistered(bin).then((registered) => {
-        statusEl.setText(`Registered with Claude Code: ${registered ? "yes" : "no"}`);
+      // Both names are probed, and they are REPORTED SEPARATELY. A surviving
+      // 0.12.0-era `governor` entry still works (the bridge resolves the socket
+      // through discovery, not through the registration name), so it must not
+      // be an error — but it must not read as "registered" either, or the
+      // half-migrated state after the S3c wire rename would be invisible.
+      Promise.all([claudeIsRegistered(bin), claudeLegacyIsRegistered(bin)]).then(([registered, legacy]) => {
+        const legacyNote = legacy
+          ? ` — a legacy '${LEGACY_MCP_SERVER_NAME}' registration is still present (its tools appear as ` +
+            `mcp__${LEGACY_MCP_SERVER_NAME}__* and still work); remove it with: claude mcp remove ${LEGACY_MCP_SERVER_NAME}`
+          : "";
+        statusEl.setText(
+          `Registered with Claude Code as '${MCP_SERVER_NAME}': ${registered ? "yes" : "no"}${legacyNote}`,
+        );
       }).catch(() => {
         statusEl.setText("Registered with Claude Code: (error checking status)");
       });
@@ -364,9 +381,11 @@ export class VaultMcpSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Registration")
       .setDesc(
-        "Connect or disconnect this vault's MCP server from Claude Code (server name 'governor'; tools appear " +
-          "as mcp__governor__*). Registrations made before 0.12.0 under the old 'vault-mcp' name should be " +
-          "removed: claude mcp remove vault-mcp.",
+        "Connect or disconnect this vault's MCP server from Claude Code (server name 'vault-mcp'; tools appear " +
+          "as mcp__vault-mcp__*). Registrations made between 0.12.0 and the host/provider split under the " +
+          "'governor' name should be removed: claude mcp remove governor. They keep working until you do, but " +
+          "leave you with two entries serving the same socket — and any mcp__governor__* permission entry in " +
+          "~/.claude/settings.json needs re-adding as mcp__vault-mcp__*.",
       )
       .addButton((b) =>
         b.setButtonText("Connect to Claude Code").setCta().onClick(() => this.plugin.autoRegister(true))
