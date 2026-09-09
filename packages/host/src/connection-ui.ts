@@ -640,7 +640,7 @@ export class VaultMcpSettingTab extends PluginSettingTab {
       .setName("Record what agents were shown")
       .setDesc(
         "Off by default. When on, Governor keeps the exact text it returns from a note read, so you can later see what an agent was actually shown rather than what it says it saw. " +
-          "The text is stored outside your vault, at ~/.claude/governor/observations/, and is never synced. " +
+          "The text is stored outside your vault, at ~/.claude/vault-mcp/observations/, and is never synced. " +
           "Only tools with a reviewed contract are recorded — today that is reading a note. Nothing is deleted automatically yet, so recording stops at the size limit below."
       )
       .addToggle((t) =>

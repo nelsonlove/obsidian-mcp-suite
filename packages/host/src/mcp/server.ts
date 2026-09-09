@@ -235,7 +235,7 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   // takes effect without a reconnect — and turning it off stops capture
   // immediately rather than at the end of a session.
   //
-  // Payloads land OUTSIDE the vault, in `~/.claude/governor/observations/<slug>/`,
+  // Payloads land OUTSIDE the vault, in `~/.claude/vault-mcp/observations/<slug>/`,
   // so Obsidian Sync never carries note text a user did not choose to sync.
   //
   // Playback authorization reuses the SAME allowlist the read boundary already
