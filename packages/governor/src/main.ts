@@ -71,15 +71,15 @@ import { buildRevisionTools } from "./tools/revision.js";
 import { GovernorSettingTab } from "./settings-tab.js";
 import { DEFAULT_GOVERNOR_SETTINGS, mergeGovernorSettings, readGovernorSettings, type GovernorSettings } from "./settings.js";
 import { vaultSlug } from "./paths.js";
+import { hostPluginDir, type HostPluginLike } from "./host-lookup.js";
 
-/**
- * The host plugin's ids, current first — the same pair `vault-mcp-api` reads,
- * and for the same reason: the host id moved to `governor` at 0.12.0 and back to
- * `vault-mcp` at the split. Used ONLY to locate the host's plugin directory, so
- * the review queue can be derived from the host's write journal. Publishing and
- * seam registration are entirely the SDK's business.
- */
-const HOST_PLUGIN_IDS = ["vault-mcp", "governor"] as const;
+// "Which loaded plugin is the host?" lives in `host-lookup.ts` — Obsidian-free,
+// so it is testable headlessly, which is what `tests/host-lookup.test.mjs`
+// needed. The id list, the order, and the `api`-presence discriminator (WITHOUT
+// which this provider matched ITSELF under the `governor` id) are all documented
+// there. It is used ONLY to locate the host's plugin directory, so the review
+// queue can be derived from the host's write journal; publishing and seam
+// registration are entirely the SDK's business.
 
 // The UI-deps factories, keyed off the plugin instance in module-local WeakMaps
 // (the wiring.ts pattern) — NOT plugin properties, so renderer JS walking
@@ -112,13 +112,9 @@ export default class GovernorPlugin extends Plugin {
   /** The host plugin's directory, or null when no host is loaded. */
   private hostPluginDir(): string | null {
     const plugins = (this.app as unknown as {
-      plugins?: { plugins?: Record<string, { manifest?: { dir?: string } }> };
+      plugins?: { plugins?: Record<string, HostPluginLike | undefined> };
     }).plugins?.plugins;
-    for (const id of HOST_PLUGIN_IDS) {
-      const host = plugins?.[id];
-      if (host) return host.manifest?.dir ?? `${this.app.vault.configDir}/plugins/${id}`;
-    }
-    return null;
+    return hostPluginDir(plugins, this.app.vault.configDir);
   }
 
   async onload(): Promise<void> {
