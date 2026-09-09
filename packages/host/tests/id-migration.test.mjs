@@ -90,7 +90,7 @@ describe("planHostAdoption", () => {
     }
   });
 
-  test("an entry the host ALREADY has is skipped, not overwritten", () => {
+  test("a FILE the host ALREADY has is skipped, not overwritten", () => {
     const plan = planHostAdoption(
       { files: PROVIDER_FILES, folders: PROVIDER_FOLDERS },
       { files: ["main.js", "manifest.json", "install-id.json"], folders: [] },
@@ -98,6 +98,37 @@ describe("planHostAdoption", () => {
     assert.equal(plan.action, "adopt");
     assert.deepEqual(plan.entries, ["journal"]);
     assert.deepEqual(plan.skipped, ["install-id.json"]);
+  });
+
+  // ── RESUMABILITY (the release review's F3) ────────────────────────────────
+  //
+  // The plan used to skip ANY entry already present, directory or file. That
+  // made a half-copied `journal/` — the state a crashed first adoption leaves —
+  // indistinguishable from a finished one: the retry classified it `skipped`,
+  // `copyEntry`'s per-file resume never got the directory to descend, and the
+  // run then wrote the adoption record saying the copy was complete. The
+  // missing months were silently never copied.
+  test("a DIRECTORY the host already has is descended into, not skipped — the retry resumes", () => {
+    const plan = planHostAdoption(
+      { files: PROVIDER_FILES, folders: PROVIDER_FOLDERS },
+      // The wreck of a failed first run: a journal dir, no data.json yet.
+      { files: ["main.js", "manifest.json"], folders: ["journal"] },
+    );
+    assert.equal(plan.action, "adopt");
+    assert.deepEqual(plan.entries, ["journal", "install-id.json"]);
+    assert.deepEqual(plan.skipped, [], "a directory is never 'already adopted' — only its individual files are");
+  });
+
+  test("the never-clobber rule still holds per FILE, at both levels", () => {
+    // Same shape, but the host holds `journal` as a FILE. Descending is not the
+    // question then — overwriting is — so it is skipped.
+    const plan = planHostAdoption(
+      { files: PROVIDER_FILES, folders: PROVIDER_FOLDERS },
+      { files: ["main.js", "journal"], folders: [] },
+    );
+    assert.equal(plan.action, "adopt");
+    assert.deepEqual(plan.entries, ["install-id.json"]);
+    assert.deepEqual(plan.skipped, ["journal"]);
   });
 
   test("a provider folder with only code and a MIGRATED.md is a 0.12.0 leftover, not a provider — quiet skip", () => {
@@ -272,6 +303,70 @@ describe("runHostAdoption", () => {
     assert.deepEqual(r.copied, ["journal"]);
     assert.equal(files.get(`${HOST}/${ADOPTION_RECORD}`), undefined, "a partial adoption must stay re-inspectable, not be stamped done");
     assert.deepEqual(writes.filter((w) => w.startsWith(SOURCE)), []);
+  });
+
+  // ── RESUMING A HALF-COPIED JOURNAL, end to end (the release review's F3) ───
+
+  /** The wreck a crashed first adoption leaves: one journal month landed, the
+   *  other did not, the install id never got copied, and — crucially — the host
+   *  has NO data.json, so the one-shot latch is still open. */
+  const HALF_COPIED = { ...LIVE_PROVIDER, [`${HOST}/journal/2026-08.jsonl`]: '{"op":"a"}\n' };
+
+  test("RESUMES a half-copied journal: the missing month arrives and the marker is written", async () => {
+    const { fs, files, writes } = fakeFs(HALF_COPIED);
+    const r = await runHostAdoption(fs, SOURCE, HOST, { now: () => new Date("2026-09-08T00:00:00Z") });
+    assert.equal(r.plan.action, "adopt");
+    assert.deepEqual(r.plan.entries, ["journal", "install-id.json"]);
+    assert.deepEqual(r.plan.skipped, []);
+    assert.deepEqual(r.copied, ["journal", "install-id.json"]);
+    // THE POINT: the month that never landed is here now.
+    assert.equal(files.get(`${HOST}/journal/2026-09.jsonl`), '{"op":"b"}\n');
+    // And the one that did land was not rewritten — the per-file skip IS the resume.
+    assert.deepEqual(
+      writes.filter((w) => w === `${HOST}/journal/2026-08.jsonl`),
+      [],
+      "an already-copied file must be passed over, not rewritten",
+    );
+    assert.equal(files.get(`${HOST}/journal/2026-08.jsonl`), '{"op":"a"}\n');
+    assert.ok(files.get(`${HOST}/${ADOPTION_RECORD}`), "a COMPLETE copy closes the marker");
+    assert.deepEqual(writes.filter((w) => w.startsWith(SOURCE)), [], "and the source is still untouched");
+  });
+
+  test("the marker closes ONLY on a complete copy — a second failure on the retry writes none", async () => {
+    const { fs, files } = fakeFs(HALF_COPIED);
+    const realWrite = fs.write.bind(fs);
+    fs.write = async (p, d) => {
+      if (p === `${HOST}/journal/2026-09.jsonl`) throw new Error("disk full, again");
+      return realWrite(p, d);
+    };
+    const r = await runHostAdoption(fs, SOURCE, HOST);
+    assert.equal(r.failedEntry, "journal");
+    assert.deepEqual(r.copied, []);
+    assert.equal(r.settingsJson, undefined, "and no settings are adopted off an incomplete copy");
+    assert.equal(
+      files.get(`${HOST}/${ADOPTION_RECORD}`),
+      undefined,
+      "an incomplete copy must never be stamped done — the next load has to try again",
+    );
+  });
+
+  test("re-descending a COMPLETE journal copies nothing: the resume is idempotent", async () => {
+    // The safety half of the fix. Descending into an existing directory must
+    // not duplicate or overwrite anything, or every retry would be a hazard.
+    const { fs, writes } = fakeFs({
+      ...LIVE_PROVIDER,
+      [`${HOST}/journal/2026-08.jsonl`]: '{"op":"a"}\n',
+      [`${HOST}/journal/2026-09.jsonl`]: '{"op":"b"}\n',
+      [`${HOST}/install-id.json`]: '{"install":"abc"}',
+    });
+    const r = await runHostAdoption(fs, SOURCE, HOST);
+    assert.equal(r.plan.action, "adopt");
+    assert.deepEqual(
+      writes.filter((w) => w.startsWith(`${HOST}/journal/`)),
+      [],
+      "not one journal file rewritten",
+    );
+    assert.deepEqual(writes, [`${HOST}/${ADOPTION_RECORD}`], "the only write is the record itself");
   });
 
   test("the adoption surface CANNOT move or delete — a structural guarantee, not a rule", () => {
