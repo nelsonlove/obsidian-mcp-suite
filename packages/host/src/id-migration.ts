@@ -48,8 +48,13 @@
 // Safety posture, unchanged in shape from the 0.12.0 machinery:
 //   - PLAN before touching anything (`planHostAdoption` is pure + fixture-tested).
 //   - The source plugin's CODE artifacts never travel.
-//   - If a copy target already exists on the host side, that ENTRY is skipped
-//     rather than overwritten — never clobber, never half-adopt.
+//   - Never clobber: an existing FILE on the host side is left alone, at both
+//     levels — the plan skips a top-level entry the host already holds as a
+//     file, and `copyEntry` skips any individual file that already exists.
+//   - Never half-adopt: a DIRECTORY the host already has is DESCENDED INTO
+//     rather than skipped, so a retry after a mid-copy failure finishes the
+//     copy instead of recording a partial one as complete. The adoption record
+//     is written only after every entry landed.
 //   - A failure must never fail the plugin load. The caller logs, raises a
 //     sticky Notice, and continues.
 
@@ -123,11 +128,16 @@ export type AdoptionPlan =
     }
   | {
       action: "adopt";
-      /** Basenames to copy, in order. Never includes an entry the host already has. */
+      /**
+       * Basenames to copy, in order. Never includes an entry the host already
+       * holds as a FILE — but DOES include a directory entry the host already
+       * has, so a half-copied tree is resumed rather than declared done. See
+       * `planHostAdoption`'s resumability note.
+       */
       entries: string[];
       /** Whether the source carries a `data.json` whose host half should be adopted. */
       settings: boolean;
-      /** Entries present on BOTH sides and therefore skipped rather than overwritten. */
+      /** Entries the host already holds as a FILE, skipped rather than overwritten. */
       skipped: string[];
     };
 
@@ -167,12 +177,37 @@ export function planHostAdoption(sourceDir: FolderListing | null, hostDir: Folde
         `letting this vault serve agents.`,
     };
   }
-  const present = new Set([...hostDir.files, ...hostDir.folders]);
+  // ── RESUMABILITY: a DIRECTORY entry is descended into, never skipped ───────
+  //
+  // The first version of this filter skipped any entry already present on the
+  // host side, directory or file alike. For `install-id.json` that is right —
+  // a file that exists is a file that must not be clobbered. For `journal/` it
+  // was wrong, and wrong in the direction that loses evidence: if a first
+  // adoption crashed part-way through the copy, the host is left holding a
+  // journal directory with SOME of the months in it. On the retry, the
+  // plan-level filter saw the directory, classified it `skipped`, and the run
+  // then wrote the adoption record saying the copy was complete — while
+  // `copyEntry`'s own per-file resume (which already skips only files that
+  // exist) never got the chance to run, because the plan never handed it the
+  // directory. The missing months were never copied and nothing ever said so.
+  //
+  // So the plan now descends: a directory present on both sides is ADOPTED, and
+  // `copyEntry` skips per-FILE. That is idempotent by construction — a complete
+  // directory copies nothing on a re-run — and a half-complete one finishes.
+  // `skipped` therefore means "the host already holds this as a file", which is
+  // the only case where refusing to descend protects something.
+  const hostFiles = new Set(hostDir.files);
+  const hostFolders = new Set(hostDir.folders);
   const available = HOST_ADOPTED_ENTRIES.filter(
     (e) => sourceDir.files.includes(e) || sourceDir.folders.includes(e)
   );
-  const entries = available.filter((e) => !present.has(e));
-  const skipped = available.filter((e) => present.has(e));
+  const adoptable = (e: string) => {
+    if (hostFiles.has(e)) return false;                 // a real file: never overwrite
+    if (hostFolders.has(e)) return sourceDir.folders.includes(e); // descend to resume
+    return true;                                        // absent here: copy it
+  };
+  const entries = available.filter(adoptable);
+  const skipped = available.filter((e) => !adoptable(e));
   return { action: "adopt", entries, settings: true, skipped };
 }
 
@@ -222,9 +257,11 @@ async function listing(fs: AdoptionFs, dir: string): Promise<FolderListing | nul
  * journal is JSONL and the install id is JSON, so text is the right shape;
  * nothing binary is adopted.
  *
- * NEVER overwrites: an existing destination entry is left alone. The plan
- * already filtered top-level collisions, so this is the guard for anything a
- * concurrent load created underneath one.
+ * NEVER overwrites: an existing destination FILE is left alone, at every depth.
+ * That per-file skip is also the RESUME mechanism — the plan deliberately hands
+ * this function a directory the host already has (see `planHostAdoption`), so
+ * the files already copied are passed over and the missing ones land. Copying a
+ * complete tree twice is therefore a no-op, which is what makes a retry safe.
  */
 async function copyEntry(fs: AdoptionFs, from: string, to: string): Promise<void> {
   const l = await fs.list(from).catch(() => null);
