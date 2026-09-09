@@ -55,7 +55,7 @@ An agent may report and perform bounded work. It does not become the operator be
 11. Configure each additional Sync replica deliberately.
 12. Add private packs last, through separate change records.
 
-If you are upgrading an existing deployment across the host/Governor plugin split rather than deploying fresh, see [the migration plan](s3c-migration-plan.md) for the cutover procedure. The Claude Code MCP server name stays `governor` and tool prefixes stay `mcp__governor__*` through the split, so existing client registrations do not need to be redone.
+If you are upgrading an existing deployment across the host/Governor plugin split rather than deploying fresh, see [the migration plan](s3c-migration-plan.md) for the cutover procedure. The Claude Code MCP server name moves back to `vault-mcp` at the split, so tool prefixes become `mcp__vault-mcp__*`. An existing `governor` registration keeps working through the grace period (the bridge resolves the socket through discovery, never through the registration name), so the client change is not urgent — but it is the one operator action the split does not do for you, and any `mcp__governor__*` permission entry needs re-adding under the new prefix. Steps 11–12 of the migration plan are the whole procedure.
 
 ## Scope design
 

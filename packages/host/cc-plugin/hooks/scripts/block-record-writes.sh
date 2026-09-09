@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 # block-record-writes.sh — PreToolUse hook for Bash and mcp__(vault-mcp|governor)__* tools.
 #
-# BOTH id prefixes are matched, deliberately. The plugin id was `vault-mcp`
-# before 0.12.0, is `governor` today, and the suite split returns the HOST to
-# `vault-mcp` — so a single-prefix match silently stops guarding on every
+# BOTH server-name prefixes are matched, deliberately, and BOTH STAY. The
+# Claude Code MCP server name was `vault-mcp` before 0.12.0, `governor` from
+# 0.12.0 until the suite split's S3c wire rename (2026-09-09), and `vault-mcp`
+# again after it — so a single-prefix match silently stops guarding on every
 # rename. It already did: this hook matched only `mcp__vault-mcp__*` from the
 # 0.12.0 rename until 2026-08-29, which means it never fired for any MCP tool
-# call in that whole window. The Bash half was unaffected.
+# call in that whole window. The Bash half was unaffected. The `governor`
+# spelling is NOT dropped now that the name has moved back: a pre-cutover
+# `claude mcp` entry named `governor` still resolves to the live socket through
+# discovery, so sessions can still ride it during the grace period.
 #
 # Guards record-class files — the byte-verbatim, write-once fold archives under
 # any "Machinery record/" folder — against the write paths a plain Edit/Write

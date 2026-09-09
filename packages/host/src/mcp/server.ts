@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { TFile, stringifyYaml, parseYaml, type App } from "obsidian";
 import { registerFsTools, ok } from "@vault-mcp/core";
+import { serverInfo } from "./helpers.js";
 import { registerCoreTools, type ServerCtx } from "./tools-core.js";
 import { registerVaultWriteTools } from "./tools-vault-write.js";
 import { registerSchemeWriteTools } from "./tools-scheme-write.js";
@@ -86,15 +87,13 @@ let connSeq = 0;
 const CONN_EPOCH = Date.now().toString(36);
 
 export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): McpServer {
-  // serverInfo, as returned by `initialize`. `title` carries the vault name so a
-  // client with two governor servers attached can tell them apart at the
-  // handshake, without a tool call — the same assertion the journal's
-  // `actor.server` makes, made once at connect time.
-  const server = new McpServer({
-    name: "governor",
-    version: ctx.pluginVersion,
-    ...(ctx.vaultName ? { title: `governor (${ctx.vaultName})` } : {}),
-  });
+  // serverInfo, as returned by `initialize` — built by `serverInfo()` in
+  // mcp/helpers.ts, which owns the name and is reachable from a plain node
+  // test. `vault-mcp` since the S3c wire rename (2026-09-09); it was `governor`
+  // between 0.12.0 and the split, which after the split had the handshake
+  // introducing this server as the governance provider while it published the
+  // host's tools.
+  const server = new McpServer(serverInfo(ctx.pluginVersion, ctx.vaultName));
   const connectionId = `${CONN_EPOCH}-${++connSeq}`;
 
   // Wrap registerTool so every tool handler is guarded before registration.

@@ -56,3 +56,34 @@ export function validateMoves(moves: Array<{ from: string; to: string }>): strin
   for (const f of froms) if (tos.has(f)) return `path is both a source and a destination: ${f}`;
   return null;
 }
+
+// ── serverInfo (the `initialize` handshake's self-description) ────────────────
+
+/** The name this server declares at the MCP handshake.
+ *
+ * `vault-mcp` since the suite split's S3c wire rename (Nelson's ruling,
+ * 2026-09-09); it was `governor` between 0.12.0 and the split. It matches the
+ * Claude Code registration name (`MCP_SERVER_NAME` in `src/claude-cli.ts`) but
+ * is deliberately a SEPARATE constant: an operator may register this bridge
+ * under any name they like, so coupling the two would assert an agreement the
+ * wire does not guarantee. Both are pinned, each on its own side.
+ *
+ * It lives here rather than in `mcp/server.ts` so it is reachable from a plain
+ * node test — `server.ts` constructs live Obsidian classes at module scope. */
+export const SERVER_INFO_NAME = "vault-mcp";
+
+/** serverInfo, as returned by `initialize`. `title` carries the vault name so a
+ * client with two vault-mcp servers attached can tell them apart at the
+ * handshake, without a tool call — the same assertion the journal's
+ * `actor.server` makes, made once at connect time. An absent vault name yields
+ * no `title` key at all, rather than a title reading `vault-mcp (undefined)`. */
+export function serverInfo(
+  version: string,
+  vaultName?: string,
+): { name: string; version: string; title?: string } {
+  return {
+    name: SERVER_INFO_NAME,
+    version,
+    ...(vaultName ? { title: `${SERVER_INFO_NAME} (${vaultName})` } : {}),
+  };
+}

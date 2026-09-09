@@ -9,6 +9,8 @@ This is the S3 package's required migration map ([the suite split's §4](suite-s
 
 **Almost nothing moves.** The governance provider keeps the plugin id `governor`, so it keeps the folder `.obsidian/plugins/governor/` and everything under `governance/`, and it keeps the machine-local directory `~/.claude/governor/` where the standing chain lives. The HOST takes back the id `vault-mcp`, installs into a new folder, and **copies** three things out of the provider's folder on its first load: the write journal, the install id, and its own half of `data.json`. It never moves and never deletes, and it never writes into the provider's folder at all. On the machine-local side the host's namespace returns to `~/.claude/vault-mcp/` while `~/.claude/governor/` keeps a grace-period bridge and a `legacy: true` discovery copy, so **every existing `claude mcp` registration keeps working with no re-registration**.
 
+**The one client-visible change is the MCP server name**, which Nelson ruled on 2026-09-09 after the split had deferred it: the Claude Code registration moves back to `vault-mcp` with the plugin id, so tool prefixes become `mcp__vault-mcp__*`. The old `governor` registration keeps resolving to the live socket throughout the grace period; what the operator does once, by hand, is re-add their `mcp__governor__*` permission entries under the new prefix. §2 has the ruling and the grace mechanics, §5 steps 11–12 the procedure, §7 the rollback.
+
 ## 1. Every file, and where it lands
 
 ### In the vault: `.obsidian/plugins/governor/`
@@ -53,7 +55,11 @@ This is the S3 package's required migration map ([the suite split's §4](suite-s
 
 ## 2. What is NOT a migration, but is a behaviour change on the operator's vault
 
-- **The MCP server name stays `governor`.** Tool prefixes remain `mcp__governor__*`. The Obsidian plugin id changed; the Claude Code registration name did not, because the client-visible tool prefix is a shipped name and renaming shipped names breaks agent sessions for zero semantic gain. An operator's `~/.claude/settings.json` permission entries keep working untouched.
+- **The MCP server name becomes `vault-mcp` (Nelson's ruling, 2026-09-09).** Tool prefixes become `mcp__vault-mcp__*`. The split deferred this and this document said the name "stays `governor`"; that is superseded. Post-split, prefixing the HOST's whole tool surface with the PROVIDER's id is the same architectural lie the `obsidian_pending_review` → `governance_pending_review` rename fixed one level down: `governor` names the governance provider, while the socket, the request guard, the kernel and the whole `obsidian_*` tool surface are the host's. **The cost was stated and accepted, and it is one-time:** any `mcp__governor__*` entry in `~/.claude/settings.json` (or a project's `.claude/settings.local.json`) must be re-added as `mcp__vault-mcp__*`. Nothing else re-does anything — see the grace paragraph below, and §5 steps 11–12 for the procedure.
+  - **Spelling.** Claude Code does not sanitize a hyphen out of a server name (any live session shows `mcp__omnifocus-enhanced__*`, `mcp__claude-in-chrome__*`), so the prefix is `mcp__vault-mcp__*` — the same spelling this server used before 0.12.0 — and **not** `mcp__vault_mcp__*`.
+- **The old `governor` registration KEEPS WORKING, and this is verified rather than assumed.** A `claude mcp` entry named `governor` points `node` at `~/.claude/governor/bridge.mjs`. The plugin still writes that file on every load (§1), and the bridge finds the live socket by reading the discovery jsons out of **both** `~/.claude/vault-mcp/` and `~/.claude/governor/` (`loadDiscoveries` in `packages/host/bridge/bridge.ts`) — the registration name is a label in `~/.claude.json` and is never consulted in the resolution path. So an operator who does nothing keeps a working connection under the old prefix; what they lose is only the new prefix, until they re-register.
+  - **A half-migrated state is made VISIBLE, not silently tolerated.** The settings tab's probe (`claudeIsRegistered`) asks about `vault-mcp` **only**, so a vault still carrying just the old entry reads `Registered with Claude Code as 'vault-mcp': no`. A second probe (`claudeLegacyIsRegistered`) then appends `— a legacy 'governor' registration is still present … remove it with: claude mcp remove governor`. Accepting either name in one probe was considered and rejected: 0.12.0's dual-id pattern belongs to the state DIRECTORIES, where silent continuity is the whole point, but a registration name is an operator decision surface, and a vault that never re-registered must not report a clean migration.
+  - **The cc-plugin's record-write hook matcher stays dual** (`mcp__(vault-mcp|governor)__.*`), deliberately, for exactly as long as a session may still be riding the old registration. Dropping the old spelling would silently stop guarding those sessions — the failure that already happened once, when the 0.12.0 rename left the matcher on `mcp__vault-mcp__*` alone and it fired for no MCP call at all between then and 2026-08-29.
 - **Four governance tools keep their exact names, and ONE was renamed.** The published set is `governance_pending_review`, `governance_revisions`, `governance_submit_revision`, `governance_mandate_draft`, `governance_mandates` — all bare, through a closed grandfather table in the host (`GRANDFATHERED_TOOL_NAMES`) that carves out the `<plugin id>_<bare name>` prefixing rule and nothing else. **`obsidian_pending_review` became `governance_pending_review`** (Nelson's ruling, 2026-09-08): grandfathering the old spelling would also have carved out F1, the host's refusal of any published name beginning `obsidian_`, and an exception to a namespace-integrity rule becomes the precedent for the next exception. The rename also has real semantic gain — the `obsidian_` prefix branded a governance tool as a host built-in, which after the split is an architectural lie.
   - **What an operator has to do about it: nothing, in practice.** MCP tools are discovered per session, so any session that reconnects after the cutover sees the new name. The one glob in the repository that patterns on it (`packages/host/cc-plugin/hooks/scripts/block-record-writes.sh`'s `*pending_review*`) still matches. A hand-written permission entry naming the exact old string would stop matching; check `~/.claude/settings.json` if you have one.
 - **Their allowlist posture got STRICTER**, exactly like every previous extraction. As external tools their read-only claims are distrusted unless the operator adds `governor` to `trustedReadOnlyPlugins`, and under an ACTIVE path allowlist the F3 gate blocks any external tool carrying no recognized path key — so four of the five are refused wholesale while an allowlist is active. Only `governance_submit_revision` (which takes `path`) stays scoped per-path. **This operator's allowlist is empty**, so the live effect today is limited to read-only mode.
@@ -87,7 +93,7 @@ The same reasoning made the adoption surface structural rather than advisory: `A
 Do this with Obsidian closed between steps where it says so. Nothing here is reversible-by-accident; every step is reversible on purpose.
 
 1. **Verify the backup is fresh.** The `obsidian-backup` tickle job commits `~/obsidian` to `~/obsidian-backup.git`; the standing chain has its own backup repository (#337). Confirm both are current before anything else. The chain backup is the one that matters — it is the only copy of `~/.claude/governor/history/`.
-2. **Note the current state**, so the after can be compared to the before: the newest journal month and its line count, `governance/cutover.json`'s contents, the output of `claude mcp get governor`, and whether the review pane is currently enabled.
+2. **Note the current state**, so the after can be compared to the before: the newest journal month and its line count, `governance/cutover.json`'s contents, the output of `claude mcp get governor`, each `mcp__governor__*` line in `~/.claude/settings.json` and in any project `.claude/settings.local.json` (`grep -rn 'mcp__governor__' ~/.claude/settings.json ~/.claude/settings.local.json` — step 12 re-adds these), and whether the review pane is currently enabled.
 3. **Close Obsidian.**
 4. **Install the PROVIDER over the existing folder.** Copy `packages/governor/main.js` and `packages/governor/manifest.json` into `.obsidian/plugins/governor/`. This replaces the code and touches no data. The folder keeps its `governance/`, its `data.json`, its `journal/` and its `install-id.json`.
 5. **Install the HOST into its own folder.** Create `.obsidian/plugins/vault-mcp/` if it does not exist (on this vault it does, carrying the 0.12.0 `MIGRATED.md` and stale code), and copy `packages/host/main.js` and `packages/host/manifest.json` in. **Do not copy any data by hand** — the adoption is the plugin's job and it is latched on the absence of `data.json`.
@@ -95,7 +101,25 @@ Do this with Obsidian closed between steps where it says so. Nothing here is rev
 7. **Verify the adoption before doing anything else** (§6's checklist).
 8. **Enable "Governor".** It reads its settings out of the same `data.json` it always did.
 9. **Re-enable the review pane** in Governor's own settings tab if it was on. It is a different toggle in a different place now.
-10. **Reconnect any open Claude Code session.** The socket path changed, but the registration did not: the bridge at `~/.claude/governor/bridge.mjs` is rewritten on load and resolves the new socket through the `legacy: true` discovery copy. A session that was connected before the reload must reconnect regardless, because each connection is a fresh server.
+10. **Reconnect any open Claude Code session.** A session connected before the reload must reconnect regardless, because each connection is a fresh server. It reconnects under whichever registration it was using: the old `governor` entry still works, because the bridge at `~/.claude/governor/bridge.mjs` is rewritten on every load and resolves the new socket out of the discovery jsons.
+
+### The wire rename — steps 11 and 12
+
+These two are the whole operator cost of the server-name ruling (§2). They are **independent of the plugin cutover above**: nothing in steps 1–10 depends on them, and skipping them leaves a working — but old-prefixed — connection.
+
+11. **Re-register under the new name.** Either run **`Vault MCP: Connect to Claude Code`** from the command palette, or paste the line from **Settings → Vault MCP → Connection** (it is generated from the same constant the palette command uses). Then remove the old entry:
+
+    ```
+    claude mcp remove governor
+    ```
+
+    Removing it is a **deliberate human step** — the plugin never removes a registration it did not make. Until you do, `claude mcp list` shows two entries serving the same socket, and Claude Code exposes both tool surfaces (`mcp__vault-mcp__*` and `mcp__governor__*`), which is harmless but doubles the tool list in every session. The settings tab says so explicitly while the old entry is still there.
+
+12. **Re-add the permission entries under the new prefix.** This is the part nothing can do for you: `mcp__governor__*` allow/deny entries in `~/.claude/settings.json` (and any project `.claude/settings.local.json`) stop matching once sessions ride the new registration. Take the list from step 2 and re-add each one with `mcp__governor__` rewritten to `mcp__vault-mcp__`, e.g. `mcp__governor__obsidian_read_note` → `mcp__vault-mcp__obsidian_read_note`. Keep the old lines only for as long as you keep the old registration.
+
+    **Note the spelling.** The hyphen survives into the prefix — Claude Code does not sanitize a server name (`mcp__omnifocus-enhanced__*` in any live session is the proof). It is `mcp__vault-mcp__*`, not `mcp__vault_mcp__*`.
+
+13. **Start one fresh Claude Code session** and confirm the new prefix is live before considering the cutover done (§6, Transport).
 
 ## 6. Verification, after the cutover
 
@@ -110,6 +134,13 @@ Do this with Obsidian closed between steps where it says so. Nothing here is rev
 - `obsidian_environment_info` (or the diagnostics command) reports the new version and names the registered governance provider.
 - A write lands a record in the HOST's journal, not the provider's.
 
+**The wire rename:**
+- In a fresh session, the tools appear as `mcp__vault-mcp__*` (hyphen, not underscore). `mcp__vault-mcp__obsidian_doctor` returns.
+- `claude mcp list` shows `vault-mcp`, and — once step 11 is complete — no longer shows `governor`.
+- **Settings → Vault MCP → Connection** reads `Registered with Claude Code as 'vault-mcp': yes` with **no** trailing legacy notice. A notice still there means step 11's removal did not run.
+- The bridge still resolves a single vault: with both `~/.claude/vault-mcp/<slug>.json` and the grace-period `~/.claude/governor/<slug>.json` on disk, a connection succeeds instead of failing with "multiple vaults open; specify --vault". (The flagged copy is skipped by the flag, not by which directory it is in.)
+- No `mcp__governor__*` line survives in `~/.claude/settings.json` except ones you deliberately kept for the legacy registration.
+
 **Governance:**
 - `governance_pending_review` returns `published: true` with the same queue the pane shows. If it returns `published: false`, the provider's `journalDir` is wrong — that is the failure this split most plausibly introduces, and the pane refuses to mount at all when no host is loaded precisely to make it loud.
 - `governance_revisions`, `governance_mandates`, `governance_mandate_draft` and `governance_submit_revision` are all present under their exact names — **not** `governor_governance_*`.
@@ -123,8 +154,16 @@ The whole design of §1 and §3 exists to make this short.
 2. Disable both plugins (`.obsidian/community-plugins.json`, or Obsidian's own settings before closing).
 3. Reinstall the pre-split single-plugin build's `main.js` + `manifest.json` (id `governor`, version 0.18.2) into `.obsidian/plugins/governor/`.
 4. Open Obsidian and enable it.
+5. **Undo the wire rename**, if steps 11–12 of §5 were run. The pre-split build writes and serves `~/.claude/governor/`, so the old registration is the one that works:
 
-**It finds everything where it left it.** Its `data.json` still has every key it ever wrote — the provider merges rather than replaces, and the host never wrote into that folder. Its `journal/` is intact up to the moment of the split. Its `install-id.json` is unchanged. Its whole `governance/` tree, the cutover marker and the store binding were never touched. `~/.claude/governor/history/` was never touched. The bridge at `~/.claude/governor/bridge.mjs` is what the old build writes anyway, and the registration name never changed.
+   ```
+   claude mcp remove vault-mcp
+   claude mcp add --scope user governor -- node ~/.claude/governor/bridge.mjs  # the legacy bridge the pre-split build writes
+   ```
+
+   (Append `--vault '<name>'` if more than one vault serves MCP on this machine — same rule as the forward direction.) Then restore the legacy `mcp__governor__*` permission entries from the step-2 record and drop the `mcp__vault-mcp__*` ones you added in step 12. This is the same shape as the forward move and costs the same: one registration swap plus a permission-entry rewrite, in the other direction.
+
+**It finds everything where it left it.** Its `data.json` still has every key it ever wrote — the provider merges rather than replaces, and the host never wrote into that folder. Its `journal/` is intact up to the moment of the split. Its `install-id.json` is unchanged. Its whole `governance/` tree, the cutover marker and the store binding were never touched. `~/.claude/governor/history/` was never touched. The bridge at `~/.claude/governor/bridge.mjs` is what the old build writes anyway. **The registration is the one thing that must be put back by hand** — everything else in this list restores itself, and rollback step 5 is the exception that proves it.
 
 **What it does NOT have** is anything written after the split: journal records that landed in `plugins/vault-mcp/journal/`, and any session lifecycle lines in `plugins/vault-mcp/sessions.jsonl`. Both are append-only and timestamped; reconciling is concatenating the newer months back in, and the `ADOPTED-FROM-GOVERNOR.md` record says exactly which files to look at.
 
@@ -151,6 +190,15 @@ Every item below is a claim this package makes that no test in this repository c
 - [ ] `obsidian_plugin_toggle('governor', false)` is REFUSED. **The refusal text changed (release-review F5, 2026-09-08):** the id is now name-protected, so the refusal fires whether or not the provider currently holds a seam registration, and reads `refusing to disable 'governor' via MCP: that id is either the governance provider … or a pre-split host …`. A provider that HAS registered is still additionally covered by the condition-6 refusal naming it a registered governance provider — to see that one, use a provider id other than `governor`.
 - [ ] `obsidian_plugin_toggle('governor', true)` is still ALLOWED — the protection is one-directional and must never become a lockout.
 - [ ] `obsidian_plugin_uninstall('governor')` is refused for the same reasons.
+
+**The wire rename (2026-09-09).** Everything in the repository is pinned — `packages/host/tests/wire-name.test.mjs` holds the registered name, the probe's grace behaviour and the handshake's `serverInfo`, and `packages/host/tests/bridge.test.mjs` holds the two-directory discovery merge. What no test in this repository can reach is the Claude Code client itself: what it actually derives the tool prefix from, and what a permission entry actually matches.
+
+- [ ] **The prefix spelling.** In a fresh session, `/mcp` lists the server as `vault-mcp` and the tools appear as `mcp__vault-mcp__*` — and **not** `mcp__vault_mcp__*`. The claim under test is that Claude Code does not sanitize the hyphen (`mcp__omnifocus-enhanced__*` is the corroborating live evidence, and `mcp__vault-mcp__obsidian_read_note` is the exact string this machine's `~/.claude/settings.local.json` already carries from before 0.12.0). If the underscored form turns up instead, step 12's rewrite is wrong and the permission entries would silently fail to match.
+- [ ] **The old registration still works, untouched.** BEFORE running §5 step 11, start a session on the surviving `governor` entry and call `mcp__governor__obsidian_doctor`. It must return. This is the grace claim the whole "do nothing and stay working" paragraph rests on.
+- [ ] **Both registrations at once.** With `governor` and `vault-mcp` both registered, a session exposes both prefixes and both reach the same vault — no "multiple vaults open" failure from the two discovery copies, and no crossed sockets.
+- [ ] **The half-migrated state is visible.** With ONLY the old entry registered, Settings → Vault MCP → Connection reads `Registered with Claude Code as 'vault-mcp': no` AND names the legacy `governor` entry with its removal command. After step 11 the notice is gone.
+- [ ] **A permission entry actually re-matches.** Rewrite one real `mcp__governor__*` entry to `mcp__vault-mcp__*` and confirm the tool is permitted without a prompt in a fresh session — and that the un-rewritten ones prompt. This is the only thing that measures the accepted cost.
+- [ ] **The record-write hook still fires under the new prefix.** Attempt a non-append MCP write under `Machinery record/` in a session on the new registration; the cc-plugin hook must refuse it. The matcher is dual (`mcp__(vault-mcp|governor)__.*`), so this is a check that the NEW half of a matcher that has only ever been exercised on the old half actually fires.
 
 **Published tool names.** The grandfather table is unit-tested; that the SDK actually publishes these five specs into the host's registry under those exact names, in a live renderer with two bundles, is not.
 
