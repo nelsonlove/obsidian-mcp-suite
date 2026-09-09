@@ -10,7 +10,7 @@
  * transcluded note's `---` fence riding into the compiled output.
  *
  * The other four sites are still pinned by
- * packages/plugin/tests/frontmatter-read-sites.test.mjs. This block is verbatim
+ * packages/host/tests/frontmatter-read-sites.test.mjs. This block is verbatim
  * from that file, so neutering `stripFrontmatter` still fails its own site's
  * tests — which is the per-site non-vacuity the issue's definition-of-done asks
  * for, preserved across the package boundary.

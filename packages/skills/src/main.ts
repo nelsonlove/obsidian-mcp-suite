@@ -47,11 +47,26 @@ import {
   type SkillsPluginSettings,
 } from "./settings.js";
 
-/** The host plugin's ids, newest first — the same pair vault-mcp-api reads, and
- *  for the same reason (Governor renamed `vault-mcp` → `governor` in 0.12.0).
+/** The host plugin's ids, CURRENT FIRST — the same pair vault-mcp-api reads, in
+ *  the same order, and for the same reason: the host id moved `vault-mcp` →
+ *  `governor` at 0.12.0 and back to `vault-mcp` at the suite split's S3c.
  *  Used ONLY to find the settings to adopt from; publishing itself is entirely
- *  vault-mcp-api's business. */
-const HOST_PLUGIN_IDS = ["governor", "vault-mcp"] as const;
+ *  vault-mcp-api's business.
+ *
+ *  THE ORDER AND THE `api` CHECK BELOW ARE BOTH PART OF THE ANSWER. Post-split
+ *  `app.plugins.plugins["governor"]` is the governance PROVIDER, which exposes
+ *  no `api` object, so a bare-presence match over the old `["governor",
+ *  "vault-mcp"]` order resolved the PROVIDER as the host — this satellite would
+ *  then have adopted the provider's settings as the host's. The discriminator is
+ *  vault-mcp-api's own (`getApi`, packages/vault-mcp-api/src/index.ts): a plugin
+ *  counts as the host only if it exposes the api surface.
+ *
+ *  THE SUITE'S ONE BEHAVIOURAL TEST of this lookup is
+ *  `packages/crosssession/tests/host-lookup.test.mjs`, over the extracted
+ *  `packages/crosssession/src/host-lookup.ts` — same two lines, same reasoning,
+ *  written out in full there. Nine identical suites would be nine copies of one
+ *  assertion; a change here belongs in that file too. */
+const HOST_PLUGIN_IDS = ["vault-mcp", "governor"] as const;
 
 export default class VaultSkillsPlugin extends Plugin {
   settings: SkillsPluginSettings = { ...DEFAULT_PLUGIN_SETTINGS };
@@ -112,7 +127,7 @@ export default class VaultSkillsPlugin extends Plugin {
   private async adoptFromHostOnce(): Promise<void> {
     if (this.settings.adoptedFromHost) return;
     const plugins = (this.app as unknown as {
-      plugins?: { plugins?: Record<string, { settings?: unknown }> };
+      plugins?: { plugins?: Record<string, { api?: unknown; settings?: unknown }> };
     }).plugins?.plugins;
     let hostSettings: unknown;
     for (const id of HOST_PLUGIN_IDS) {
@@ -123,7 +138,10 @@ export default class VaultSkillsPlugin extends Plugin {
       // settings" would burn the one-shot latch on nothing and the user's
       // config would never adopt. An undefined settings bag reads as HOST NOT
       // READY, exactly like an absent host: adoption retries next load.
-      if (host && host.settings !== undefined) { hostSettings = host.settings; break; }
+      // A plugin under a host id exposing no `api` is the governance PROVIDER,
+      // not a host — skip it and fall through. See HOST_PLUGIN_IDS above.
+      if (!host || !host.api) continue;
+      if (host.settings !== undefined) { hostSettings = host.settings; break; }
     }
     const adopted = adoptHostConfig(this.settings, hostSettings);
     if (!adopted) return;

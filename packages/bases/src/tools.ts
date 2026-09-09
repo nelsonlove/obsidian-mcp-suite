@@ -47,7 +47,7 @@
 // the leaf and of the serializer. A move leaves one copy; a copy would have
 // left two. Verified at the extraction: after the move, no reference to
 // `queryBaseRows`, `makeSerializer`, `captureSerializer` or `captureWithCleanup`
-// remains anywhere in `packages/plugin/src`.
+// remains anywhere in `packages/host/src`.
 //
 // The serializer below MUST stay MODULE-SCOPED, not per-`buildBasesTools`. The
 // hidden leaf is a global resource (one Obsidian window), and a per-build

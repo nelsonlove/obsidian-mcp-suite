@@ -8,31 +8,34 @@ Governor is a local bridge between a compatible AI client and the Obsidian appli
 sequenceDiagram
     actor Human
     participant Client as Local AI client
-    participant Bridge as Governor local bridge
-    participant Gov as Governor operation kernel
+    participant Bridge as Host local bridge
+    participant Host as Host operation kernel
     participant Obsidian
     participant Vault as Vault notes
     participant Obs as Observation/effect store
-    participant State as Governor local state
+    participant State as Host local state
+    participant Prov as Governance provider
     participant Git as Local Git store
     participant Ledger as Portable attestation ledger
 
     Human->>Client: Request an outcome
     Client->>Bridge: Capability request
-    Bridge->>Gov: Local MCP message
-    Gov->>Gov: Resolve action/surface, actor, posture, scope, and capture policy
-    Gov->>Obsidian: Observe through supported live-app API
+    Bridge->>Host: Local MCP message
+    Host->>Host: Resolve action/surface, actor, posture, scope, and capture policy
+    Host->>Obsidian: Observe through supported live-app API
     Obsidian->>Vault: Read or mutate
     Vault-->>Obsidian: Current state
-    Obsidian-->>Gov: Observation or effect evidence
-    Gov->>Obs: Retain evidence/replayable observation or observed effect
-    Gov->>Git: Record content transition when required
-    Gov->>State: Append operation/review evidence when required
-    Gov->>Ledger: Write immutable signed attestation when required
-    Gov-->>Bridge: Structured result and receipt data
+    Obsidian-->>Host: Observation or effect evidence
+    Host->>Obs: Retain evidence/replayable observation or observed effect
+    Host->>State: Append operation journal entry
+    Host->>Prov: Dispatch write facts to the registered governance observer, when a provider is registered
+    Prov->>Prov: Produce the proposal inside the provider
+    Prov->>Git: Record content transition when required
+    Prov->>Ledger: Write immutable signed attestation when required
+    Host-->>Bridge: Structured result and receipt data
     Bridge-->>Client: Response
     Client-->>Human: Explanation and receipt
-    Human->>Gov: Invoke human-only acceptance/mandate action in Obsidian
+    Human->>Prov: Invoke human-only acceptance/mandate action in Obsidian
 ```
 
 The client may separately send prompts or retrieved content to a local or remote model provider. That path is configured and governed by the client, not Governor.
@@ -98,7 +101,7 @@ Ephemeral reads leave no durable response. Evidence reads retain identities, sou
 
 ### Processing
 
-Governor checks action and surface eligibility, posture, session, mandate, scope, observation sufficiency, change class, budgets, protected properties, record status, revision, idempotency, and advisory claims. A real mutation enters the single write queue. Governor records the proposal in its local Git history, the effect adapter uses the live Obsidian API when authorized, then Governor observes the landed effects and runs the documented postcondition and class-specific verification operations.
+Governor checks action and surface eligibility, posture, session, mandate, scope, observation sufficiency, change class, budgets, protected properties, record status, revision, idempotency, and advisory claims. A real mutation enters the single write queue, and the effect adapter uses the live Obsidian API when authorized. The host journals the write, then dispatches the write facts across the governance seam to the registered governance provider's observer, which produces the proposal inside the provider's own local Git history. The host then observes the landed effects and runs the documented postcondition and class-specific verification operations.
 
 ### Output
 
@@ -119,6 +122,8 @@ Review gestures occur in Obsidian, not through the agent connection.
 - **Revoke**, **expire**, or **supersede** preserves history without conferring new standing.
 
 The pending index exposes a scope-filtered read view to agents so they can avoid conflicting work. It contains path and review metadata, not authority to decide the queue.
+
+Session lifecycle and refusal state now live in different places. The host owns a session lifecycle log (`sessions.jsonl` in the host's plugin directory) recording `opened`, `closed`, and `expired`, plus its own pure expiry floor that needs no store and no provider. The governance provider owns only refusal state — revocation and session-to-mandate attachment — in its own `governance/sessions.jsonl`, and answers the seam's refusal hook from that file alone; no connection-lifecycle notification travels across the seam. One consequence: the provider no longer witnesses a session's `opened` event, so **Revoke** and mandate attachment now act on a session id without a prior `opened` record on file — a deliberate loosening, safe because revocation can only add refusals and because mandate fit already binds by session id rather than by the session record.
 
 ## Data inventory
 

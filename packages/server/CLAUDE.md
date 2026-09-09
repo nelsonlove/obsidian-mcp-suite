@@ -22,7 +22,7 @@ Since issue #92 they are **serialized and journaled**: every FS-mode mutation
 runs through a process-wide FIFO write queue and appends exactly one JSONL
 record to the server-side journal (`src/fs-write-kernel.ts` — a lean,
 server-local counterpart to the plugin kernel's WriteQueue/WriteJournal; this
-package does not, and must not, depend on `packages/plugin`). Journal location:
+package does not, and must not, depend on `packages/host`). Journal location:
 `~/.claude/vault-mcp/journal/<vault-slug>/YYYY-MM.jsonl` (or under
 `$VAULT_MCP_STATE_DIR`; override with `$VAULT_MCP_FS_JOURNAL_DIR`) — beside the
 server's socket state, never inside the vault tree. Record shape matches the

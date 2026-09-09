@@ -1,12 +1,12 @@
 # Inbox triage — the disposition substrate's second instance (#221, phase 3 shape per #241)
 
-> **Deep reference for the shipped implementation.** Canonical concepts and the target design live in the [documentation corpus](README.md); what is shipped versus target is owned by [status-and-compatibility.md](status-and-compatibility.md). Since the S5 satellite extraction (`suite-split-design.md` §6) this reference documents the standalone **`vault-triage`** plugin, not a module of the host plugin (`governor`).
+> **Deep reference for the shipped implementation.** Canonical concepts and the target design live in the [documentation corpus](README.md); what is shipped versus target is owned by [status-and-compatibility.md](status-and-compatibility.md). Since the S5 satellite extraction (`suite-split-design.md` §6) this reference documents the standalone **`vault-triage`** plugin, not a module of the host plugin (`vault-mcp`).
 
 
 The successor to the vault's retired `dispose-inbox-item` QuickAdd flow,
 shipped as the standalone `vault-triage` plugin with exactly two tools — a
 read-only queue view and one guarded mutating disposition verb, published to
-the Governor host through `vault-mcp-api`. There is **no human UI** in this
+the host through `vault-mcp-api`. There is **no human UI** in this
 plugin beyond its settings tab, deliberately: no pane, no palette command, no
 ribbon.
 
@@ -66,8 +66,9 @@ write is agent-expressible through the guarded path.
 Phase 1 (#101/#228) proved the shape on the live acceptance instance; phase 2
 extracted the generic descriptor shape into a **disposition substrate**, which
 S3 then published to `@vault-mcp/core`. That publication is exactly what let
-triage leave: the acceptance instance (`governor/kernel/dispositions.ts`, in
-the host) and the triage instance now declare against one shape from two
+triage leave: the acceptance instance (`packages/governor/src/kernel/dispositions.ts`,
+which left the host for the governance provider plugin at S3c — the publication
+outlived the arrangement it was built for) and the triage instance now declare against one shape from two
 plugins that share no build, and neither depends on the other. The triage
 instance's **frozen code-level table** is the three built-ins
 (`packages/triage/src/kernel/descriptors.ts`), all `authority: "agent"`.

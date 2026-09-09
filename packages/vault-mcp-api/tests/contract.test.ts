@@ -1,7 +1,7 @@
 // tests/contract.test.ts — the reason this SDK lives in the monorepo (#86):
 // pin the SDK's declared boundary (apiVersion + registration shapes) to what
 // the HOST actually accepts, by importing the host's real source
-// (packages/plugin/src/mcp/external-tools.ts). If either side drifts, this
+// (packages/host/src/mcp/external-tools.ts). If either side drifts, this
 // file fails to type-check or these tests fail — the contract cannot drift
 // silently.
 import { test } from "node:test";
@@ -18,8 +18,8 @@ import {
   sanitizeOwnerId,
   type VaultMcpApi as HostVaultMcpApi,
   type ExternalToolSpec as HostExternalToolSpec,
-} from "../../plugin/src/mcp/external-tools.js";
-import type { JsonSchemaObject as HostJsonSchemaObject } from "../../plugin/src/mcp/json-schema-to-zod.js";
+} from "../../host/src/mcp/external-tools.js";
+import type { JsonSchemaObject as HostJsonSchemaObject } from "../../host/src/mcp/json-schema-to-zod.js";
 
 // ── Type-level contract, checked by `tsc -p tsconfig.tests.json` ─────────────
 // (the package's test script runs it).
@@ -50,7 +50,7 @@ const _vSdkToHost: HostVaultMcpApi["apiVersion"] = 1 as SdkVaultMcpApi["apiVersi
 void [_api, _spec, _schema, _vHostToSdk, _vSdkToHost];
 
 // ── Runtime contract: the real SDK against the real host registry ────────────
-// Mirrors how packages/plugin/src/main.ts exposes the api object
+// Mirrors how packages/host/src/main.ts exposes the api object
 // (apiVersion: 1 wrapping an ExternalToolRegistry instance).
 
 function hostWorld() {

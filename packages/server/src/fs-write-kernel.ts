@@ -3,11 +3,11 @@
  * queue + append-only JSONL write journal.
  *
  * LIVE mode funnels every write through the plugin kernel's WriteQueue +
- * WriteJournal (packages/plugin/src/kernel/{write-queue,journal}.ts). FS
+ * WriteJournal (packages/host/src/kernel/{write-queue,journal}.ts). FS
  * fallback mode had neither — a hole in the "every write is journaled" audit
  * claim (kernel-audit finding MEDIUM-6). This module is the lean, server-local
  * counterpart: packages/server depends on @vault-mcp/core + third-party only —
- * it does not, and must not, depend on packages/plugin — so the primitives are
+ * it does not, and must not, depend on the host plugin package — so the primitives are
  * re-stated here at the scale the FS write set needs (six backend methods)
  * rather than imported. The journal RECORD SHAPE deliberately matches the
  * plugin's JournalRecord field-for-field where the field is meaningful in FS
@@ -38,7 +38,7 @@
  *
  * - **No record immutability (#264).** The plugin kernel refuses non-append
  *   mutation of `record: true` notes at its dequeue closure
- *   (packages/plugin/src/kernel/record-guard.ts); FS mode has no metadata
+ *   (packages/host/src/kernel/record-guard.ts); FS mode has no metadata
  *   cache to probe the flag from cheaply and, like if_rev/idempotency above,
  *   does not re-state the check. With FS_ALLOW_WRITES on, a record note is
  *   mutable through this path — same residual class as the rest of this list.
@@ -104,7 +104,7 @@ export interface FsJournalRecord {
 
 // ── Argument digest ───────────────────────────────────────────────────────────
 //
-// Ported from packages/plugin/src/kernel/journal.ts (digestArgs) so both
+// Ported from packages/host/src/kernel/journal.ts (digestArgs) so both
 // journals summarize identically. Note bodies never land: known body-bearing
 // keys and over-long strings become `<N chars>`, long arrays truncate, deep
 // nesting collapses. Shape is preserved so a record stays greppable by path,

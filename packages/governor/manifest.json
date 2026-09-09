@@ -1,0 +1,9 @@
+{
+  "id": "governor",
+  "name": "Governor",
+  "version": "0.19.0",
+  "minAppVersion": "1.6.6",
+  "description": "The human-only acceptance perimeter for agent writes: proposals, admission, mandates, the standing chain and the review pane. Plugs into the Vault MCP host — install and enable that plugin first.",
+  "author": "Nelson Love",
+  "isDesktopOnly": true
+}

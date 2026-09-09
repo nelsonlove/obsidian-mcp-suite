@@ -2,11 +2,11 @@
 
 **Let AI assistants work with your Obsidian vault without giving up control of it.**
 
-Governor is a desktop-only Obsidian Community Plugin that gives a compatible local AI client carefully governed access to the vault open in Obsidian. You can ask the assistant to find, explain, capture, organize, validate, or maintain information. Obsidian remains the visible home of the work, and Governor controls what the assistant can see, what it can change, how results are verified, and which exact results have standing.
+Governor ships as two desktop-only Obsidian Community Plugins working together: the host (plugin id `vault-mcp`, display name "Vault MCP") and the governance provider (plugin id `governor`, display name "Governor"), both at 0.19.0. The host alone gives a compatible local AI client audited, journaled, allowlist-scoped access to the vault — ungoverned. Installing the governance provider on top of it turns that audited access into governed access: it adds control over what the assistant can change, how results are verified, and which exact results have standing. Obsidian remains the visible home of the work either way.
 
-Governor was formerly called vault-mcp. The product name is now Governor; the old name appears only where migration history requires it.
+`vault-mcp` was this project's original single-plugin id, later renamed to `governor`. The 0.19.0 split reintroduces `vault-mcp` as the host's own id — a live, current plugin, not a legacy alias — while `governor` stays the governance provider's id. See [Status and compatibility](docs/status-and-compatibility.md) for exact release state and [the migration plan](docs/s3c-migration-plan.md) for the cutover.
 
-The name comes from the **governor in an engine**: a mechanism that regulates speed and output as the load changes. Governor does the analogous job for human-agent work. It does not choose the destination or do the work itself; it keeps the machinery within the authority, pace, and operating limits the person set.
+The name **Governor** comes from the **governor in an engine**: a mechanism that regulates speed and output as the load changes. The governance provider does the analogous job for human-agent work. It does not choose the destination or do the work itself; it keeps the machinery within the authority, pace, and operating limits the person set.
 
 > [!important]
 > This is a proposed target-state documentation package. It describes the coherent public product that results when the associated review recommendations are implemented. It is not evidence that every behavior described here is present in a particular build. See [Documentation basis](docs/documentation-basis.md) and [Status and compatibility](docs/status-and-compatibility.md).
@@ -18,7 +18,7 @@ You have two surfaces over the same notes:
 - **Obsidian** is where the notes live and where you inspect, edit, link, and review them.
 - **Your AI assistant** is a conversational way to work with those notes.
 
-Governor is the boundary between them. It starts with reading only. You decide which folders a connection may access and which classes of change it may attempt. For larger work, you can accept a bounded mandate once, let Governor verify the result, and decide an entire session or collection cohort together. Changes outside that authority remain proposals.
+The Governor suite is the boundary between them. It starts with reading only. You decide which folders a connection may access and which classes of change it may attempt. For larger work, you can accept a bounded mandate once, let Governor verify the result, and decide an entire session or collection cohort together. Changes outside that authority remain proposals.
 
 Underneath those human choices, every request becomes an **operation** of one registered **action**. Governor can preserve substantive reads as replayable **observations**, then connect them to the effects, verification, proposal, and authority decision that followed. This lets review answer both “What did it do?” and “What vault information did Governor give it?” without pretending to record the assistant's private reasoning.
 
@@ -88,25 +88,30 @@ Private operators may add separately installed capability packs. Those packs are
 
 ## Installing today (pre-Community-directory)
 
-Governor is not yet in Obsidian's Community Plugins directory (the submission is target state — see [Status and compatibility](docs/status-and-compatibility.md)). To install now:
+Neither plugin is yet in Obsidian's Community Plugins directory (the submission is target state — see [Status and compatibility](docs/status-and-compatibility.md)). Governor ships as two plugins: install the host, and optionally install the governance provider on top of it.
 
 1. **Build** (or grab a [release](https://github.com/nelsonlove/obsidian-governor/releases) — BRAT-installable):
    ```bash
-   npm install && npm run build      # emits main.js (bridge embedded) + manifest.json
+   npm install && npm run build      # builds both packages/host and packages/governor
    ```
-2. **Copy into your vault** and enable it:
+2. **Install the host** — copy its build output into your vault and enable it:
    ```bash
-   cp main.js manifest.json <vault>/.obsidian/plugins/governor/
+   cp packages/host/main.js packages/host/manifest.json <vault>/.obsidian/plugins/vault-mcp/
+   ```
+   Then Settings → Community plugins → enable **Vault MCP**. On its own, this gives a compatible local AI client audited, journaled, allowlist-scoped access to the vault — ungoverned.
+3. **Optionally install the governance provider** for accept/mandate/cohort governance on top of the host:
+   ```bash
+   cp packages/governor/main.js packages/governor/manifest.json <vault>/.obsidian/plugins/governor/
    ```
    Then Settings → Community plugins → enable **Governor**.
-3. **Connect Claude Code** — run **`Governor: Connect to Claude Code`** from the command palette (one-time; the exact registration line is always in **Settings → Governor** if you'd rather paste it yourself).
-4. **Restart any open Claude Code session** — MCP servers load at session start.
+4. **Connect Claude Code** — run **`Vault MCP: Connect to Claude Code`** from the command palette (one-time; the exact registration line is always in **Settings → Vault MCP** if you'd rather paste it yourself). The Claude Code MCP server name is `vault-mcp` and its tool prefixes are `mcp__vault-mcp__*` (the hyphen survives into the prefix). It was `governor` between 0.12.0 and the host/provider split; a registration from that era keeps working — the bridge finds the socket through discovery, not through the registration name — but the tools stay under the old prefix until you re-register. See [the migration plan](docs/s3c-migration-plan.md) for the two-step rename, including the `mcp__governor__*` permission entries that need re-adding under the new prefix.
+5. **Restart any open Claude Code session** — MCP servers load at session start.
 
-Upgrading from ≤0.11 (plugin id `vault-mcp`): disable the old "Vault MCP" plugin FIRST — Governor refuses to migrate while it is enabled and says so; its first load then adopts the old folder's data and leaves a `MIGRATED.md` marker.
+Migrating an existing single-`governor`-plugin install (0.17.0–0.18.2) onto the 0.19.0 split, or upgrading from ≤0.11 (plugin id `vault-mcp`, before the earlier rename to `governor`): see [the migration plan](docs/s3c-migration-plan.md) and [Status and compatibility](docs/status-and-compatibility.md) for exact release state — the split is built and not yet cut over.
 
 ## Start in ten minutes
 
-1. Install and enable Governor (see **Installing today**, above — the Community Plugins directory listing is target state).
+1. Install the host, and optionally the governance provider, and enable them (see **Installing today**, above — the Community Plugins directory listing is target state).
 2. Open **Settings → Governor**.
 3. Keep the initial posture at **Looking only**.
 4. Use **Connect a local assistant** and follow the client-specific instructions.

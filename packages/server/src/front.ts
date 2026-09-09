@@ -170,7 +170,7 @@ export function wireFailover(deps: {
 //
 // The plugin writes its Unix socket at `~/.claude/vault-mcp/<slug>.sock` where
 // `slug` is the vault name lowercased with non-alphanumeric chars replaced by `-`.
-// This mirrors the `vaultSlug()` + `socketPath()` helpers in packages/plugin/src/paths.ts
+// This mirrors the `vaultSlug()` + `socketPath()` helpers in packages/host/src/paths.ts
 // without adding a cross-package dependency.
 //
 // Override order (highest priority first):

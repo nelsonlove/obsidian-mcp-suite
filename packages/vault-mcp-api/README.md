@@ -6,7 +6,7 @@ Publisher SDK for [Governor](https://github.com/nelsonlove/obsidian-governor)'s 
 > Governor monorepo at `packages/vault-mcp-api` of
 > [nelsonlove/obsidian-governor](https://github.com/nelsonlove/obsidian-governor),
 > next to the host side of the contract
-> (`packages/plugin/src/mcp/external-tools.ts`) and a contract test that pins
+> (`packages/host/src/mcp/external-tools.ts`) and a contract test that pins
 > the two together. The old standalone repo
 > ([nelsonlove/vault-mcp-api](https://github.com/nelsonlove/vault-mcp-api)) is
 > to be archived; existing `github:nelsonlove/vault-mcp-api#v1.0.0` installs

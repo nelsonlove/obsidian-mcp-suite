@@ -11,7 +11,7 @@ You need:
 
 - Obsidian on a desktop computer;
 - a vault you can back up;
-- Governor installed and enabled; and
+- Vault MCP installed and enabled, plus Governor installed and enabled for the governed-write steps later in this guide; and
 - a compatible local AI client already able to connect to MCP servers.
 
 Use a test vault for your first setup if the notes matter. Governor adds safeguards, but Community Plugins run with Obsidian's local privileges.
@@ -22,13 +22,16 @@ Your notes stay in Obsidian. The assistant does not receive a second, authoritat
 
 Obsidian is where you verify the result. The assistant is where you state your intention.
 
-## 2. Install and enable Governor
+## 2. Install Vault MCP, then Governor
 
 1. In Obsidian, open **Settings → Community plugins**.
-2. Find **Governor**, install it, and enable it.
-3. Open **Settings → Governor**.
+2. Find **Vault MCP**, install it, and enable it. This is the host: it holds the bridge, the read tools, and the guard scoping. It works standalone: with no Governor installed, its governance-seam consultations are vacuous, so you still get audited, journaled, allowlist-scoped vault access without governance.
+3. Find **Governor**, install it, and enable it. Governor plugs into Vault MCP rather than replacing it, and adds proposals, review, and admission on top.
+4. Open **Settings → Governor**.
 
-Governor is desktop-only. If you read the vault on a phone or tablet, the notes still sync normally, but the local bridge does not run there.
+Vault MCP and Governor are both desktop-only. If you read the vault on a phone or tablet, the notes still sync normally, but the local bridge does not run there.
+
+If you already had Governor installed before this split, see [the migration plan](s3c-migration-plan.md) for the cutover steps; this walkthrough assumes a fresh install.
 
 ## 3. Stay in Looking only
 
@@ -36,13 +39,13 @@ A new installation begins in **Looking only**. Leave it there.
 
 In this posture, the assistant can search, read, explain, open notes, inspect links and properties, and run report-only checks within its assigned scope. It cannot change the vault.
 
-This is not merely a polite instruction to the assistant. Mutating operations are unavailable or refused at Governor's boundary.
+This is not merely a polite instruction to the assistant. Mutating operations are unavailable or refused at Vault MCP's guard boundary.
 
 ## 4. Connect a local assistant
 
-In Governor settings, choose **Connect a local assistant** and select the client you use. Governor provides the local connection details and a client-specific registration step.
+In Vault MCP settings, choose **Connect a local assistant** and select the client you use. Vault MCP provides the local connection details and a client-specific registration step; if Governor is also installed, it plugs into this same connection rather than adding a second one.
 
-The connection uses a local desktop bridge. It is not a public web endpoint. The configured socket is accessible only to the local account under the target design, but any process running as you may still have substantial local authority. Do not treat the socket as an internet-facing service.
+The connection uses a local desktop bridge owned by Vault MCP. It is not a public web endpoint. The configured socket is accessible only to the local account under the target design, but any process running as you may still have substantial local authority. Do not treat the socket as an internet-facing service.
 
 After registering the connection, start a new client session so it discovers the current capability surface.
 
@@ -62,7 +65,7 @@ Poor first scope:
 the whole vault
 ```
 
-Governor filters discovery as well as direct reads. A note outside scope should appear unresolved, not “found but forbidden,” so the connection does not learn hidden paths through ordinary lookup.
+Vault MCP's guard filters discovery as well as direct reads. A note outside scope should appear unresolved, not “found but forbidden,” so the connection does not learn hidden paths through ordinary lookup.
 
 ## 6. Ask your first read-only question
 
@@ -76,7 +79,7 @@ Check three things:
 2. Obsidian opens the expected note.
 3. Nothing in the vault changes.
 
-Governor also returns a lightweight observation receipt. It names the read operation, scope, capture level, truncation or redaction, and a replay reference when the response was retained replayably. This records what Governor returned; it does not record the assistant's private reasoning.
+Vault MCP also returns a lightweight observation receipt. It names the read operation, scope, capture level, truncation or redaction, and a replay reference when the response was retained replayably. This records what Vault MCP returned; it does not record the assistant's private reasoning.
 
 You can stop here. Search, orientation, explanation, navigation, history, and validation are useful without enabling any writes.
 
@@ -109,7 +112,7 @@ Authority is both *where* and *what*: scope limits the territory; posture limits
 
 ## 9. Apply, verify, and read the receipt
 
-Ask the assistant to apply the preview. Governor should:
+Ask the assistant to apply the preview. Vault MCP, the host that executes the write, should:
 
 1. compare the note with the revision the preview used;
 2. serialize the write behind any other active mutations;

@@ -87,7 +87,7 @@ It does not block this extraction, because **bases is the OWNER of the leaf and 
 - `makeSerializer` and `captureWithCleanup` were used only by the three files that moved.
 - The triage satellite's `baseQuery` ctx seam is a **shaped type that nothing ever supplies** — it imports nothing from the host and its handler refuses `bases_unavailable`. It is not a consumer.
 
-So zero host callers remained, and after the move `grep -rn "queryBaseRows\|makeSerializer\|captureSerializer\|captureWithCleanup" packages/plugin/src` returns nothing. The mirror-image risk is exactly why this is a **move and not a copy**: had the host kept a copy, the two serializers would race.
+So zero host callers remained, and after the move `grep -rn "queryBaseRows\|makeSerializer\|captureSerializer\|captureWithCleanup" packages/host/src` returns nothing. The mirror-image risk is exactly why this is a **move and not a copy**: had the host kept a copy, the two serializers would race.
 
 The serializer must stay **module-scoped, not per-registration** — `main.ts` rebuilds the specs on every settings write and the host snapshots them per connection, so a per-build serializer would serialize nothing. Pinned by test.
 

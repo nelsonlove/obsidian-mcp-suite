@@ -1,8 +1,22 @@
 # Architecture
 
-Governor is an Obsidian plugin, local bridge, operation kernel, Git-backed history engine, attestation verifier, and human review surface. Its architecture is organized around one principle: **every surface invokes a registered action through the same operation, authority, and observability boundary before it reads the vault, attempts an effect, or changes standing**.
+Governor is a suite of Obsidian plugins — a local bridge and operation kernel, a Git-backed history engine, an attestation verifier, and a human review surface — divided across two artifacts plus a set of capability satellites. Its architecture is organized around one principle: **every surface invokes a registered action through the same operation, authority, and observability boundary before it reads the vault, attempts an effect, or changes standing**.
 
 This document describes the target-state architecture while preserving mechanisms already evidenced in the repository, such as live-app access, a local socket, write queue, journal, revisions, idempotency, stable addressing, protected acceptance, modules, and an in-app review pane. Git-backed proposals, durable sessions, mandates, cohorts, signed attestations, and Sync reconciliation are target-state additions.
+
+## Three artifacts, one boundary
+
+The suite has three roles and three trust postures. The split of code across them is [the suite split design](suite-split-design.md); what follows is what each role owns and where the line between them runs.
+
+**The host** — `packages/host`, Obsidian plugin id `vault-mcp` — is the honest standalone product. It owns the socket transport and the embedded bridge, the guard (read-only mode and the path allowlist), kernel v0 (write queue, journal, idempotency, advisory locks, the uid index, the record guard), the operation executor and action registry, observation capture and the blob store, the core `obsidian_*` tool surface, scheme and JD addressing, the conformance rail, the module host, the external-tool registry, and the governance seam itself. Installed alone it gives audited, journaled, allowlist-scoped vault access over MCP. That is not a degraded mode: with no provider registered, each seam consultation iterates an empty list, so the standalone host is the vacuous case rather than a special one.
+
+**The governance provider** — `packages/governor`, Obsidian plugin id `governor` — is the flagship consumer of the seam and the only thing in the suite that holds authority. Proposals, verification, admission, cohorts, mandates, transformations and promotion, the history store, the review pane, the gesture perimeter, and the legacy acceptance machinery with its migration, cutover and store-binding all live inside it, closure-held. It publishes five MCP tools back into the host through `vault-mcp-api` like any other publisher. Installing it turns audited access into governed access.
+
+**Satellites** are capability packs — Bases, vocabulary, health, skills compilation, triage, cross-session coordination, fileclass, provenance, JD scaffolding, QuickAdd compilation — each its own plugin publishing tools through `vault-mcp-api`, with no special standing and no seam registration.
+
+**The seam is the boundary, and it is deliberately narrow.** It offers exactly two hook classes and there will not be a third. A write observer runs after the host's own journal record, observe-only, dispatched off the caller's result path so a slow or throwing observer costs no one a write that already landed. A session refusal runs inside the kernel's queued closure at dequeue, bounded by the same write timeout as the operation itself, and is refusal-shaped rather than boolean: it returns a typed refusal or silence, so the type cannot express permission and no registrant can un-refuse what the host or another registrant refused. Registration is reachable from `app`, which is harmless; the registered closures are held in module-private WeakMaps, which is not optional, because a reachable observer is the thing that manufactures proposals. Every `register*` call returns a disposer and the disposer is the only revocation — `id` is a diagnostic label, never an address.
+
+Two costs of the split are named rather than glossed. The provider is now removable like any plugin, where before it was inseparable from the host; the host answers that only by refusing to toggle or uninstall a registered provider's id, which stops an agent doing cleanup, not a determined human. And the provider's five tools became external tools, so their read-only claims are distrusted unless the operator lists `governor` in the host's trusted-read-only list, and under an active path allowlist the host refuses outright any of them that carries no recognized path key — four of the five. Both are stricter postures than the folded arrangement had, and the second costs availability to buy them.
 
 ## System components
 
@@ -79,7 +93,7 @@ Headless pure cores are still preferred for deterministic planning and validatio
 
 ## Local bridge
 
-The bridge translates a local MCP connection into the plugin's in-process capability surface. In the target public configuration:
+The bridge belongs to the host plugin and translates a local MCP connection into its in-process capability surface. In the target public configuration:
 
 - it uses a per-vault local socket;
 - the socket is owner-readable/writable only;
@@ -203,6 +217,8 @@ Monthly append-only JSONL records contain reduced operation metadata, not note b
 
 A durable session binds the Governor-derived actor, purpose, base state, scope, mandate, proposals, cohorts, receipts, expiry, and closure. A human-accepted mandate names allowed change classes, transformation, limits, verifier, admission mode, and recovery. An agent may counter-propose a mandate but cannot activate, widen, or renew it.
 
+Ownership of the session is split across the seam, because a session is transport state and only the host knows a connection began. The host mints sessions, keeps their lifecycle log (`opened`, `closed`, `expired`) beside its own state, and applies a pure expiry floor that needs no store and no provider. The provider keeps refusal state only — revocation, and the session-to-mandate attachment — and answers the seam's refusal hook from it, so a human revoking a session in the review pane reaches the write path as a refusal at dequeue. No connection-lifecycle notification was added to the seam, which has a consequence worth stating plainly rather than hiding: the provider no longer witnesses a session opening, so revoking or attaching a mandate acts on a session id with no prior open record required. That is a real loosening. It is safe in this direction because revocation can only add refusals, and because mandate fit already binds by session id rather than by the session record.
+
 ### Cohorts
 
 A cohort is an immutable manifest of exact proposal items selected by session, collection, scope, class, or their intersection. Its digest freezes the decision subject. A collection query remains dynamic; a cohort never does.
@@ -230,13 +246,15 @@ Dedicated actions are preferred to generic commands because their postconditions
 
 The accepted family is a structural floor enforced at the shared write primitive and at every exceptional transport that can write content. The guard decides over the content Obsidian will honor, including frontmatter boundary variations.
 
+That floor is host-side, and the split deliberately left it there: a host with no provider installed still refuses an agent stamping the accepted family into frontmatter, which is defense in depth rather than duplication. The fuller transition rules and everything downstream of them belong to the provider.
+
 Human acceptance lives in an in-app review component with no agent accept or admit verb. It may cover an individual proposal, an immutable cohort, or a prospective mandate. Governor verifies the subject and authority conditions, emits an admission attestation, then atomically advances the local standing ref. A race that changes any subject aborts advancement.
 
 Declared protected properties extend the same transition predicates. Authority-conferring values are honored from blessed baseline state, not raw unreviewed frontmatter.
 
 ## Review center
 
-The review component owns:
+The review component ships in the governance provider plugin (`governor`), not in the host. It owns:
 
 - operation timelines and observation/effect playback;
 - baseline snapshots;
@@ -265,7 +283,7 @@ A module declares identity, user outcome, dependencies, settings, action referen
 
 One bad module is skipped and reported rather than taking down the core surface. A load-bearing dependency failure is unavailable, not silently empty.
 
-The [Module directory](modules.md) accounts for scheme, acceptance, and the conformance, survey, QuickAdd, identity/link, write-kernel, and external-publisher surfaces. Scheme and acceptance are the two modules the host still mounts itself. Nine capabilities that were once modules here now ship as separate satellite plugins, each publishing through `vault-mcp-api`: skills compilation as `vault-skills` (see [skills.md](skills.md)), triage as `vault-triage` (see [triage.md](triage.md)), cross-session coordination as `vault-crosssession` (see [crosssession.md](crosssession.md)), then — at the S7 read-tier extraction — the vocabulary provider as `vault-vocab` (see [vocabulary-module.md](vocabulary-module.md)), the health scan as `vault-health` and the Bases surface as `vault-bases` (see [bases.md](bases.md)), and finally the mutating tier: the fileclass CLI proxy as `vault-fileclass`, derived-content provenance as `vault-provenance` (see [provenance.md](provenance.md)), and JD scaffolding as `vault-jd-scaffold`.
+The [Module directory](modules.md) accounts for scheme and the conformance, survey, QuickAdd, identity/link, write-kernel, and external-publisher surfaces. **Scheme is now the only capability module the host mounts itself.** Acceptance was the second until the S3c split, and it did not become a satellite: it left the module registry entirely with the governance provider, taking its enabled flag and its `config` block into the provider's own `data.json` and settings tab. That is the difference between a capability pack and the perimeter — a satellite publishes tools through a contract, while the provider registers on the seam and owns authority, so a module row was the wrong shape for it in both directions. Nine capabilities that were once modules here do ship as separate satellite plugins, each publishing through `vault-mcp-api`: skills compilation as `vault-skills` (see [skills.md](skills.md)), triage as `vault-triage` (see [triage.md](triage.md)), cross-session coordination as `vault-crosssession` (see [crosssession.md](crosssession.md)), then — at the S7 read-tier extraction — the vocabulary provider as `vault-vocab` (see [vocabulary-module.md](vocabulary-module.md)), the health scan as `vault-health` and the Bases surface as `vault-bases` (see [bases.md](bases.md)), and finally the mutating tier: the fileclass CLI proxy as `vault-fileclass`, derived-content provenance as `vault-provenance` (see [provenance.md](provenance.md)), and JD scaffolding as `vault-jd-scaffold`.
 
 ## Public and private distributions
 

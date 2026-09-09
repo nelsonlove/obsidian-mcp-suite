@@ -48,7 +48,7 @@ export const OWNER = sanitizeOwnerId(PLUGIN_ID);
  *
  * It is a REVIEW AID, never a live tripwire: this snapshot cannot fail when the
  * host changes. The test that actually fires on a host addition is the host's own
- * `packages/plugin/tests/guard.test.mjs`, which drives the live `collectPaths`.
+ * `packages/host/tests/guard.test.mjs`, which drives the live `collectPaths`.
  */
 export const HOST_PATH_KEYS = [
   "path", "from", "to", "target_path", "template_path", "subdir", "file_path", "output_folder",

@@ -67,17 +67,15 @@ import {
   DEFAULT_PLUGIN_SETTINGS,
   type CrosssessionPluginSettings,
 } from "./settings.js";
+import { findHostPlugin, HOST_PLUGIN_IDS, type HostPluginLike } from "./host-lookup.js";
 
-/** The host plugin's ids, newest first — the same pair vault-mcp-api reads, and
- *  for the same reason (Governor renamed `vault-mcp` → `governor` in 0.12.0).
- *  Used ONLY to find the settings and the receipt file to adopt from;
- *  publishing itself is entirely vault-mcp-api's business. */
-const HOST_PLUGIN_IDS = ["governor", "vault-mcp"] as const;
-
-interface HostPluginLike {
-  settings?: unknown;
-  manifest?: { dir?: string };
-}
+// "Which loaded plugin is the host?" lives in `host-lookup.ts` — Obsidian-free,
+// so it is testable headlessly (`tests/host-lookup.test.mjs`), and the one copy
+// of that answer in the suite's satellites that HAS a behavioural test. The id
+// list, its post-split order, and the `api`-presence discriminator (without
+// which the governance PROVIDER matched under the `governor` id) are documented
+// there. Used ONLY to find the settings and the receipt file to adopt from;
+// publishing itself is entirely vault-mcp-api's business.
 
 export default class VaultCrosssessionPlugin extends Plugin {
   settings: CrosssessionPluginSettings = { ...DEFAULT_PLUGIN_SETTINGS };
@@ -157,16 +155,12 @@ export default class VaultCrosssessionPlugin extends Plugin {
     }
   }
 
-  /** The host plugin instance, newest id first, or undefined. */
+  /** The host plugin instance, current id first, or undefined. */
   private hostPlugin(): HostPluginLike | undefined {
     const plugins = (this.app as unknown as {
-      plugins?: { plugins?: Record<string, HostPluginLike> };
+      plugins?: { plugins?: Record<string, HostPluginLike | undefined> };
     }).plugins?.plugins;
-    for (const id of HOST_PLUGIN_IDS) {
-      const host = plugins?.[id];
-      if (host) return host;
-    }
-    return undefined;
+    return findHostPlugin(plugins);
   }
 
   /**

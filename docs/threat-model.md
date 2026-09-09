@@ -54,20 +54,22 @@ May receive content through the connected client or an optional integration. Its
 
 ```mermaid
 flowchart LR
-    H["Human in Obsidian"] -->|settings and review gestures| G["Governor"]
+    H["Human in Obsidian"] -->|settings and review gestures| Gv["Governance provider (governor)"]
     C["Local AI client"] -->|MCP requests| B["Local bridge"]
-    B --> G
-    G -->|supported APIs| O["Running Obsidian"]
+    B --> Ho["Host (vault-mcp)"]
+    Ho -->|supported APIs| O["Running Obsidian"]
     O --> V["Vault notes"]
-    G --> P["Plugin-owned state"]
-    G --> T["Local Git store and attestation ledger"]
+    Ho --> P["Plugin-owned state"]
+    Ho -.->|governance seam, optional| Gv
+    Gv --> P
+    Gv --> T["Local Git store and attestation ledger"]
     S["Obsidian Sync"] --> O
     S --> P
     C -.->|provider-dependent| R["Remote or local model"]
-    X["Other local software and plugins"] -.->|outside Governor boundary| O
+    X["Other local software and plugins"] -.->|outside the host boundary| O
 ```
 
-Governor mediates the solid request path. It cannot mediate the dotted local-software path or guarantee what the client sends to its model provider.
+The host mediates the solid request path by itself, including the local bridge and the MCP surface. The governance provider is reached only across the dotted governance seam and is itself optional and removable — the split's own design names this as its largest doctrinal cost. With no provider installed, seam consultations are vacuous and the vault works ungoverned — still journaled and allowlist-scoped, just not governed. The host's mitigation is narrow: once a provider id is registered as the active governance provider, the host refuses to toggle it off or uninstall it, so a human cannot silently defeat governance through the plugin manager alone. Neither component can mediate the dotted local-software path, and neither can guarantee what the client sends to its model provider.
 
 ## Security assumptions
 
@@ -161,6 +163,8 @@ When one of these assumptions fails, Governor may still produce useful evidence 
 **Controls:** treat external read-only assertions as mutating unless the publishing plugin identity is explicitly trusted; block unscopable mutations under an active scope.
 
 **Residual:** Trusting a compromised plugin accepts its assertion. Exact identity does not establish code integrity.
+
+**Concrete instance:** the governance provider's five published tools (`governance_pending_review`, `governance_revisions`, `governance_submit_revision`, `governance_mandate_draft`, `governance_mandates`) are external tools from the host's point of view. Their `readOnlyHint` claims are distrusted unless the operator lists `governor` in `trustedReadOnlyPlugins`, so by default they register as mutating; under an active path allowlist the host's gate also blocks any external tool whose arguments carry no recognized path key, so `governance_pending_review`, `governance_revisions`, `governance_mandates`, and `governance_mandate_draft` are refused wholesale while `governance_submit_revision` (which takes `path`) stays scoped per-path. They also lose the in-tool `isVisible` filtering they had as built-in tools, because a satellite plugin has no access to the host's guard settings — the host's gate is the enforced boundary now. This is stricter than the pre-split posture, and it is the same finding class as every previous satellite extraction.
 
 ### 11. Missing dependency reported as empty
 

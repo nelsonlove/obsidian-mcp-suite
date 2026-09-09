@@ -394,7 +394,7 @@ class VaultImpl {
   // module-level singleton functions (writeNote/appendNote/setFrontmatterField/
   // patchNote, exported below) delegate to — so every write surface on the
   // filesystem backend inherits the SAME check from the SAME place, matching
-  // ObsidianBackend's guard (packages/plugin/src/mcp/obsidian-backend.ts).
+  // ObsidianBackend's guard (packages/host/src/mcp/obsidian-backend.ts).
 
   /** The note's current on-disk content, or `null` when it doesn't exist / can't be read. */
   private async diskContentSafe(relPath: string): Promise<string | null> {
