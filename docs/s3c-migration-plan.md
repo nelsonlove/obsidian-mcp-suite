@@ -139,14 +139,18 @@ Every item below is a claim this package makes that no test in this repository c
 - [ ] The host loads and the sticky-Notice path does NOT fire.
 - [ ] The journal copy is byte-identical, month for month.
 - [ ] The provider's folder is unchanged (`git status` on a vault snapshot, or a directory hash before and after).
+- [ ] **RESUME (release-review F3, 2026-09-08).** Interrupt the first adoption part-way (kill Obsidian while the journal is copying, or plant a host `journal/` holding only the older months and no `data.json`), then load again. The missing months must ARRIVE, the months already there must not be rewritten, and `ADOPTED-FROM-GOVERNOR.md` must appear only once the copy is complete. Before the fix the retry classified the existing directory as `skipped` and stamped the partial copy done.
 
 **The seam across two plugins.** Every seam mechanic is pinned in-process (`packages/host/tests/seam.test.mjs`), and the SDK's registration path is pinned against the host's shapes (`packages/vault-mcp-api/tests/contract.test.ts`). What is NOT reachable is the actual cross-plugin round trip: two Obsidian plugin instances, one registering on the other's `api` object.
 
 - [ ] With both plugins enabled, an MCP write produces a proposal in `governance/proposals.jsonl`.
 - [ ] Disabling the provider mid-session leaves the host fully functional (writes land, journal records, no errors), which is the standalone-host claim.
-- [ ] Re-enabling the provider re-registers: `registerGovernance` must pick the host up again on the ready event, and a second write must propose again.
-- [ ] `obsidian_plugin_toggle('governor', false)` is REFUSED while the provider holds a registration, and the refusal names it as a registered governance provider (condition 6).
-- [ ] `obsidian_plugin_uninstall('governor')` is refused for the same reason.
+- [ ] **NOW EXPECTED TO PASS (release-review F1, 2026-09-08).** After disabling the provider, a further MCP write produces NO proposal and NO console noise from a dead hook. Before the fix the SDK dropped a live registration on each ready event instead of disposing it, so an orphaned write observer survived the disable and there was no way left to revoke it. Check `governance/proposals.jsonl` stops growing.
+- [ ] **NOW EXPECTED TO PASS (F1).** One write with both plugins enabled produces exactly ONE proposal, not two, and charges the mandate budget ONCE. The host fires both ready events on every load, so the duplicate landed on every ordinary load.
+- [ ] Re-enabling the provider re-registers: `registerGovernance` must pick the host up again on the ready event, and a second write must propose again — still exactly one proposal.
+- [ ] `obsidian_plugin_toggle('governor', false)` is REFUSED. **The refusal text changed (release-review F5, 2026-09-08):** the id is now name-protected, so the refusal fires whether or not the provider currently holds a seam registration, and reads `refusing to disable 'governor' via MCP: that id is either the governance provider … or a pre-split host …`. A provider that HAS registered is still additionally covered by the condition-6 refusal naming it a registered governance provider — to see that one, use a provider id other than `governor`.
+- [ ] `obsidian_plugin_toggle('governor', true)` is still ALLOWED — the protection is one-directional and must never become a lockout.
+- [ ] `obsidian_plugin_uninstall('governor')` is refused for the same reasons.
 
 **Published tool names.** The grandfather table is unit-tested; that the SDK actually publishes these five specs into the host's registry under those exact names, in a live renderer with two bundles, is not.
 
@@ -156,7 +160,7 @@ Every item below is a claim this package makes that no test in this repository c
 **Load order.** `publishTools` and `registerGovernance` both handle "the host may load later" through the ready event, and the host fires `vault-mcp:ready` and `governor:ready`. Untestable headlessly.
 
 - [ ] Provider enabled BEFORE host: tools appear after the host loads.
-- [ ] Host reloaded while the provider stays loaded: tools reappear, and the seam hooks re-register into the NEW seam rather than holding the dead one.
+- [ ] Host reloaded while the provider stays loaded: tools reappear, and the seam hooks re-register into the NEW seam rather than holding the dead one — and, since F1, the stale hooks are DISPOSED rather than merely dropped, so `app.plugins.plugins['vault-mcp']` (the fresh one) ends up with exactly one observer and one session-refusal hook. A write after the reload must still produce exactly one proposal.
 
 **Settings ordering.** The merge-on-save rule (§1, `data.json`) is the fix for a race no headless test can produce: the provider saving before the host has adopted.
 
@@ -164,8 +168,8 @@ Every item below is a claim this package makes that no test in this repository c
 
 **The review queue's journal directory.** The provider derives the queue from the host's journal directory, resolved from the host plugin's `manifest.dir`.
 
-- [ ] The pane shows the same pending set it showed before the split.
-- [ ] With the host disabled, enabling the pane refuses with the explanatory Notice rather than showing an empty queue.
+- [ ] The pane shows the same pending set it showed before the split, and it is derived from the HOST's `plugins/vault-mcp/journal/` — not from the frozen pre-split copy still sitting in `plugins/governor/journal/`. Confirm by appending to the host's journal and watching the queue move.
+- [ ] **NOW EXPECTED TO PASS (release-review F2, 2026-09-08).** With the host disabled (or not installed) and the provider enabled, turning the review pane on refuses with the explanatory Notice. Before the fix the provider's host lookup matched ITSELF under the `governor` id, so this branch was unreachable: the pane mounted on the provider's own folder and rendered the frozen pre-split journal as the current queue.
 
 **The review queue's event drive (#261), which got narrower.** The host used to nudge the queue from inside its `journal.append` wrapper — every append. It cannot now; the provider nudges from the seam's write observer instead, which fires only where write facts were produced. The property that matters is unchanged in kind and reduced in scope, and only a live window can show it.
 
