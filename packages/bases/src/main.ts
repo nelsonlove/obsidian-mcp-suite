@@ -71,13 +71,31 @@ import {
   type BasesPluginSettings,
 } from "./settings.js";
 
-/** The host plugin's ids, newest first — the same pair vault-mcp-api reads, and
- *  for the same reason (Governor renamed `vault-mcp` → `governor` in 0.12.0).
+/** The host plugin's ids, CURRENT FIRST — the same pair vault-mcp-api reads, in
+ *  the same order, and for the same reason: the host id moved `vault-mcp` →
+ *  `governor` at 0.12.0 and back to `vault-mcp` at the suite split's S3c.
  *  Used ONLY to find the settings to adopt from; publishing itself is entirely
- *  vault-mcp-api's business. */
-const HOST_PLUGIN_IDS = ["governor", "vault-mcp"] as const;
+ *  vault-mcp-api's business.
+ *
+ *  THE ORDER AND THE `api` CHECK BELOW ARE BOTH PART OF THE ANSWER. Post-split
+ *  `app.plugins.plugins["governor"]` is the governance PROVIDER, which exposes
+ *  no `api` object, so a bare-presence match over the old `["governor",
+ *  "vault-mcp"]` order resolved the PROVIDER as the host — this satellite would
+ *  then have adopted the provider's settings as the host's. The discriminator is
+ *  vault-mcp-api's own (`getApi`, packages/vault-mcp-api/src/index.ts): a plugin
+ *  counts as the host only if it exposes the api surface.
+ *
+ *  THE SUITE'S ONE BEHAVIOURAL TEST of this lookup is
+ *  `packages/crosssession/tests/host-lookup.test.mjs`, over the extracted
+ *  `packages/crosssession/src/host-lookup.ts` — same two lines, same reasoning,
+ *  written out in full there. Nine identical suites would be nine copies of one
+ *  assertion; a change here belongs in that file too. */
+const HOST_PLUGIN_IDS = ["vault-mcp", "governor"] as const;
 
 interface HostPluginLike {
+  /** The plugin-to-plugin api object. Its PRESENCE is what makes a plugin the
+   *  host — the governance provider has none. See HOST_PLUGIN_IDS. */
+  api?: unknown;
   settings?: unknown;
 }
 
@@ -163,14 +181,17 @@ export default class VaultBasesPlugin extends Plugin {
     }
   }
 
-  /** The host plugin instance, newest id first, or undefined. */
+  /** The host plugin instance, current id first, or undefined. */
   private hostPlugin(): HostPluginLike | undefined {
     const plugins = (this.app as unknown as {
       plugins?: { plugins?: Record<string, HostPluginLike> };
     }).plugins?.plugins;
     for (const id of HOST_PLUGIN_IDS) {
       const host = plugins?.[id];
-      if (host) return host;
+      // A plugin under a host id exposing no `api` is the governance PROVIDER,
+      // not a host — skip it and fall through. See HOST_PLUGIN_IDS above.
+      if (!host || !host.api) continue;
+      return host;
     }
     return undefined;
   }
