@@ -1,4 +1,4 @@
-// tools.ts — the vault-triage satellite's tool surface. TWO tools, published to
+// tools.ts — the vaultmcp-triage satellite's tool surface. TWO tools, published to
 // the Governor host through `vault-mcp-api` (see main.ts):
 //
 //   queue   — the agent's view of a triage queue (declared read-only). Default:
@@ -6,7 +6,7 @@
 //             oldest first). With `base`/`view` — or a config-named `queue` —
 //             the queue would be the EVALUATED rows of a `.base` file; that
 //             path needs the bases capture seam, which since S7 lives in the
-//             `vault-bases` satellite and is reachable from neither the host
+//             `vaultmcp-bases` satellite and is reachable from neither the host
 //             nor this plugin, so it refuses typed (`bases_unavailable`). See
 //             the base-backed-queue note at the bottom of this file.
 //   dispose — the ONE guarded mutating verb, disposition selected from the
@@ -19,11 +19,11 @@
 // ── The published names DID change, and that is the one thing to know ────────
 //
 // The host publishes an external tool as `<sanitized publisher id>_<bare name>`.
-// This plugin's id is `vault-triage`, which sanitizes to `vault_triage`, so the
-// two bare names below go on the wire as `vault_triage_queue` and
-// `vault_triage_dispose` — NOT the `triage_queue` / `triage_dispose` the folded
-// module shipped. The skills satellite kept its names because `vault-skills`
-// sanitizes to exactly the `vault_skills` prefix its tools already carried;
+// This plugin's id is `vaultmcp-triage`, which sanitizes to `vaultmcp_triage`, so the
+// two bare names below go on the wire as `vaultmcp_triage_queue` and
+// `vaultmcp_triage_dispose` — NOT the `triage_queue` / `triage_dispose` the folded
+// module shipped. The skills satellite kept its names because `vaultmcp-skills`
+// sanitizes to exactly the `vaultmcp_skills` prefix its tools already carried;
 // there is no id that both matches the suite's `vault-*` naming and reproduces
 // a bare `triage_` prefix. The plugin id and the tool namespace are the same
 // string, so this is a consequence of the id, not an independent decision — see
@@ -124,7 +124,7 @@
 // `description` and STRING `enum` survive; `default`, `min`, `max` and
 // `pattern` DO NOT. So every bound this tool relies on is re-applied in the
 // handler — the `limit` clamp and the `dry_run` default below. That is the
-// `vault_skills_release` semver lesson: a constraint that lives only in the
+// `vaultmcp_skills_release` semver lesson: a constraint that lives only in the
 // declared schema never runs for an MCP caller.
 //
 // Obsidian-free by construction: the vault arrives through the injected
@@ -322,9 +322,9 @@ export function buildTriageTools(source: TriageSource, ctx: TriageToolsCtx): Sdk
       "configured inbox marker (default \" Inbox for \"; the inbox's own folder note is not an item), with " +
       "path, enclosing inbox, created/modified times, age in days, and frontmatter `type`/`status`, OLDEST " +
       "FIRST. Capped by `limit` (`truncated: true` + the total when more exist). `base`/`view`/`queue` select a " +
-      "Base-backed queue, which needs the Bases capture path owned by the separate `vault-bases` plugin: this " +
+      "Base-backed queue, which needs the Bases capture path owned by the separate `vaultmcp-bases` plugin: this " +
       "plugin cannot reach it, so those forms refuse typed (`bases_unavailable`) and the marker queue is the " +
-      "working surface (for evaluated Base rows call `vault_bases_query`). Read-only in " +
+      "working surface (for evaluated Base rows call `vaultmcp_bases_query`). Read-only in " +
       "intent; the host treats an external tool's read-only claim as untrusted, so under a path allowlist this " +
       "tool is blocked outright (it carries no path argument to scope by).",
     inputSchema: {
@@ -397,8 +397,8 @@ export function buildTriageTools(source: TriageSource, ctx: TriageToolsCtx): Sdk
           refuse(
             "bases_unavailable",
             "base-backed queues evaluate a .base through the Bases capture path owned by the separate " +
-              "`vault-bases` plugin, which is internal to it and not reachable from this plugin — use the " +
-              "inbox-marker queue (omit `base`/`queue`), or read the Base with the `vault_bases_query` tool",
+              "`vaultmcp-bases` plugin, which is internal to it and not reachable from this plugin — use the " +
+              "inbox-marker queue (omit `base`/`queue`), or read the Base with the `vaultmcp_bases_query` tool",
           );
         }
         const outcome = await ctx.baseQuery({ path: basePath, view: baseView, limit: cap });
@@ -682,18 +682,18 @@ export function buildTriageTools(source: TriageSource, ctx: TriageToolsCtx): Sdk
 // `captureSerializer`, `withBeltDeadline` and `captureWithCleanup` MOVED into
 // `packages/bases/src/tools.ts` — a move, with no copy left behind (nothing in
 // `packages/host/src` references any of them). One serializer over the one
-// leaf still, owned now by the `vault-bases` plugin rather than by the host. A
+// leaf still, owned now by the `vaultmcp-bases` plugin rather than by the host. A
 // copy HERE would still be wrong for exactly the reason above: two plugins each
 // holding a serializer over the one leaf is the same race whichever two plugins
 // they are. What changed is only the seam's address, never the argument.
 //
 // So `ctx.baseQuery` is left unsupplied and the base/queue forms refuse typed,
 // through the SAME feature-gate branch they always had for a pre-Bases
-// Obsidian. Callers that want evaluated Base rows have the `vault-bases`
-// satellite's `vault_bases_query` tool — the same evaluation path, under the
+// Obsidian. Callers that want evaluated Base rows have the `vaultmcp-bases`
+// satellite's `vaultmcp_bases_query` tool — the same evaluation path, under the
 // name publication gave it (`<sanitized publisher id>_<bare name>`, with the
 // module's redundant `base_` prefix stripped so it is not
-// `vault_bases_base_query`; `base_list` likewise became `vault_bases_list`).
+// `vaultmcp_bases_base_query`; `base_list` likewise became `vaultmcp_bases_list`).
 // The seam stays in the ctx (and its tests keep exercising it) so the feature
 // re-lights the day a publisher can be handed a bases service — an
 // apiVersion-2 item, alongside carrying the caller's scope.

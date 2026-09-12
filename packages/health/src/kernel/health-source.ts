@@ -1,4 +1,4 @@
-// The HealthSource seam: everything the vault-health scan reads, expressed as an
+// The HealthSource seam: everything the vaultmcp-health scan reads, expressed as an
 // injected dependency so the pure tiered-findings core (scan.ts) runs with no
 // `obsidian` / `app` / `metadataCache` import. The Obsidian-backed implementation
 // is `obsidianHealthBackend(app)` (src/obsidian-source.ts); tests inject an

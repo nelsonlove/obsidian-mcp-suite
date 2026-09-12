@@ -1,4 +1,4 @@
-# Vault Skills (plugin id `vault-skills`)
+# Vault Skills (plugin id `vaultmcp-skills`)
 
 Compiles the vault's skill / agent / policy / command notes into a Claude Code plugin and materializes it to disk. Two surfaces over one compiler core: an in-Obsidian human surface (a preview pane, six palette commands, a ribbon icon, opt-in export-on-save) and an agent-facing surface of six MCP tools published to the Governor host.
 
@@ -12,7 +12,7 @@ Written as the standalone `obsidian-vault-skills` plugin, folded into the Govern
 
 ```text
 packages/skills/
-├── manifest.json          plugin id `vault-skills`, isDesktopOnly
+├── manifest.json          plugin id `vaultmcp-skills`, isDesktopOnly
 ├── esbuild.config.mjs     bundles src/main.ts → main.js; embeds assets/new-skill/*
 ├── assets/new-skill/      the bundled "new-skill" skill the exporter emits
 ├── src/
@@ -56,14 +56,14 @@ The pane, the commands, the ribbon, and export-on-save are pure Obsidian plus th
 
 ### 1. The allowlist boundary moved to the host — and got stricter
 
-While skills was a module, `vault_skills_preview` filtered the compiled BODIES it returned by each contributing note's visibility under the host's path allowlist. That filter is still in `src/tools.ts`, in full, and nothing was deleted from it — but it is **defence in depth now, not the enforced boundary**, and in the shipped configuration it does nothing at all: a satellite cannot reach the host's guard settings, so `ctx.getSettings` is undefined and the filter degrades through exactly the `!settings ||` branch it always had.
+While skills was a module, `vaultmcp_skills_preview` filtered the compiled BODIES it returned by each contributing note's visibility under the host's path allowlist. That filter is still in `src/tools.ts`, in full, and nothing was deleted from it — but it is **defence in depth now, not the enforced boundary**, and in the shipped configuration it does nothing at all: a satellite cannot reach the host's guard settings, so `ctx.getSettings` is undefined and the filter degrades through exactly the `!settings ||` branch it always had.
 
 The enforced boundary is the host's external-tool gate, and it refuses more than the filter ever did:
 
 - An external tool's `readOnlyHint: true` is a CLAIM the host distrusts unless the publisher's raw plugin id appears in the host's `trustedReadOnlyPlugins` setting. Untrusted, all six of these register as **mutating**.
 - A mutating external tool whose arguments carry **no recognized path key** is **blocked outright** while a path allowlist is active — it cannot be scoped, so it is refused rather than guessed at.
 
-Five of the six tools (`validate`, `tree`, `preview`, `export`, `release`) carry no path argument. So under an active allowlist they are refused **wholesale**, where the module version merely filtered `preview`'s bodies. That is fail-closed and it is strictly stricter than before. `vault_skills_mark` carries `path`, so it is scoped normally by the guard, and it still runs the accept-forbidden guard before any write.
+Five of the six tools (`validate`, `tree`, `preview`, `export`, `release`) carry no path argument. So under an active allowlist they are refused **wholesale**, where the module version merely filtered `preview`'s bodies. That is fail-closed and it is strictly stricter than before. `vaultmcp_skills_mark` carries `path`, so it is scoped normally by the guard, and it still runs the accept-forbidden guard before any write.
 
 The in-satellite filter is kept because the expensive part of it is correct and hard-won: a compiled body is ASSEMBLED from up to three notes — the entry's own source, everything it transcludes, and every `type: policy` note injected into an agent — and an independent review found the first version of the fix checking only the first of those. That reasoning becomes live again the moment `vault-mcp-api` can carry the caller's scope to a publisher, which is an apiVersion-2 item. Its tests supply `getSettings` themselves so the dormant guard stays honest.
 
@@ -80,7 +80,7 @@ See `src/settings.ts`; the rules are pinned by `tests/skills-module.test.mjs`.
 
 ## The tool names did not change
 
-Each spec in `src/tools.ts` carries a bare name (`validate`, `tree`, `preview`, `export`, `release`, `mark`). The host publishes an external tool as `<sanitized publisher id>_<bare name>`, and `vault-skills` sanitizes to `vault_skills` — so the wire names are still exactly `vault_skills_validate` … `vault_skills_mark`. That is deliberate: renaming shipped tool names breaks agent sessions for zero semantic gain, which is the host's own locked-decision precedent for `governance_revisions` / `governance_submit_revision`.
+Each spec in `src/tools.ts` carries a bare name (`validate`, `tree`, `preview`, `export`, `release`, `mark`). The host publishes an external tool as `<sanitized publisher id>_<bare name>`, and `vaultmcp-skills` sanitizes to `vaultmcp_skills` — so the wire names are still exactly `vaultmcp_skills_validate` … `vaultmcp_skills_mark`. That is deliberate: renaming shipped tool names breaks agent sessions for zero semantic gain, which is the host's own locked-decision precedent for `governance_revisions` / `governance_submit_revision`.
 
 ## What the host still owns
 

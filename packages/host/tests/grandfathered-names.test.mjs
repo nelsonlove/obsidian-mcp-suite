@@ -84,7 +84,7 @@ describe("publishedToolName", () => {
   });
 
   test("it agrees with sanitizeOwnerId for the ordinary case", () => {
-    assert.equal(publishedToolName("vault-crosssession", "post"), `${sanitizeOwnerId("vault-crosssession")}_post`);
+    assert.equal(publishedToolName("vaultmcp-crosssession", "post"), `${sanitizeOwnerId("vaultmcp-crosssession")}_post`);
   });
 });
 

@@ -1,6 +1,6 @@
 {
-  "id": "vault-fileclass",
-  "name": "Vault Fileclass",
+  "id": "vaultmcp-fileclass",
+  "name": "Vault MCP Fileclass",
   "version": "0.1.0",
   "minAppVersion": "1.5.0",
   "description": "Typed-frontmatter tools for agents: list fileClasses, read a class schema, explain a note, query rows, and write validated field values — by proxying the standalone `fileclass` CLI, with acceptance fields refused. Published as MCP tools through the Governor host.",

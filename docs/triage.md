@@ -1,10 +1,10 @@
 # Inbox triage — the disposition substrate's second instance (#221, phase 3 shape per #241)
 
-> **Deep reference for the shipped implementation.** Canonical concepts and the target design live in the [documentation corpus](README.md); what is shipped versus target is owned by [status-and-compatibility.md](status-and-compatibility.md). Since the S5 satellite extraction (`suite-split-design.md` §6) this reference documents the standalone **`vault-triage`** plugin, not a module of the host plugin (`vault-mcp`).
+> **Deep reference for the shipped implementation.** Canonical concepts and the target design live in the [documentation corpus](README.md); what is shipped versus target is owned by [status-and-compatibility.md](status-and-compatibility.md). Since the S5 satellite extraction (`suite-split-design.md` §6) this reference documents the standalone **`vaultmcp-triage`** plugin, not a module of the host plugin (`vault-mcp`).
 
 
 The successor to the vault's retired `dispose-inbox-item` QuickAdd flow,
-shipped as the standalone `vault-triage` plugin with exactly two tools — a
+shipped as the standalone `vaultmcp-triage` plugin with exactly two tools — a
 read-only queue view and one guarded mutating disposition verb, published to
 the host through `vault-mcp-api`. There is **no human UI** in this
 plugin beyond its settings tab, deliberately: no pane, no palette command, no
@@ -20,18 +20,18 @@ now the three **mechanical primitives**, and everything richer is a
 
 Triage shipped as the host's default-disabled `triage` capability module until
 the suite split's **S5**, when it was extracted to `packages/triage` (plugin
-id `vault-triage`) — the design doc's §6 row *"Triage | private operator |
+id `vaultmcp-triage`) — the design doc's §6 row *"Triage | private operator |
 satellite"*. It follows `packages/quickadd-choices-compile` (the pilot) and
 `packages/skills` (S4). The planner and the disposition table are the same
 code through both homes; only who mounts them differs. Four things changed,
 and all four are visible to a caller:
 
 **1. The published tool names changed.** `triage_queue` and `triage_dispose`
-are now **`vault_triage_queue`** and **`vault_triage_dispose`**. The host
+are now **`vaultmcp_triage_queue`** and **`vaultmcp_triage_dispose`**. The host
 publishes an external tool as `<sanitized publisher id>_<bare name>`, so the
-plugin id and the tool namespace are the same string, and `vault-triage`
-sanitizes to `vault_triage`. (The skills satellite kept its names only because
-`vault-skills` sanitizes to exactly the `vault_skills` prefix its six tools
+plugin id and the tool namespace are the same string, and `vaultmcp-triage`
+sanitizes to `vaultmcp_triage`. (The skills satellite kept its names only because
+`vaultmcp-skills` sanitizes to exactly the `vaultmcp_skills` prefix its six tools
 already carried.) Sessions and prompts calling the old names must be updated.
 
 **2. The allowlist boundary moved to the host.** The host distrusts an
@@ -39,10 +39,10 @@ external tool's `readOnlyHint: true` unless the publisher's raw id is in its
 `trustedReadOnlyPlugins` setting, so **both** tools register as mutating; and
 a mutating external tool whose arguments carry no recognized path key is
 **blocked outright** while a path allowlist is active — trusted or not.
-`vault_triage_queue` carries none (`base`, `view` and `queue` are not path
+`vaultmcp_triage_queue` carries none (`base`, `view` and `queue` are not path
 keys, and the marker queue takes no path at all), so under an allowlist it is
 refused **wholesale**, where the module merely filtered its listing. That is
-fail-closed and strictly stricter. `vault_triage_dispose` carries `path`, so
+fail-closed and strictly stricter. `vaultmcp_triage_dispose` carries `path`, so
 it is scoped normally — and its destination argument was **renamed `target` →
 `target_path`** in the same motion, because `target_path` is one of the host's
 recognized path keys and `target` is not, so the guard now checks the
@@ -75,10 +75,10 @@ instance's **frozen code-level table** is the three built-ins
 Declared rows are *not* runtime additions to that table: they are
 **configuration** the planner interprets — human-only-mutable data whose
 authority answer is uniform (every declared row is exercised by an agent
-through the one guarded `vault_triage_dispose` tool; none confers standing).
+through the one guarded `vaultmcp_triage_dispose` tool; none confers standing).
 
 The **merged table** (built-ins ∪ declared rows) is the single source: the
-`vault_triage_dispose` enum, its tool description, and this doc all render
+`vaultmcp_triage_dispose` enum, its tool description, and this doc all render
 from `mergedDispositionsOf`. Because a published tool's schema is snapshotted
 by the host, the plugin **re-publishes both tools on every settings write** —
 otherwise a newly declared row would be unreachable through the enum until an
@@ -167,7 +167,7 @@ invoked. It was published rather than copied for that reason.
   A choice row refuses typed (`choice_dry_run_unsupported`) until the caller
   passes an **explicit `dry_run: false`**.
 - **Journal + audit net.** The call is an ordinary guarded mutation: the
-  journal records the `vault_triage_dispose` op with the disposition id (the
+  journal records the `vaultmcp_triage_dispose` op with the disposition id (the
   binding id) in its args digest; the row→choice mapping is auditable config.
   The script's own writes are not itemized by this tool (`effects_unknown:
   true`, no `filesChanged` claim) — but script writes are not
@@ -191,7 +191,7 @@ beside the existing computed-destination allowlist re-check.
 
 ### The marker queue (default — unchanged from phase 2)
 
-With no `base`/`queue` argument, `vault_triage_queue` lists notes whose ancestor
+With no `base`/`queue` argument, `vaultmcp_triage_queue` lists notes whose ancestor
 folder name contains a configured `inboxMarkers` substring (default
 `" Inbox for "`; the inbox's own folder note is never an item), oldest first,
 with path/inbox/created/modified/age and frontmatter `type`/`status`.
@@ -216,29 +216,29 @@ config and typed-refusal vocabulary, neither of which is published.
 **S7 reinforced that reasoning rather than overturning it.** When bases itself
 left the host it took `queryBaseRows` and the serializer WITH it — a move, with
 no copy left behind — so there is still exactly one serializer over the one
-leaf, owned now by the `vault-bases` plugin instead of the host. A copy in
+leaf, owned now by the `vaultmcp-bases` plugin instead of the host. A copy in
 `packages/triage` would still be wrong today: two plugins each holding a
 serializer over the one leaf is the same race whichever two plugins they are.
 
 So `base`, `view` and `queue` **refuse typed (`bases_unavailable`)** — through
 the same feature-gate branch that always covered a pre-Bases Obsidian, with a
 message saying why. The marker queue above is unaffected and is the working
-surface. For evaluated Base rows, use the `vault-bases` satellite's
-`vault_bases_query` tool — the same evaluation path, under the name publication
+surface. For evaluated Base rows, use the `vaultmcp-bases` satellite's
+`vaultmcp_bases_query` tool — the same evaluation path, under the name publication
 gave it (the module's `base_query`; `base_list` likewise became
-`vault_bases_list`). The arguments and the `queues` config field are kept (its
+`vaultmcp_bases_list`). The arguments and the `queues` config field are kept (its
 help text says it is inert) so the feature re-lights the day `vault-mcp-api` can
 hand a publisher a Bases service — an apiVersion-2 item, alongside carrying the
 caller's scope to a publisher.
 
-**Membership boundary (deliberate, un-relaxed):** `vault_triage_dispose`
+**Membership boundary (deliberate, un-relaxed):** `vaultmcp_triage_dispose`
 requires the note to be a *marker-queue* member (`not_inbox` otherwise). That
 was true when base-backed queues worked and is true now: a queue generalizes
 what an agent can *sweep*, never what the disposition verb may touch.
 
 ## Vault semantics are configuration
 
-All of it lives in the `vault-triage` plugin's own settings tab, validated
+All of it lives in the `vaultmcp-triage` plugin's own settings tab, validated
 loudly and degrading to defaults at use time: `inboxMarkers`,
 `stampFrontmatter`, `escalateFrontmatter`, `moveWhitelist`, `moveBlacklist`,
 `declaredDispositions`, `builtinDescriptions`, `queues`. A patch carrying an
@@ -295,12 +295,12 @@ a satellite cannot reach the host's guard settings.
 
 **There is no second write path.** This plugin has no pane, command or ribbon,
 so nothing here can write to the vault outside the host's journal. Every vault
-write is inside `vault_triage_dispose`'s handler, which is only ever reached
+write is inside `vaultmcp_triage_dispose`'s handler, which is only ever reached
 through the host.
 
 ## Report-first: dry-run by default
 
-`vault_triage_dispose` defaults to `dry_run: true`: the call reports the exact
+`vaultmcp_triage_dispose` defaults to `dry_run: true`: the call reports the exact
 plan (action, computed destination, patch, choice binding) and writes nothing
 until `dry_run: false`. Refusals are computed identically in both modes. The
 one asymmetry is choice rows (no preview exists — see above). A mid-sequence

@@ -1,4 +1,4 @@
-// tools.ts — the vault-bases satellite's tool surface (#243): evaluated Base
+// tools.ts — the vaultmcp-bases satellite's tool surface (#243): evaluated Base
 // result sets for agents. TWO tools, published to the Governor host through
 // `vault-mcp-api` (see main.ts):
 //
@@ -25,14 +25,14 @@
 // ── THE PUBLISHED NAMES CHANGED, AND THE BARE NAMES CHANGED TOO ─────────────
 //
 // The host publishes an external tool as `<sanitized publisher id>_<bare name>`,
-// so the plugin id IS the tool namespace: `vault-bases` sanitizes to
-// `vault_bases`. Keeping the module's bare names `base_list` / `base_query`
-// would have published `vault_bases_base_list` / `vault_bases_base_query` —
+// so the plugin id IS the tool namespace: `vaultmcp-bases` sanitizes to
+// `vaultmcp_bases`. Keeping the module's bare names `base_list` / `base_query`
+// would have published `vaultmcp_bases_base_list` / `vaultmcp_bases_base_query` —
 // stuttering — so the `base_` prefix is stripped from the bare names here:
 //
 //     shipped (module)  bare name (this file)  published (satellite)
-//     base_list         list                   vault_bases_list
-//     base_query        query                  vault_bases_query
+//     base_list         list                   vaultmcp_bases_list
+//     base_query        query                  vaultmcp_bases_query
 //
 // That is a breaking change for any agent session or saved prompt calling the
 // old names. Recorded in CLAUDE.md and README.md with the one-line reversal.
@@ -59,7 +59,7 @@
 //
 //   - READ-ONLY plugin: both tools declare `readOnly: true`, there is no write
 //     path, no accept verb, and nothing here mutates the vault or a base file.
-//     The host DISTRUSTS that claim unless `vault-bases` is in the user's
+//     The host DISTRUSTS that claim unless `vaultmcp-bases` is in the user's
 //     `trustedReadOnlyPlugins` setting — see the allowlist note below.
 //   - Feature-gated: `buildBasesTools` returns an EMPTY spec list when the
 //     running Obsidian lacks the public Bases API (`source.available()` — the
@@ -79,7 +79,7 @@
 // ACTUAL ARGUMENTS, not on the declared schema:
 //
 //   * The host distrusts an external `readOnly: true` claim unless the raw
-//     publisher id `vault-bases` is listed in `trustedReadOnlyPlugins`.
+//     publisher id `vaultmcp-bases` is listed in `trustedReadOnlyPlugins`.
 //     Untrusted ⇒ BOTH tools register as MUTATING, so read-only mode blocks
 //     both and each takes a write-queue slot and a journal record. Trust
 //     restores read-only-mode availability but does NOT change the gate below
@@ -103,7 +103,7 @@
 //     frontmatter/formula VALUES, not merely its name; say so wherever this
 //     loosening is described,
 //     which nothing supplies — and the host's guard checks the `path` ARGUMENT,
-//     never the discovered ROW paths. So under an allowlist `vault_bases_query`
+//     never the discovered ROW paths. So under an allowlist `vaultmcp_bases_query`
 //     on a VISIBLE base can now return rows naming notes OUTSIDE the allowlist,
 //     where the module filtered them. One tool tightened (`list`), one
 //     loosened (`query`'s rows). Both are stated, in README.md too.
@@ -123,7 +123,7 @@
 // through a deliberately small subset (`json-schema-to-zod.ts`): `type`,
 // `description` and STRING `enum` survive; `default`, `min`, `max` and
 // `pattern` DO NOT. So `path`'s `.min(1)` and `limit`'s `.int().min(1)` are
-// RE-APPLIED in the handler below — that is the `vault_skills_release` semver
+// RE-APPLIED in the handler below — that is the `vaultmcp_skills_release` semver
 // lesson: a constraint that lives only in the declared schema never runs for an
 // MCP caller.
 //

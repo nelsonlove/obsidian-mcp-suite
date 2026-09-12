@@ -297,7 +297,7 @@ export function registerExternalTools(server: McpServer, app: App, ctx: ServerCt
           // cannot write?" — and must not also answer the ALLOWLIST question,
           // because a trusted read-only tool that enumerates or returns vault
           // content with no path argument is exactly the read-boundary bypass
-          // the allowlist sweep closed in-tree (`vault_skills_preview` returned
+          // the allowlist sweep closed in-tree (`vaultmcp_skills_preview` returned
           // hidden note bodies; as a satellite tool under a trusted publisher it
           // would have again). A satellite cannot consult the host's allowlist,
           // so the host must refuse what it cannot scope. Fail closed; the cost

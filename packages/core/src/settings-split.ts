@@ -20,7 +20,7 @@
  * the kernel, the module host and observation capture read.
  *
  * `vocabularies` is here because it was already migration-only when the read
- * tier left (the `vault-vocab` satellite adopts from it and nothing in the
+ * tier left (the `vaultmcp-vocab` satellite adopts from it and nothing in the
  * suite reads it); it stays on the HOST side because that is where the
  * satellite looks for it.
  */

@@ -1,5 +1,5 @@
 /**
- * vocab-module.test.mjs — the vault-vocab satellite (suite split, S7):
+ * vocab-module.test.mjs — the vaultmcp-vocab satellite (suite split, S7):
  * src/tools.ts (the four published tools) and src/settings.ts (the one-shot
  * adoption plus the per-instance form's pure half), all headless.
  *
@@ -7,7 +7,7 @@
  *   • the four tools over a synthetic vault: enumeration with counts and
  *     examples, token resolution, parse mode, path mode, note validation,
  *     kind listing with `scope` and `vocabulary` narrowing;
- *   • THE PUBLICATION CONTRACT: the wire names (`vault_vocab_*`, with the
+ *   • THE PUBLICATION CONTRACT: the wire names (`vaultmcp_vocab_*`, with the
  *     host's `obsidian_` prefix stripped from the bare names), the untrusted
  *     read-only claim, the coded-error rendering, and — the thing that makes
  *     this package different from every prior satellite — the PER-TOOL and
@@ -136,8 +136,8 @@ const errText = (res) => res.content[0].text;
 describe("publication: names, flags, and what the host's guard can scope", () => {
   const specs = () => buildVocabTools(emptyVocabSource(), {});
 
-  test("the plugin id sanitizes to `vault_vocab`, and the bare names drop the host's `obsidian_` prefix", () => {
-    assert.equal(OWNER, "vault_vocab");
+  test("the plugin id sanitizes to `vaultmcp_vocab`, and the bare names drop the host's `obsidian_` prefix", () => {
+    assert.equal(OWNER, "vaultmcp_vocab");
     assert.deepEqual(specs().map((t) => t.name), [
       "vocabularies",
       "resolve_term",
@@ -146,16 +146,16 @@ describe("publication: names, flags, and what the host's guard can scope", () =>
     ]);
     const { tools } = publishInto(specs());
     assert.deepEqual([...tools.keys()], [
-      "vault_vocab_vocabularies",
-      "vault_vocab_resolve_term",
-      "vault_vocab_validate_terms",
-      "vault_vocab_list_vocabulary",
+      "vaultmcp_vocab_vocabularies",
+      "vaultmcp_vocab_resolve_term",
+      "vaultmcp_vocab_validate_terms",
+      "vaultmcp_vocab_list_vocabulary",
     ]);
     // The rename is a CHOICE, not a forced move: the host's F1 check rejects a
-    // PUBLISHED name starting with `obsidian_`, and `vault_vocab_obsidian_*`
+    // PUBLISHED name starting with `obsidian_`, and `vaultmcp_vocab_obsidian_*`
     // does not. Keeping the shipped bare names would have registered fine and
     // read terribly. Pinned so the reasoning in CLAUDE.md stays honest.
-    assert.equal("vault_vocab_obsidian_vocabularies".startsWith("obsidian_"), false);
+    assert.equal("vaultmcp_vocab_obsidian_vocabularies".startsWith("obsidian_"), false);
   });
 
   test("all four CLAIM read-only, and an untrusted claim registers every one of them as MUTATING", () => {
@@ -221,7 +221,7 @@ describe("publication: names, flags, and what the host's guard can scope", () =>
 
 // ── the four tools ───────────────────────────────────────────────────────────
 
-describe("vault_vocab_vocabularies", () => {
+describe("vaultmcp_vocab_vocabularies", () => {
   test("enumerates instances with capabilities, counts and examples", async () => {
     const res = await build().call("vocabularies");
     assert.equal(res.isError, undefined);
@@ -256,7 +256,7 @@ describe("vault_vocab_vocabularies", () => {
   });
 });
 
-describe("vault_vocab_resolve_term", () => {
+describe("vaultmcp_vocab_resolve_term", () => {
   test("token + kind resolves to the entry, naming its vocabulary", async () => {
     const res = await build().call("resolve_term", { token: "meta/type", kind: "tag" });
     const sc = res.structuredContent;
@@ -338,7 +338,7 @@ describe("vault_vocab_resolve_term", () => {
   });
 });
 
-describe("vault_vocab_validate_terms", () => {
+describe("vaultmcp_vocab_validate_terms", () => {
   test("a note's frontmatter yields findings anchored to the note", async () => {
     const res = await build().call("validate_terms", { path: "Notes/Tagged.md" });
     const sc = res.structuredContent;
@@ -359,7 +359,7 @@ describe("vault_vocab_validate_terms", () => {
   });
 });
 
-describe("vault_vocab_list_vocabulary", () => {
+describe("vaultmcp_vocab_list_vocabulary", () => {
   test("lists a kind sorted, with the declaring vocabulary named", async () => {
     const res = await build().call("list_vocabulary", { kind: "term" });
     const entries = res.structuredContent.entries;
@@ -394,7 +394,7 @@ describe("schema bounds are re-applied in the handler", () => {
   // small subset: `type`, `description`, string `enum` and the object's
   // `required` list survive; `min`, `max`, `default` and `pattern` do NOT. So
   // every `.min(1)` runs again where it actually executes. This is the
-  // `vault_skills_release` semver lesson, applied before it could bite.
+  // `vaultmcp_skills_release` semver lesson, applied before it could bite.
 
   test("an empty-string `path` refuses in the handler rather than reaching the vault", async () => {
     for (const bare of ["validate_terms", "resolve_term"]) {

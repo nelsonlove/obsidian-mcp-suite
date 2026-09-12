@@ -1,4 +1,4 @@
-# Vault Provenance (plugin id `vault-provenance`)
+# Vault Provenance (plugin id `vaultmcp-provenance`)
 
 Derived content, given an agent surface: ask whether a generated note is still true to the sources it declares, reconcile the vault's installed Obsidian plugins against the notes that describe them, and regenerate the plugin-audit note without ever touching what a human wrote in it. Like the triage, cross-session and bases satellites and unlike the skills one, this plugin has no human surface at all — no pane, no palette command, no ribbon. Its entire surface is three MCP tools published to the Governor host through `vault-mcp-api`, plus a settings tab for the human who says where the plugin notes live.
 
@@ -12,7 +12,7 @@ Built as the standalone `obsidian-provenance` Python CLI, folded into the Govern
 
 ```text
 packages/provenance/
-├── manifest.json          plugin id `vault-provenance`, isDesktopOnly
+├── manifest.json          plugin id `vaultmcp-provenance`, isDesktopOnly
 ├── esbuild.config.mjs     bundles src/main.ts → main.js (no assets, no defines)
 ├── src/
 │   ├── main.ts            onload: settings + adoption, settings tab, publishTools (re-published on every config change)
@@ -53,11 +53,11 @@ Same as the triage, cross-session and bases satellites. The three published tool
 
 | shipped by the module  | bare name in this package | published by the satellite   |
 |------------------------|---------------------------|------------------------------|
-| `provenance_check`     | `check`                   | **`vault_provenance_check`**     |
-| `provenance_reconcile` | `reconcile`               | **`vault_provenance_reconcile`** |
-| `provenance_regen`     | `regen`                   | **`vault_provenance_regen`**     |
+| `provenance_check`     | `check`                   | **`vaultmcp_provenance_check`**     |
+| `provenance_reconcile` | `reconcile`               | **`vaultmcp_provenance_reconcile`** |
+| `provenance_regen`     | `regen`                   | **`vaultmcp_provenance_regen`**     |
 
-Two compositions produce that. First, the host publishes an external tool as `<sanitized publisher id>_<bare name>`, so **the plugin id and the tool namespace are the same string**, and `vault-provenance` sanitizes to `vault_provenance` — the same rename class as triage's, cross-session's and bases'. Second, the bare names shed their `provenance_` prefix, because keeping it would have published the stuttering `vault_provenance_provenance_check`.
+Two compositions produce that. First, the host publishes an external tool as `<sanitized publisher id>_<bare name>`, so **the plugin id and the tool namespace are the same string**, and `vaultmcp-provenance` sanitizes to `vaultmcp_provenance` — the same rename class as triage's, cross-session's and bases'. Second, the bare names shed their `provenance_` prefix, because keeping it would have published the stuttering `vaultmcp_provenance_provenance_check`.
 
 **Beside the tool rename, one ARGUMENT was renamed — twice.** `check`'s `path` became `note_path` at the extraction and is now **`note`**:
 
@@ -77,7 +77,7 @@ Round 1 (2026-09-07) added `note_path` to the host's path-key list for the tier'
 
 The host's external-tool gate is what enforces scope now, and it refuses on two grounds:
 
-- An external tool's `readOnlyHint: true` is a CLAIM the host distrusts unless the publisher's raw plugin id appears in its **`trustedReadOnlyPlugins`** setting. Untrusted, **all three** register as mutating — so **read-only mode blocks all three**, and each takes a write-queue slot and a journal record even though two of them write nothing. Listing `vault-provenance` in that setting restores read-only-mode availability; it does **not** change the gate below (the trusted exemption was closed 2026-09-05 by the skills satellite's review — trust answers read-only mode, never scoping).
+- An external tool's `readOnlyHint: true` is a CLAIM the host distrusts unless the publisher's raw plugin id appears in its **`trustedReadOnlyPlugins`** setting. Untrusted, **all three** register as mutating — so **read-only mode blocks all three**, and each takes a write-queue slot and a journal record even though two of them write nothing. Listing `vaultmcp-provenance` in that setting restores read-only-mode availability; it does **not** change the gate below (the trusted exemption was closed 2026-09-05 by the skills satellite's review — trust answers read-only mode, never scoping).
 - A mutating external tool whose arguments carry **no recognized path key** is **blocked outright** while a path allowlist is active. The host evaluates this at call time on the ACTUAL ARGUMENTS.
 
 **None of the three tools carries a recognized path key**, so under an active allowlist the entire surface is refused wholesale. `reconcile` takes no arguments and `regen` takes only a boolean, so both were pathless already; `check`'s `path` was **deliberately renamed out of the host's key list** to make the third one match — first to `note_path`, then (once `note_path` itself became a host key at round 1) to **`note`**.
@@ -94,7 +94,7 @@ That rename is the decision worth understanding, and it went the opposite way fr
 
 Issue #381 asked whether the host's whole-vault read exception had grown by precedent rather than by decision, and named three tools that scan the entire vault with no allowlist filtering: **`obsidian_health`**, **`provenance_reconcile`** and **`obsidian_conformance_debt`**.
 
-At S7 the health extraction took the first one out of the host. As an untrusted external tool with no recognized path-key argument, `vault_health_scan` is now blocked WHOLESALE under an active allowlist — stricter than the documented-exception outcome the issue was weighing. That left two.
+At S7 the health extraction took the first one out of the host. As an untrusted external tool with no recognized path-key argument, `vaultmcp_health_scan` is now blocked WHOLESALE under an active allowlist — stricter than the documented-exception outcome the issue was weighing. That left two.
 
 **This extraction takes `provenance_reconcile` out on the same terms, leaving `obsidian_conformance_debt` alone.** Health was the first, this is the second, one remains — and the remaining one is still owed the enumerate-or-filter decision the issue asked for.
 
@@ -112,7 +112,7 @@ Those two settings are not cosmetic. `notesDir` is the field #257 exists because
 
 **Refusals throw.** A handler returns plain data or throws; the host wraps the first in `ok()` and the second in `fail()`, and `fail()` renders a lowercase-snake `code` off the error as `Error [code]: message`. The module caught everything and handed it to the same `fail()`, so the rendering is reproduced by letting the same errors propagate: `AcceptForbiddenError` keeps its `accept_forbidden` code, `AuditDestinationError` stays deliberately uncoded (`Error: refusing to regenerate over …`), and a kernel throw — a note with no `derived-from`, an unparseable `generated` — stays a bare `Error: …`. **Two codes are new**, and both name refusals that could not fire before: `invalid_argument` (an empty, missing or non-string `note`) and `invalid_path` (a backslash in it). As a module the zod bound ran inside the host's own registration; across the publishing boundary it does not survive, so the check moved into the handler and needed a name.
 
-**Schema bounds are re-applied in the handler.** The SDK converts a zod shape to JSON Schema and the host converts it back through a deliberately small subset: `type`, `description` and string `enum` survive; `default`, `min`, `max` and `pattern` do not. So `note`'s `.min(1)` runs again in the handler, where it actually executes. This is the `vault_skills_release` semver lesson, applied before it could bite. The backslash refusal rides the same check, for the reason the triage and bases satellites adopted it: every check downstream splits on `/` alone, so a backslash reads as one opaque segment here and as a traversal to whatever normalizes it later.
+**Schema bounds are re-applied in the handler.** The SDK converts a zod shape to JSON Schema and the host converts it back through a deliberately small subset: `type`, `description` and string `enum` survive; `default`, `min`, `max` and `pattern` do not. So `note`'s `.min(1)` runs again in the handler, where it actually executes. This is the `vaultmcp_skills_release` semver lesson, applied before it could bite. The backslash refusal rides the same check, for the reason the triage and bases satellites adopted it: every check downstream splits on `/` alone, so a backslash reads as one opaque segment here and as a traversal to whatever normalizes it later.
 
 **`regen` now reports its effect.** A successful write returns `filesChanged: 1` and `files: [<audit note>]` beside the unchanged `written` key. This is additive, and it is the host's `reportedEffects` convention: the audit's destination is CONFIGURATION and never a call argument, so the journal's argument-derived `target` is empty for this tool and this is the only way the file actually written reaches the record's `effects` field. A dry run reports no effects, because "would change" is not "changed".
 
@@ -130,7 +130,7 @@ What this plugin owns is the freshness model, the `derived-from` resolution, the
 
 **Round 1 (2026-09-07):** the host added `note_path` to its path-key list. The ledger below is why, and it was written before anyone acted on it — the three checks are not allowlist-gated, so a pathless single-note WRITE lost them on every vault.
 
-**Round 2 (2026-09-07), after an independent review:** round 1 reached further than its reason. The three checks it restores all bind at the MUTATING dequeue, so they buy a READ nothing — while making `check` per-path scopable re-created the exact oracle §2 exists to close. So `check`'s argument is `note`, this package carries no host path key again, and §2's fail-closed posture is what ships. The mutating tools elsewhere in the tier (`vault_fileclass_set`, `vault_jd_scaffold_promote_to_folder`, `vault_jd_scaffold_reindex_category`) keep `note_path` for exactly the reason the ledger gives. **The rule extracted from all three spellings, and the thing to carry forward: path-key an argument iff the tool MUTATES the note it names.**
+**Round 2 (2026-09-07), after an independent review:** round 1 reached further than its reason. The three checks it restores all bind at the MUTATING dequeue, so they buy a READ nothing — while making `check` per-path scopable re-created the exact oracle §2 exists to close. So `check`'s argument is `note`, this package carries no host path key again, and §2's fail-closed posture is what ships. The mutating tools elsewhere in the tier (`vaultmcp_fileclass_set`, `vaultmcp_jd_scaffold_promote_to_folder`, `vaultmcp_jd_scaffold_reindex_category`) keep `note_path` for exactly the reason the ledger gives. **The rule extracted from all three spellings, and the thing to carry forward: path-key an argument iff the tool MUTATES the note it names.**
 
 **The ledger below is kept in full.** It is not obsolete: it is the argument that made round 1 correct, and anyone proposing to move either half has to answer it.
 

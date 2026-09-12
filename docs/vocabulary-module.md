@@ -1,6 +1,6 @@
 # Vocabulary provider — controlled vocabulary (read-only)
 
-> **Deep reference for the shipped implementation.** Canonical concepts and the target design live in the [documentation corpus](README.md); what is shipped versus target is owned by [status-and-compatibility.md](status-and-compatibility.md). Since the S7 read-tier extraction (`suite-split-design.md` §6) this reference documents the standalone **`vault-vocab`** plugin, not a module of the host plugin (`vault-mcp`).
+> **Deep reference for the shipped implementation.** Canonical concepts and the target design live in the [documentation corpus](README.md); what is shipped versus target is owned by [status-and-compatibility.md](status-and-compatibility.md). Since the S7 read-tier extraction (`suite-split-design.md` §6) this reference documents the standalone **`vaultmcp-vocab`** plugin, not a module of the host plugin (`vault-mcp`).
 
 The vocabulary provider lets an agent **check a note's tags, properties, types, and glossary
 terms against the vault's controlled vocabulary** — and validate them **without writing
@@ -17,13 +17,13 @@ adapter; the vault reader arrives as an injected `VocabSource` exposing only `pa
 ## Now a satellite plugin — and the engine went somewhere else again
 
 This capability shipped as the host plugin's `vocab` module through 2026-08; as of the S7
-extraction it is its own Obsidian plugin, id `vault-vocab`, publishing its tools to the host
+extraction it is its own Obsidian plugin, id `vaultmcp-vocab`, publishing its tools to the host
 through the `vault-mcp-api` SDK's `publishTools`. **All four tool names changed**, because the
 host publishes an external tool as `<sanitized publisher id>_<bare name>` and so the plugin id
 IS the tool namespace: `obsidian_vocabularies`, `obsidian_resolve_term`,
-`obsidian_validate_terms` and `obsidian_list_vocabulary` are now **`vault_vocab_vocabularies`**,
-**`vault_vocab_resolve_term`**, **`vault_vocab_validate_terms`** and
-**`vault_vocab_list_vocabulary`**. The `obsidian_` prefix was the HOST's built-in namespace,
+`obsidian_validate_terms` and `obsidian_list_vocabulary` are now **`vaultmcp_vocab_vocabularies`**,
+**`vaultmcp_vocab_resolve_term`**, **`vaultmcp_vocab_validate_terms`** and
+**`vaultmcp_vocab_list_vocabulary`**. The `obsidian_` prefix was the HOST's built-in namespace,
 never this module's name, so it was stripped rather than carried into a second owner's
 namespace. Sessions and prompts calling the old names must be updated.
 
@@ -83,10 +83,10 @@ All declared read-only, published to the host through `vault-mcp-api`. (They reg
 
 | Tool | Input | Returns |
 | --- | --- | --- |
-| **`vault_vocab_vocabularies`** | *(none)* | `{ vocabularies: [{ id, provider, root, capabilities, kinds, counts, examples }], problems }` — every configured vocabulary, its served kinds, per-kind counts and examples. |
-| **`vault_vocab_resolve_term`** | `token?` **xor** `path?`; plus `kind?` (`tag`\|`property`\|`type`\|`term`), `parse?`, `vocabulary?` | `token` → `{ token, found, vocabulary, entry }` (one sense) or `{ found:false }`; `token` + `parse:true` → `{ token, valid, findings }` (validate-only); `path` → `{ path, terms:[{ token, kind, found, canonical?, vocabulary?, definition?, deprecated?, ambiguous? }] }` (the note's own tags/properties/types). |
-| **`vault_vocab_validate_terms`** | `path` | `{ path, findings, clean }` — the note's vocabulary findings. Report-only; findings are returned, never fixed, nothing is written. |
-| **`vault_vocab_list_vocabulary`** | `kind`, `scope?`, `vocabulary?` | `{ kind, count, entries }` — every registered term of that kind, case-insensitively sorted, each carrying its `vocabulary` id. |
+| **`vaultmcp_vocab_vocabularies`** | *(none)* | `{ vocabularies: [{ id, provider, root, capabilities, kinds, counts, examples }], problems }` — every configured vocabulary, its served kinds, per-kind counts and examples. |
+| **`vaultmcp_vocab_resolve_term`** | `token?` **xor** `path?`; plus `kind?` (`tag`\|`property`\|`type`\|`term`), `parse?`, `vocabulary?` | `token` → `{ token, found, vocabulary, entry }` (one sense) or `{ found:false }`; `token` + `parse:true` → `{ token, valid, findings }` (validate-only); `path` → `{ path, terms:[{ token, kind, found, canonical?, vocabulary?, definition?, deprecated?, ambiguous? }] }` (the note's own tags/properties/types). |
+| **`vaultmcp_vocab_validate_terms`** | `path` | `{ path, findings, clean }` — the note's vocabulary findings. Report-only; findings are returned, never fixed, nothing is written. |
+| **`vaultmcp_vocab_list_vocabulary`** | `kind`, `scope?`, `vocabulary?` | `{ kind, count, entries }` — every registered term of that kind, case-insensitively sorted, each carrying its `vocabulary` id. |
 
 ### Error codes and finding shapes
 
@@ -122,9 +122,9 @@ are the scope-tags provider's pack (below).
 
 The enforced boundary is now the HOST's, because a satellite cannot reach the host's guard settings, and the host's gate tests the arguments a call actually carries. The four tools therefore land differently and the difference is worth reading twice:
 
-- **`vault_vocab_vocabularies`** takes no arguments, and **`vault_vocab_list_vocabulary`** takes `kind` / `scope` / `vocabulary`, none of which is a recognized path key. Under an active path allowlist both are **blocked outright** — stricter than the in-module listing filter they replace.
-- **`vault_vocab_validate_terms`** requires `path`, which IS a path key, so it is **not blocked**: the host scopes it and refuses `out_of_allowlist` for a hidden note.
-- **`vault_vocab_resolve_term`** takes `path` OPTIONALLY, so the same tool is **blocked when called with `{token}` and scoped when called with `{path}`**. That per-call asymmetry is the most surprising fact about this extraction and is not a bug: the host cannot scope a call whose arguments name no path.
+- **`vaultmcp_vocab_vocabularies`** takes no arguments, and **`vaultmcp_vocab_list_vocabulary`** takes `kind` / `scope` / `vocabulary`, none of which is a recognized path key. Under an active path allowlist both are **blocked outright** — stricter than the in-module listing filter they replace.
+- **`vaultmcp_vocab_validate_terms`** requires `path`, which IS a path key, so it is **not blocked**: the host scopes it and refuses `out_of_allowlist` for a hidden note.
+- **`vaultmcp_vocab_resolve_term`** takes `path` OPTIONALLY, so the same tool is **blocked when called with `{token}` and scoped when called with `{path}`**. That per-call asymmetry is the most surprising fact about this extraction and is not a bug: the host cannot scope a call whose arguments name no path.
 
 The in-plugin LISTING filter — which ran the vault enumeration through the allowlist before any body was read — is now dormant, since nothing supplies it. **Be precise about what that costs**, because "no tool became looser" would be false: the two tools the host still lets through build their providers from the whole-vault listing, so for a token the caller's own visible note already carries, they can disclose whether a hidden registry declares it, its definition gloss, and — through the ambiguity detail — the paths of registry notes claiming a duplicated token. Bounded (you can only ask about tokens you can already read) but real, and not closable from inside a satellite. The `visible` seam is kept, unsupplied, with its tests still driving it, so an apiVersion-2 `vault-mcp-api` able to carry the caller's scope to a publisher closes it with no code change.
 
@@ -134,7 +134,7 @@ Every tool declares `readOnly: true` and the plugin has no write path at all. `f
 (`noteVocabFindings` — the pure whole-note rule pack) is exposed for a single named note through
 the validate tool but is **not registered as its own tool**: capabilities arrive as rule
 packs, never as new mutating surface. Note what the declaration buys since S7: the host
-DISTRUSTS an external tool's read-only claim unless `vault-vocab` is listed in its
+DISTRUSTS an external tool's read-only claim unless `vaultmcp-vocab` is listed in its
 `trustedReadOnlyPlugins` setting, so by default all four register as mutating — read-only mode
 blocks them, and each call takes a write-queue slot and a journal record. Trusting the publisher
 restores read-only-mode availability; it does not change the scoping gate below. Deciding whether an unregistered tag *should* be added to

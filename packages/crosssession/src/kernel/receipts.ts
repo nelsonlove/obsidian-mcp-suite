@@ -15,7 +15,7 @@
 // session claimed to have read; it cannot verify the reading.
 //
 // SINCE THE S6 SATELLITE EXTRACTION the "plugin's own directory" is THIS
-// plugin's (`.obsidian/plugins/vault-crosssession/`), not the host's. The
+// plugin's (`.obsidian/plugins/vaultmcp-crosssession/`), not the host's. The
 // host's copy is live operator state — a lost receipt re-serves entries a
 // session already attested — so main.ts adopts it once, by merge, on first
 // load, and never writes the host's file. See settings.ts.
@@ -83,7 +83,7 @@ function sane(parsed: unknown): ReceiptsState {
 export class ReceiptStore implements ReceiptStoreLike {
   constructor(
     private readonly adapter: ReceiptAdapter,
-    /** This plugin's data directory (`.obsidian/plugins/vault-crosssession`). */
+    /** This plugin's data directory (`.obsidian/plugins/vaultmcp-crosssession`). */
     private readonly dir: string,
   ) {}
 
@@ -98,11 +98,11 @@ export class ReceiptStore implements ReceiptStoreLike {
       try {
         return sane(JSON.parse(raw));
       } catch {
-        console.error(`[vault-crosssession] ${this.file} is unreadable; treating receipts as empty`);
+        console.error(`[vaultmcp-crosssession] ${this.file} is unreadable; treating receipts as empty`);
         return {};
       }
     } catch (e) {
-      console.error("[vault-crosssession] crosssession receipts could not be read", e);
+      console.error("[vaultmcp-crosssession] crosssession receipts could not be read", e);
       return {};
     }
   }
@@ -187,7 +187,7 @@ export class ReceiptStore implements ReceiptStoreLike {
       // caller's operation (attest / post) still succeeded; the next delta
       // simply re-serves what the lost receipt would have covered. The boolean
       // exists for ONE caller: adoption, whose latch must not burn on this.
-      console.error("[vault-crosssession] crosssession receipt could not be persisted", e);
+      console.error("[vaultmcp-crosssession] crosssession receipt could not be persisted", e);
       return false;
     }
   }

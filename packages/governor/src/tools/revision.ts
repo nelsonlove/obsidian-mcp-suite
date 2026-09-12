@@ -135,7 +135,7 @@ export function buildRevisionTools(source: RevisionSource, listing: RevisionList
       const path = raw.path;
       const summary = raw.summary;
       // The publishing boundary drops zod min/max, so both bounds are
-      // re-applied here (the vault_skills_release semver lesson).
+      // re-applied here (the vaultmcp_skills_release semver lesson).
       if (typeof path !== "string" || path.length === 0) {
         refuse("invalid_argument", "'path' must be a non-empty string");
       }

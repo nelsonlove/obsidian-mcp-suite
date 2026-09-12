@@ -4,7 +4,7 @@
 // PUBLISHED AT S8 (the mutating tier's extraction), on the `isVisible` (S4) /
 // `executeQuickAddChoice` (S5) / `resolveScope` + the vocabulary kernel (S7)
 // precedent. Before S8 both lived in the host's `src/claude-cli.ts` and
-// `findObsidianBinary` in `src/mcp/tools-cli.ts`. The `vault-fileclass`
+// `findObsidianBinary` in `src/mcp/tools-cli.ts`. The `vaultmcp-fileclass`
 // satellite spawns the `fileclass` CLI and needs all three: the SAME PATH
 // augmentation (or its spawn fails where the host's succeeds) and the SAME
 // obsidian-binary probe (the CLI's `obsidian eval` bridge is pointed at it

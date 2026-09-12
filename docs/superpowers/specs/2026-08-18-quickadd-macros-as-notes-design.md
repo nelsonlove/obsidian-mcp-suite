@@ -58,9 +58,9 @@ Every cross-note reference in this schema is a wikilink, resolved via Obsidian's
 
 ## Compiler architecture
 
-A new vault-mcp tool. Split the same way as vault-skills' own compiler:
+A new vault-mcp tool. Split the same way as vaultmcp-skills' own compiler:
 
-**Pure core** — `kernel/quickadd/transform.ts`, no `obsidian` import, unit-testable like every other kernel module. Takes `ChoiceNoteInput[]` (path, frontmatter, and each wikilink field already resolved to a target path — resolution is the glue layer's job, matching how `parentPaths` arrives pre-resolved into vault-skills' own transform) and produces a `TransformResult`: the `choices` array in QuickAdd's exact native `data.json` shape, plus `warnings`/`errors` per problem found (unresolved wikilink, ambiguous target, malformed step shape, an orphaned Multi folder, etc.).
+**Pure core** — `kernel/quickadd/transform.ts`, no `obsidian` import, unit-testable like every other kernel module. Takes `ChoiceNoteInput[]` (path, frontmatter, and each wikilink field already resolved to a target path — resolution is the glue layer's job, matching how `parentPaths` arrives pre-resolved into vaultmcp-skills' own transform) and produces a `TransformResult`: the `choices` array in QuickAdd's exact native `data.json` shape, plus `warnings`/`errors` per problem found (unresolved wikilink, ambiguous target, malformed step shape, an orphaned Multi folder, etc.).
 
 **Glue layer** — `mcp/tools-quickadd.ts`. Walks the note tree under the QuickAdd-choices root (mirroring folder structure per the Multi rule above), resolves every wikilink field through `app.metadataCache`, feeds the pure transform, and — since vault-mcp is itself a full Obsidian plugin with `app.*` access, not an external process — applies the result in-process: `quickadd.settings.choices = result.choices; await quickadd.saveSettings()`. No raw `data.json` parsing or QuickAdd disable/enable cycling required; QuickAdd's own settings persistence does the actual write.
 
@@ -74,7 +74,7 @@ A **separate** tool, `obsidian_quickadd_bootstrap` — not a mode flag on the co
 
 ## Edit discipline
 
-Once a choice is note-backed, QuickAdd's own settings UI is **read/run-only** for it — editing a choice there gets silently overwritten on the next compile. This matches vault-skills' own rule exactly ("the generated files must never be hand-edited — edit the note, re-export") and is a deliberate choice over a two-way reconciler: running or testing a macro from the command palette is completely unaffected; only *editing a choice's definition* moves to the note. A two-way sync was considered and rejected — it reintroduces the exact class of drift problem this design exists to eliminate, just with an extra reconciliation step in front of it instead of behind it.
+Once a choice is note-backed, QuickAdd's own settings UI is **read/run-only** for it — editing a choice there gets silently overwritten on the next compile. This matches vaultmcp-skills' own rule exactly ("the generated files must never be hand-edited — edit the note, re-export") and is a deliberate choice over a two-way reconciler: running or testing a macro from the command palette is completely unaffected; only *editing a choice's definition* moves to the note. A two-way sync was considered and rejected — it reintroduces the exact class of drift problem this design exists to eliminate, just with an extra reconciliation step in front of it instead of behind it.
 
 ## Rollout (sketch — task breakdown is writing-plans' job)
 

@@ -2,21 +2,21 @@
 //
 // Published to the Governor host through vault-mcp-api as three MCP tools:
 //
-//   vault_provenance_check     — is a derived note FRESH or STALE against its
+//   vaultmcp_provenance_check     — is a derived note FRESH or STALE against its
 //                                own `derived-from:` sources (read-only in
 //                                intent; the host distrusts that claim);
-//   vault_provenance_reconcile — installed vs enabled vs noted Obsidian plugins;
-//   vault_provenance_regen     — regenerate the plugin-audit note; dry-run by
+//   vaultmcp_provenance_reconcile — installed vs enabled vs noted Obsidian plugins;
+//   vaultmcp_provenance_regen     — regenerate the plugin-audit note; dry-run by
 //                                default, `write: true` persists (MUTATING).
 //
 // SATELLITE OF THE SUITE (suite-split design §6). Extracted out of the host
-// after the quickadd-choices-compile pilot, the vault-skills (S4), vault-triage
-// (S5), vault-crosssession (S6) and vault-health / vault-vocab / vault-bases
+// after the quickadd-choices-compile pilot, the vaultmcp-skills (S4), vaultmcp-triage
+// (S5), vaultmcp-crosssession (S6) and vaultmcp-health / vaultmcp-vocab / vaultmcp-bases
 // (S7) satellites. Consequences of the publishing contract, each deliberate:
 //
 //   * THE PUBLISHED TOOL NAMES CHANGED — `provenance_*` became
-//     `vault_provenance_*`, with the bare names shedding the `provenance_`
-//     prefix so nothing publishes as `vault_provenance_provenance_check`. The
+//     `vaultmcp_provenance_*`, with the bare names shedding the `provenance_`
+//     prefix so nothing publishes as `vaultmcp_provenance_provenance_check`. The
 //     host publishes an external tool as `<sanitized publisher id>_<bare name>`,
 //     so the plugin id IS the tool namespace. Same rename class as bases'.
 //     Recorded in CLAUDE.md and README.md, not buried here.
@@ -160,7 +160,7 @@ export default class VaultProvenancePlugin extends Plugin {
         }),
       );
     } catch (e) {
-      console.error("[vault-provenance] publishing the tool surface failed", e);
+      console.error("[vaultmcp-provenance] publishing the tool surface failed", e);
     }
   }
 
@@ -204,11 +204,11 @@ export default class VaultProvenancePlugin extends Plugin {
     const outcome = await runConfigAdoption(this.settings, hostSettings, (s) => this.saveData(s));
     this.settings = outcome.settings;
     if (!outcome.persisted) {
-      console.error("[vault-provenance] adopted config could not be persisted; will retry next load");
+      console.error("[vaultmcp-provenance] adopted config could not be persisted; will retry next load");
       return;
     }
     if (outcome.adopted) {
-      console.info("[vault-provenance] adopted the Governor host's modules.provenance.config (one shot; the host's copy is untouched)");
+      console.info("[vaultmcp-provenance] adopted the Governor host's modules.provenance.config (one shot; the host's copy is untouched)");
     }
   }
 }

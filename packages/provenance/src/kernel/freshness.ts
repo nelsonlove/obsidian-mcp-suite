@@ -4,7 +4,7 @@
 // A "derived" note declares `derived-from:` (source globs/paths, vault-relative)
 // and `generated:` (an ISO timestamp) in its frontmatter. It is STALE when any
 // resolved source file changed AFTER `generated`; otherwise FRESH. This is the
-// general engine `vault_provenance_check` exposes — orthogonal to the plugin-audit
+// general engine `vaultmcp_provenance_check` exposes — orthogonal to the plugin-audit
 // specialization (plugins.ts / regen.ts), which is one particular derived note.
 //
 // ── What "changed" can and cannot see (the deleted-source blind spot) ────────

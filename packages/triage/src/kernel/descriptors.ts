@@ -47,7 +47,7 @@ import type { DispositionDescriptorShape } from "@vault-mcp/core";
 export type TriageBuiltinId = "trash" | "move" | "stamp";
 
 /** The one surface this instance has: every verb is a guarded MCP tool call
- * (they share the single `vault_triage_dispose` tool, selected by `disposition`). */
+ * (they share the single `vaultmcp_triage_dispose` tool, selected by `disposition`). */
 export type TriageDispositionSurface = "mcp-tool";
 
 /** What a disposition does to the note. `choice` (declared rows only) runs a
@@ -231,7 +231,7 @@ export function mergedById(table: MergedDisposition[], id: string): MergedDispos
   return table.find((d) => d.id === id);
 }
 
-/** The merged id list, in declared order — the `vault_triage_dispose` enum's single
+/** The merged id list, in declared order — the `vaultmcp_triage_dispose` enum's single
  * source. */
 export function mergedIds(table: MergedDisposition[]): string[] {
   return table.map((d) => d.id);

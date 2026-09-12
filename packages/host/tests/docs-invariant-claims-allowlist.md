@@ -316,7 +316,7 @@ bypass the MCP server entirely are out of scope by the stated threat model.
 
 Reviewed at authoring time (#221 phase 2), re-reviewed for the phase-3
 rewrite (#241), and again at the S5 satellite extraction (triage is now the
-`vault-triage` plugin, so both substantiating suites live in
+`vaultmcp-triage` plugin, so both substantiating suites live in
 `packages/triage/tests/` rather than here). Each claim is substantiated by
 `packages/triage/tests/triage-module.test.mjs`: the all-agent built-in table
 + empty gesture-gated set, the merged-table collision/enum pins (no
@@ -336,7 +336,7 @@ guard-patched `buildMcpServer` path, are treated as mutating unless the
 publisher is trusted, and are blocked outright under an allowlist when they
 carry no recognized path key) plus
 `packages/triage/tests/triage-module.test.mjs`'s publication block, which pins
-that `vault_triage_dispose` carries `path` and `target_path` — both host
+that `vaultmcp_triage_dispose` carries `path` and `target_path` — both host
 PATH_KEYS — and that the queue carries none. The second is a claim about what
 is NOT enforced and is the honest counterpart: the satellite supplies no
 `visible`, which that same block documents, and the real bound on a declared
@@ -344,7 +344,7 @@ row's configured destination is `moveWhitelist`/`moveBlacklist`, pinned at
 plan time and re-checked at apply.
 
 - The **authority axis** sorts every verb with one rule: a disposition that **confers standing** (accept, adopt, revert-of-standing) is a human gesture — never an API; a disposition that is an ordinary reversible write is agent-expressible through the guarded path.
-- Declared rows are *not* runtime additions to that table: they are **configuration** the planner interprets — human-only-mutable data whose authority answer is uniform (every declared row is exercised by an agent through the one guarded `vault_triage_dispose` tool; none confers standing).
+- Declared rows are *not* runtime additions to that table: they are **configuration** the planner interprets — human-only-mutable data whose authority answer is uniform (every declared row is exercised by an agent through the one guarded `vaultmcp_triage_dispose` tool; none confers standing).
 - A patch carrying an acceptance field is refused at validation AND sanitized/dropped at coercion — it can never reach a note.
 - Moves ride a link-healing rename (`fileManager.renameFile`, parents created, **never an overwrite**: `destination_occupied`); trash is Obsidian's trash; frontmatter transitions go through `processFrontMatter` with the shared accept-forbidden rule re-checked over every effective patch.
 - Both tools are published external tools and register at the host's guarded registration point like every built-in: read-only mode, path allowlist, serialized write queue, journal, kernel args.
@@ -353,7 +353,7 @@ plan time and re-checked at apply.
 ## docs/crosssession.md
 
 Added at the S6 satellite extraction (cross-session coordination is now the
-`vault-crosssession` plugin, so its behavioural suite lives in
+`vaultmcp-crosssession` plugin, so its behavioural suite lives in
 `packages/crosssession/tests/` rather than here). Four claims, each checked
 against the implementation at approval time:
 
@@ -382,7 +382,7 @@ against the implementation at approval time:
 3. **The `RECORD_EXEMPT_OPS` claim.** Re-verified at S6 and substantiated on
    both sides. Host side: `src/kernel/record-guard.ts`'s exemption set is
    unchanged, and `tests/record-immutable.test.mjs` pins that BOTH the old
-   `crosssession_post` and the new `vault_crosssession_post` spellings are
+   `crosssession_post` and the new `vaultmcp_crosssession_post` spellings are
    unexempted. The "always ran inside the kernel" half is
    `tests/modules-mount.test.mjs` (module tools register through the same
    registrar) plus `tests/external-tools.test.mjs` (published tools do too).
@@ -464,7 +464,7 @@ Substantiated, and deliberately NARROW. The mechanism is
 — evaluated inside the registered handler, on the ARGUMENTS object, not on the
 declared schema. So "the arguments a call actually carries" is the literal
 behaviour, and it is why the two documents go on to state a per-tool (and, for
-`vault_vocab_resolve_term`, a per-CALL) posture instead of one blanket rule.
+`vaultmcp_vocab_resolve_term`, a per-CALL) posture instead of one blanket rule.
 The "a satellite cannot reach the host's guard settings" half is a statement
 about what is NOT wired: `vault-mcp-api`'s publishing contract carries no
 caller scope at apiVersion 1, which is why both packages keep `ctx.visible` /
@@ -489,9 +489,9 @@ pending the operator's review like every other span in this file.
 
 ## docs/suite-split-design.md (mutating-tier extraction)
 
-- With no argument in `PATH_KEYS` all three see an empty path list on every call in the tier, so a `record: true` note is no longer protected from `vault_fileclass_set` or `vault_jd_scaffold_reindex_category` by that kernel check, a foreign scope claim covering the note is no longer disclosed, and the journal names no target path except where a handler reports `filesChanged`/`files` as effects.
+- With no argument in `PATH_KEYS` all three see an empty path list on every call in the tier, so a `record: true` note is no longer protected from `vaultmcp_fileclass_set` or `vaultmcp_jd_scaffold_reindex_category` by that kernel check, a foreign scope claim covering the note is no longer disclosed, and the journal names no target path except where a handler reports `filesChanged`/`files` as effects.
   approved at the mutating-tier extraction: this is a DISCLOSURE of a reduction, not a safety claim — the class of sentence this control exists to make sure gets written rather than omitted. It is mechanically checkable in one place: `collectPaths` (packages/host/src/guard.ts) is the single walker that feeds the allowlist check, `recordImmutableRefusal`, `locks.coveringAny` and the journal's `target.path`. The `filesChanged`/`files` carve-out is the `reportedEffects` convention in mcp/guarded.ts, which the jd-scaffold and provenance write handlers do return.
-  NOTE UPDATED 2026-09-07 (mutating-tier rounds 1 and 2): the sentence describes the state AT THE EXTRACTION and the paragraph it sits in now carries a dated bracket saying so — it is kept because it is the argument that made round 1 correct, not because it still describes shipped behaviour. What is true now: `note_path` IS in `collectPaths`' key list (round 1), so those three kernel checks are live for the tier's MUTATING note-naming tools (`vault_fileclass_set`, `vault_jd_scaffold_promote_to_folder`, `vault_jd_scaffold_reindex_category`), which is exactly the reduction this sentence warned about being closed. Round 2 then moved the tier's READS (`vault_fileclass_explain` / `_get`, `vault_provenance_check`) to a non-key spelling (`note`), because those checks bind at the mutating dequeue and buy a read nothing. **So the old note's claim that "the satellites' `publication` tests pin that none of their arguments is in its key list" is NO LONGER TRUE and has been removed from this entry** — those tests now pin WHICH arguments are keys (fileclass: `set` only; provenance: none; jd-scaffold: `promote_to_folder` + `reindex_category`), and the host-side pins are `tests/guard.test.mjs`'s two `collectPaths` cases for `note_path` (collects) and `note` (does not).
+  NOTE UPDATED 2026-09-07 (mutating-tier rounds 1 and 2): the sentence describes the state AT THE EXTRACTION and the paragraph it sits in now carries a dated bracket saying so — it is kept because it is the argument that made round 1 correct, not because it still describes shipped behaviour. What is true now: `note_path` IS in `collectPaths`' key list (round 1), so those three kernel checks are live for the tier's MUTATING note-naming tools (`vaultmcp_fileclass_set`, `vaultmcp_jd_scaffold_promote_to_folder`, `vaultmcp_jd_scaffold_reindex_category`), which is exactly the reduction this sentence warned about being closed. Round 2 then moved the tier's READS (`vaultmcp_fileclass_explain` / `_get`, `vaultmcp_provenance_check`) to a non-key spelling (`note`), because those checks bind at the mutating dequeue and buy a read nothing. **So the old note's claim that "the satellites' `publication` tests pin that none of their arguments is in its key list" is NO LONGER TRUE and has been removed from this entry** — those tests now pin WHICH arguments are keys (fileclass: `set` only; provenance: none; jd-scaffold: `promote_to_folder` + `reindex_category`), and the host-side pins are `tests/guard.test.mjs`'s two `collectPaths` cases for `note_path` (collects) and `note` (does not).
 
 
 - For provenance and JD scaffolding it is strictly stricter than the module was, and that is the point: keeping `path` would have handed the guard one argument while the work reached further — provenance's freshness answer names every path the checked note's `derived-from` globs resolve to, JD promote-to-folder writes to destinations the plan COMPUTES and no argument names, and JD reindex reads every sibling index file vault-wide at the area and system tiers.
@@ -519,7 +519,7 @@ omitted, and both are checkable against code that exists.
   word" — flipping the argument name off `PATH_KEYS` is what F3 reads; the jd-scaffold
   `publication` pin fails immediately on that edit, mutation-verified. The operator's-allowlist-
   is-empty half is a statement about this vault's configuration, not about the code.
-- `vault_jd_scaffold_promote_to_folder`'s COMPUTED destinations are a different and already-documented class: discovered writes the argument-derived guard never sees, the `obsidian_repoint_link` boundary, mitigated by the `filesChanged`/`files` effects report.
+- `vaultmcp_jd_scaffold_promote_to_folder`'s COMPUTED destinations are a different and already-documented class: discovered writes the argument-derived guard never sees, the `obsidian_repoint_link` boundary, mitigated by the `filesChanged`/`files` effects report.
   approved 2026-09-07 (round 2): an honest-limits claim — it states what the guard does NOT
   cover, so it cannot fail in the dangerous direction. Substantiated: `planPromoteToFolder`
   derives `folderPath` / `newFilePath` from the note path inside the handler, so neither is a

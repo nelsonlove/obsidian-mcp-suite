@@ -17,7 +17,7 @@
  * in the host's tests and covered BOTH the pure kernel and the tool layer that
  * consumes it. The kernel moved to `packages/core/src/vocab/` — because the
  * host's conformance rail is a second consumer of it and always was — and the
- * four tools moved to the `vault-vocab` satellite. So did their tests: the
+ * four tools moved to the `vaultmcp-vocab` satellite. So did their tests: the
  * TOOL-LAYER half of this file (which drove `registerVocabTools` over a fake
  * source, including the allowlist-filtering cases) now lives in
  * `packages/vocab/tests/vocab-module.test.mjs`, rewritten against

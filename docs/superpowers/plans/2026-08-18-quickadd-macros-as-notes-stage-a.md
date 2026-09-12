@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Pure transform code lives under `kernel/`, imports nothing from `obsidian` (repo-wide rule, packages/plugin/CLAUDE.md).
-- Wikilink resolution happens ONLY in the glue layer (`mcp/tools-quickadd.ts`), never in the pure transform — mirrors the vault-skills precedent (`parentPaths` arrives pre-resolved).
+- Wikilink resolution happens ONLY in the glue layer (`mcp/tools-quickadd.ts`), never in the pure transform — mirrors the vaultmcp-skills precedent (`parentPaths` arrives pre-resolved).
 - `dry_run: z.boolean()` is REQUIRED on the compile tool's input schema, no default — matches `obsidian_assign_address`/`obsidian_refile_address`/`obsidian_renumber_address` in `tools-scheme-write.ts`.
 - The compile tool registers `annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }` (the `RW` constant pattern used throughout `tools-complementary.ts`/`tools-scheme-write.ts`) so it automatically gets the kernel's queue/journal/if_rev treatment at `server.registerTool`'s interception point — no manual wiring needed for that.
 - One malformed choice note fails ONLY that choice (reported as an entry in `errors`), never the whole compile — matches `obsidian_move_notes`' "static validation, no half-applied batch" discipline, but scoped per-choice here rather than failing the whole call.

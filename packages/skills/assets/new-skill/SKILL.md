@@ -1,6 +1,6 @@
 ---
 name: new-skill
-description: Scaffold a new vault skill, agent, policy, or slash command note in the Vault Skills convention. Use when the user wants to add a new skill, agent (including a cross-cutting one), policy, or slash command to their Obsidian vault (which the vault-skills exporter turns into a Claude Code skill / agent / injected context / slash command).
+description: Scaffold a new vault skill, agent, policy, or slash command note in the Vault Skills convention. Use when the user wants to add a new skill, agent (including a cross-cutting one), policy, or slash command to their Obsidian vault (which the vaultmcp-skills exporter turns into a Claude Code skill / agent / injected context / slash command).
 ---
 
 # Author a new vault skill, agent, policy, or command
@@ -13,7 +13,7 @@ Full field & rule reference is bundled next to this skill —
 
 ## 1. Locate the vault
 
-Read `${CLAUDE_PLUGIN_ROOT}/.vault-skills-manifest.json` and use its `vault` field (the absolute
+Read `${CLAUDE_PLUGIN_ROOT}/.vaultmcp-skills-manifest.json` and use its `vault` field (the absolute
 path of the source vault this plugin was generated from). If missing / null, ask the user.
 
 ## 2. Gather the inputs
@@ -64,8 +64,8 @@ source of truth is the vault.
 ## 4. Publish
 
 1. In Obsidian: run the **Vault Skills** export (ribbon icon or *Export skills & agents to
-   Claude Code*), or call the `vault_skills_export` MCP tool.
+   Claude Code*), or call the `vaultmcp_skills_export` MCP tool.
 2. In Claude Code: `/reload-plugins`.
 
-Then confirm invocation: `/vault-skills:<name>` (skill), `vault-skills:<name>` (subagent). A
+Then confirm invocation: `/vaultmcp-skills:<name>` (skill), `vaultmcp-skills:<name>` (subagent). A
 policy has no invocation — it's injected into its scope's agents' prompts.

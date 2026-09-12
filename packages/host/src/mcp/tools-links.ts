@@ -118,7 +118,7 @@ const MAX_ITEMS = 100;
 // must check it by hand.
 //
 // At the read-tier satellite extraction (suite split, S7) `obsidian_lint` left
-// for the `vault-health` satellite, and a satellite cannot import host
+// for the `vaultmcp-health` satellite, and a satellite cannot import host
 // internals. The choice was copy or publish; forking a guard predicate is the
 // drift this repo has already paid for three times, so it was PUBLISHED into
 // `@vault-mcp/core` (`packages/core/src/scope.ts`), joining `isVisible` (S4)

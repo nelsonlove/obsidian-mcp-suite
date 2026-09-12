@@ -4,7 +4,7 @@
 // of the module consolidation ruling (Assent, 2026-08-09); the modules
 // themselves live in their own kernel directories (kernel/scheme/) and plug in
 // behind this shape. The vocabulary provider was the other founding example;
-// it left for the `vault-vocab` satellite at S7 and its kernel now lives in
+// it left for the `vaultmcp-vocab` satellite at S7 and its kernel now lives in
 // `@vault-mcp/core`.
 //
 // Kernel-module rules apply: nothing here imports from "obsidian" or the MCP

@@ -1,5 +1,5 @@
 /**
- * provenance-module.test.mjs — the vault-provenance satellite: src/kernel/* (the
+ * provenance-module.test.mjs — the vaultmcp-provenance satellite: src/kernel/* (the
  * pure provenance core folded in from the standalone `obsidian-provenance`
  * Python CLI) and src/tools.ts (the three published tools), all headless.
  *
@@ -117,7 +117,7 @@ function fakeBackend({ notes = {}, files = {}, stats = {}, globs = {} } = {}) {
  * every handler assertion below is about the envelope an agent sees.
  *
  * `call(bare, args)` addresses a tool by its BARE name; the shim applies the
- * `vault_provenance_` prefix the host would.
+ * `vaultmcp_provenance_` prefix the host would.
  */
 function tools(backend, config = {}, extraCtx = {}) {
   const { tools: published } = publishInto(
@@ -759,19 +759,19 @@ describe("provenance tools: handlers answer over the injected backend", () => {
 describe("publication: names, flags, and what the host's guard can scope", () => {
   const specs = () => buildProvenanceTools(emptyProvenanceBackend(), { config: () => ({}) });
 
-  test("the plugin id sanitizes to `vault_provenance`, so the wire names are vault_provenance_*", () => {
-    assert.equal(OWNER, "vault_provenance");
-    assert.equal(sanitizeOwnerId("vault-provenance"), "vault_provenance");
+  test("the plugin id sanitizes to `vaultmcp_provenance`, so the wire names are vaultmcp_provenance_*", () => {
+    assert.equal(OWNER, "vaultmcp_provenance");
+    assert.equal(sanitizeOwnerId("vaultmcp-provenance"), "vaultmcp_provenance");
     assert.deepEqual(specs().map((t) => t.name), BARE_NAMES);
     const { tools: published } = publishInto(specs());
     assert.deepEqual([...published.keys()], [
-      "vault_provenance_check",
-      "vault_provenance_reconcile",
-      "vault_provenance_regen",
+      "vaultmcp_provenance_check",
+      "vaultmcp_provenance_reconcile",
+      "vaultmcp_provenance_regen",
     ]);
   });
 
-  test("the bare names SHED the `provenance_` prefix — nothing publishes as vault_provenance_provenance_*", () => {
+  test("the bare names SHED the `provenance_` prefix — nothing publishes as vaultmcp_provenance_provenance_*", () => {
     // The bases satellite's trade, for the same reason: `<owner>_<bare>` would
     // otherwise stutter. Recorded in CLAUDE.md and README.md as the extraction's
     // breaking change, with the one-line reversal named there.
@@ -824,8 +824,8 @@ describe("publication: names, flags, and what the host's guard can scope", () =>
     // read: it has no dequeue, no record guard, no journal target to lose. So
     // round 2 spells its argument `note`, which the host does not recognize,
     // and this whole package carries no host path key again. The mutating
-    // siblings elsewhere in the tier (`vault_fileclass_set`,
-    // `vault_jd_scaffold_promote_to_folder`, `_reindex_category`) keep
+    // siblings elsewhere in the tier (`vaultmcp_fileclass_set`,
+    // `vaultmcp_jd_scaffold_promote_to_folder`, `_reindex_category`) keep
     // `note_path` for exactly the reason round 1 named.
     //
     // HOST_PATH_KEYS is a SNAPSHOT carried as data — a REVIEW AID, never a live
@@ -863,7 +863,7 @@ describe("publication: names, flags, and what the host's guard can scope", () =>
     // a small subset: type, description and string enums survive; min, max,
     // default and pattern do not. So an empty-string / missing / non-string
     // `note` reaches the handler and must refuse there. This is the
-    // vault_skills_release semver lesson.
+    // vaultmcp_skills_release semver lesson.
     const { call } = tools(fakeBackend());
     for (const args of [{}, { note: "" }, { note: "   " }, { note: 7 }, { note: null }]) {
       const res = await call("check", args);

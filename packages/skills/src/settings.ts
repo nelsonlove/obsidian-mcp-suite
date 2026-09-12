@@ -114,7 +114,7 @@ export interface SkillsField {
 }
 
 export const SKILLS_FIELDS: SkillsField[] = [
-  { key: "outputDir", label: "Output plugin directory", type: "text", help: "Where vault_skills_export writes the generated Claude Code plugin (skills/ + agents/). ~ is expanded." },
+  { key: "outputDir", label: "Output plugin directory", type: "text", help: "Where vaultmcp_skills_export writes the generated Claude Code plugin (skills/ + agents/). ~ is expanded." },
   { key: "pluginName", label: "Plugin name", type: "text", help: "Claude Code plugin name — also the command/subagent namespace." },
   { key: "typeSource", label: "Type source", type: "select", options: ["frontmatter", "tags"], help: "How a note declares its kind: the `type` frontmatter field, or a kind tag." },
   { key: "tagPrefix", label: "Tag prefix", type: "text", help: "Tags mode: kind tags are #{prefix}skill / #{prefix}agent / … (e.g. agent/ → #agent/skill)." },
@@ -122,7 +122,7 @@ export const SKILLS_FIELDS: SkillsField[] = [
   { key: "fieldPrefix", label: "Field prefix", type: "text", help: "prefix mode: prefixes each field, e.g. vs- → vs-type. Blank ⇒ bare top-level fields (type, parent, …)." },
   { key: "fieldKey", label: "Field key", type: "text", help: "nested mode: nests every field under this one key, e.g. vault-skills." },
   { key: "assetsRoot", label: "Supporting-files tree", type: "text", help: "Root of a parallel filesystem tree of skills' supporting files. Blank ⇒ none. ~ is expanded." },
-  { key: "releaseDir", label: "Release repo directory", type: "text", help: "A git checkout vault_skills_release targets. Blank ⇒ release disabled. ~ is expanded." },
+  { key: "releaseDir", label: "Release repo directory", type: "text", help: "A git checkout vaultmcp_skills_release targets. Blank ⇒ release disabled. ~ is expanded." },
   { key: "exportOnSave", label: "Export on save", type: "toggle", help: "When on, this plugin re-exports automatically (debounced) whenever a skill/agent/policy/command note changes. Off ⇒ export only when you run it. Ignored by the MCP tool surface." },
   { key: "preloadCap", label: "Preload cap (warn above)", type: "number", help: "How many `preload: true` skills may be compiled into one agent's `skills:` list before the compile warns. A warning, not a refusal — preloading is context provisioning, and a large set spends the fresh context window a subagent is delegated for." },
 ];

@@ -1,4 +1,4 @@
-// tools.ts — the vault-fileclass satellite's tool surface (#188): typed
+// tools.ts — the vaultmcp-fileclass satellite's tool surface (#188): typed
 // frontmatter given an agent surface, by PROXYING the standalone `fileclass`
 // CLI (github.com/mdelobelle/fileclass-cli, the terminal for the Fileclass
 // Obsidian plugin — a typed-frontmatter / fileClass engine). EIGHT tools,
@@ -34,21 +34,21 @@
 // ── THE PUBLISHED NAMES CHANGED, AND THE BARE NAMES CHANGED TOO ────────────
 //
 // The host publishes an external tool as `<sanitized publisher id>_<bare name>`,
-// so the plugin id IS the tool namespace: `vault-fileclass` sanitizes to
-// `vault_fileclass`. Keeping the module's bare names `fileclass_list` … would
-// have published the stuttering `vault_fileclass_fileclass_list`, so the
+// so the plugin id IS the tool namespace: `vaultmcp-fileclass` sanitizes to
+// `vaultmcp_fileclass`. Keeping the module's bare names `fileclass_list` … would
+// have published the stuttering `vaultmcp_fileclass_fileclass_list`, so the
 // `fileclass_` prefix is stripped from the bare names here — the same motion
 // the bases satellite made with `base_`:
 //
 //     shipped (module)     bare name (this file)  published (satellite)
-//     fileclass_list       list                   vault_fileclass_list
-//     fileclass_schema     schema                 vault_fileclass_schema
-//     fileclass_explain    explain                vault_fileclass_explain
-//     fileclass_query      query                  vault_fileclass_query
-//     fileclass_get        get                    vault_fileclass_get
-//     fileclass_validate   validate               vault_fileclass_validate
-//     fileclass_set        set                    vault_fileclass_set
-//     fileclass_set_where  set_where              vault_fileclass_set_where
+//     fileclass_list       list                   vaultmcp_fileclass_list
+//     fileclass_schema     schema                 vaultmcp_fileclass_schema
+//     fileclass_explain    explain                vaultmcp_fileclass_explain
+//     fileclass_query      query                  vaultmcp_fileclass_query
+//     fileclass_get        get                    vaultmcp_fileclass_get
+//     fileclass_validate   validate               vaultmcp_fileclass_validate
+//     fileclass_set        set                    vaultmcp_fileclass_set
+//     fileclass_set_where  set_where              vaultmcp_fileclass_set_where
 //
 // One published name COLLIDES with an unrelated host tool and that is worth
 // knowing rather than discovering: the host has always shipped
@@ -175,7 +175,7 @@
 // `description` and STRING `enum` survive; `default`, `min`, `max` and
 // `pattern` DO NOT. Every `.min(1)` / `.int()` / range below is therefore
 // re-applied in the handler (`requireText`, `optionalTimeout`, `optionalLimit`)
-// — the `vault_skills_release` semver lesson, applied rather than repeated.
+// — the `vaultmcp_skills_release` semver lesson, applied rather than repeated.
 
 import { z } from "zod";
 import type { SdkToolSpec } from "vault-mcp-api";
@@ -184,7 +184,7 @@ import { execFile } from "node:child_process";
 import * as os from "node:os";
 
 /** The read tools' SDK flags. `readOnly: true` is a CLAIM the host distrusts
- * unless the raw publisher id `vault-fileclass` is listed in the host's
+ * unless the raw publisher id `vaultmcp-fileclass` is listed in the host's
  * `trustedReadOnlyPlugins` setting — see the allowlist note in the header for
  * what that does and does not buy. */
 const RO = { readOnly: true, destructive: false, idempotent: true } as const;

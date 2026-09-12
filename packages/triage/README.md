@@ -1,4 +1,4 @@
-# Vault Triage (plugin id `vault-triage`)
+# Vault Triage (plugin id `vaultmcp-triage`)
 
 Inbox triage for agents: a read-only queue view and one guarded, dry-run-by-default disposition verb. Unlike the skills satellite this plugin has no human surface at all — no pane, no palette command, no ribbon. Its entire surface is two MCP tools published to the Governor host through `vault-mcp-api`, plus a settings tab for the human who configures what those tools may do.
 
@@ -6,13 +6,13 @@ The user-facing deep reference — the merged disposition table, the three built
 
 ## Lineage
 
-Built as the host's `triage` capability module (#221 phase 2, reshaped to the three-primitives-plus-declared-rows form by #241 phase 3), itself the successor to the vault's retired `dispose-inbox-item` QuickAdd flow. Extracted to its own plugin at the suite split's S5 — the design doc's `docs/suite-split-design.md` §6 row *"Triage | private operator | satellite"*. It follows `packages/quickadd-choices-compile` (the pilot) and `packages/skills` (`vault-skills`, S4). The planner and the disposition table are the same code through both homes; only who mounts it differs.
+Built as the host's `triage` capability module (#221 phase 2, reshaped to the three-primitives-plus-declared-rows form by #241 phase 3), itself the successor to the vault's retired `dispose-inbox-item` QuickAdd flow. Extracted to its own plugin at the suite split's S5 — the design doc's `docs/suite-split-design.md` §6 row *"Triage | private operator | satellite"*. It follows `packages/quickadd-choices-compile` (the pilot) and `packages/skills` (`vaultmcp-skills`, S4). The planner and the disposition table are the same code through both homes; only who mounts it differs.
 
 ## Package layout
 
 ```text
 packages/triage/
-├── manifest.json          plugin id `vault-triage`, isDesktopOnly
+├── manifest.json          plugin id `vaultmcp-triage`, isDesktopOnly
 ├── esbuild.config.mjs     bundles src/main.ts → main.js (no assets, no defines)
 ├── src/
 │   ├── main.ts            onload: settings + adoption, settings tab, publishTools (re-published on every config change)
@@ -48,9 +48,9 @@ This is the opposite of the skills satellite, and worth stating plainly. Skills 
 
 ### 1. The published tool names changed
 
-`triage_queue` and `triage_dispose` are now **`vault_triage_queue`** and **`vault_triage_dispose`**.
+`triage_queue` and `triage_dispose` are now **`vaultmcp_triage_queue`** and **`vaultmcp_triage_dispose`**.
 
-This is the extraction's one breaking change and it is a consequence of the plugin id, not a separate decision. The host publishes an external tool as `<sanitized publisher id>_<bare name>`, so **the plugin id and the tool namespace are the same string**. The skills satellite kept its names only because `vault-skills` sanitizes to exactly the `vault_skills` prefix its six tools already carried; no id that fits the suite's `vault-*` naming reproduces a bare `triage_` prefix. Any agent session or saved prompt calling the old names must be updated — see `CLAUDE.md` in this package for the alternative that was available and why it was not taken.
+This is the extraction's one breaking change and it is a consequence of the plugin id, not a separate decision. The host publishes an external tool as `<sanitized publisher id>_<bare name>`, so **the plugin id and the tool namespace are the same string**. The skills satellite kept its names only because `vaultmcp-skills` sanitizes to exactly the `vaultmcp_skills` prefix its six tools already carried; no id that fits the suite's `vault-*` naming reproduces a bare `triage_` prefix. Any agent session or saved prompt calling the old names must be updated — see `CLAUDE.md` in this package for the alternative that was available and why it was not taken.
 
 ### 2. The allowlist boundary moved to the host — stricter for the queue, differently reached for dispose
 
@@ -59,9 +59,9 @@ The host's external-tool gate is now what enforces scope, and it refuses on two 
 - An external tool's `readOnlyHint: true` is a CLAIM the host distrusts unless the publisher's raw plugin id appears in its `trustedReadOnlyPlugins` setting. Untrusted, **both** of these register as mutating.
 - A mutating external tool whose arguments carry **no recognized path key** is **blocked outright** while a path allowlist is active — trusted or not (the trusted exemption was closed 2026-09-05 by the skills satellite's review; trust answers read-only mode, never scoping).
 
-`vault_triage_queue` carries no path argument — `base`, `view` and `queue` are not path keys, and the marker queue takes none at all. So under an active allowlist it is refused **wholesale**, where the module merely filtered its listing. That is fail-closed and strictly stricter. With no allowlist configured the in-tool `visible` filter was a no-op anyway, so nothing else changes.
+`vaultmcp_triage_queue` carries no path argument — `base`, `view` and `queue` are not path keys, and the marker queue takes none at all. So under an active allowlist it is refused **wholesale**, where the module merely filtered its listing. That is fail-closed and strictly stricter. With no allowlist configured the in-tool `visible` filter was a no-op anyway, so nothing else changes.
 
-`vault_triage_dispose` carries `path`, so it is scoped normally. Its destination argument was **renamed `target` → `target_path`** in the same motion: `target_path` is in the host's `PATH_KEYS` and `target` is not, so the host's guard now checks the destination folder the caller names. In the module that check was the handler's own, over the computed destination, using the host's guard settings — which a satellite cannot reach. Renaming the argument moves the check to something the host CAN see. It is the same precedent as the scheme-write tools' `to_address` / `displace_to_address`, applied in the direction that adds a check rather than removing a false one.
+`vaultmcp_triage_dispose` carries `path`, so it is scoped normally. Its destination argument was **renamed `target` → `target_path`** in the same motion: `target_path` is in the host's `PATH_KEYS` and `target` is not, so the host's guard now checks the destination folder the caller names. In the module that check was the handler's own, over the computed destination, using the host's guard settings — which a satellite cannot reach. Renaming the argument moves the check to something the host CAN see. It is the same precedent as the scheme-write tools' `to_address` / `displace_to_address`, applied in the direction that adds a check rather than removing a false one.
 
 **What that does not cover**, stated rather than glossed: a declared row with a CONFIGURED `destination` and no `target_path` sends the note somewhere no call argument names, so the host's allowlist never sees it. The bound on that path is the human's own `moveWhitelist` / `moveBlacklist`, enforced at plan time and re-checked at apply — which is the right bound for it. The session allowlist scopes what the CALLER can name; a declared row's destination is the human's standing choice, not the agent's.
 
@@ -69,9 +69,9 @@ The host's external-tool gate is now what enforces scope, and it refuses on two 
 
 `triage_queue {base}` used to evaluate a `.base` file through the bases module's shared capture seam — Obsidian's own Bases engine, so one human-authored Base definition drove the human view and the agent sweep. That seam did **not** come along, and copying it would have been wrong rather than merely large: the capture drives a hidden Bases leaf, a GLOBAL resource its owner guards with a module-scoped serializer holding it to one capture at a time. A second serializer in a second plugin would race the first over the one leaf. The seam also reaches the bases surface's own config and typed-refusal vocabulary, none of which is published.
 
-**S7 reinforced that, rather than overturning it.** When bases itself left the host it took `queryBaseRows` and the serializer WITH it — a move, with no copy left behind (they now live in `packages/bases/src/tools.ts`; nothing in `packages/host/src` references them). So there is still exactly one serializer over the one leaf, owned now by the `vault-bases` plugin instead of the host, and a copy in this package would still be wrong: two plugins each holding a serializer over the one leaf is the same race whichever two plugins they are.
+**S7 reinforced that, rather than overturning it.** When bases itself left the host it took `queryBaseRows` and the serializer WITH it — a move, with no copy left behind (they now live in `packages/bases/src/tools.ts`; nothing in `packages/host/src` references them). So there is still exactly one serializer over the one leaf, owned now by the `vaultmcp-bases` plugin instead of the host, and a copy in this package would still be wrong: two plugins each holding a serializer over the one leaf is the same race whichever two plugins they are.
 
-So `base`, `view` and `queue` refuse typed (`bases_unavailable`) through the same feature-gate branch that always covered a pre-Bases Obsidian, with a message saying why. **The inbox-marker queue is unaffected and is the working surface.** For evaluated Base rows, use the `vault-bases` satellite's `vault_bases_query` tool — the same evaluation path, under the name publication gave it (the module's `base_query`; `base_list` likewise became `vault_bases_list`). The `baseQuery` seam stays in this package's ctx (and its tests keep exercising it) so the feature re-lights the day the host can hand a publisher a Bases service — an apiVersion-2 item, alongside carrying the caller's scope.
+So `base`, `view` and `queue` refuse typed (`bases_unavailable`) through the same feature-gate branch that always covered a pre-Bases Obsidian, with a message saying why. **The inbox-marker queue is unaffected and is the working surface.** For evaluated Base rows, use the `vaultmcp-bases` satellite's `vaultmcp_bases_query` tool — the same evaluation path, under the name publication gave it (the module's `base_query`; `base_list` likewise became `vaultmcp_bases_list`). The `baseQuery` seam stays in this package's ctx (and its tests keep exercising it) so the feature re-lights the day the host can hand a publisher a Bases service — an apiVersion-2 item, alongside carrying the caller's scope.
 
 The `queues` config field is kept for the same reason, with its help text saying it is currently inert.
 
@@ -90,7 +90,7 @@ For triage this is a safety migration, not just a convenience: `moveWhitelist` a
 
 **Refusals throw, and one envelope changed.** A handler returns plain data or throws; the host wraps the first in `ok()` and the second in `fail()`, and `fail()` renders a lowercase-snake `code` off the error as `Error [code]: message` — the same shape the module's `codedError` produced. The exception is the mid-sequence partial failure ("the frontmatter patch landed, then the move failed"). The module returned `okError(...)` — `ok()`'s structure PLUS the error flag — which a published handler cannot produce. It now throws `dispose_partially_applied` with the facts in the message. The load-bearing property is kept: a partial disposition is always NAMED, never reported as success. What is lost is the journal's `effects` field on that one path; the journal record still exists, with `outcome: "error"` and the note as its target.
 
-**Schema bounds are re-applied in the handler.** The SDK converts a zod shape to JSON Schema and the host converts it back through a deliberately small subset: `type`, `description` and string `enum` survive; `default`, `min`, `max` and `pattern` do not. So the `limit` clamp and the `dry_run: true` default both run in the handler, where they actually execute. This is the `vault_skills_release` semver lesson, applied before it could bite.
+**Schema bounds are re-applied in the handler.** The SDK converts a zod shape to JSON Schema and the host converts it back through a deliberately small subset: `type`, `description` and string `enum` survive; `default`, `min`, `max` and `pattern` do not. So the `limit` clamp and the `dry_run: true` default both run in the handler, where they actually execute. This is the `vaultmcp_skills_release` semver lesson, applied before it could bite.
 
 ## What the host still owns
 

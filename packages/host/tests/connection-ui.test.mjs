@@ -123,7 +123,7 @@ describe("numberFieldProblem — surfaces what parseNumberField cannot express o
 // `packages/vocab/src/settings.ts` at the read-tier satellite extraction
 // (suite split, S7), with their tests. They were the settings form for the
 // vocab MODULE's `settings.vocabularies` list; the module is now the
-// `vault-vocab` plugin and renders its own tab. Nothing was copied — this
+// `vaultmcp-vocab` plugin and renders its own tab. Nothing was copied — this
 // file's coverage moved, it did not fork.
 
 describe("addAllowOpaqueEntry — the 'Add a command' picker's append+dedupe", () => {

@@ -176,7 +176,7 @@ export type { GuardSettings } from "./visibility.js";
 // as `isVisible`, and with the same alternative declined. A `scope` is not in
 // the host's PATH_KEYS, so the guard never sees it and every tool taking one
 // must check it by hand; `obsidian_lint` did not until 2026-08-29, which was a
-// live read-boundary bypass. When that tool left for the `vault-health`
+// live read-boundary bypass. When that tool left for the `vaultmcp-health`
 // satellite the choice was publish or fork, and forking a guard predicate is
 // the drift this repo has paid for three times. Its two callers are now in
 // different plugins: the host's `obsidian_check_links` and the health
@@ -189,7 +189,7 @@ export { normalizePosix } from "./visibility.js";
 
 // ── The controlled-vocabulary kernel (suite split, S7) ──────────────────────
 //
-// Published INTO core rather than moved into the `vault-vocab` satellite,
+// Published INTO core rather than moved into the `vaultmcp-vocab` satellite,
 // because it has TWO consumers and always did: the four vocabulary tools (now
 // the satellite's) and the HOST's conformance rail — `conformance/packs/vocab.ts`
 // wraps `noteVocabFindings`, `conformance/cli.ts` builds a `VocabRegistry` per
@@ -245,7 +245,7 @@ export type { ChoiceOutcome } from "./quickadd-choice.js";
 // ── The subprocess primitives, published at the mutating tier's extraction ───
 //
 // `spawnEnv` / `findBinary` were the host's `src/claude-cli.ts`; `findObsidianBinary`
-// was `src/mcp/tools-cli.ts`. The `vault-fileclass` satellite spawns the
+// was `src/mcp/tools-cli.ts`. The `vaultmcp-fileclass` satellite spawns the
 // `fileclass` CLI and needs all three to behave EXACTLY as the host's do — the
 // same PATH augmentation, the same obsidian-binary probe — so they were
 // published rather than forked, on the `isVisible` / `executeQuickAddChoice` /
@@ -257,7 +257,7 @@ export { spawnEnv, findBinary, findObsidianBinary, EXTRA_BIN_DIRS } from "./spaw
 //
 // `scanForAcceptFence` came verbatim out of the host's `mcp/tools-cli.ts`. Its
 // two callers now live in different plugins — the host's `obsidian_cli`
-// template/content guard and the `vault-jd-scaffold` satellite's template
+// template/content guard and the `vaultmcp-jd-scaffold` satellite's template
 // apply — which is the vocabulary kernel's shape at S7 and has the same
 // forbidden answer: two copies of an accept predicate is how one vault gets two
 // definitions of "accepted". Behaviour-preserving by construction: every symbol

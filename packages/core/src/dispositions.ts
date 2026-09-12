@@ -21,7 +21,7 @@
 //      governance PROVIDER) — the review pane's seven verbs, mixed
 //      human/agent authority;
 //    - the INBOX-TRIAGE instance (packages/triage/src/kernel/descriptors.ts,
-//      the `vault-triage` SATELLITE plugin since S5) — THREE mechanical
+//      the `vaultmcp-triage` SATELLITE plugin since S5) — THREE mechanical
 //      primitives (trash / move /
 //      stamp), ALL agent authority (none confers standing), no pane surface at
 //      all. Anything richer is a human-declared config row, not a built-in.

@@ -49,7 +49,7 @@
 // property degrades to `z.unknown()`, which validates nothing and strips
 // nothing, so `transformation`, `budgets`, `delegate` and the two id/version
 // ARRAYS reach the handler exactly as the caller sent them and are checked
-// below by hand. This is the `vault_skills_release` semver bug avoided rather
+// below by hand. This is the `vaultmcp_skills_release` semver bug avoided rather
 // than repeated: if you add a constrained argument, constrain it twice.
 //
 // Obsidian-free by construction: everything arrives through the injected

@@ -1,13 +1,13 @@
 /**
- * skills-module.test.mjs — the vault-skills satellite's tool surface. Four
+ * skills-module.test.mjs — the vaultmcp-skills satellite's tool surface. Four
  * things this must prove, three of them carried over unchanged from the
  * folded-into-the-host era (#82) and one new to the extraction:
  *
  *   1. the six tools are BUILT with the names and read/write flags that make
- *      the host publish them as `vault_skills_validate` … `vault_skills_mark`
+ *      the host publish them as `vaultmcp_skills_validate` … `vaultmcp_skills_mark`
  *      — the shipped spelling, which renaming would break for agent sessions;
  *   2. the surface contributes NO accept/approve tool;
- *   3. vault_skills_mark CANNOT write an acceptance assertion — the mark path
+ *   3. vaultmcp_skills_mark CANNOT write an acceptance assertion — the mark path
  *      runs the shared accept-forbidden transition guard, so a mark that would
  *      introduce/change an accepted-family field is REFUSED and nothing is
  *      written, while preserving an existing (human-granted) accepted value is
@@ -34,9 +34,9 @@ import { buildSkillsTools, guardSkillsMark } from "../src/tools.ts";
 import { adoptHostConfig, settingsOf, SKILLS_FIELDS, ADOPTABLE_KEYS } from "../src/settings.ts";
 import { AcceptForbiddenError } from "@vault-mcp/core";
 
-/** The plugin id is `vault-skills`, which the host sanitizes to `vault_skills`;
- *  each bare spec name is published as `vault_skills_<name>`. */
-const PUBLISHED = (name) => `vault_skills_${name}`;
+/** The plugin id is `vaultmcp-skills`, which the host sanitizes to `vaultmcp_skills`;
+ *  each bare spec name is published as `vaultmcp_skills_<name>`. */
+const PUBLISHED = (name) => `vaultmcp_skills_${name}`;
 const READ_TOOLS = ["validate", "tree", "preview"];
 const WRITE_TOOLS = ["export", "release", "mark"];
 
@@ -57,19 +57,19 @@ const toolNamed = (specs, name) => specs.find((s) => s.name === name);
 
 // ── 1. the published surface ────────────────────────────────────────────────
 
-describe("vault-skills satellite: the six published tools", () => {
-  test("builds exactly six tools, and they publish under the shipped vault_skills_* names", () => {
+describe("vaultmcp-skills satellite: the six published tools", () => {
+  test("builds exactly six tools, and they publish under the shipped vaultmcp_skills_* names", () => {
     const specs = build();
     assert.equal(specs.length, 6);
     assert.deepEqual(
       specs.map((s) => PUBLISHED(s.name)).sort(),
       [
-        "vault_skills_export",
-        "vault_skills_mark",
-        "vault_skills_preview",
-        "vault_skills_release",
-        "vault_skills_tree",
-        "vault_skills_validate",
+        "vaultmcp_skills_export",
+        "vaultmcp_skills_mark",
+        "vaultmcp_skills_preview",
+        "vaultmcp_skills_release",
+        "vaultmcp_skills_tree",
+        "vaultmcp_skills_validate",
       ],
     );
   });
@@ -119,7 +119,7 @@ describe("vault-skills satellite: the six published tools", () => {
 
 // ── 2. the settings tab's fields ────────────────────────────────────────────
 
-describe("vault-skills satellite: settings fields", () => {
+describe("vaultmcp-skills satellite: settings fields", () => {
   test("renders eleven fields — the nine from the standalone settings tab, exportOnSave, and the preload cap", () => {
     assert.equal(SKILLS_FIELDS.length, 11);
     const cap = SKILLS_FIELDS.find((f) => f.key === "preloadCap");
@@ -136,9 +136,9 @@ describe("vault-skills satellite: settings fields", () => {
   });
 });
 
-// ── 3. the accept-forbidden guard on vault_skills_mark (load-bearing) ───────
+// ── 3. the accept-forbidden guard on vaultmcp_skills_mark (load-bearing) ───────
 
-const PREFIX = { mode: "prefix", prefix: "", key: "vault-skills", typeSource: "frontmatter" };
+const PREFIX = { mode: "prefix", prefix: "", key: "vaultmcp-skills", typeSource: "frontmatter" };
 
 describe("guardSkillsMark: a skills-mark can never introduce an acceptance assertion", () => {
   test("a clean mark on a clean note is allowed (returns the MarkResult, no throw)", () => {
@@ -190,7 +190,7 @@ function markHandler(config, before) {
   return { handler: toolNamed(specs, "mark").handler, writes };
 }
 
-describe("vault_skills_mark handler: the guard blocks the write, not just the response", () => {
+describe("vaultmcp_skills_mark handler: the guard blocks the write, not just the response", () => {
   test("a clean mark writes the frontmatter", async () => {
     const { handler, writes } = markHandler({}, {});
     const res = await handler({ path: "Note.md", type: "skill" });
@@ -215,7 +215,7 @@ describe("vault_skills_mark handler: the guard blocks the write, not just the re
 
 // ── the read boundary (2026-08-29 review), now defence in depth ─────────────
 //
-// `vault_skills_preview` returned an entry's full compiled body for ANY source
+// `vaultmcp_skills_preview` returned an entry's full compiled body for ANY source
 // note, ignoring the path allowlist — `ctx.getSettings` sat on the context
 // declared and never called. The compile itself is legitimately whole-vault
 // (parent edges span the tree), so the fix filters BODIES, not the compile.
@@ -226,7 +226,7 @@ describe("vault_skills_mark handler: the guard blocks the write, not just the re
 // strictly stricter. These tests supply the settings themselves and keep the
 // filter honest for the apiVersion that can pass scope through.
 
-describe("vault_skills_preview: bodies are filtered by the source note's visibility", () => {
+describe("vaultmcp_skills_preview: bodies are filtered by the source note's visibility", () => {
   const twoSkills = {
     ...inertSkillsSource,
     notes: async () => [
@@ -282,7 +282,7 @@ describe("vault_skills_preview: bodies are filtered by the source note's visibil
 // A sandboxed session can trigger both by authoring an ordinary note INSIDE its
 // own allowlist. These are the regression tests for that.
 
-describe("vault_skills_preview: assembled bodies cannot smuggle hidden notes out", () => {
+describe("vaultmcp_skills_preview: assembled bodies cannot smuggle hidden notes out", () => {
   const SANDBOXED = { readOnly: false, allowlist: ["Projects"] };
 
   const previewFor = (notes, embed) =>

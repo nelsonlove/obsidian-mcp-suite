@@ -1,4 +1,4 @@
-// tools.ts — the vault-jd-scaffold satellite's tool surface: Johnny Decimal
+// tools.ts — the vaultmcp-jd-scaffold satellite's tool surface: Johnny Decimal
 // scaffolding, ported from obsidian-jd-dashboard and published to the Governor
 // host through `vault-mcp-api` (see main.ts). SEVEN tools, every one MUTATING,
 // every one a thin PLAN-then-APPLY shell over the pure planners in
@@ -33,10 +33,10 @@
 // ── The published names ALL changed, and this one was FORCED ────────────────
 //
 // The host publishes an external tool as `<sanitized publisher id>_<bare name>`,
-// and this plugin's id `vault-jd-scaffold` sanitizes to `vault_jd_scaffold`. On
+// and this plugin's id `vaultmcp-jd-scaffold` sanitizes to `vaultmcp_jd_scaffold`. On
 // top of that the bare names below shed the `obsidian_jd_` prefix the module
 // shipped, so `obsidian_jd_standard_zeros` is on the wire as
-// `vault_jd_scaffold_standard_zeros`. Unlike the bases satellite's `base_` strip
+// `vaultmcp_jd_scaffold_standard_zeros`. Unlike the bases satellite's `base_` strip
 // — a readability choice — HALF of this rename had no alternative: the host's
 // registry REFUSES a published name beginning `obsidian_` outright
 // (`external-tools.ts`, F1: `if (toolName.startsWith("obsidian_")) throw new
@@ -147,7 +147,7 @@
 // `description` and STRING `enum` survive; `default`, `min`, `max` and `pattern`
 // DO NOT. Every bound below is therefore re-applied in the handler
 // (`requireText` / `requireBool` / `requirePath` / `requirePrefix`) — the
-// `vault_skills_release` semver lesson: a constraint that lives only in the
+// `vaultmcp_skills_release` semver lesson: a constraint that lives only in the
 // declared schema never runs for an MCP caller.
 //
 // Obsidian-free by construction: the vault arrives through the injected

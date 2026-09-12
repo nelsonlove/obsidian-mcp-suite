@@ -69,7 +69,7 @@ export interface ServerCtx {
   };
   // `getVocabularies` was here until the read-tier satellite extraction (suite
   // split, S7). It carried `settings.vocabularies` to the vocab module's tool
-  // layer; that module is now the `vault-vocab` plugin, which owns its own
+  // layer; that module is now the `vaultmcp-vocab` plugin, which owns its own
   // copy of the list, so nothing on this context needs it.
   /** Externally-published tools (other Obsidian plugins via plugin.api). Optional: absent in tests that don't exercise it. */
   getExternalTools?: () => ExternalToolEntry[];

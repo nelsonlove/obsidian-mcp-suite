@@ -1,4 +1,4 @@
-# Vault Fileclass (plugin id `vault-fileclass`)
+# Vault Fileclass (plugin id `vaultmcp-fileclass`)
 
 Typed frontmatter, given an agent surface: list the vault's fileClasses, read a class schema with its inherited fields, explain a note, query rows, and write validated field values — by proxying the standalone [`fileclass` CLI](https://github.com/mdelobelle/fileclass-cli), the plugin author's own terminal for the Fileclass Obsidian plugin. Like the triage, cross-session and bases satellites and unlike the skills one, this plugin has no human surface at all — no pane, no palette command, no ribbon. Its entire surface is eight MCP tools published to the Governor host through `vault-mcp-api`, plus a settings tab for the one thing a human tunes: where the CLI binary lives.
 
@@ -10,7 +10,7 @@ Built as the host's `fileclass` capability module (#188). Extracted to its own p
 
 ```text
 packages/fileclass/
-├── manifest.json          plugin id `vault-fileclass`, isDesktopOnly
+├── manifest.json          plugin id `vaultmcp-fileclass`, isDesktopOnly
 ├── esbuild.config.mjs     bundles src/main.ts → main.js (no assets, no defines)
 ├── src/
 │   ├── main.ts            onload: settings + adoption, settings tab, publishTools (re-published on every config change)
@@ -50,16 +50,16 @@ In each case the plugin publishes *nothing*: absent, not broken. **The grain of 
 
 | shipped by the module | bare name in this package | published by the satellite |
 |---|---|---|
-| `fileclass_list` | `list` | **`vault_fileclass_list`** |
-| `fileclass_schema` | `schema` | **`vault_fileclass_schema`** |
-| `fileclass_explain` | `explain` | **`vault_fileclass_explain`** |
-| `fileclass_query` | `query` | **`vault_fileclass_query`** |
-| `fileclass_get` | `get` | **`vault_fileclass_get`** |
-| `fileclass_validate` | `validate` | **`vault_fileclass_validate`** |
-| `fileclass_set` | `set` | **`vault_fileclass_set`** |
-| `fileclass_set_where` | `set_where` | **`vault_fileclass_set_where`** |
+| `fileclass_list` | `list` | **`vaultmcp_fileclass_list`** |
+| `fileclass_schema` | `schema` | **`vaultmcp_fileclass_schema`** |
+| `fileclass_explain` | `explain` | **`vaultmcp_fileclass_explain`** |
+| `fileclass_query` | `query` | **`vaultmcp_fileclass_query`** |
+| `fileclass_get` | `get` | **`vaultmcp_fileclass_get`** |
+| `fileclass_validate` | `validate` | **`vaultmcp_fileclass_validate`** |
+| `fileclass_set` | `set` | **`vaultmcp_fileclass_set`** |
+| `fileclass_set_where` | `set_where` | **`vaultmcp_fileclass_set_where`** |
 
-Two compositions produce that, exactly as with bases. First, the host publishes an external tool as `<sanitized publisher id>_<bare name>`, so **the plugin id and the tool namespace are the same string**, and `vault-fileclass` sanitizes to `vault_fileclass`. Second, the bare names shed their `fileclass_` prefix, because keeping them would have published the stuttering `vault_fileclass_fileclass_list`.
+Two compositions produce that, exactly as with bases. First, the host publishes an external tool as `<sanitized publisher id>_<bare name>`, so **the plugin id and the tool namespace are the same string**, and `vaultmcp-fileclass` sanitizes to `vaultmcp_fileclass`. Second, the bare names shed their `fileclass_` prefix, because keeping them would have published the stuttering `vaultmcp_fileclass_fileclass_list`.
 
 **This breaks any agent session or saved prompt that calls the old names.** That cost is real and should not be understated: the host's own locked decision says renaming shipped tool names breaks agent sessions for zero semantic gain. What buys it here is that the alternative spelling is actively worse to read and to type, and that the rename is one motion rather than two.
 
@@ -89,7 +89,7 @@ So at the extraction the argument was named `note_path`, which was not one of th
 
 **That is no longer what ships. Two corrections landed on top of it, and this is the record of both.**
 
-**Round 1 (2026-09-07): the host added `note_path` to its path-key list.** The rename above had cost more than allowlist availability — the cost ledger below is the paragraph that says so, and it was written before anyone acted on it. `collectPaths` is not the allowlist's private walker: the same list feeds record immutability, the advisory-lock consult and the journal's target, **none of them gated on an allowlist**. Pathless, `vault_fileclass_set` could field-write a `record: true` note the kernel used to refuse, on every vault, allowlist or not. Recognizing `note_path` restored all three.
+**Round 1 (2026-09-07): the host added `note_path` to its path-key list.** The rename above had cost more than allowlist availability — the cost ledger below is the paragraph that says so, and it was written before anyone acted on it. `collectPaths` is not the allowlist's private walker: the same list feeds record immutability, the advisory-lock consult and the journal's target, **none of them gated on an allowlist**. Pathless, `vaultmcp_fileclass_set` could field-write a `record: true` note the kernel used to refuse, on every vault, allowlist or not. Recognizing `note_path` restored all three.
 
 **Round 2 (2026-09-07), after an independent review: the fix was narrowed to the tools it was ever about.** Round 1 also made `explain` and `get` per-path scopable under an allowlist — which is exactly the weaker posture two paragraphs above rejects, re-created silently. The rule that settles it: **kernel visibility is a MUTATING concern.** The record guard, the lock consult and the journal target all bind at the mutating dequeue, so a read gains nothing from being path-keyed and loses only F3's refusal. So `explain` and `get` now spell the argument `note`, which the host does not recognize, and are refused outright under an allowlist at zero kernel cost; `set` keeps `note_path` and is scoped per-path like every host write tool, with the kernel watching the note it rewrites. Five tools name no note at all and were never in question.
 
@@ -128,7 +128,7 @@ Blank is not a missing setting — it is the documented "auto-detect on the stan
 
 **Refusals throw.** A handler returns plain data or throws; the host wraps the first in `ok()` and the second in `fail()`, and `fail()` renders a lowercase-snake `code` off the error as `Error [code]: message`. `ok` / `fail` / `codedError` / `okError` are host-internal and are not imported here.
 
-**Schema bounds are re-applied in the handler.** The SDK converts a zod shape to JSON Schema and the host converts it back through a deliberately small subset: `type`, `description` and string `enum` survive; `default`, `min`, `max` and `pattern` do not. So every `.min(1)`, the `timeout_ms` range, `limit`'s `.int().min(1)` and `value`'s union all run again in the handler, where they actually execute. This is the `vault_skills_release` semver lesson, applied before it could bite.
+**Schema bounds are re-applied in the handler.** The SDK converts a zod shape to JSON Schema and the host converts it back through a deliberately small subset: `type`, `description` and string `enum` survive; `default`, `min`, `max` and `pattern` do not. So every `.min(1)`, the `timeout_ms` range, `limit`'s `.int().min(1)` and `value`'s union all run again in the handler, where they actually execute. This is the `vaultmcp_skills_release` semver lesson, applied before it could bite.
 
 ## What the host still owns
 

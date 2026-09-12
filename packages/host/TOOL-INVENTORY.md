@@ -29,8 +29,8 @@ governance provider at S3c, along with the one `obsidian_*` tool that went with
 them (see "Section 2's governance rows" below).  Section 2c is now EMPTY — the
 `provenance`, `fileclass` and `jd-scaffold` module surfaces were the last
 default-disabled modules and left with the mutating tier, following `bases` at
-S7. All are satellite tools now (`vault_provenance_*`, `vault_fileclass_*`,
-`vault_jd_scaffold_*`, `vault_bases_*`), and this inventory has never counted
+S7. All are satellite tools now (`vaultmcp_provenance_*`, `vaultmcp_fileclass_*`,
+`vaultmcp_jd_scaffold_*`, `vaultmcp_bases_*`), and this inventory has never counted
 external tools.
 
 Cross-check: the observed live set with Dataview + Templater + Metadata Menu
@@ -267,9 +267,9 @@ for their own plugins at the S7 satellite extraction.
 
 Both modules left for their own plugins at the read-tier satellite extraction
 and publish through the external-tool registry, like any third-party publisher.
-On the wire they are `vault_vocab_vocabularies` / `_resolve_term` /
-`_validate_terms` / `_list_vocabulary` and `vault_bases_list` /
-`vault_bases_query` — the plugin id is the tool namespace, so the `obsidian_`
+On the wire they are `vaultmcp_vocab_vocabularies` / `_resolve_term` /
+`_validate_terms` / `_list_vocabulary` and `vaultmcp_bases_list` /
+`vaultmcp_bases_query` — the plugin id is the tool namespace, so the `obsidian_`
 and `base_` spellings are both gone. This inventory locks the `obsidian_*`
 family and has never counted external tools, so only the module-mounted totals
 above move. See `docs/vocabulary-module.md`, `docs/bases.md`,
@@ -283,11 +283,11 @@ This section is EMPTY, and the heading stays so the shape of the surface is
 legible: the module host still supports default-disabled modules, and nothing
 ships as one today. Every module that used to be here left for its own plugin.
 
-- `skills` at the suite split's S4 (`packages/skills`, id `vault-skills`), publishing six `vault_skills_*` tools through the external-tool registry like any third-party publisher.
-- `triage` at S5 (`packages/triage`, id `vault-triage`), on the wire as `vault_triage_queue` / `vault_triage_dispose`.
-- `crosssession` at S6 (`packages/crosssession`, id `vault-crosssession`), on the wire as `vault_crosssession_channels` / `_delta` / `_attest` / `_post`.
-- `health` at S7 (`packages/health`, id `vault-health`), on the wire as `vault_health_scan` / `vault_health_lint`.
-- `provenance`, `fileclass` and `jd-scaffold` with the mutating tier (`packages/provenance`, `packages/fileclass`, `packages/jd-scaffold`), on the wire as `vault_provenance_*` (3 tools), `vault_fileclass_*` (8 tools) and `vault_jd_scaffold_*` (7 tools).
+- `skills` at the suite split's S4 (`packages/skills`, id `vaultmcp-skills`), publishing six `vaultmcp_skills_*` tools through the external-tool registry like any third-party publisher.
+- `triage` at S5 (`packages/triage`, id `vaultmcp-triage`), on the wire as `vaultmcp_triage_queue` / `vaultmcp_triage_dispose`.
+- `crosssession` at S6 (`packages/crosssession`, id `vaultmcp-crosssession`), on the wire as `vaultmcp_crosssession_channels` / `_delta` / `_attest` / `_post`.
+- `health` at S7 (`packages/health`, id `vaultmcp-health`), on the wire as `vaultmcp_health_scan` / `vaultmcp_health_lint`.
+- `provenance`, `fileclass` and `jd-scaffold` with the mutating tier (`packages/provenance`, `packages/fileclass`, `packages/jd-scaffold`), on the wire as `vaultmcp_provenance_*` (3 tools), `vaultmcp_fileclass_*` (8 tools) and `vaultmcp_jd_scaffold_*` (7 tools).
 
 The `jd-scaffold` seven were the only ones documented here IN FULL, because they
 were the only default-disabled module tools inside the locked `obsidian_*`

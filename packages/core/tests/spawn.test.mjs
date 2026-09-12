@@ -5,8 +5,8 @@
  * These are thin, and that is exactly why they are pinned HERE rather than left
  * to their callers' suites. All three used to live in the host and now have
  * callers in two different plugins: the host's `claude`/`obsidian` spawn sites
- * and the `vault-fileclass` satellite's CLI spawn, and the host's `obsidian_cli`
- * template guard and the `vault-jd-scaffold` satellite's template apply. A
+ * and the `vaultmcp-fileclass` satellite's CLI spawn, and the host's `obsidian_cli`
+ * template guard and the `vaultmcp-jd-scaffold` satellite's template apply. A
  * forked copy of `spawnEnv` fails only on machines whose PATH happens to lack
  * the extra dirs — silently, and not on the machine that forked it — and a
  * second copy of an accept predicate is how one vault gets two definitions of

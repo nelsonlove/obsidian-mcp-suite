@@ -3,24 +3,24 @@
 //
 // Published to the Governor host through vault-mcp-api as two MCP tools:
 //
-//   vault_bases_list  — enumerate `.base` files + their declared views
+//   vaultmcp_bases_list  — enumerate `.base` files + their declared views
 //                       (read-only in intent; the host distrusts that claim,
 //                       see below)
-//   vault_bases_query — one declared view's rows, evaluated by Obsidian's own
+//   vaultmcp_bases_query — one declared view's rows, evaluated by Obsidian's own
 //                       Bases engine in a hidden background leaf
 //
 // SATELLITE OF THE SUITE (suite-split design §6/§7, the "Bases | public
 // optional | satellite" row). Extracted out of the host at S7, following the
-// quickadd-choices-compile pilot and the private-tier satellites vault-skills
-// (S4), vault-triage (S5) and vault-crosssession (S6). Consequences of the
+// quickadd-choices-compile pilot and the private-tier satellites vaultmcp-skills
+// (S4), vaultmcp-triage (S5) and vaultmcp-crosssession (S6). Consequences of the
 // publishing contract, each deliberate:
 //
 //   * THE TOOL NAMES CHANGED TWICE OVER — `base_list` / `base_query` are now
-//     `vault_bases_list` / `vault_bases_query`. The host publishes an external
+//     `vaultmcp_bases_list` / `vaultmcp_bases_query`. The host publishes an external
 //     tool as `<sanitized publisher id>_<bare name>`, so the plugin id IS the
-//     namespace (`vault-bases` → `vault_bases`); and the bare names shed their
+//     namespace (`vaultmcp-bases` → `vaultmcp_bases`); and the bare names shed their
 //     `base_` prefix, because keeping it would have published the stuttering
-//     `vault_bases_base_query`. Recorded in CLAUDE.md and README.md, not buried
+//     `vaultmcp_bases_base_query`. Recorded in CLAUDE.md and README.md, not buried
 //     here.
 //   * THE ALLOWLIST BOUNDARY MOVED TO THE HOST, and it lands ASYMMETRICALLY
 //     here — unlike the three private-tier satellites, where it closed on the
@@ -177,7 +177,7 @@ export default class VaultBasesPlugin extends Plugin {
         }),
       );
     } catch (e) {
-      console.error("[vault-bases] publishing the tool surface failed", e);
+      console.error("[vaultmcp-bases] publishing the tool surface failed", e);
     }
   }
 
@@ -216,6 +216,6 @@ export default class VaultBasesPlugin extends Plugin {
     if (!adopted) return;
     this.settings = adopted;
     await this.saveData(this.settings);
-    console.info("[vault-bases] adopted the Governor host's modules.bases.config (one shot; the host's copy is untouched)");
+    console.info("[vaultmcp-bases] adopted the Governor host's modules.bases.config (one shot; the host's copy is untouched)");
   }
 }

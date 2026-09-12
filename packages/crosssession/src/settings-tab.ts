@@ -78,7 +78,7 @@ export class CrosssessionSettingTab extends PluginSettingTab {
     containerEl.createEl("p", {
       cls: "setting-item-description",
       text: hostLoaded
-        ? "Governor is installed: the vault_crosssession_channels, _delta, _attest and _post MCP tools are published to it. Note that under an active Governor path allowlist ALL FOUR are refused — none of them carries a path argument to scope by (a channel reference is a uid or a folder, not a path)."
+        ? "Governor is installed: the vaultmcp_crosssession_channels, _delta, _attest and _post MCP tools are published to it. Note that under an active Governor path allowlist ALL FOUR are refused — none of them carries a path argument to scope by (a channel reference is a uid or a folder, not a path)."
         : "Governor is NOT installed. This plugin's entire surface is the four MCP tools it publishes to the Governor host, so nothing here does anything until Governor is installed and enabled.",
     });
   }

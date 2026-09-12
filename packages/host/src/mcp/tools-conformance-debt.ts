@@ -21,10 +21,10 @@
 //
 // The report runs over the whole vault and does NOT apply the path allowlist,
 // matching the health scan's precedent ("a partial report is a misleading
-// one"). That scan is now the `vault-health` satellite's `vault_health_scan`,
+// one"). That scan is now the `vaultmcp-health` satellite's `vaultmcp_health_scan`,
 // where the same posture holds. `provenance_reconcile` was the other whole-vault
 // reader issue #381 named inside this plugin, and it left with the mutating
-// tier — as the `vault-provenance` satellite's `vault_provenance_reconcile` it
+// tier — as the `vaultmcp-provenance` satellite's `vaultmcp_provenance_reconcile` it
 // is now blocked wholesale under an allowlist rather than answering vault-wide.
 // So THIS TOOL IS THE LAST ONE ON #381's LIST, and it still owes the
 // enumerate-or-filter decision. It is also the right call

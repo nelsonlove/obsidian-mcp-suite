@@ -101,7 +101,7 @@ export type { InstallIdAdapter, LoadedInstallId, ServerIdentity } from "./instal
 // The vocabulary kernel was re-exported HERE until the read-tier satellite
 // extraction (suite split, S7). It now lives in `@vault-mcp/core`
 // (`packages/core/src/vocab/`), because it has two consumers in two plugins:
-// the four vocabulary tools, which left for the `vault-vocab` satellite, and
+// the four vocabulary tools, which left for the `vaultmcp-vocab` satellite, and
 // the host's own conformance rail, which stayed. Import it from core — a
 // second copy of a rule core is how one vault gets two vocabularies, which is
 // the same reasoning that kept `queryBaseRows` in one place at S5.

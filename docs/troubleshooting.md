@@ -164,14 +164,14 @@ Enable the review center, refresh it, and reconnect if needed. Only `published: 
 
 ## A Base query is slow or unavailable
 
-Base evaluation depends on a supported Obsidian Bases API and on the `vault-bases` plugin, which since the S7 satellite extraction is a separate plugin rather than a module of this one — install and enable it alongside the Vault MCP host plugin, and call its tools as `vault_bases_list` / `vault_bases_query`. Hidden or background Obsidian windows may evaluate large views more slowly.
+Base evaluation depends on a supported Obsidian Bases API and on the `vaultmcp-bases` plugin, which since the S7 satellite extraction is a separate plugin rather than a module of this one — install and enable it alongside the Vault MCP host plugin, and call its tools as `vaultmcp_bases_list` / `vaultmcp_bases_query`. Hidden or background Obsidian windows may evaluate large views more slowly.
 
 - Confirm the Base opens normally in Obsidian.
 - Confirm the requested view exists.
 - Reduce the row limit or narrow the Base filter.
 - Bring Obsidian to the foreground for diagnosis.
 - Treat a timeout as a retryable read failure; no note was mutated.
-- If the API or the `vault-bases` plugin is unavailable, use direct note search rather than expecting an empty Base.
+- If the API or the `vaultmcp-bases` plugin is unavailable, use direct note search rather than expecting an empty Base.
 
 ## A link-health report and Obsidian disagree
 

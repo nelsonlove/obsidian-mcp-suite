@@ -1,4 +1,4 @@
-# Vault Cross-session (plugin id `vault-crosssession`)
+# Vault Cross-session (plugin id `vaultmcp-crosssession`)
 
 The fleet's coordination-log conventions given an agent surface: discover channels by frontmatter, read the entries newer than your attested position, attest a read receipt, and post — with posting mechanically refused while you are behind. Like the triage satellite and unlike the skills one, this plugin has no human surface at all — no pane, no palette command, no ribbon. Its entire surface is four MCP tools published to the Governor host through `vault-mcp-api`, plus a settings tab for the human who configures what counts as a channel.
 
@@ -6,13 +6,13 @@ The user-facing deep reference — the channel model, the entry grammar, the sta
 
 ## Lineage
 
-Built as the host's `crosssession` capability module (#232). Extracted to its own plugin at the suite split's **S6** — the design doc's `docs/suite-split-design.md` §6 row *"Cross-session | private operator | satellite"*. It follows `packages/quickadd-choices-compile` (the pilot), `packages/skills` (`vault-skills`, S4) and `packages/triage` (`vault-triage`, S5). The parser, the ordering, the unread computation and the receipt store are the same code through both homes; only who mounts them differs.
+Built as the host's `crosssession` capability module (#232). Extracted to its own plugin at the suite split's **S6** — the design doc's `docs/suite-split-design.md` §6 row *"Cross-session | private operator | satellite"*. It follows `packages/quickadd-choices-compile` (the pilot), `packages/skills` (`vaultmcp-skills`, S4) and `packages/triage` (`vaultmcp-triage`, S5). The parser, the ordering, the unread computation and the receipt store are the same code through both homes; only who mounts them differs.
 
 ## Package layout
 
 ```text
 packages/crosssession/
-├── manifest.json          plugin id `vault-crosssession`, isDesktopOnly
+├── manifest.json          plugin id `vaultmcp-crosssession`, isDesktopOnly
 ├── esbuild.config.mjs     bundles src/main.ts → main.js (no assets, no defines)
 ├── src/
 │   ├── main.ts            onload: settings + BOTH adoptions, settings tab, publishTools (re-published on every config change)
@@ -47,9 +47,9 @@ Same as the triage satellite. The four published tools ARE the plugin. With Gove
 
 ### 1. The published tool names changed
 
-`crosssession_channels`, `crosssession_delta`, `crosssession_attest` and `crosssession_post` are now **`vault_crosssession_channels`**, **`vault_crosssession_delta`**, **`vault_crosssession_attest`** and **`vault_crosssession_post`**.
+`crosssession_channels`, `crosssession_delta`, `crosssession_attest` and `crosssession_post` are now **`vaultmcp_crosssession_channels`**, **`vaultmcp_crosssession_delta`**, **`vaultmcp_crosssession_attest`** and **`vaultmcp_crosssession_post`**.
 
-This is the extraction's one breaking change and it is a consequence of the plugin id, not a separate decision. The host publishes an external tool as `<sanitized publisher id>_<bare name>`, so **the plugin id and the tool namespace are the same string**, and `vault-crosssession` sanitizes to `vault_crosssession`. Same class as the triage rename. Any agent session or saved prompt calling the old names must be updated — see `CLAUDE.md` in this package for the alternative that was available and why it was not taken.
+This is the extraction's one breaking change and it is a consequence of the plugin id, not a separate decision. The host publishes an external tool as `<sanitized publisher id>_<bare name>`, so **the plugin id and the tool namespace are the same string**, and `vaultmcp-crosssession` sanitizes to `vaultmcp_crosssession`. Same class as the triage rename. Any agent session or saved prompt calling the old names must be updated — see `CLAUDE.md` in this package for the alternative that was available and why it was not taken.
 
 ### 2. The allowlist boundary moved to the host, and it closes on the WHOLE surface
 
@@ -66,14 +66,14 @@ The host's external-tool gate is now what enforces scope, and it refuses on two 
 2. **A `channel` value may be a uid.** The argument accepts a channel uid, its folder-note path, or its folder. Under an allowlist the guard would prefix-match a bare uid string as if it were a path and refuse every uid-addressed call. That is exactly the bug the host fixed by renaming its scheme-write `to` → `to_address` **away** from a path key — an address string is not a path.
 3. **It would expose the tool to the record-immutability guard on the wrong path** (the folder note, not the appended file). See below.
 
-Read tools blocked wholesale under an allowlist is the documented posture, not a bug — the same one `vault_triage_queue` and five of the six `vault_skills_*` tools carry.
+Read tools blocked wholesale under an allowlist is the documented posture, not a bug — the same one `vaultmcp_triage_queue` and five of the six `vaultmcp_skills_*` tools carry.
 
 ### 3. Record immutability: nothing changed, and that was checked rather than assumed
 
 The host refuses any mutating operation that NAMES a note whose frontmatter carries `record: true`, exempting only `obsidian_append_note` by tool identity (`RECORD_EXEMPT_OPS` in the host's `src/kernel/record-guard.ts`). That set's comment names `crosssession_post` as the one other pure-EOF-append tool, deliberately unexempted because it was "unreachable by this check today". The extraction re-verified both halves of that:
 
 - **It was never outside the kernel.** As a module tool it registered on the same guard-patched `server.registerTool` every built-in rides, and as a published external tool it registers through the identical `external-tools.ts` → `makeGuarded` path. Publishing exempts a tool from nothing.
-- **It is unreachable on ARGUMENTS.** The host collects paths from a fixed `PATH_KEYS` list; `channel` is not on it, so `collectPaths({handle, channel, body})` is empty and the guard has nothing to test. Because the argument names did not change, that is still true of `vault_crosssession_post`.
+- **It is unreachable on ARGUMENTS.** The host collects paths from a fixed `PATH_KEYS` list; `channel` is not on it, so `collectPaths({handle, channel, body})` is empty and the guard has nothing to test. Because the argument names did not change, that is still true of `vaultmcp_crosssession_post`.
 
 So `RECORD_EXEMPT_OPS` was **not** widened — listing the tool would still change no behavior while widening a protective set on a guess. The host's comment and its pin were updated to name the new tool identity and to record the re-verification; this package pins the other half, that none of its four tools carries a host path key, so the day `channel` becomes path-keyed a test fails on both sides instead of a live coordination log silently starting to refuse.
 
@@ -87,7 +87,7 @@ Configuration used to live in the host's `data.json` at `modules.crosssession.co
 
 **Refusals throw.** A handler returns plain data or throws; the host wraps the first in `ok()` and the second in `fail()`, and `fail()` renders a lowercase-snake `code` off the error as `Error [code]: message` — the same shape the module's `codedError` produced. Every typed refusal an agent sees (`stale_read`, `channel_unresolved`, `invalid_handle`, `invalid_body`, `stamp_ahead`, `no_log_file`, `log_ambiguous`) is byte-compatible with the folded era. Unlike the triage extraction, **no envelope changed**: this surface never used `okError`.
 
-**Schema bounds are re-applied in the handler.** The SDK converts a zod shape to JSON Schema and the host converts it back through a deliberately small subset: `type`, `description` and string `enum` survive; `default`, `min`, `max` and `pattern` do not. So every `.min(1)` runs again in the handler (`requireText`), where it actually executes. This is the `vault_skills_release` semver lesson, applied before it could bite.
+**Schema bounds are re-applied in the handler.** The SDK converts a zod shape to JSON Schema and the host converts it back through a deliberately small subset: `type`, `description` and string `enum` survive; `default`, `min`, `max` and `pattern` do not. So every `.min(1)` runs again in the handler (`requireText`), where it actually executes. This is the `vaultmcp_skills_release` semver lesson, applied before it could bite.
 
 ## The entry format may not drift
 

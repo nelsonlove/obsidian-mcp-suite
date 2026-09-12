@@ -1,17 +1,17 @@
-// tools.ts — the vault-skills satellite's tool surface. Six tools, published to
+// tools.ts — the vaultmcp-skills satellite's tool surface. Six tools, published to
 // the Governor host through `vault-mcp-api` (see main.ts):
 //
-//   vault_skills_validate — collect + transform, report errors/warnings/counts (read-only)
-//   vault_skills_tree     — the agent/skill hierarchy (read-only)
-//   vault_skills_preview  — the compiled output diffed against the export dir (read-only)
-//   vault_skills_export   — materialize the Claude Code plugin to disk (mutating)
-//   vault_skills_release  — export into a repo dir + stamp a version (mutating)
-//   vault_skills_mark     — mark a note skill/agent/policy/command in its frontmatter (mutating)
+//   vaultmcp_skills_validate — collect + transform, report errors/warnings/counts (read-only)
+//   vaultmcp_skills_tree     — the agent/skill hierarchy (read-only)
+//   vaultmcp_skills_preview  — the compiled output diffed against the export dir (read-only)
+//   vaultmcp_skills_export   — materialize the Claude Code plugin to disk (mutating)
+//   vaultmcp_skills_release  — export into a repo dir + stamp a version (mutating)
+//   vaultmcp_skills_mark     — mark a note skill/agent/policy/command in its frontmatter (mutating)
 //
 // THE PUBLISHED NAMES ARE UNCHANGED. Each spec's `name` here is the bare half
 // (`validate`, `tree`, …); the host publishes it as `<sanitized plugin id>_<name>`,
-// and this plugin's id is `vault-skills`, which sanitizes to `vault_skills`. So
-// the wire names stay exactly `vault_skills_validate` … `vault_skills_mark`.
+// and this plugin's id is `vaultmcp-skills`, which sanitizes to `vaultmcp_skills`. So
+// the wire names stay exactly `vaultmcp_skills_validate` … `vaultmcp_skills_mark`.
 // That is deliberate and load-bearing: renaming shipped tool names breaks agent
 // sessions for zero semantic gain (the host's own locked-decision precedent for
 // `governance_revisions` / `governance_submit_revision`).
@@ -31,7 +31,7 @@
 //
 // ── The one load-bearing security requirement (accept guard) ─────────────────
 //
-// `vault_skills_mark` writes note frontmatter, so it MUST route through the
+// `vaultmcp_skills_mark` writes note frontmatter, so it MUST route through the
 // accept-forbidden guard like every other vault write: a skills-mark can NOT
 // introduce or change an `accepted` / `accepted-by` / `accepted-on` field, or
 // set `acceptance-status` to an accepted value. Acceptance is a human gesture
@@ -76,7 +76,7 @@ const RO = { readOnly: true, destructive: false, idempotent: true } as const;
  * spelling it out keeps the three-read / three-write split legible. */
 const RW = { readOnly: false, destructive: false, idempotent: false } as const;
 
-/** The write half of the skills backend — what `vault_skills_mark` needs on
+/** The write half of the skills backend — what `vaultmcp_skills_mark` needs on
  * top of the read-only SkillsSource. Kept structural (no `obsidian` import) so
  * the handler stays headless-testable against a fake. */
 export interface SkillsWriter {
@@ -173,7 +173,7 @@ export function obsidianSkillsBackend(app: {
 }
 
 /**
- * The accept-forbidden guard for `vault_skills_mark`, pure and headless.
+ * The accept-forbidden guard for `vaultmcp_skills_mark`, pure and headless.
  *
  * Computes the frontmatter the mark WOULD land (BEFORE with the mark applied)
  * and runs the shared `acceptTransitionReason` predicate: a mark that

@@ -78,7 +78,7 @@ export class HealthSettingTab extends PluginSettingTab {
     containerEl.createEl("p", {
       cls: "setting-item-description",
       text: hostLoaded
-        ? "Governor is installed: the vault_health_scan and vault_health_lint MCP tools are published to it (they were obsidian_health and obsidian_lint while this shipped inside Governor). Note that under an active Governor path allowlist BOTH are refused — neither carries a path argument to scope by, and the scan reads the whole vault by design."
+        ? "Governor is installed: the vaultmcp_health_scan and vaultmcp_health_lint MCP tools are published to it (they were obsidian_health and obsidian_lint while this shipped inside Governor). Note that under an active Governor path allowlist BOTH are refused — neither carries a path argument to scope by, and the scan reads the whole vault by design."
         : "Governor is NOT installed. This plugin's entire surface is the two MCP tools it publishes to the Governor host, so nothing here does anything until Governor is installed and enabled.",
     });
   }

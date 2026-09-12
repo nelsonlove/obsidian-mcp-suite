@@ -93,7 +93,7 @@ export class BasesSettingTab extends PluginSettingTab {
     containerEl.createEl("p", {
       cls: "setting-item-description",
       text: hostLoaded
-        ? "Governor is installed: the vault_bases_list and vault_bases_query MCP tools are published to it. Under an active Governor path allowlist, vault_bases_list is refused outright — it takes no arguments, so there is nothing to scope by — while vault_bases_query is scoped by its `path` argument (a hidden `.base` refuses out_of_allowlist). Result ROWS are not filtered: the host scopes the base you name, not the notes the engine returns. Both tools declare read-only, which Governor distrusts unless `vault-bases` is listed in its trustedReadOnlyPlugins setting; untrusted, read-only mode blocks both."
+        ? "Governor is installed: the vaultmcp_bases_list and vaultmcp_bases_query MCP tools are published to it. Under an active Governor path allowlist, vaultmcp_bases_list is refused outright — it takes no arguments, so there is nothing to scope by — while vaultmcp_bases_query is scoped by its `path` argument (a hidden `.base` refuses out_of_allowlist). Result ROWS are not filtered: the host scopes the base you name, not the notes the engine returns. Both tools declare read-only, which Governor distrusts unless `vaultmcp-bases` is listed in its trustedReadOnlyPlugins setting; untrusted, read-only mode blocks both."
         : "Governor is NOT installed. This plugin's entire surface is the two MCP tools it publishes to the Governor host, so nothing here does anything until Governor is installed and enabled.",
     });
   }

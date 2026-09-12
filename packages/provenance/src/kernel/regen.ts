@@ -44,7 +44,7 @@ export function auditPath(notesDir: string = DEFAULT_NOTES_DIR): string {
  * The audit is Governor's own derived note, so it stamps the
  * `derived-source-count` witness over its own `derived-from` set — resolved with
  * the same `resolveEntries` the freshness check uses, so a later
- * `vault_provenance_check` can see a source DELETED out of the globbed set (the one
+ * `vaultmcp_provenance_check` can see a source DELETED out of the globbed set (the one
  * class of change no mtime comparison can detect).
  */
 export async function regenerateAudit(

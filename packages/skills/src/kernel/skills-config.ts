@@ -24,7 +24,7 @@ import { DEFAULT_PRELOAD_CAP } from "./transform.js";
  * the field/detection config plus the two write destinations (export +
  * release) and the optional supporting-files root. */
 export interface SkillsConfig {
-  /** Where `vault_skills_export` writes the generated Claude Code plugin. `~` expanded. */
+  /** Where `vaultmcp_skills_export` writes the generated Claude Code plugin. `~` expanded. */
   outputDir: string;
   /** Claude Code plugin name — also the command/subagent namespace. */
   pluginName: string;
@@ -40,7 +40,7 @@ export interface SkillsConfig {
   fieldKey: string;
   /** Root of a parallel filesystem tree of skills' supporting files. Blank => none. `~` expanded. */
   assetsRoot: string;
-  /** A git checkout `vault_skills_release` targets. Blank => release disabled. `~` expanded. */
+  /** A git checkout `vaultmcp_skills_release` targets. Blank => release disabled. `~` expanded. */
   releaseDir: string;
   /** GUI only: re-export automatically when a skill/agent/policy/command note
    *  (or a transcluded source note) changes. Debounced; opt-in (default false).

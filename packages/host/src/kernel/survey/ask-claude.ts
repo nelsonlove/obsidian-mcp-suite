@@ -31,7 +31,7 @@
 //
 // The exec function is injected (`AskExec`) rather than calling `execFile`
 // directly, matching tools-cli.ts's `CliExec` precedent (and the fileclass
-// proxy's `FileclassExec`, which left for the `vault-fileclass` satellite with
+// proxy's `FileclassExec`, which left for the `vaultmcp-fileclass` satellite with
 // the mutating tier): everything except the live subprocess itself —
 // argv construction, JSON-envelope parsing, is_error handling — is
 // headless-testable this way.

@@ -1,4 +1,4 @@
-# Vault Bases (plugin id `vault-bases`)
+# Vault Bases (plugin id `vaultmcp-bases`)
 
 Obsidian's Bases engine, given an agent surface: enumerate the vault's `.base` files with their declared views, and evaluate a view — filters, formulas, sort and the view's own limit all computed by Obsidian itself, in a background leaf the human never sees. Like the triage and cross-session satellites and unlike the skills one, this plugin has no human surface at all — no pane, no palette command, no ribbon. Its entire surface is two MCP tools published to the Governor host through `vault-mcp-api`, plus a settings tab for the human who tunes the timeout and the row cap.
 
@@ -6,13 +6,13 @@ The user-facing deep reference — the capture mechanism, the live findings behi
 
 ## Lineage
 
-Built as the host's `bases` capability module (#243), with the shared `queryBaseRows` seam factored out at #241. Extracted to its own plugin at the suite split's **S7** — the design doc's `docs/suite-split-design.md` §6 row *"Bases | public optional | satellite"*, the first of the optional tier. It follows `packages/quickadd-choices-compile` (the pilot) and the private-tier satellites `packages/skills` (`vault-skills`, S4), `packages/triage` (`vault-triage`, S5) and `packages/crosssession` (`vault-crosssession`, S6). The `.base` interpretation, the propertyId normalization, the capture lifecycle, the serializer and the hidden-leaf adapter are the same code through both homes; only who mounts them differs.
+Built as the host's `bases` capability module (#243), with the shared `queryBaseRows` seam factored out at #241. Extracted to its own plugin at the suite split's **S7** — the design doc's `docs/suite-split-design.md` §6 row *"Bases | public optional | satellite"*, the first of the optional tier. It follows `packages/quickadd-choices-compile` (the pilot) and the private-tier satellites `packages/skills` (`vaultmcp-skills`, S4), `packages/triage` (`vaultmcp-triage`, S5) and `packages/crosssession` (`vaultmcp-crosssession`, S6). The `.base` interpretation, the propertyId normalization, the capture lifecycle, the serializer and the hidden-leaf adapter are the same code through both homes; only who mounts them differs.
 
 ## Package layout
 
 ```text
 packages/bases/
-├── manifest.json          plugin id `vault-bases`, isDesktopOnly
+├── manifest.json          plugin id `vaultmcp-bases`, isDesktopOnly
 ├── esbuild.config.mjs     bundles src/main.ts → main.js (no assets, no defines)
 ├── src/
 │   ├── main.ts            onload: settings + adoption, settings tab, publishTools (re-published on every config change)
@@ -49,10 +49,10 @@ Same as the triage and cross-session satellites. The two published tools ARE the
 
 | shipped by the module | bare name in this package | published by the satellite |
 |---|---|---|
-| `base_list`  | `list`  | **`vault_bases_list`**  |
-| `base_query` | `query` | **`vault_bases_query`** |
+| `base_list`  | `list`  | **`vaultmcp_bases_list`**  |
+| `base_query` | `query` | **`vaultmcp_bases_query`** |
 
-Two compositions produce that. First, the host publishes an external tool as `<sanitized publisher id>_<bare name>`, so **the plugin id and the tool namespace are the same string**, and `vault-bases` sanitizes to `vault_bases` — the same rename class as triage's and cross-session's. Second, the bare names shed their `base_` prefix, because keeping them would have published the stuttering `vault_bases_base_list` / `vault_bases_base_query`.
+Two compositions produce that. First, the host publishes an external tool as `<sanitized publisher id>_<bare name>`, so **the plugin id and the tool namespace are the same string**, and `vaultmcp-bases` sanitizes to `vaultmcp_bases` — the same rename class as triage's and cross-session's. Second, the bare names shed their `base_` prefix, because keeping them would have published the stuttering `vaultmcp_bases_base_list` / `vaultmcp_bases_base_query`.
 
 **This breaks any agent session or saved prompt that calls the old names.** That cost is real and should not be understated: the host's own locked decision says renaming shipped tool names breaks agent sessions for zero semantic gain. What buys it here is that the alternative spelling is actively worse to read and to type, and that the rename is one motion rather than two.
 
@@ -64,15 +64,15 @@ This is the one place this extraction differs from its three predecessors, where
 
 The host's external-tool gate is what enforces scope now, and it refuses on two grounds:
 
-- An external tool's `readOnlyHint: true` is a CLAIM the host distrusts unless the publisher's raw plugin id appears in its **`trustedReadOnlyPlugins`** setting. Untrusted, **both** tools register as mutating — so **read-only mode blocks both**, and each takes a write-queue slot and a journal record even though neither writes anything. Listing `vault-bases` in that setting restores read-only-mode availability; it does **not** change the gate below (the trusted exemption was closed 2026-09-05 by the skills satellite's review — trust answers read-only mode, never scoping).
+- An external tool's `readOnlyHint: true` is a CLAIM the host distrusts unless the publisher's raw plugin id appears in its **`trustedReadOnlyPlugins`** setting. Untrusted, **both** tools register as mutating — so **read-only mode blocks both**, and each takes a write-queue slot and a journal record even though neither writes anything. Listing `vaultmcp-bases` in that setting restores read-only-mode availability; it does **not** change the gate below (the trusted exemption was closed 2026-09-05 by the skills satellite's review — trust answers read-only mode, never scoping).
 - A mutating external tool whose arguments carry **no recognized path key** is **blocked outright** while a path allowlist is active. Crucially the host evaluates this **at call time on the ACTUAL ARGUMENTS**, not on the declared schema.
 
 So:
 
-- **`vault_bases_list` takes no arguments at all** ⇒ under an active path allowlist it is **blocked wholesale**, where the module filtered its `.base` listing through the host's own visibility filter. Fail-closed, and strictly stricter.
-- **`vault_bases_query` takes `path`**, which IS one of the host's recognized path keys ⇒ it is **not** blocked. The host's guard **scopes** it, refusing `out_of_allowlist` when the named `.base` file is hidden. The in-handler `pathVisible` belt is now dormant (nothing supplies `ctx.visible` in the shipped configuration) and the ENFORCED check is the host's.
+- **`vaultmcp_bases_list` takes no arguments at all** ⇒ under an active path allowlist it is **blocked wholesale**, where the module filtered its `.base` listing through the host's own visibility filter. Fail-closed, and strictly stricter.
+- **`vaultmcp_bases_query` takes `path`**, which IS one of the host's recognized path keys ⇒ it is **not** blocked. The host's guard **scopes** it, refusing `out_of_allowlist` when the named `.base` file is hidden. The in-handler `pathVisible` belt is now dormant (nothing supplies `ctx.visible` in the shipped configuration) and the ENFORCED check is the host's.
 
-**The row filter is dormant too, and that is a genuine reduction in containment.** `boundRows`' allowlist drop and the `some_rows_hidden` marker both depend on `ctx.visible`, which a satellite cannot obtain — and the host's guard checks the `path` ARGUMENT, never the row paths the engine discovers. So **under an allowlist, `vault_bases_query` on a VISIBLE base can now return rows for notes outside the allowlist, carrying their PATHS and their EVALUATED PROPERTY VALUES — frontmatter fields and formula outputs rendered through the view's columns. That is content of hidden notes (frontmatter-derived; never body text), not merely their names, where the module dropped them.** That is the extraction's honest cost. It is not a hole to paper over with a claim that "the host scopes it": the host scopes the base you name, not the notes the answer contains. The seam re-lights the day `vault-mcp-api` can carry the caller's scope to a publisher — an apiVersion-2 item, the same one triage and cross-session named — with no change to the code. Until then it is something the host may want to decide on explicitly.
+**The row filter is dormant too, and that is a genuine reduction in containment.** `boundRows`' allowlist drop and the `some_rows_hidden` marker both depend on `ctx.visible`, which a satellite cannot obtain — and the host's guard checks the `path` ARGUMENT, never the row paths the engine discovers. So **under an allowlist, `vaultmcp_bases_query` on a VISIBLE base can now return rows for notes outside the allowlist, carrying their PATHS and their EVALUATED PROPERTY VALUES — frontmatter fields and formula outputs rendered through the view's columns. That is content of hidden notes (frontmatter-derived; never body text), not merely their names, where the module dropped them.** That is the extraction's honest cost. It is not a hole to paper over with a claim that "the host scopes it": the host scopes the base you name, not the notes the answer contains. The seam re-lights the day `vault-mcp-api` can carry the caller's scope to a publisher — an apiVersion-2 item, the same one triage and cross-session named — with no change to the code. Until then it is something the host may want to decide on explicitly.
 
 **This has nothing to do with issue #381.** That issue names `obsidian_health`, `provenance_reconcile` and `obsidian_conformance_debt` as whole-vault readers absent from the host's enumerated exception list. Bases is not one of the three and this extraction does not resolve it.
 
@@ -101,7 +101,7 @@ Configuration used to live in the host's `data.json` at `modules.bases.config` �
 
 **Refusals throw.** A handler returns plain data or throws; the host wraps the first in `ok()` and the second in `fail()`, and `fail()` renders a lowercase-snake `code` off the error as `Error [code]: message` — the same shape the module's `codedError` produced. Every typed refusal an agent sees (`bases_unavailable`, `not_a_base`, `out_of_allowlist`, `not_found`, `base_parse_error`, `view_not_found`, `base_timeout`) is byte-compatible with the folded era. **One code is new: `invalid_path`** — a `path` argument containing a backslash is refused outright, before every other path check, because every check downstream splits on `/` alone and an Obsidian path never legitimately contains a backslash. Same rule the triage satellite adopted for `target_path`.
 
-**Schema bounds are re-applied in the handler.** The SDK converts a zod shape to JSON Schema and the host converts it back through a deliberately small subset: `type`, `description` and string `enum` survive; `default`, `min`, `max` and `pattern` do not. So `path`'s `.min(1)` and `limit`'s `.int().min(1)` run again in the handler, where they actually execute. This is the `vault_skills_release` semver lesson, applied before it could bite.
+**Schema bounds are re-applied in the handler.** The SDK converts a zod shape to JSON Schema and the host converts it back through a deliberately small subset: `type`, `description` and string `enum` survive; `default`, `min`, `max` and `pattern` do not. So `path`'s `.min(1)` and `limit`'s `.int().min(1)` run again in the handler, where they actually execute. This is the `vaultmcp_skills_release` semver lesson, applied before it could bite.
 
 ## What the host still owns
 

@@ -1,9 +1,9 @@
 # Cross-session channels — coordination log surface (#232)
 
-> **Deep reference for the shipped implementation.** Canonical concepts and the target design live in the [documentation corpus](README.md); what is shipped versus target is owned by [status-and-compatibility.md](status-and-compatibility.md). Since the S6 satellite extraction (`suite-split-design.md` §6) this reference documents the standalone **`vault-crosssession`** plugin, not a module of the host plugin (`vault-mcp`).
+> **Deep reference for the shipped implementation.** Canonical concepts and the target design live in the [documentation corpus](README.md); what is shipped versus target is owned by [status-and-compatibility.md](status-and-compatibility.md). Since the S6 satellite extraction (`suite-split-design.md` §6) this reference documents the standalone **`vaultmcp-crosssession`** plugin, not a module of the host plugin (`vault-mcp`).
 
 
-The `vault-crosssession` plugin (default off, mutating) gives the fleet's cross-session
+The `vaultmcp-crosssession` plugin (default off, mutating) gives the fleet's cross-session
 coordination-log conventions a real agent surface: **channel discovery, delta reads,
 read-receipt attestation, and posting that is refused while the poster is stale**, published
 to the host through `vault-mcp-api`. It mechanizes the vault convention "posting
@@ -21,20 +21,20 @@ Obsidian-import-free above the adapter; the vault arrives as an injected
 ## Now a satellite plugin
 
 This capability shipped as the host plugin's `crosssession` module through 2026-08; as of
-the S6 extraction it is its own Obsidian plugin, id `vault-crosssession`, publishing its
+the S6 extraction it is its own Obsidian plugin, id `vaultmcp-crosssession`, publishing its
 tools to the host through the `vault-mcp-api` SDK's `publishTools` — following the
-`quickadd-choices-compile` pilot, `vault-skills` (S4) and `vault-triage` (S5). It is no
+`quickadd-choices-compile` pilot, `vaultmcp-skills` (S4) and `vaultmcp-triage` (S5). It is no
 longer a `modules.crosssession` entry in the host's module registry. The parser, the
 ordering, the unread computation and the receipt store are the same code through both homes.
 Four things changed, and all four are visible to a caller:
 
 **1. The published tool names changed.** `crosssession_channels`, `crosssession_delta`,
-`crosssession_attest` and `crosssession_post` are now **`vault_crosssession_channels`**,
-**`vault_crosssession_delta`**, **`vault_crosssession_attest`** and
-**`vault_crosssession_post`**. The host publishes an external tool as
+`crosssession_attest` and `crosssession_post` are now **`vaultmcp_crosssession_channels`**,
+**`vaultmcp_crosssession_delta`**, **`vaultmcp_crosssession_attest`** and
+**`vaultmcp_crosssession_post`**. The host publishes an external tool as
 `<sanitized publisher id>_<bare name>`, so the plugin id and the tool namespace are the same
-string, and `vault-crosssession` sanitizes to `vault_crosssession`. (The skills satellite
-kept its names only because `vault-skills` sanitizes to exactly the `vault_skills` prefix
+string, and `vaultmcp-crosssession` sanitizes to `vaultmcp_crosssession`. (The skills satellite
+kept its names only because `vaultmcp-skills` sanitizes to exactly the `vaultmcp_skills` prefix
 its six tools already carried.) Sessions and prompts calling the old names must be updated.
 
 **2. The allowlist boundary moved to the host, and it closes on the WHOLE surface.** The
@@ -98,11 +98,11 @@ format (non-empty, single line, no ` · ` separator).
 
 ## Read receipts (attestation)
 
-`vault_crosssession_attest` records "handle H has read channel C through stamp S" — a
+`vaultmcp_crosssession_attest` records "handle H has read channel C through stamp S" — a
 **read-receipt, not authority**. It grants nothing, needs no human gesture (agents attest
-their own reads), and feeds exactly one consumer: `vault_crosssession_post`'s staleness
+their own reads), and feeds exactly one consumer: `vaultmcp_crosssession_post`'s staleness
 check. Receipts also make "which handles are behind?" queryable via
-`vault_crosssession_channels`.
+`vaultmcp_crosssession_channels`.
 
 **Where the state lives:** per-handle receipts in `crosssession-receipts.json` in the
 plugin's own directory. Deliberately **not** in any note's frontmatter (a receipt is a claim
@@ -113,7 +113,7 @@ by the channel note's `uid` when it has one, so a reorg move does not reset read
 
 **The S6 migration.** "The plugin's own directory" used to be the HOST's — the file sat
 beside the host's write journal and `install-id.json`, on the install-id precedent. It is
-now `.obsidian/plugins/vault-crosssession/`. That move matters more than a config move
+now `.obsidian/plugins/vaultmcp-crosssession/`. That move matters more than a config move
 would, because receipts are live operational state: leaving them behind would make every
 affected handle's next delta re-serve entries it had already read, and its next post refuse
 `stale_read` on entries it had already attested. So the satellite **adopts the host's file
@@ -129,7 +129,7 @@ the store records claims, it does not verify the reading.
 
 ## Posting and the `stale_read` refusal
 
-`vault_crosssession_post(handle, channel, body)` appends one `## <stamp> · <handle>` section
+`vaultmcp_crosssession_post(handle, channel, body)` appends one `## <stamp> · <handle>` section
 (run clock, minutes precision, matching the live convention) to the channel's single log
 file. It is an **ordinary guarded mutating tool**: read-only mode, the path allowlist, the
 serialized write queue, the journal and the kernel args all bind at the host's standard
@@ -161,7 +161,7 @@ field names the discovered append target even though the call's arguments carry 
 channel ref — that survives the publishing boundary because the host wraps a returned object
 as `ok(data)`, making it the `structuredContent` the kernel reads.
 
-`vault_crosssession_attest` is also declared mutating even though it writes plugin state
+`vaultmcp_crosssession_attest` is also declared mutating even though it writes plugin state
 rather than a note — the advisory-locks precedent: the journal record of who attested what
 matters more than the queue slot, and read-only mode consistently blocks both state writers.
 (The host's write queue is also what keeps two concurrent attests from racing over the
@@ -216,18 +216,18 @@ light it up with no code change.
 
 | Tool | R/W | What it does |
 |---|---|---|
-| `vault_crosssession_channels(handle?)` | R | All channels by fileclass + audience: uid, path, audience, projects, entry count, newest stamp, recorded receipts with behind-counts; with `handle`, your position + unread count. |
-| `vault_crosssession_delta(handle, channel?)` | R | Entries newer than your attested position — `{stamp, handle, event?, body, source, form}`, both forms merged, oldest first; per-channel cap (default 20, config `deltaCap`) with `more` + `next_stamp` (attest through it, call again). The cap never bisects a run of equal stamps — the slice extends to complete the final same-minute group, so the attest-through-`next_stamp` continuation loses nothing. Own entries omitted. `channel` = uid, folder-note path, or folder; omit for all visible channels. |
-| `vault_crosssession_attest(handle, channel, through_stamp)` | W | Record the read receipt. Typed refusals: `channel_unresolved`, `stamp_ahead`, `invalid_handle`, `invalid_argument`. |
-| `vault_crosssession_post(handle, channel, body)` | W | Guarded append of one entry section. Typed refusals: `stale_read` (before any write), `channel_unresolved`, `no_log_file` (a channel with only per-message notes), `log_ambiguous` (more than one entry-bearing log file), `invalid_handle`, `invalid_body`, `invalid_argument`. |
+| `vaultmcp_crosssession_channels(handle?)` | R | All channels by fileclass + audience: uid, path, audience, projects, entry count, newest stamp, recorded receipts with behind-counts; with `handle`, your position + unread count. |
+| `vaultmcp_crosssession_delta(handle, channel?)` | R | Entries newer than your attested position — `{stamp, handle, event?, body, source, form}`, both forms merged, oldest first; per-channel cap (default 20, config `deltaCap`) with `more` + `next_stamp` (attest through it, call again). The cap never bisects a run of equal stamps — the slice extends to complete the final same-minute group, so the attest-through-`next_stamp` continuation loses nothing. Own entries omitted. `channel` = uid, folder-note path, or folder; omit for all visible channels. |
+| `vaultmcp_crosssession_attest(handle, channel, through_stamp)` | W | Record the read receipt. Typed refusals: `channel_unresolved`, `stamp_ahead`, `invalid_handle`, `invalid_argument`. |
+| `vaultmcp_crosssession_post(handle, channel, body)` | W | Guarded append of one entry section. Typed refusals: `stale_read` (before any write), `channel_unresolved`, `no_log_file` (a channel with only per-message notes), `log_ambiguous` (more than one entry-bearing log file), `invalid_handle`, `invalid_body`, `invalid_argument`. |
 
 The first two declare themselves read-only; the host treats that as an untrusted claim and
-registers them as mutating unless `vault-crosssession` is listed in its
+registers them as mutating unless `vaultmcp-crosssession` is listed in its
 `trustedReadOnlyPlugins` — which does not change the allowlist posture above either way.
 
 ## Config
 
-The `vault-crosssession` plugin's own settings tab (formerly rendered as
+The `vaultmcp-crosssession` plugin's own settings tab (formerly rendered as
 `modules.crosssession.config` in the host's config tab):
 
 | Key | Default | Meaning |

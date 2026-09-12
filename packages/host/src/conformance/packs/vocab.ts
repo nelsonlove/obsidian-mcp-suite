@@ -4,7 +4,7 @@
 // The kernel it wraps moved to `@vault-mcp/core` at the read-tier satellite
 // extraction (suite split, S7). This pack is why: it is the SECOND consumer of
 // the vocabulary rule core, and it stays in the host while the four vocabulary
-// TOOLS left for the `vault-vocab` satellite. Two consumers in two plugins is
+// TOOLS left for the `vaultmcp-vocab` satellite. Two consumers in two plugins is
 // exactly the `queryBaseRows` shape, and it has the same forbidden answer —
 // two copies of a rule core is how one vault gets two vocabularies — so the
 // kernel was published rather than copied or stranded.

@@ -34,7 +34,7 @@ This is the S3 package's required migration map ([the suite split's §4](suite-s
 | `governance/auto-accept-allowlist.json` | PROVIDER | untouched |
 | `governance/rename-records.json` | PROVIDER | untouched |
 | `governance/quarantine/**` | PROVIDER | untouched |
-| `crosssession-receipts.json` | already the `vault-crosssession` satellite's | untouched by both. That satellite adopted it by merge at S6 and its copy is authoritative; a second adoption here would resurrect a stale read position. |
+| `crosssession-receipts.json` | already the `vaultmcp-crosssession` satellite's | untouched by both. That satellite adopted it by merge at S6 and its copy is authoritative; a second adoption here would resurrect a stale read position. |
 | `MIGRATED.md` | inert | The 0.12.0 marker, left in `plugins/vault-mcp/` by the previous migration. Harmless; the host installs over that folder and recognizes the marker. |
 
 ### On the machine: `~/.claude/`

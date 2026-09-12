@@ -46,12 +46,12 @@ export class VocabSettingTab extends PluginSettingTab {
     containerEl.createEl("p", {
       cls: "setting-item-description",
       text:
-        "Each row is a controlled-vocabulary source the four vault_vocab_* tools read. A row with a blank id, an " +
+        "Each row is a controlled-vocabulary source the four vaultmcp_vocab_* tools read. A row with a blank id, an " +
         "unknown provider, or a duplicate id is skipped at runtime (the warnings below say which). With no rows " +
         "configured the built-in defaults apply.",
     });
 
-    const listEl = containerEl.createDiv({ cls: "vault-vocab-list" });
+    const listEl = containerEl.createDiv({ cls: "vaultmcp-vocab-list" });
     const problemsEl = containerEl.createEl("p", { cls: "mod-warning" });
 
     const current = (): VocabInstanceSettings[] => coerceVocabInstances(this.host.getVocabularies());
@@ -95,7 +95,7 @@ export class VocabSettingTab extends PluginSettingTab {
     renderProblems: () => void,
     paint: () => void,
   ): void {
-    const row = listEl.createDiv({ cls: "vault-vocab-instance" });
+    const row = listEl.createDiv({ cls: "vaultmcp-vocab-instance" });
     row.createEl("h6", { text: `Instance ${index + 1}${inst.id ? `: ${inst.id}` : ""}` });
 
     // Field edits patch just this instance and re-derive the warning list in
@@ -108,7 +108,7 @@ export class VocabSettingTab extends PluginSettingTab {
 
     new Setting(row)
       .setName("Id")
-      .setDesc("Unique identifier for this source (shown by vault_vocab_vocabularies). Required.")
+      .setDesc("Unique identifier for this source (shown by vaultmcp_vocab_vocabularies). Required.")
       .addText((t) => {
         t.setValue(inst.id);
         t.onChange((value) => void commit({ id: value }));
@@ -181,7 +181,7 @@ export class VocabSettingTab extends PluginSettingTab {
     containerEl.createEl("p", {
       cls: "setting-item-description",
       text: hostLoaded
-        ? "Governor is installed: the vault_vocab_vocabularies, _resolve_term, _validate_terms and _list_vocabulary " +
+        ? "Governor is installed: the vaultmcp_vocab_vocabularies, _resolve_term, _validate_terms and _list_vocabulary " +
           "MCP tools are published to it. Under an active Governor path allowlist the posture is PER TOOL, not " +
           "uniform: _validate_terms stays available and is scoped on its `path` argument; _resolve_term is scoped " +
           "when called with `path` and blocked when called with `token`; _vocabularies and _list_vocabulary are " +

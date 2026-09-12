@@ -20,7 +20,7 @@
 //     `journal/`, `install-id.json`, and the host-owned keys of `data.json` —
 //     into its own `.obsidian/plugins/vault-mcp/`.
 //   • It leaves every byte of the source in place, including the ones it just
-//     copied. That is the satellite-adoption precedent (`vault-crosssession`
+//     copied. That is the satellite-adoption precedent (`vaultmcp-crosssession`
 //     merged the host's read receipts and never touched the host's copy) and it
 //     is ALSO what makes the rollback path work: disable both plugins, reinstall
 //     the single-plugin `governor` build, and it finds its journal, its install
@@ -112,7 +112,7 @@ export const CODE_ARTIFACTS = new Set(["main.js", "manifest.json", "styles.css"]
  *     does not report a new install at the split.
  *
  * `governance/` is absent by design. `crosssession-receipts.json` is absent
- * because the `vault-crosssession` satellite already adopted it at S6 and its
+ * because the `vaultmcp-crosssession` satellite already adopted it at S6 and its
  * copy is authoritative.
  */
 export const HOST_ADOPTED_ENTRIES = ["journal", "install-id.json"] as const;

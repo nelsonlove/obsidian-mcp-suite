@@ -128,7 +128,7 @@ export const COMMAND_SURFACES: CommandRow[] = [
   },
   // The six `skills-*` command rows lived here until the S4 satellite
   // extraction; they moved out with the commands themselves, which are now
-  // registered by the `vault-skills` plugin (packages/skills/src/wiring.ts).
+  // registered by the `vaultmcp-skills` plugin (packages/skills/src/wiring.ts).
 ];
 
 // ── automation ───────────────────────────────────────────────────────────────

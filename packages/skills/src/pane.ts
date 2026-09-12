@@ -2,7 +2,7 @@
 // Ported from the standalone vault-skills plugin (obsidian/src/preview-view.ts) as part of
 // the GUI fold (#82 residuals). READ-ONLY: it never writes; it compiles the vault through
 // the folded skills core (`previewVault`, kernel/skills) and diffs it against the current
-// export dir — the exact same core the read-only MCP `vault_skills_preview` tool runs, so the
+// export dir — the exact same core the read-only MCP `vaultmcp_skills_preview` tool runs, so the
 // pane and the tool can never disagree about the same vault.
 //
 // Left: the agent/skill tree plus flat groups (commands, policies, static, removed), each
@@ -15,7 +15,7 @@
 // "relevant" = exportable now, or a source of the last render, so deletions and de-typed
 // notes count); and the "vault-mcp:skills-exported" workspace event fired by the GUI's own
 // export path (command / ribbon / export-on-save), since writing the output dir emits no
-// vault events. NOTE: an MCP-triggered `vault_skills_export` runs in the per-connection
+// vault events. NOTE: an MCP-triggered `vaultmcp_skills_export` runs in the per-connection
 // server process and fires no workspace event, so the pane won't auto-refresh after one —
 // the manual Refresh button (or any subsequent note edit) picks up the new baseline. A hidden
 // leaf marks itself dirty instead of re-running the pipeline, and re-renders on reveal.

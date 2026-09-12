@@ -38,8 +38,8 @@ const pendingReviewSource = { read: async () => null };
 // until the S7 satellite extraction; the `provenanceSource` backend and the
 // fileclass presence/binary/vault-name fixtures lived here until the mutating
 // tier followed. All six of those modules are separate plugins now
-// (`vault-vocab`, `vault-health`, `vault-bases`, `vault-provenance`,
-// `vault-fileclass`, `vault-jd-scaffold`), each with its own suite, and
+// (`vaultmcp-vocab`, `vaultmcp-health`, `vaultmcp-bases`, `vaultmcp-provenance`,
+// `vaultmcp-fileclass`, `vaultmcp-jd-scaffold`), each with its own suite, and
 // `MountDeps` no longer declares a slot for any of them — it is down to
 // `getSettings` and `schemeNotes`.
 
@@ -90,18 +90,18 @@ describe("mountModules: the built-in modules register through the registry", () 
     // Nothing provenance-, fileclass- or jd-scaffold-shaped can leak from the
     // mount now: those modules are gone, and these names are exactly what a
     // half-reverted extraction would put back.
-    assert.ok(!names.some((n) => n.startsWith("provenance_") || n.startsWith("vault_provenance_")));
-    assert.ok(!names.some((n) => n.startsWith("fileclass_") || n.startsWith("vault_fileclass_")));
-    assert.ok(!names.some((n) => n.startsWith("obsidian_jd_") || n.startsWith("vault_jd_scaffold_")));
+    assert.ok(!names.some((n) => n.startsWith("provenance_") || n.startsWith("vaultmcp_provenance_")));
+    assert.ok(!names.some((n) => n.startsWith("fileclass_") || n.startsWith("vaultmcp_fileclass_")));
+    assert.ok(!names.some((n) => n.startsWith("obsidian_jd_") || n.startsWith("vaultmcp_jd_scaffold_")));
     // Nothing triage-, vocab-, health- or bases-shaped can leak from the mount
     // at all now: those modules are gone. Kept as pins because the satellites
     // publish through the EXTERNAL registry, which is a different surface with
     // a different gate — and because these names are exactly what a
     // half-reverted extraction would put back.
-    assert.ok(!names.some((n) => n.startsWith("triage_") || n.startsWith("vault_triage_")));
+    assert.ok(!names.some((n) => n.startsWith("triage_") || n.startsWith("vaultmcp_triage_")));
     assert.ok(!names.some((n) => n.startsWith("obsidian_vocab") || n === "obsidian_resolve_term" || n === "obsidian_validate_terms" || n === "obsidian_list_vocabulary"));
     assert.ok(!names.includes("obsidian_health") && !names.includes("obsidian_lint"));
-    assert.ok(!names.some((n) => n.startsWith("base_") || n.startsWith("vault_bases_")));
+    assert.ok(!names.some((n) => n.startsWith("base_") || n.startsWith("vaultmcp_bases_")));
     // governance_pending_review is NEVER on the MODULE surface (#83 cycle 2): it is
     // registered always-on in server.ts, decoupled from the governance toggle, so the
     // mount never contributes it whether governance is on or off.
