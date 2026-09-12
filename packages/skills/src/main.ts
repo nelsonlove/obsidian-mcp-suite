@@ -6,8 +6,8 @@
 //   1. the HUMAN surface — a Preview pane, six palette commands, a ribbon icon,
 //      and an opt-in export-on-save trigger (wiring.ts);
 //   2. the AGENT surface — six MCP tools published to the Governor host through
-//      vault-mcp-api (tools.ts), on the wire as `vault_skills_validate` …
-//      `vault_skills_mark`, the same names they have always had.
+//      vault-mcp-api (tools.ts), on the wire as `vaultmcp_skills_validate` …
+//      `vaultmcp_skills_mark`, the same names they have always had.
 //
 // SATELLITE OF THE SUITE (suite-split design §6: "Skills compiler | private
 // operator | satellite — the biggest single extraction; least entangled").
@@ -20,7 +20,7 @@
 //     register as mutating; and a mutating external tool whose arguments carry
 //     no recognized path key is BLOCKED OUTRIGHT while a path allowlist is
 //     active. Five of the six carry no path argument, so under an allowlist
-//     they are refused wholesale rather than filtered. `vault_skills_mark` does
+//     they are refused wholesale rather than filtered. `vaultmcp_skills_mark` does
 //     carry `path`, so it is scoped normally. The in-tool visibility filter is
 //     kept as defence in depth — see the long note in tools.ts.
 //   * REFUSALS THROW; the host renders a thrown error as its error envelope.
@@ -98,7 +98,7 @@ export default class VaultSkillsPlugin extends Plugin {
     try {
       wireSkills(this, { getConfig: () => this.settings.config });
     } catch (e) {
-      console.error("[vault-skills] GUI wiring failed", e);
+      console.error("[vaultmcp-skills] GUI wiring failed", e);
     }
 
     this.register(
@@ -147,6 +147,6 @@ export default class VaultSkillsPlugin extends Plugin {
     if (!adopted) return;
     this.settings = adopted;
     await this.saveData(this.settings);
-    console.info("[vault-skills] adopted the Governor host's modules.skills.config (one shot; the host's copy is untouched)");
+    console.info("[vaultmcp-skills] adopted the Governor host's modules.skills.config (one shot; the host's copy is untouched)");
   }
 }

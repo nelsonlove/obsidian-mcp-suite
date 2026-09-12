@@ -1,4 +1,4 @@
-// tools.ts — the vault-provenance satellite's tool surface: derived-content
+// tools.ts — the vaultmcp-provenance satellite's tool surface: derived-content
 // provenance, ported from the standalone `obsidian-provenance` Python CLI,
 // folded into the Governor host as a capability module, and now published back
 // to that host through `vault-mcp-api` as THREE tools (see main.ts):
@@ -15,11 +15,11 @@
 // ── The published names DID change, and so did one ARGUMENT name ─────────────
 //
 // The host publishes an external tool as `<sanitized publisher id>_<bare name>`.
-// This plugin's id is `vault-provenance`, which sanitizes to `vault_provenance`,
-// so the three BARE names below go on the wire as `vault_provenance_check` /
+// This plugin's id is `vaultmcp-provenance`, which sanitizes to `vaultmcp_provenance`,
+// so the three BARE names below go on the wire as `vaultmcp_provenance_check` /
 // `_reconcile` / `_regen` — NOT the `provenance_*` the folded module shipped.
 // The bare names deliberately SHED the `provenance_` prefix; keeping it would
-// have published the stuttering `vault_provenance_provenance_check`, the same
+// have published the stuttering `vaultmcp_provenance_provenance_check`, the same
 // trade the bases satellite made with `base_`. Recorded in CLAUDE.md and
 // README.md as the extraction's breaking change, with the one-line reversal
 // named there.
@@ -144,7 +144,7 @@
 // through a deliberately small subset (`json-schema-to-zod.ts`): `type`,
 // `description` and STRING `enum` survive; `default`, `min`, `max` and `pattern`
 // DO NOT. `note`'s `.min(1)` is therefore re-applied in the handler — that
-// is the `vault_skills_release` semver lesson: a constraint that lives only in
+// is the `vaultmcp_skills_release` semver lesson: a constraint that lives only in
 // the declared schema never runs for an MCP caller.
 //
 // Obsidian-free by construction: the vault arrives through the injected

@@ -4,22 +4,22 @@
 // Published to the Governor host through vault-mcp-api as seven MCP tools, all
 // mutating:
 //
-//   vault_jd_scaffold_standard_zeros          — the fixed 10-note zeros set
-//   vault_jd_scaffold_ensure_category_indexes — vault-wide XX.00 self-heal
-//   vault_jd_scaffold_promote_to_folder       — id note → same-named folder
-//   vault_jd_scaffold_reindex_category        — rebuild an XX.00's Contents
-//   vault_jd_scaffold_new_standard_zero       — one zero slot from a template
-//   vault_jd_scaffold_new_generic_id          — an XX.YY note from a template
-//   vault_jd_scaffold_new_stem                — an XX.00+CODE note from a template
+//   vaultmcp_jd_scaffold_standard_zeros          — the fixed 10-note zeros set
+//   vaultmcp_jd_scaffold_ensure_category_indexes — vault-wide XX.00 self-heal
+//   vaultmcp_jd_scaffold_promote_to_folder       — id note → same-named folder
+//   vaultmcp_jd_scaffold_reindex_category        — rebuild an XX.00's Contents
+//   vaultmcp_jd_scaffold_new_standard_zero       — one zero slot from a template
+//   vaultmcp_jd_scaffold_new_generic_id          — an XX.YY note from a template
+//   vaultmcp_jd_scaffold_new_stem                — an XX.00+CODE note from a template
 //
 // SATELLITE OF THE SUITE. Extracted out of the host with the mutating tier,
-// following the quickadd-choices-compile pilot and the vault-skills (S4),
-// vault-triage (S5), vault-crosssession (S6) and vault-bases (S7) satellites.
+// following the quickadd-choices-compile pilot and the vaultmcp-skills (S4),
+// vaultmcp-triage (S5), vaultmcp-crosssession (S6) and vaultmcp-bases (S7) satellites.
 // Consequences of the publishing contract, each deliberate and each recorded in
 // CLAUDE.md rather than buried here:
 //
 //   * THE PUBLISHED TOOL NAMES CHANGED — `obsidian_jd_*` became
-//     `vault_jd_scaffold_*`. Half of that is the usual namespace composition
+//     `vaultmcp_jd_scaffold_*`. Half of that is the usual namespace composition
 //     (the host publishes `<sanitized publisher id>_<bare name>`), and half was
 //     FORCED: the host's registry refuses any published name starting
 //     `obsidian_`, so no plugin id could have carried the shipped spellings.
@@ -96,7 +96,7 @@ export default class VaultJdScaffoldPlugin extends Plugin {
         ),
       );
     } catch (e) {
-      console.error("[vault-jd-scaffold] publishing the tool surface failed", e);
+      console.error("[vaultmcp-jd-scaffold] publishing the tool surface failed", e);
     }
   }
 }

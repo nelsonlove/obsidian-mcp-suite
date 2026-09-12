@@ -1,4 +1,4 @@
-// tools.ts — the vault-health satellite's tool surface. TWO tools, published to
+// tools.ts — the vaultmcp-health satellite's tool surface. TWO tools, published to
 // the Governor host through `vault-mcp-api` (see main.ts):
 //
 //   scan — the full tiered health scan → structured findings
@@ -14,20 +14,20 @@
 //
 // The host publishes an external tool as `<sanitized publisher id>_<bare name>`
 // (`sanitizeOwnerId` in the host's `mcp/external-tools.ts`), so the plugin id IS
-// the tool namespace: `vault-health` sanitizes to `vault_health`.
+// the tool namespace: `vaultmcp-health` sanitizes to `vaultmcp_health`.
 //
-//     obsidian_health  →  vault_health_scan
-//     obsidian_lint    →  vault_health_lint
+//     obsidian_health  →  vaultmcp_health_scan
+//     obsidian_lint    →  vaultmcp_health_lint
 //
 // The BARE names shed the `obsidian_` prefix, on the grounds the bases satellite
 // used for shedding `base_`: `obsidian_` was the HOST's built-in tool namespace,
 // never this module's own name, so carrying it into a satellite's namespace would
-// publish a tool named after two owners — `vault_health_obsidian_health`.
+// publish a tool named after two owners — `vaultmcp_health_obsidian_health`.
 //
 // KEEPING THEM WAS AVAILABLE AND WAS DECLINED. It is worth being exact, because
 // the opposite claim is easy to make and wrong: the host's F1 check tests the
 // PUBLISHED name, not the bare one (`const toolName = ownerId_name;
-// if (toolName.startsWith("obsidian_")) throw`), and `vault_health_obsidian_health`
+// if (toolName.startsWith("obsidian_")) throw`), and `vaultmcp_health_obsidian_health`
 // does not start with `obsidian_`, so it would have registered fine — just
 // stutteringly. `NAME_RE` accepts the bare `obsidian_health` too. Nothing forced
 // this rename.
@@ -64,7 +64,7 @@
 //   * `scan` takes NO arguments        ⇒ blocked outright under an allowlist;
 //   * `lint` takes `scope`, which is not a path key ⇒ ALSO blocked outright.
 //
-// Both declare `readOnly: true`, which the host DISTRUSTS unless `vault-health`
+// Both declare `readOnly: true`, which the host DISTRUSTS unless `vaultmcp-health`
 // is listed in the user's `trustedReadOnlyPlugins` setting. Untrusted ⇒ both
 // register as MUTATING, so read-only mode blocks them and each call takes a
 // write-queue slot and a journal record. Trust restores read-only-mode
@@ -134,7 +134,7 @@
 // through a deliberately small subset (`json-schema-to-zod.ts`): `type`,
 // `description` and STRING `enum` survive; `default`, `min`, `max` and `pattern`
 // DO NOT. `scope`'s `.min(1)` is therefore re-applied in the handler
-// (`requireText`) — the `vault_skills_release` semver lesson: a constraint that
+// (`requireText`) — the `vaultmcp_skills_release` semver lesson: a constraint that
 // lives only in the declared schema never runs for an MCP caller.
 //
 // Obsidian-free by construction: the vault arrives through the injected
@@ -154,7 +154,7 @@ import {
 } from "./kernel/index.js";
 
 /** Both tools' SDK flags. `readOnly: true` is a CLAIM the host distrusts unless
- * `vault-health` is in `trustedReadOnlyPlugins` — see the allowlist note in the
+ * `vaultmcp-health` is in `trustedReadOnlyPlugins` — see the allowlist note in the
  * header for what that costs. */
 const RO = { readOnly: true, destructive: false, idempotent: true } as const;
 

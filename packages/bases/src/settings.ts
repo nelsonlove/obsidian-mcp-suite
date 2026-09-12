@@ -126,7 +126,7 @@ export function adoptHostConfig(
 // Ported from BASES_CONFIG_FIELDS in the host's mcp/modules-mount.ts — same
 // keys, same labels, same help text, with two edits and no others: the
 // `modules.bases.config.` prefixes are gone (they name nothing in this plugin),
-// and the tool the help text refers to is spelled `vault_bases_query`, which is
+// and the tool the help text refers to is spelled `vaultmcp_bases_query`, which is
 // what the tool is actually called now (`base_query` names nothing either — see
 // the rename table in README.md). The host rendered these through its generic
 // manifest-driven config tab; this plugin renders them itself. The help text is
@@ -148,7 +148,7 @@ export const BASES_FIELDS: BasesField[] = [
     label: "Query timeout (ms)",
     type: "number",
     help:
-      "Hard deadline for one vault_bases_query evaluation. The Bases engine's scan is heavily throttled while the " +
+      "Hard deadline for one vaultmcp_bases_query evaluation. The Bases engine's scan is heavily throttled while the " +
       "Obsidian window is hidden, so slow answers are normal in the background — expiry refuses with a typed, " +
       `retryable base_timeout. Blank ⇒ the default (${DEFAULT_BASES_CONFIG.queryTimeoutMs}).`,
   },
@@ -157,7 +157,7 @@ export const BASES_FIELDS: BasesField[] = [
     label: "Row cap",
     type: "number",
     help:
-      "Maximum rows one vault_bases_query returns (the tool's `limit` argument clamps to this). Blank ⇒ the " +
+      "Maximum rows one vaultmcp_bases_query returns (the tool's `limit` argument clamps to this). Blank ⇒ the " +
       `default (${DEFAULT_BASES_CONFIG.rowCap}).`,
   },
 ];

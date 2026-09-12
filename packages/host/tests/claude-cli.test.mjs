@@ -72,7 +72,7 @@ test("hasMarketplace matches the marketplace name in list output", () => {
 
 test("hasConnectPlugin matches vault-mcp-connect@ in plugin list output", () => {
   assert.equal(hasConnectPlugin("Installed plugins:\n  ❯ vault-mcp-connect@claude-code-plugins-mac\n"), true);
-  assert.equal(hasConnectPlugin("Installed plugins:\n  ❯ vault-skills@claude-code-plugins-mac\n"), false);
+  assert.equal(hasConnectPlugin("Installed plugins:\n  ❯ vaultmcp-skills@claude-code-plugins-mac\n"), false);
   assert.equal(hasConnectPlugin("No plugins installed\n"), false);
 });
 
@@ -112,7 +112,7 @@ test("claudeEnsureConnectPlugin: marketplace present, plugin missing → install
   const exec = async (bin, args) => {
     calls.push(args.join(" "));
     if (args.join(" ") === "plugin marketplace list") return { stdout: "❯ claude-code-plugins-mac\n" };
-    if (args.join(" ") === "plugin list") return { stdout: "Installed plugins:\n  ❯ vault-skills@claude-code-plugins-mac\n" };
+    if (args.join(" ") === "plugin list") return { stdout: "Installed plugins:\n  ❯ vaultmcp-skills@claude-code-plugins-mac\n" };
     return { stdout: "" };
   };
   const result = await claudeEnsureConnectPlugin("claude", { exec });

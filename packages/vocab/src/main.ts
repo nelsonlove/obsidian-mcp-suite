@@ -3,15 +3,15 @@
 //
 // Published to the Governor host through vault-mcp-api as four MCP tools:
 //
-//   vault_vocab_vocabularies    — enumerate the configured vocabulary sources
-//   vault_vocab_resolve_term    — token → entry; path → that note's own terms
-//   vault_vocab_validate_terms  — one note's frontmatter → findings
-//   vault_vocab_list_vocabulary — the registered entries of one kind
+//   vaultmcp_vocab_vocabularies    — enumerate the configured vocabulary sources
+//   vaultmcp_vocab_resolve_term    — token → entry; path → that note's own terms
+//   vaultmcp_vocab_validate_terms  — one note's frontmatter → findings
+//   vaultmcp_vocab_list_vocabulary — the registered entries of one kind
 //
 // SATELLITE OF THE SUITE (suite-split design §6, row "Vocabulary provider |
 // public optional | satellite"). Extracted out of the host at S7, following the
-// quickadd-choices-compile pilot, vault-skills (S4), vault-triage (S5) and
-// vault-crosssession (S6). Consequences of the publishing contract, each
+// quickadd-choices-compile pilot, vaultmcp-skills (S4), vaultmcp-triage (S5) and
+// vaultmcp-crosssession (S6). Consequences of the publishing contract, each
 // deliberate:
 //
 //   * THE KERNEL DID NOT COME WITH IT. `packages/core/src/vocab/` holds the
@@ -19,7 +19,7 @@
 //     rail is a SECOND consumer of exactly that code and always was. There is
 //     no `src/kernel/` here and there must not be one — see tools.ts.
 //   * THE PUBLISHED TOOL NAMES CHANGED. `obsidian_vocabularies` and its three
-//     siblings are now `vault_vocab_*`, with the `obsidian_` prefix stripped
+//     siblings are now `vaultmcp_vocab_*`, with the `obsidian_` prefix stripped
 //     because it was the HOST's built-in namespace and not this module's name.
 //     Recorded in CLAUDE.md with the reversal, not buried here.
 //   * THE ALLOWLIST BOUNDARY MOVED TO THE HOST, and unlike every prior
@@ -168,7 +168,7 @@ export default class VaultVocabPlugin extends Plugin {
         }),
       );
     } catch (e) {
-      console.error("[vault-vocab] publishing the tool surface failed", e);
+      console.error("[vaultmcp-vocab] publishing the tool surface failed", e);
     }
   }
 
@@ -214,7 +214,7 @@ export default class VaultVocabPlugin extends Plugin {
     // burnt latch with nothing on disk.
     await this.saveData(this.settings);
     console.info(
-      `[vault-vocab] adopted ${this.settings.vocabularies.length} vocabulary row(s) from the Governor host's ` +
+      `[vaultmcp-vocab] adopted ${this.settings.vocabularies.length} vocabulary row(s) from the Governor host's ` +
         "top-level `vocabularies` setting (one shot; the host's copy is untouched and is no longer read by the host)",
     );
   }

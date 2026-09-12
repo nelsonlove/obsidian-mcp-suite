@@ -16,7 +16,7 @@ import { existsSync, realpathSync, lstatSync, readlinkSync, statSync } from "nod
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 // The vocabulary kernel lives in @vault-mcp/core since the read-tier satellite
 // extraction (suite split, S7) — this rail is one of its two consumers, the
-// `vault-vocab` satellite's four tools being the other.
+// `vaultmcp-vocab` satellite's four tools being the other.
 import { VocabRegistry, DEFAULT_VOCABULARIES, type VocabInstanceSettings } from "@vault-mcp/core";
 import { makeRegistry, DEFAULT_SCHEMES, type SchemeInstanceConfig } from "../kernel/scheme/registry.js";
 import { buildSnapshot } from "./snapshot.js";

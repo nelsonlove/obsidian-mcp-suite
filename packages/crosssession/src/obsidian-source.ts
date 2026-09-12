@@ -64,7 +64,7 @@ export function obsidianCrosssessionSource(app: {
  * cross-session entries this session already attested. The fallback exists only
  * for a host that reports no dir.
  *
- * The fallback id is THIS plugin's (`vault-crosssession`), not the Governor
+ * The fallback id is THIS plugin's (`vaultmcp-crosssession`), not the Governor
  * host's. Before the S6 extraction this store lived in the HOST's plugin dir
  * and the fallback used the host's `PLUGIN_ID`; the host's copy is now adopted
  * once by main.ts and thereafter untouched.
@@ -73,5 +73,5 @@ export function obsidianReceiptStore(
   app: { vault: { adapter: ReceiptAdapter; configDir: string } },
   pluginDir?: string,
 ): ReceiptStore {
-  return new ReceiptStore(app.vault.adapter, pluginDir ?? `${app.vault.configDir}/plugins/vault-crosssession`);
+  return new ReceiptStore(app.vault.adapter, pluginDir ?? `${app.vault.configDir}/plugins/vaultmcp-crosssession`);
 }

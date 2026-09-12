@@ -299,7 +299,7 @@ test("F3: even a TRUSTED read-only pathless tool is blocked under an allowlist â
   // DELIBERATE INVERSION of the pin that used to live here (2026-09-05). The old
   // rule let a trusted publisher's pathless read tool through under an active
   // allowlist, and the skills satellite's review showed what that costs: a
-  // trusted `vault_skills_preview {content: true}` would return hidden note
+  // trusted `vaultmcp_skills_preview {content: true}` would return hidden note
   // bodies â€” the exact read-boundary bypass the in-tree sweep closed. Trust
   // decides whether a tool may run in READ-ONLY MODE; it must not also decide
   // the allowlist question, because a satellite cannot consult the host's

@@ -2,7 +2,7 @@
 // a stored config record to a typed HealthConfig. Obsidian-free (no imports at
 // all), so it moves with the rest of the pure core and is headless-testable.
 //
-// In the standalone `obsidian-vault-health` scanner this was one env var,
+// In the standalone `obsidian-vaultmcp-health` scanner this was one env var,
 // `VAULT_HEALTH_EMPTY_CHARS` (default 40) — the body-character count (frontmatter
 // excluded) at/under which a note counts as empty / near-empty. It became the
 // health capability module's single config field, and is now this satellite's

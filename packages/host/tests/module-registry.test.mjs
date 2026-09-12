@@ -256,7 +256,7 @@ describe("moduleFromRegistrar: the registerXTools adapter", () => {
   // change to the function itself. Both are SYNTHETIC — the names are the two
   // founding modules', but neither function is imported, and the vocab one no
   // longer has a real counterpart in this plugin at all (it left for the
-  // `vault-vocab` satellite at S7). The two SHAPES are what this pins, and
+  // `vaultmcp-vocab` satellite at S7). The two SHAPES are what this pins, and
   // they are still the two shapes the adapter has to accept.
   function registerSchemeTools(server, ctx) {
     server.registerTool(

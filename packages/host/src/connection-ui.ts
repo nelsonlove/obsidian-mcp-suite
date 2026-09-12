@@ -159,7 +159,7 @@ export function numberFieldProblem(label: string, value: string): string | null 
 //
 // They left at the read-tier satellite extraction (suite split, S7), MOVED not
 // copied: the four vocabulary tools now ship as `packages/vocab` (plugin id
-// `vault-vocab`), which renders its own settings tab over its own copy of the
+// `vaultmcp-vocab`), which renders its own settings tab over its own copy of the
 // list. The form here became unreachable the moment the vocab module left
 // `builtinModules` — it was appended to that module's generated section, and
 // there is no such section any more — and unreachable UI with passing tests is
@@ -846,7 +846,7 @@ export class VaultMcpSettingTab extends PluginSettingTab {
   // It rendered `settings.vocabularies` as an editable list — id / provider /
   // root / config per row, plus add and remove — and it was appended to the
   // vocab module's generated settings section. That section is gone (the
-  // module left for the `vault-vocab` satellite at S7), so the form was
+  // module left for the `vaultmcp-vocab` satellite at S7), so the form was
   // unreachable; it now lives in that plugin's own settings tab, over that
   // plugin's own copy of the list. Moved, not copied.
 

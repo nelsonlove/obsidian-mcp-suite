@@ -1,4 +1,4 @@
-// kernel — the vault-bases satellite's pure core (#243): evaluated Base rows
+// kernel — the vaultmcp-bases satellite's pure core (#243): evaluated Base rows
 // for agents. Obsidian evaluates `.base` files only inside a rendered view, so
 // the live half of this plugin (src/obsidian-source.ts) opens the base in a
 // hidden background leaf and harvests the engine's own result set — full

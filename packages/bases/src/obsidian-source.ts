@@ -1,4 +1,4 @@
-// obsidian-source.ts — the vault-bases satellite's live adapter: a separate
+// obsidian-source.ts — the vaultmcp-bases satellite's live adapter: a separate
 // file so tools.ts stays obsidian-free and headless-testable; only main.ts
 // imports this. (It was `mcp/obsidian-bases-source.ts` in the host, where only
 // server.ts imported it; the pattern and the discipline are unchanged. The

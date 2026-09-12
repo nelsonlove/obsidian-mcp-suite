@@ -2,24 +2,24 @@
 //
 // Published to the Governor host through vault-mcp-api as eight MCP tools:
 //
-//   vault_fileclass_list      — every fileClass
-//   vault_fileclass_schema    — a fileClass's options + resolved fields
-//   vault_fileclass_explain   — a note's fileClasses + field values
-//   vault_fileclass_query     — rows for a fileClass, filtered
-//   vault_fileclass_get       — one field's value on a note
-//   vault_fileclass_validate  — schema violations
-//   vault_fileclass_set       — validated single-note field write (MUTATING)
-//   vault_fileclass_set_where — validated bulk write, dry-run by default (MUTATING)
+//   vaultmcp_fileclass_list      — every fileClass
+//   vaultmcp_fileclass_schema    — a fileClass's options + resolved fields
+//   vaultmcp_fileclass_explain   — a note's fileClasses + field values
+//   vaultmcp_fileclass_query     — rows for a fileClass, filtered
+//   vaultmcp_fileclass_get       — one field's value on a note
+//   vaultmcp_fileclass_validate  — schema violations
+//   vaultmcp_fileclass_set       — validated single-note field write (MUTATING)
+//   vaultmcp_fileclass_set_where — validated bulk write, dry-run by default (MUTATING)
 //
 // SATELLITE OF THE SUITE (suite-split design §6, "Fileclass CLI proxy | public
 // optional | satellite"). Extracted out of the host after the
-// quickadd-choices-compile pilot and the vault-skills (S4), vault-triage (S5),
-// vault-crosssession (S6) and vault-vocab / vault-health / vault-bases (S7)
+// quickadd-choices-compile pilot and the vaultmcp-skills (S4), vaultmcp-triage (S5),
+// vaultmcp-crosssession (S6) and vaultmcp-vocab / vaultmcp-health / vaultmcp-bases (S7)
 // satellites. Consequences of the publishing contract, each deliberate:
 //
 //   * THE PUBLISHED TOOL NAMES CHANGED — `fileclass_*` became
-//     `vault_fileclass_*`, and the bare names shed the `fileclass_` prefix so
-//     nothing publishes as `vault_fileclass_fileclass_list`. The host publishes
+//     `vaultmcp_fileclass_*`, and the bare names shed the `fileclass_` prefix so
+//     nothing publishes as `vaultmcp_fileclass_fileclass_list`. The host publishes
 //     an external tool as `<sanitized publisher id>_<bare name>`, so the plugin
 //     id IS the tool namespace. Recorded in CLAUDE.md and README.md, not buried
 //     here.
@@ -40,7 +40,7 @@
 //   * The host's queue, journal and kernel args still apply — external mutating
 //     tools ride the guarded registration path like every built-in, and the
 //     host distrusts an external `readOnly: true` claim, so all eight register
-//     as mutating unless `vault-fileclass` is listed in the host's
+//     as mutating unless `vaultmcp-fileclass` is listed in the host's
 //     `trustedReadOnlyPlugins`.
 //
 // THIS PLUGIN NEEDS THE HOST, and it needs two more things besides — which is
@@ -172,7 +172,7 @@ export default class VaultFileclassPlugin extends Plugin {
         }),
       );
     } catch (e) {
-      console.error("[vault-fileclass] publishing the tool surface failed", e);
+      console.error("[vaultmcp-fileclass] publishing the tool surface failed", e);
     }
   }
 
@@ -218,12 +218,12 @@ export default class VaultFileclassPlugin extends Plugin {
     try {
       await this.saveData(adopted);
     } catch (e) {
-      console.error("[vault-fileclass] adopted config could not be persisted; will retry next load", e);
+      console.error("[vaultmcp-fileclass] adopted config could not be persisted; will retry next load", e);
       return;
     }
     this.settings = adopted;
     console.info(
-      "[vault-fileclass] adopted the Governor host's fileclass module config (one shot; the host's copy is untouched)",
+      "[vaultmcp-fileclass] adopted the Governor host's fileclass module config (one shot; the host's copy is untouched)",
     );
   }
 }

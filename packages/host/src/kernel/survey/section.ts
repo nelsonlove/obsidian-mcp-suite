@@ -2,7 +2,7 @@
 // goes in a note's body, and whether it's allowed to go there at all.
 //
 // This is new to vault-mcp in mechanism, not in problem: the provenance kernel
-// (checked before writing this; it lives in the `vault-provenance` satellite
+// (checked before writing this; it lives in the `vaultmcp-provenance` satellite
 // since the mutating-tier extraction, and was `kernel/provenance/` here)
 // already protects human-authored content
 // across a regen, via extractSections/reinsertSections splicing named

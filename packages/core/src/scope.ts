@@ -14,7 +14,7 @@
 // route `obsidian_lint` through the SAME resolver `obsidian_check_links` uses,
 // explicitly rather than a second hand-rolled copy.
 //
-// At S7 `obsidian_lint` left the host for the `vault-health` satellite, and a
+// At S7 `obsidian_lint` left the host for the `vaultmcp-health` satellite, and a
 // satellite cannot import host internals. That left exactly two options: copy
 // the resolver into the satellite, or publish it. Copying a guard predicate is
 // the drift this repo has already paid for three times (the accept-guard

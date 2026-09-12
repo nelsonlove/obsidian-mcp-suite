@@ -18,7 +18,7 @@
  *      check downstream of this one splits on "/" alone, so a backslash reads
  *      as one opaque segment here and as a traversal to whatever normalizes it
  *      later. Both callers — the host's `obsidian_check_links` and the
- *      `vault-health` satellite's lint — got stricter in the same motion, which
+ *      `vaultmcp-health` satellite's lint — got stricter in the same motion, which
  *      is the whole point of there being one copy rather than two.
  */
 

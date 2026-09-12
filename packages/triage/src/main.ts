@@ -3,19 +3,19 @@
 // The disposition substrate's second instance (#221, phase-3 shape per #241),
 // published to the Governor host through vault-mcp-api as two MCP tools:
 //
-//   vault_triage_queue    — the agent's view of a triage queue (read-only in
+//   vaultmcp_triage_queue    — the agent's view of a triage queue (read-only in
 //                           intent; the host distrusts that claim, see below);
-//   vault_triage_dispose  — the one guarded mutating verb, dry-run by default.
+//   vaultmcp_triage_dispose  — the one guarded mutating verb, dry-run by default.
 //
 // SATELLITE OF THE SUITE (suite-split design §6: "Triage | private operator |
 // satellite"). Extracted out of the host at S5, following the
-// quickadd-choices-compile pilot and the vault-skills satellite. Consequences
+// quickadd-choices-compile pilot and the vaultmcp-skills satellite. Consequences
 // of the publishing contract, each deliberate:
 //
 //   * THE PUBLISHED TOOL NAMES CHANGED — `triage_queue` / `triage_dispose`
-//     became `vault_triage_queue` / `vault_triage_dispose`. The host publishes
+//     became `vaultmcp_triage_queue` / `vaultmcp_triage_dispose`. The host publishes
 //     an external tool as `<sanitized publisher id>_<bare name>`, so the plugin
-//     id IS the tool namespace; `vault-triage` sanitizes to `vault_triage`.
+//     id IS the tool namespace; `vaultmcp-triage` sanitizes to `vaultmcp_triage`.
 //     This is the extraction's one breaking change and it is recorded in
 //     CLAUDE.md, not buried here.
 //   * THE ALLOWLIST BOUNDARY MOVED TO THE HOST. An external tool's
@@ -39,7 +39,7 @@
 // event and registers if one appears. The settings tab says so plainly.
 //
 // RE-PUBLISHING ON CONFIG CHANGE is the one structural difference from the
-// skills satellite, and it is not decoration. `vault_triage_dispose`'s
+// skills satellite, and it is not decoration. `vaultmcp_triage_dispose`'s
 // `disposition` argument is a zod ENUM over the merged (built-in ∪ declared)
 // table, and its description renders one line per verb — both computed from
 // config. As a host module the specs were rebuilt per CONNECTION, so a declared
@@ -146,12 +146,12 @@ export default class VaultTriagePlugin extends Plugin {
           // external-tool gate is the enforced boundary. `baseQuery` and
           // `schemeExpected` are not supplied either: both were host-module
           // seams with no published equivalent, and `baseQuery`'s counterpart
-          // has since moved out of the host too — into the `vault-bases`
+          // has since moved out of the host too — into the `vaultmcp-bases`
           // satellite, which is no more reachable from here. See tools.ts.
         }),
       );
     } catch (e) {
-      console.error("[vault-triage] publishing the tool surface failed", e);
+      console.error("[vaultmcp-triage] publishing the tool surface failed", e);
     }
   }
 
@@ -187,6 +187,6 @@ export default class VaultTriagePlugin extends Plugin {
     if (!adopted) return;
     this.settings = adopted;
     await this.saveData(this.settings);
-    console.info("[vault-triage] adopted the Governor host's modules.triage.config (one shot; the host's copy is untouched)");
+    console.info("[vaultmcp-triage] adopted the Governor host's modules.triage.config (one shot; the host's copy is untouched)");
   }
 }

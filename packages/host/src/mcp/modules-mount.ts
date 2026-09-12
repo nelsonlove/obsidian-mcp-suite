@@ -40,7 +40,7 @@
 //     registerSchemeTools directly (pinned by a source scan in the test
 //     suite), so the tripwire and collision checks cannot be bypassed for
 //     module tools. (The same scan used to name registerVocabTools; the vocab
-//     module left for the `vault-vocab` satellite at S7.)
+//     module left for the `vaultmcp-vocab` satellite at S7.)
 //  4. Capability modules only — nothing here declares (or could smuggle) a
 //     governance posture; the registry refuses that posture at construction
 //     anyway.
@@ -72,7 +72,7 @@ import { registerSchemeTools } from "./tools-scheme.js";
 // ("no data migration in v1"). The vocab module USED to get a manifest with
 // no `config` block and a bespoke `renderVocabInstances` form writing to
 // `settings.vocabularies`, read per-connection through a `getVocabularies`
-// thunk — all three left with the vault-vocab satellite at S7 (the form and
+// thunk — all three left with the vaultmcp-vocab satellite at S7 (the form and
 // the thunk are gone; the setting survives host-side as the satellite's
 // migration-only adoption source and is read by nothing here). This
 // paragraph keeps the shape as history because the "structured-instance
@@ -308,9 +308,9 @@ const schemeBinding: ConfigBinding = {
 // Removed at the read-tier satellite extraction (suite split, S7), with the
 // health and bases manifests below it, for the same reason the skills manifest
 // left at S4, triage's at S5 and cross-session's at S6: controlled-vocabulary
-// validation is now a separate plugin (`packages/vocab`, id `vault-vocab`)
+// validation is now a separate plugin (`packages/vocab`, id `vaultmcp-vocab`)
 // publishing through the external-tool registry. Its four tools are on the
-// wire as `vault_vocab_vocabularies` / `_resolve_term` / `_validate_terms` /
+// wire as `vaultmcp_vocab_vocabularies` / `_resolve_term` / `_validate_terms` /
 // `_list_vocabulary` — the plugin id IS the tool namespace, so the `obsidian_`
 // spellings are gone.
 //
@@ -336,10 +336,10 @@ const schemeBinding: ConfigBinding = {
 //
 // Removed at the MUTATING-tier satellite extraction, with the fileclass and
 // jd-scaffold manifests below it. Derived-content provenance is now
-// `packages/provenance` (id `vault-provenance`), publishing
-// `vault_provenance_check` / `_reconcile` / `_regen` — the plugin id IS the
+// `packages/provenance` (id `vaultmcp-provenance`), publishing
+// `vaultmcp_provenance_check` / `_reconcile` / `_regen` — the plugin id IS the
 // tool namespace, and the bare names shed the `provenance_` prefix so nothing
-// published as `vault_provenance_provenance_check`. Its three config fields
+// published as `vaultmcp_provenance_provenance_check`. Its three config fields
 // (`notesDir`, `notesSource`, `auditNote`) moved to that plugin's own settings
 // tab and are adopted once out of `modules.provenance.config`.
 //
@@ -359,8 +359,8 @@ const schemeBinding: ConfigBinding = {
 // ── the health module manifest USED TO LIVE HERE ────────────────────────────
 //
 // Removed at the read-tier satellite extraction (suite split, S7). The vault
-// health scan is now `packages/health` (id `vault-health`), publishing
-// `vault_health_scan` and `vault_health_lint`. Its one config field
+// health scan is now `packages/health` (id `vaultmcp-health`), publishing
+// `vaultmcp_health_scan` and `vaultmcp_health_lint`. Its one config field
 // (`emptyChars`) moved to that plugin's own settings tab and is adopted once
 // out of `modules.health.config`.
 //
@@ -377,10 +377,10 @@ const schemeBinding: ConfigBinding = {
 // ── the fileclass module manifest USED TO LIVE HERE ────────────────────────
 //
 // Removed at the MUTATING-tier satellite extraction. The fileclass CLI proxy is
-// now `packages/fileclass` (id `vault-fileclass`), publishing
-// `vault_fileclass_list` / `_schema` / `_explain` / `_query` / `_get` /
+// now `packages/fileclass` (id `vaultmcp-fileclass`), publishing
+// `vaultmcp_fileclass_list` / `_schema` / `_explain` / `_query` / `_get` /
 // `_validate` / `_set` / `_set_where` — the bare names shed the `fileclass_`
-// prefix so nothing published as `vault_fileclass_fileclass_list`. Its one
+// prefix so nothing published as `vaultmcp_fileclass_fileclass_list`. Its one
 // config field (`binaryPath`) moved to that plugin's own settings tab and is
 // adopted once out of `modules.fileclass.config`.
 //
@@ -424,8 +424,8 @@ const schemeBinding: ConfigBinding = {
 // ── the bases module manifest USED TO LIVE HERE ─────────────────────────────
 //
 // Removed at the read-tier satellite extraction (suite split, S7). Evaluated
-// Base rows are now `packages/bases` (id `vault-bases`), publishing
-// `vault_bases_list` and `vault_bases_query`.
+// Base rows are now `packages/bases` (id `vaultmcp-bases`), publishing
+// `vaultmcp_bases_list` and `vaultmcp_bases_query`.
 //
 // THE CAPTURE SEAM WENT WITH IT, and that is the decision worth carrying. At
 // S5 the triage module's base-backed queues were cut loose rather than take
@@ -441,8 +441,8 @@ const schemeBinding: ConfigBinding = {
 // ── the jd-scaffold module manifest USED TO LIVE HERE ──────────────────────
 //
 // Removed at the MUTATING-tier satellite extraction. Johnny Decimal scaffolding
-// is now `packages/jd-scaffold` (id `vault-jd-scaffold`), publishing
-// `vault_jd_scaffold_standard_zeros` / `_ensure_category_indexes` /
+// is now `packages/jd-scaffold` (id `vaultmcp-jd-scaffold`), publishing
+// `vaultmcp_jd_scaffold_standard_zeros` / `_ensure_category_indexes` /
 // `_promote_to_folder` / `_reindex_category` / `_new_standard_zero` /
 // `_new_generic_id` / `_new_stem`.
 //
@@ -505,7 +505,7 @@ export function mountHost(deps: MountDeps): ModuleHostCtx {
  * + guard imports (not `host.visible`) — preserved verbatim so the mount is a
  * pure re-wiring, zero behavior change. Vocab was the other module in that
  * pair, on the top-level `vocabularies` setting, until it left for the
- * `vault-vocab` satellite at S7. A NEW module should do the opposite: read
+ * `vaultmcp-vocab` satellite at S7. A NEW module should do the opposite: read
  * `host`/`config` and use `host.visible`, per the adapters doc. */
 export function builtinModules(deps: MountDeps): VaultModule[] {
   return [
@@ -519,8 +519,8 @@ export function builtinModules(deps: MountDeps): VaultModule[] {
       }),
     ),
     // THE VOCAB MODULE IS GONE FROM HERE (suite split, S7). Its four read
-    // tools ship as `packages/vocab` (plugin id `vault-vocab`), published
-    // through vault-mcp-api as `vault_vocab_*`. Its kernel did NOT go with it
+    // tools ship as `packages/vocab` (plugin id `vaultmcp-vocab`), published
+    // through vault-mcp-api as `vaultmcp_vocab_*`. Its kernel did NOT go with it
     // — it went to `@vault-mcp/core`, because the host's conformance rail is
     // its second consumer; the setting `settings.vocabularies` stays declared
     // host-side as the satellite's MIGRATION-ONLY adoption source, read by
@@ -530,7 +530,7 @@ export function builtinModules(deps: MountDeps): VaultModule[] {
     // THE SKILLS MODULE IS GONE FROM HERE (suite split, S4). It was the FIRST
     // mutating capability module and it is the precedent several comments below
     // still cite; it now ships as its own plugin, `packages/skills` (plugin id
-    // `vault-skills`), publishing the same six `vault_skills_*` tools through
+    // `vaultmcp-skills`), publishing the same six `vaultmcp_skills_*` tools through
     // vault-mcp-api like any third-party publisher. Its config left with it —
     // a stale `modules.skills` row in an existing data.json is simply an
     // unknown module id now, and the satellite adopts a copy of
@@ -538,22 +538,22 @@ export function builtinModules(deps: MountDeps): VaultModule[] {
     // anything here.
     //
     // THE PROVENANCE MODULE IS GONE FROM HERE (mutating tier). Derived-content
-    // freshness ships as `packages/provenance` (plugin id `vault-provenance`),
-    // publishing `vault_provenance_check` / `_reconcile` / `_regen`. It took
+    // freshness ships as `packages/provenance` (plugin id `vaultmcp-provenance`),
+    // publishing `vaultmcp_provenance_check` / `_reconcile` / `_regen`. It took
     // its whole kernel (`src/kernel/provenance/`) with it — nothing else in
     // this plugin imported it — and its config left with it, so a stale
     // `modules.provenance` row in an existing data.json is simply an unknown
     // module id now.
     //
     // THE HEALTH MODULE IS GONE FROM HERE (suite split, S7). The tiered vault
-    // health scan ships as `packages/health` (plugin id `vault-health`),
-    // publishing `vault_health_scan` and `vault_health_lint`. It took its
+    // health scan ships as `packages/health` (plugin id `vaultmcp-health`),
+    // publishing `vaultmcp_health_scan` and `vaultmcp_health_lint`. It took its
     // whole kernel (`src/kernel/health/`) with it — nothing else in this
     // plugin imported it.
     //
     // THE FILECLASS MODULE IS GONE FROM HERE (mutating tier). The fileclass
-    // CLI proxy ships as `packages/fileclass` (plugin id `vault-fileclass`),
-    // publishing eight `vault_fileclass_*` tools. It had no kernel to take —
+    // CLI proxy ships as `packages/fileclass` (plugin id `vaultmcp-fileclass`),
+    // publishing eight `vaultmcp_fileclass_*` tools. It had no kernel to take —
     // the engine is the CLI's — and its `binaryPath` config left with it. Its
     // double gate (Fileclass plugin loaded AND CLI binary found) went too, and
     // is now evaluated at publish time rather than per connection build.
@@ -566,14 +566,14 @@ export function builtinModules(deps: MountDeps): VaultModule[] {
     // the host no longer holds a settings row for a pane it cannot mount.
     //
     // THE BASES MODULE IS GONE FROM HERE (suite split, S7). Evaluated Base
-    // rows ship as `packages/bases` (plugin id `vault-bases`), publishing
-    // `vault_bases_list` and `vault_bases_query`. The hidden-leaf capture
+    // rows ship as `packages/bases` (plugin id `vaultmcp-bases`), publishing
+    // `vaultmcp_bases_list` and `vaultmcp_bases_query`. The hidden-leaf capture
     // seam and its module-scoped serializer moved WITH it, as one piece and
     // with no copy left behind — see the note where the manifest used to be.
     //
     // THE JD-SCAFFOLD MODULE IS GONE FROM HERE (mutating tier). Johnny Decimal
     // scaffolding ships as `packages/jd-scaffold` (plugin id
-    // `vault-jd-scaffold`), publishing seven `vault_jd_scaffold_*` tools. It
+    // `vaultmcp-jd-scaffold`), publishing seven `vaultmcp_jd_scaffold_*` tools. It
     // took its whole kernel (`src/kernel/jd-scaffold/`) and its Obsidian
     // adapter with it, and it declared no config at all, so there is not even a
     // stale settings row to leave behind.

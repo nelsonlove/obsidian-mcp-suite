@@ -1,5 +1,5 @@
 /**
- * bases-module.test.mjs — the vault-bases satellite (#243): evaluated Base rows
+ * bases-module.test.mjs — the vaultmcp-bases satellite (#243): evaluated Base rows
  * for agents via a hidden-leaf capture. What this proves, headlessly:
  *
  *   1. the PURE core (src/kernel, Obsidian-free): `.base` config interpretation
@@ -25,8 +25,8 @@
  *      the (now dormant) allowlist row-drop with its boolean-only
  *      `some_rows_hidden`;
  *   5. THE PUBLICATION CONTRACT, which replaces the module-host conformance
- *      block the host suite had: the wire names `vault_bases_list` /
- *      `vault_bases_query`, the untrusted read-only claim, the ASYMMETRY that
+ *      block the host suite had: the wire names `vaultmcp_bases_list` /
+ *      `vaultmcp_bases_query`, the untrusted read-only claim, the ASYMMETRY that
  *      `list` carries no host path key while `query`'s `path` IS one, the
  *      schema bounds re-applied in the handler, and the coded-error rendering;
  *   6. the one-shot config adoption from the host's `modules.bases.config`.
@@ -334,7 +334,7 @@ describe("feature gate", () => {
   });
 });
 
-describe("vault_bases_list", () => {
+describe("vaultmcp_bases_list", () => {
   test("enumerates bases with their declared views; parse errors reported per file", async () => {
     const { call } = build(
       fakeSource({ bases: { "Views/Q.base": QUEUE_BASE, "Views/Broken.base": "PARSE_ERROR", "Views/Odd.base": "scalar" } }),
@@ -366,7 +366,7 @@ describe("vault_bases_list", () => {
   });
 });
 
-describe("vault_bases_query refusals", () => {
+describe("vaultmcp_bases_query refusals", () => {
   const src = () => fakeSource({ bases: { "Views/Q.base": QUEUE_BASE, "Views/Broken.base": "PARSE_ERROR" } });
 
   async function expectCode(call, args, code) {
@@ -429,7 +429,7 @@ describe("vault_bases_query refusals", () => {
   });
 });
 
-describe("vault_bases_query success path", () => {
+describe("vaultmcp_bases_query success path", () => {
   const ROWS = [
     { path: "Projects/a.md", values: { "file.name": "a", "note.acceptance-status": "proposed", "note.author": "x" } },
     { path: "Archive/b.md", values: { "file.name": "b", "note.acceptance-status": "proposed", "note.author": "y" } },
@@ -592,16 +592,16 @@ describe("vault_bases_query success path", () => {
 describe("publication: names, flags, and what the host's guard can scope", () => {
   const specs = () => buildBasesTools(fakeSource({ bases: { "Views/Q.base": QUEUE_BASE } }), { config: () => ({}) });
 
-  test("the plugin id sanitizes to `vault_bases`, and the bare names shed their `base_` prefix", () => {
+  test("the plugin id sanitizes to `vaultmcp_bases`, and the bare names shed their `base_` prefix", () => {
     // The rename table, pinned. `base_list`/`base_query` would have published
-    // as `vault_bases_base_list`/`vault_bases_base_query` — stuttering — so the
+    // as `vaultmcp_bases_base_list`/`vaultmcp_bases_base_query` — stuttering — so the
     // bare names are `list`/`query`. Breaking for saved prompts; reversible in
     // one line (the plugin id, plus this shim's PLUGIN_ID and the settings
     // tab's status line).
-    assert.equal(OWNER, "vault_bases");
+    assert.equal(OWNER, "vaultmcp_bases");
     assert.deepEqual(specs().map((t) => t.name), ["list", "query"]);
     const { tools } = publishInto(specs());
-    assert.deepEqual([...tools.keys()], ["vault_bases_list", "vault_bases_query"]);
+    assert.deepEqual([...tools.keys()], ["vaultmcp_bases_list", "vaultmcp_bases_query"]);
   });
 
   test("both tools CLAIM read-only, and an untrusted claim registers as MUTATING", () => {
@@ -612,12 +612,12 @@ describe("publication: names, flags, and what the host's guard can scope", () =>
     // never answers scoping.
     const untrusted = publishInto(specs()).tools;
     for (const bare of ["list", "query"]) {
-      assert.equal(untrusted.get(`vault_bases_${bare}`).def.claimsReadOnly, true, bare);
-      assert.equal(untrusted.get(`vault_bases_${bare}`).def.annotations.readOnlyHint, false, bare);
+      assert.equal(untrusted.get(`vaultmcp_bases_${bare}`).def.claimsReadOnly, true, bare);
+      assert.equal(untrusted.get(`vaultmcp_bases_${bare}`).def.annotations.readOnlyHint, false, bare);
     }
     const trusted = publishInto(specs(), { trusted: true }).tools;
     for (const bare of ["list", "query"]) {
-      assert.equal(trusted.get(`vault_bases_${bare}`).def.annotations.readOnlyHint, true, bare);
+      assert.equal(trusted.get(`vaultmcp_bases_${bare}`).def.annotations.readOnlyHint, true, bare);
     }
   });
 
@@ -651,7 +651,7 @@ describe("publication: names, flags, and what the host's guard can scope", () =>
     // a small subset: type, description and string enums survive; min, max,
     // default and pattern do not. So an empty `path` and a 0 / fractional
     // `limit` reach the handler and must refuse there. This is the
-    // vault_skills_release semver lesson.
+    // vaultmcp_skills_release semver lesson.
     const { call } = build(fakeSource({ bases: { "Views/Q.base": QUEUE_BASE } }));
     for (const args of [
       { path: "" },

@@ -153,7 +153,7 @@ export const SOURCE_COUNT_FIELD = "derived-source-count";
  * `renderAudit` emits this list into the note's frontmatter and `regenerateAudit`
  * resolves the SAME list to count the sources it stamps as
  * `derived-source-count`, so the witness can never describe a different set from
- * the one `vault_provenance_check` will later resolve.
+ * the one `vaultmcp_provenance_check` will later resolve.
  */
 export function auditDerivedFrom(
   notesDir: string = DEFAULT_NOTES_DIR,
@@ -220,7 +220,7 @@ export function provenanceConfigOf(config: Record<string, unknown>): ProvenanceC
   // make `auditPath` interpolate `Meta/Plugins//Plugins.md`, which Obsidian's
   // getAbstractFileByPath never matches (it stores the single-slash form) —
   // silently breaking human-section preservation and the create-vs-modify
-  // branch on `vault_provenance_regen` with `write: true`.
+  // branch on `vaultmcp_provenance_regen` with `write: true`.
   const notesDir = picked.replace(/\/+$/, "") || DEFAULT_PROVENANCE_CONFIG.notesDir;
 
   // An unrecognized layout degrades to the default rather than scanning nothing:

@@ -1,4 +1,4 @@
-// tools.ts — the vault-crosssession satellite's tool surface (#232): the
+// tools.ts — the vaultmcp-crosssession satellite's tool surface (#232): the
 // fleet's coordination-log conventions given a real agent surface. FOUR tools,
 // published to the Governor host through `vault-mcp-api` (see main.ts):
 //
@@ -18,9 +18,9 @@
 // ── The published names DID change ──────────────────────────────────────────
 //
 // The host publishes an external tool as `<sanitized publisher id>_<bare name>`.
-// This plugin's id is `vault-crosssession`, which sanitizes to
-// `vault_crosssession`, so the four bare names below go on the wire as
-// `vault_crosssession_channels` / `_delta` / `_attest` / `_post` — NOT the
+// This plugin's id is `vaultmcp-crosssession`, which sanitizes to
+// `vaultmcp_crosssession`, so the four bare names below go on the wire as
+// `vaultmcp_crosssession_channels` / `_delta` / `_attest` / `_post` — NOT the
 // `crosssession_*` the folded module shipped. Same rename class as the triage
 // satellite, and for the same structural reason: the plugin id IS the tool
 // namespace. Recorded in CLAUDE.md as the extraction's one breaking change,
@@ -99,7 +99,7 @@
 // about ARGUMENTS: the host collects paths from `PATH_KEYS`, `channel` is not
 // one, so `collectPaths({handle, channel, body})` is empty and the guard has
 // nothing to check. THAT IS UNCHANGED BY THE EXTRACTION — the argument names
-// did not change — so `vault_crosssession_post` reaches the check with the same
+// did not change — so `vaultmcp_crosssession_post` reaches the check with the same
 // empty path list and is refused by it exactly as often as before: never. The
 // exemption set was therefore NOT widened; the host's comment and test were
 // updated to name the new tool identity and where it lives.
@@ -119,7 +119,7 @@
 // through a deliberately small subset (`json-schema-to-zod.ts`): `type`,
 // `description` and STRING `enum` survive; `default`, `min`, `max` and
 // `pattern` DO NOT. Every `.min(1)` below is therefore re-applied in the
-// handler (`requireText`) — that is the `vault_skills_release` semver lesson:
+// handler (`requireText`) — that is the `vaultmcp_skills_release` semver lesson:
 // a constraint that lives only in the declared schema never runs for an MCP
 // caller.
 //

@@ -1,4 +1,4 @@
-# Vault Fileclass (plugin id `vault-fileclass`) — architecture & working notes for Claude Code
+# Vault Fileclass (plugin id `vaultmcp-fileclass`) — architecture & working notes for Claude Code
 
 The `fileclass` CLI given an agent surface, in its own Obsidian plugin: eight tools proxying the standalone [`fileclass` CLI](https://github.com/mdelobelle/fileclass-cli) — the plugin author's own terminal for the Fileclass typed-frontmatter engine — published to the Governor host through `vault-mcp-api`. Extracted from the host at the suite split's mutating tier (`docs/suite-split-design.md` §6, "Fileclass CLI proxy | public optional | satellite"), following `packages/quickadd-choices-compile` (the pilot), `packages/skills` (S4), `packages/triage` (S5), `packages/crosssession` (S6) and the read tier `packages/vocab` / `packages/health` / `packages/bases` (S7). Package layout, build/test commands, and the extraction's four consequences are in `README.md`.
 
@@ -22,18 +22,18 @@ The `fileclass` CLI given an agent surface, in its own Obsidian plugin: eight to
 
 - **`allowlistRefusal` is a DORMANT seam, kept deliberately.** Nothing supplies `ctx.getSettings` in the shipped configuration, exactly like the skills, triage, cross-session and bases satellites' equivalents. Do not delete it: its tests supply it so it cannot rot, and a `vault-mcp-api` that can carry the caller's scope to a publisher (apiVersion 2) makes it live again with no code change. Its refusal text and its `out_of_allowlist` code are the module's, verbatim.
 
-- **The published tool names changed TWICE OVER, and that was a deliberate trade.** `fileclass_*` are now `vault_fileclass_*`, and the BARE names shed their `fileclass_` prefix because keeping them would have published `vault_fileclass_fileclass_list`. The host publishes an external tool as `<sanitized publisher id>_<bare name>`, so **the plugin id IS the tool namespace** (`vault-fileclass` → `vault_fileclass`); the second half is the same motion bases made with `base_`.
+- **The published tool names changed TWICE OVER, and that was a deliberate trade.** `fileclass_*` are now `vaultmcp_fileclass_*`, and the BARE names shed their `fileclass_` prefix because keeping them would have published `vaultmcp_fileclass_fileclass_list`. The host publishes an external tool as `<sanitized publisher id>_<bare name>`, so **the plugin id IS the tool namespace** (`vaultmcp-fileclass` → `vaultmcp_fileclass`); the second half is the same motion bases made with `base_`.
 
   | shipped (module) | bare name here | published (satellite) |
   |---|---|---|
-  | `fileclass_list` | `list` | `vault_fileclass_list` |
-  | `fileclass_schema` | `schema` | `vault_fileclass_schema` |
-  | `fileclass_explain` | `explain` | `vault_fileclass_explain` |
-  | `fileclass_query` | `query` | `vault_fileclass_query` |
-  | `fileclass_get` | `get` | `vault_fileclass_get` |
-  | `fileclass_validate` | `validate` | `vault_fileclass_validate` |
-  | `fileclass_set` | `set` | `vault_fileclass_set` |
-  | `fileclass_set_where` | `set_where` | `vault_fileclass_set_where` |
+  | `fileclass_list` | `list` | `vaultmcp_fileclass_list` |
+  | `fileclass_schema` | `schema` | `vaultmcp_fileclass_schema` |
+  | `fileclass_explain` | `explain` | `vaultmcp_fileclass_explain` |
+  | `fileclass_query` | `query` | `vaultmcp_fileclass_query` |
+  | `fileclass_get` | `get` | `vaultmcp_fileclass_get` |
+  | `fileclass_validate` | `validate` | `vaultmcp_fileclass_validate` |
+  | `fileclass_set` | `set` | `vaultmcp_fileclass_set` |
+  | `fileclass_set_where` | `set_where` | `vaultmcp_fileclass_set_where` |
 
   Argument rename in the same motion: **`path` → `note_path`** on `explain`, `get` and `set` — and then, at round 2 (2026-09-07), a THIRD generation that split the three apart. All of it in one table, because the spelling now differs by tool and a half-remembered rename is how a posture rots:
 
@@ -53,7 +53,7 @@ The `fileclass` CLI given an agent surface, in its own Obsidian plugin: eight to
 
   Everything else is byte-compatible with the folded era: `accept_forbidden` and `out_of_allowlist` render as `Error [code]: message`, exactly as `codedError` produced. Three codes are NEW, all argument validation the JSON-Schema round trip no longer carries: `invalid_argument` and `invalid_path`.
 
-- **Re-apply every schema bound in the handler.** The SDK converts zod to JSON Schema and the host converts it back through a small subset (`packages/host/src/mcp/json-schema-to-zod.ts`): `type`, `description` and string `enum` survive; `default`, `min`, `max`, `pattern` do NOT. So `requireText` re-applies every `.min(1)`, `optionalTimeout` re-applies the 1s–300s integer range, `optionalLimit` re-applies `.int().min(1)`, and `requireFieldValue` re-applies the `string | number | boolean` union (a union does not survive either, and an array `value` would otherwise reach `String(value)` and be written as `"a,b"`). This is the `vault_skills_release` semver bug, avoided rather than repeated — if you add a constrained argument, constrain it twice.
+- **Re-apply every schema bound in the handler.** The SDK converts zod to JSON Schema and the host converts it back through a small subset (`packages/host/src/mcp/json-schema-to-zod.ts`): `type`, `description` and string `enum` survive; `default`, `min`, `max`, `pattern` do NOT. So `requireText` re-applies every `.min(1)`, `optionalTimeout` re-applies the 1s–300s integer range, `optionalLimit` re-applies `.int().min(1)`, and `requireFieldValue` re-applies the `string | number | boolean` union (a union does not survive either, and an array `value` would otherwise reach `String(value)` and be written as `"a,b"`). This is the `vaultmcp_skills_release` semver bug, avoided rather than repeated — if you add a constrained argument, constrain it twice.
 
 - **The backslash refusal, on every note argument** (`note` on the reads, `note_path` on the write — `requireNotePath` takes the name so the message tells the caller which one it means). `invalid_path`, checked FIRST, before every other path check — the rule the triage and bases satellites adopted. Every check downstream splits on `/` alone, so `Books\..\..\secret.md` reads as ONE opaque segment here and as a traversal to whatever normalizes it later; and for `set`, whose argument IS a host path key, the host's `isVisible` splits on `/` too. An Obsidian path never legitimately contains a backslash, so refusing is free and closes the class rather than the instance.
 
@@ -81,7 +81,7 @@ The `fileclass` CLI given an agent surface, in its own Obsidian plugin: eight to
 
 - `npm run build` — esbuild, emits `main.js`. No assets, no defines: like the triage, cross-session and bases satellites and unlike skills, there is nothing to embed. `node:child_process` is external alongside the other node builtins, because this package spawns.
 - `npm test` — `pretest` builds `@vault-mcp/core`, then `tsc --noEmit && node --import tsx --test`. **The `pretest` is load-bearing, not tidiness:** the tests reach `isVisible` — and, through `tools.ts`, the accept rule, `spawnEnv` and `findBinary` — via `packages/core/dist`, the COMPILED output. Without the rebuild you test the previous build's bytes.
-- Install for testing: copy `main.js` + `manifest.json` into `<vault>/.obsidian/plugins/vault-fileclass/` and reload the plugin. During development add an empty `.hotreload` file in that directory so the hot-reload plugin picks up rebuilds — it belongs to the vault install, not to this repo.
+- Install for testing: copy `main.js` + `manifest.json` into `<vault>/.obsidian/plugins/vaultmcp-fileclass/` and reload the plugin. During development add an empty `.hotreload` file in that directory so the hot-reload plugin picks up rebuilds — it belongs to the vault install, not to this repo.
 
 ## Headless testing
 

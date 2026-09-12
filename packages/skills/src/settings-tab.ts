@@ -3,7 +3,7 @@
 // While the compiler was a capability module inside the Governor host, its
 // configuration was rendered by the host's generic, manifest-driven config tab.
 // A satellite has no such host, so it renders its own — which is what the
-// standalone vault-skills plugin did before the fold. The FIELDS themselves
+// standalone vaultmcp-skills plugin did before the fold. The FIELDS themselves
 // (keys, labels, help text) live in settings.ts as pure data, so they stay
 // headless-testable and the tab is only the rendering.
 //
@@ -78,8 +78,8 @@ export class SkillsSettingTab extends PluginSettingTab {
     containerEl.createEl("p", {
       cls: "setting-item-description",
       text: hostLoaded
-        ? "Governor is installed: the six vault_skills_* MCP tools are published to it. Note that under an active Governor path allowlist all of them except vault_skills_mark are refused — they carry no path argument to scope."
-        : "Governor is not installed. The pane, commands, and export all still work; only the six vault_skills_* MCP tools are unpublished.",
+        ? "Governor is installed: the six vaultmcp_skills_* MCP tools are published to it. Note that under an active Governor path allowlist all of them except vaultmcp_skills_mark are refused — they carry no path argument to scope."
+        : "Governor is not installed. The pane, commands, and export all still work; only the six vaultmcp_skills_* MCP tools are unpublished.",
     });
   }
 }

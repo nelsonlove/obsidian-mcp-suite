@@ -1,24 +1,24 @@
-// VAULT HEALTH — the vault-health scanner as its own Obsidian plugin.
+// VAULT HEALTH — the vaultmcp-health scanner as its own Obsidian plugin.
 //
 // Published to the Governor host through vault-mcp-api as two MCP tools:
 //
-//   vault_health_scan — the full tiered health scan → structured findings
+//   vaultmcp_health_scan — the full tiered health scan → structured findings
 //                       (read-only in intent; the host distrusts that claim,
 //                       see below);
-//   vault_health_lint — the same scan, findings restricted to one folder/note.
+//   vaultmcp_health_lint — the same scan, findings restricted to one folder/note.
 //
 // SATELLITE OF THE SUITE (suite-split design §6). Extracted out of the host at
-// S7, following the quickadd-choices-compile pilot, the vault-skills satellite
-// (S4), vault-triage (S5) and vault-crosssession (S6). Consequences of the
+// S7, following the quickadd-choices-compile pilot, the vaultmcp-skills satellite
+// (S4), vaultmcp-triage (S5) and vaultmcp-crosssession (S6). Consequences of the
 // publishing contract, each deliberate:
 //
-//   * THE PUBLISHED TOOL NAMES CHANGED — `obsidian_health` → `vault_health_scan`
-//     and `obsidian_lint` → `vault_health_lint`. The host publishes an external
+//   * THE PUBLISHED TOOL NAMES CHANGED — `obsidian_health` → `vaultmcp_health_scan`
+//     and `obsidian_lint` → `vaultmcp_health_lint`. The host publishes an external
 //     tool as `<sanitized publisher id>_<bare name>`, so the plugin id IS the
-//     tool namespace; `vault-health` sanitizes to `vault_health`. The bare names
+//     tool namespace; `vaultmcp-health` sanitizes to `vaultmcp_health`. The bare names
 //     shed `obsidian_` because that prefix was the HOST's built-in namespace,
 //     never this module's own name — keeping it would publish a tool named after
-//     two owners (`vault_health_obsidian_health`). That WAS available: F1 tests
+//     two owners (`vaultmcp_health_obsidian_health`). That WAS available: F1 tests
 //     the PUBLISHED name, which would not have started with `obsidian_`. So this
 //     is a choice, not a constraint, and it is breaking for callers. Recorded in
 //     CLAUDE.md with the one-line reversal.
@@ -162,7 +162,7 @@ export default class VaultHealthPlugin extends Plugin {
         }),
       );
     } catch (e) {
-      console.error("[vault-health] publishing the tool surface failed", e);
+      console.error("[vaultmcp-health] publishing the tool surface failed", e);
     }
   }
 
@@ -206,10 +206,10 @@ export default class VaultHealthPlugin extends Plugin {
       // The latch lives in the same record that failed to persist, so leaving
       // `this.settings` untouched keeps the one chance alive for the next load
       // rather than latching in memory over a write that never landed.
-      console.error("[vault-health] adopted config could not be persisted; will retry next load", e);
+      console.error("[vaultmcp-health] adopted config could not be persisted; will retry next load", e);
       return;
     }
     this.settings = adopted;
-    console.info("[vault-health] adopted the Governor host's modules.health.config (one shot; the host's copy is untouched)");
+    console.info("[vaultmcp-health] adopted the Governor host's modules.health.config (one shot; the host's copy is untouched)");
   }
 }

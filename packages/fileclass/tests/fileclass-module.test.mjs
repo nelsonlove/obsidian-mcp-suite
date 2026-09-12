@@ -1,5 +1,5 @@
 /**
- * fileclass-module.test.mjs — the vault-fileclass satellite, headless.
+ * fileclass-module.test.mjs — the vaultmcp-fileclass satellite, headless.
  *
  * The exec layer, the plugin-presence probe, the vault name and the binary are
  * all INJECTED, so the whole surface is testable without a live Obsidian or a
@@ -445,20 +445,20 @@ describe("the allowlist seam is DORMANT, and is kept so it cannot rot", () => {
 // ── publication: what an agent actually sees ────────────────────────────────
 
 describe("publication", () => {
-  test("the wire names are vault_fileclass_* with the bare `fileclass_` prefix stripped", () => {
+  test("the wire names are vaultmcp_fileclass_* with the bare `fileclass_` prefix stripped", () => {
     const { tools } = mounted();
-    assert.equal(OWNER, "vault_fileclass");
+    assert.equal(OWNER, "vaultmcp_fileclass");
     assert.deepEqual(
       [...tools.keys()],
       [
-        "vault_fileclass_list",
-        "vault_fileclass_schema",
-        "vault_fileclass_explain",
-        "vault_fileclass_query",
-        "vault_fileclass_get",
-        "vault_fileclass_validate",
-        "vault_fileclass_set",
-        "vault_fileclass_set_where",
+        "vaultmcp_fileclass_list",
+        "vaultmcp_fileclass_schema",
+        "vaultmcp_fileclass_explain",
+        "vaultmcp_fileclass_query",
+        "vaultmcp_fileclass_get",
+        "vaultmcp_fileclass_validate",
+        "vaultmcp_fileclass_set",
+        "vaultmcp_fileclass_set_where",
       ],
     );
     // The reversal named in CLAUDE.md is the plugin id and nothing else: the
@@ -473,7 +473,7 @@ describe("publication", () => {
     // refuse-all under an allowlist. ROUND 1 found that silently removed the
     // single-note WRITE from collectPaths, which ALSO feeds record immutability,
     // the lock consult and the journal target — none of them allowlist-gated —
-    // so `vault_fileclass_set` could field-write a `record: true` note the
+    // so `vaultmcp_fileclass_set` could field-write a `record: true` note the
     // kernel used to refuse, on every vault. The host therefore recognizes
     // `note_path`.
     //

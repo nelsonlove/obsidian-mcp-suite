@@ -1,5 +1,5 @@
 /**
- * crosssession-module.test.mjs — the vault-crosssession satellite (#232):
+ * crosssession-module.test.mjs — the vaultmcp-crosssession satellite (#232):
  * src/kernel/* (parsing, ordering, unread computation, receipts) and
  * src/tools.ts (the four published tools), all headless.
  *
@@ -361,7 +361,7 @@ describe("channel discovery is by frontmatter, never by path", () => {
     assert.ok(!fileClassMatches(undefined, "Collection/Log"));
   });
 
-  test("vault_crosssession_channels reports uid, audience, projects, entry count, newest stamp", async () => {
+  test("vaultmcp_crosssession_channels reports uid, audience, projects, entry count, newest stamp", async () => {
     const { call } = build();
     const res = await call("channels");
     const chans = res.structuredContent.channels;
@@ -394,7 +394,7 @@ describe("channel discovery is by frontmatter, never by path", () => {
 
 // ── delta ────────────────────────────────────────────────────────────────────
 
-describe("vault_crosssession_delta", () => {
+describe("vaultmcp_crosssession_delta", () => {
   test("serves every foreign entry oldest-first when no receipt exists, both forms merged", async () => {
     const { call } = build();
     const res = await call("delta", { handle: "gamma", channel: FLEET_UID });
@@ -495,7 +495,7 @@ describe("vault_crosssession_delta", () => {
 
 // ── attest ───────────────────────────────────────────────────────────────────
 
-describe("vault_crosssession_attest", () => {
+describe("vaultmcp_crosssession_attest", () => {
   test("round-trip: attest is readable back and keyed by channel UID", async () => {
     const receipts = memoryReceiptStore();
     const { call } = build({ receipts });
@@ -571,7 +571,7 @@ describe("ReceiptStore persistence (module state, on disk beside the journal)", 
 
 // ── post ─────────────────────────────────────────────────────────────────────
 
-describe("vault_crosssession_post", () => {
+describe("vaultmcp_crosssession_post", () => {
   test("happy path: appends one `## <stamp> · <handle>` section and auto-attests through it", async () => {
     const receipts = memoryReceiptStore();
     const { call, files } = build({ receipts });
@@ -754,15 +754,15 @@ describe("allowlist: a hidden channel is invisible, not refused-by-name", () => 
 describe("publication: names, flags, and what the host's guard can scope", () => {
   const specs = () => buildCrosssessionTools(emptyCrosssessionSource(), { config: () => ({}), receipts: memoryReceiptStore() });
 
-  test("the plugin id sanitizes to `vault_crosssession`, so the wire names are vault_crosssession_*", () => {
-    assert.equal(OWNER, "vault_crosssession");
+  test("the plugin id sanitizes to `vaultmcp_crosssession`, so the wire names are vaultmcp_crosssession_*", () => {
+    assert.equal(OWNER, "vaultmcp_crosssession");
     assert.deepEqual(specs().map((t) => t.name), ["channels", "delta", "attest", "post"]);
     const { tools } = publishInto(specs());
     assert.deepEqual([...tools.keys()], [
-      "vault_crosssession_channels",
-      "vault_crosssession_delta",
-      "vault_crosssession_attest",
-      "vault_crosssession_post",
+      "vaultmcp_crosssession_channels",
+      "vaultmcp_crosssession_delta",
+      "vaultmcp_crosssession_attest",
+      "vaultmcp_crosssession_post",
     ]);
   });
 
@@ -773,14 +773,14 @@ describe("publication: names, flags, and what the host's guard can scope", () =>
     // blocked outright under an allowlist.
     const untrusted = publishInto(specs()).tools;
     for (const bare of ["channels", "delta"]) {
-      assert.equal(untrusted.get(`vault_crosssession_${bare}`).def.claimsReadOnly, true, bare);
-      assert.equal(untrusted.get(`vault_crosssession_${bare}`).def.annotations.readOnlyHint, false, bare);
+      assert.equal(untrusted.get(`vaultmcp_crosssession_${bare}`).def.claimsReadOnly, true, bare);
+      assert.equal(untrusted.get(`vaultmcp_crosssession_${bare}`).def.annotations.readOnlyHint, false, bare);
     }
     const trusted = publishInto(specs(), { trusted: true }).tools;
-    assert.equal(trusted.get("vault_crosssession_delta").def.annotations.readOnlyHint, true);
+    assert.equal(trusted.get("vaultmcp_crosssession_delta").def.annotations.readOnlyHint, true);
     // attest and post never claim read-only, trusted or not.
     for (const bare of ["attest", "post"]) {
-      assert.equal(trusted.get(`vault_crosssession_${bare}`).def.annotations.readOnlyHint, false, bare);
+      assert.equal(trusted.get(`vaultmcp_crosssession_${bare}`).def.annotations.readOnlyHint, false, bare);
     }
   });
 
@@ -816,7 +816,7 @@ describe("publication: names, flags, and what the host's guard can scope", () =>
     // The SDK converts zod to JSON Schema and the host converts it back through
     // a small subset: type, description and string enums survive; min, max,
     // default and pattern do not. So an empty-string `channel` reaches the
-    // handler and must refuse there. This is the vault_skills_release semver
+    // handler and must refuse there. This is the vaultmcp_skills_release semver
     // lesson.
     const { call } = build();
     for (const [bare, args, bad] of [

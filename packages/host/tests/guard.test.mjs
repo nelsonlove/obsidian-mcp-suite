@@ -181,7 +181,7 @@ test("collectPaths recurses into objects inside paths[]", () => {
 });
 
 test("crosssession tool arguments are NOT path keys — the tripwire that actually fires (2026-09-05)", () => {
-  // The vault-crosssession satellite's whole guard posture rests on this fact:
+  // The vaultmcp-crosssession satellite's whole guard posture rests on this fact:
   // `collectPaths` over its arguments is empty, so the allowlist cannot
   // wholesale-refuse the live coordination channel and the record guard cannot
   // fire on the folder note. The satellite pins its own copy of PATH_KEYS, but
@@ -209,8 +209,8 @@ test("`note` is NOT a recognized path key — the read half of the round-2 postu
   // cannot see (fileclass resolves inheritance from definitions outside the
   // allowlist; provenance's freshness answer enumerates every path the note's
   // `derived-from` globs resolve to). The host scopes the note you NAME, not
-  // the paths the answer CONTAINS. So `vault_fileclass_explain` / `_get` and
-  // `vault_provenance_check` spell their argument `note`, and F3 refuses them
+  // the paths the answer CONTAINS. So `vaultmcp_fileclass_explain` / `_get` and
+  // `vaultmcp_provenance_check` spell their argument `note`, and F3 refuses them
   // outright under an allowlist. If this ever starts collecting, those three
   // silently become path oracles again.
   assert.deepEqual(collectPaths({ note: "Records/x.md" }), []);

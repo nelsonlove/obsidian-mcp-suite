@@ -1,4 +1,4 @@
-# Vault Health (plugin id `vault-health`)
+# Vault Health (plugin id `vaultmcp-health`)
 
 A read-only vault health scan, given an agent surface: broken links tiered by how safe they are to fix, empty and near-empty notes, orphan attachments, exact-duplicate note groups, and low-signal tags — for the whole vault, or with findings restricted to one folder. Like the triage and cross-session satellites and unlike the skills one, this plugin has no human surface at all — no pane, no palette command, no ribbon. Its entire surface is two MCP tools published to the Governor host through `vault-mcp-api`, plus a settings tab for the one number a human configures.
 
@@ -6,13 +6,13 @@ It never writes. There is no mutating registrar, no write guard and no accept/ap
 
 ## Lineage
 
-Born as the standalone `obsidian-vault-health` Bash + Advanced-URI-`eval` scanner: launch Obsidian, wait for `metadataCache` to settle, read the resolver through one `eval`, quit. Folded into the Governor host as the `health` capability module, which deleted that whole launch/readiness/quit dance — a plugin simply holds a live `app.metadataCache`. Extracted to its own plugin at the suite split's **S7**, the read-tier satellites, following `packages/quickadd-choices-compile` (the pilot), `packages/skills` (S4), `packages/triage` (S5) and `packages/crosssession` (S6). The tiered classifier is the same code through all three homes; only who mounts it differs.
+Born as the standalone `obsidian-vaultmcp-health` Bash + Advanced-URI-`eval` scanner: launch Obsidian, wait for `metadataCache` to settle, read the resolver through one `eval`, quit. Folded into the Governor host as the `health` capability module, which deleted that whole launch/readiness/quit dance — a plugin simply holds a live `app.metadataCache`. Extracted to its own plugin at the suite split's **S7**, the read-tier satellites, following `packages/quickadd-choices-compile` (the pilot), `packages/skills` (S4), `packages/triage` (S5) and `packages/crosssession` (S6). The tiered classifier is the same code through all three homes; only who mounts it differs.
 
 ## Package layout
 
 ```text
 packages/health/
-├── manifest.json          plugin id `vault-health`, isDesktopOnly
+├── manifest.json          plugin id `vaultmcp-health`, isDesktopOnly
 ├── esbuild.config.mjs     bundles src/main.ts → main.js (no assets, no defines)
 ├── src/
 │   ├── main.ts            onload: settings + adoption, settings tab, publishTools (re-published on every config change)
@@ -49,14 +49,14 @@ Same as the triage and cross-session satellites. The two published tools ARE the
 
 | shipped (as a Governor module) | bare name in this package | published (as a satellite) |
 |---|---|---|
-| `obsidian_health` | `scan` | `vault_health_scan` |
-| `obsidian_lint`   | `lint` | `vault_health_lint`  |
+| `obsidian_health` | `scan` | `vaultmcp_health_scan` |
+| `obsidian_lint`   | `lint` | `vaultmcp_health_lint`  |
 
 **This breaks any agent session or saved prompt calling the old names.** Say it plainly rather than burying it: an agent that calls `obsidian_health` now gets an unknown-tool error, and every skill, saved prompt or runbook naming the old spellings has to be updated. The host's own locked decision says renaming shipped tool names breaks agent sessions for zero semantic gain, so the trade needs a reason.
 
-Two compositions produce the new names. The host publishes an external tool as `<sanitized publisher id>_<bare name>`, so **the plugin id IS the tool namespace** (`vault-health` → `vault_health`); and the BARE names shed their `obsidian_` prefix, on exactly the grounds the bases satellite used for shedding `base_` — **`obsidian_` was the HOST's built-in tool namespace, never this module's own name**, so carrying it into a satellite's namespace would publish a tool named after two owners: `vault_health_obsidian_health`.
+Two compositions produce the new names. The host publishes an external tool as `<sanitized publisher id>_<bare name>`, so **the plugin id IS the tool namespace** (`vaultmcp-health` → `vaultmcp_health`); and the BARE names shed their `obsidian_` prefix, on exactly the grounds the bases satellite used for shedding `base_` — **`obsidian_` was the HOST's built-in tool namespace, never this module's own name**, so carrying it into a satellite's namespace would publish a tool named after two owners: `vaultmcp_health_obsidian_health`.
 
-**Keeping the old bare names was available and was declined.** It is worth stating precisely, because the opposite claim is easy to make and wrong: the host's F1 check tests the **published** name, not the bare one — `const toolName = ${owner}_${spec.name}; if (toolName.startsWith("obsidian_")) throw` — and `vault_health_obsidian_health` does not start with `obsidian_`, so it would have registered fine, just stutteringly (`NAME_RE` accepts the bare `obsidian_health` too). Nothing forced this rename. What buys it is that the stuttering alternative is worse to read and to type, and that the prefix named the wrong owner.
+**Keeping the old bare names was available and was declined.** It is worth stating precisely, because the opposite claim is easy to make and wrong: the host's F1 check tests the **published** name, not the bare one — `const toolName = ${owner}_${spec.name}; if (toolName.startsWith("obsidian_")) throw` — and `vaultmcp_health_obsidian_health` does not start with `obsidian_`, so it would have registered fine, just stutteringly (`NAME_RE` accepts the bare `obsidian_health` too). Nothing forced this rename. What buys it is that the stuttering alternative is worse to read and to type, and that the prefix named the wrong owner.
 
 **Reversing it is a one-line change** — `manifest.json`'s `id` for the prefix, plus the strings in `tests/host-shim.mjs` and the settings tab's status line; the bare names live only in `src/tools.ts` and those same two places. Nothing else in the package encodes either half. Pinned by the `publication` test.
 
@@ -71,10 +71,10 @@ Per tool, precisely:
 
 | tool | arguments | under an active path allowlist |
 |---|---|---|
-| `vault_health_scan` | none | blocked outright (nothing to scope by) |
-| `vault_health_lint` | `scope` (not a path key) | blocked outright (nothing to scope by) |
+| `vaultmcp_health_scan` | none | blocked outright (nothing to scope by) |
+| `vaultmcp_health_lint` | `scope` (not a path key) | blocked outright (nothing to scope by) |
 
-Adding `vault-health` to `trustedReadOnlyPlugins` restores availability in read-only mode and stops the journal recording reads as writes. It does **not** make either tool available under an allowlist.
+Adding `vaultmcp-health` to `trustedReadOnlyPlugins` restores availability in read-only mode and stops the journal recording reads as writes. It does **not** make either tool available under an allowlist.
 
 **`scope` was deliberately NOT renamed into a path key**, which is the decision that distinguishes this extraction from triage's `target` → `target_path`. Three reasons, in order of weight:
 
@@ -82,7 +82,7 @@ Adding `vault-health` to `trustedReadOnlyPlugins` restores availability in read-
 2. **It would be the illusion of a check.** The host guard would let a scoped `lint` through while the underlying scan still read every note — exactly the trap the cross-session extraction named when it declined to path-key `channel`.
 3. **The `to` → `to_address` precedent runs the other way.** The host renamed AWAY from a path key when the argument was not a path. `scope` is at least path-shaped, but `lint` accepts a folder OR a note path, and the guard would still be answering the wrong question about the wrong read.
 
-Read tools blocked wholesale under an allowlist is the documented posture, not a bug — the same one `vault_triage_queue`, all four `vault_crosssession_*` tools and five of the six `vault_skills_*` tools carry.
+Read tools blocked wholesale under an allowlist is the documented posture, not a bug — the same one `vaultmcp_triage_queue`, all four `vaultmcp_crosssession_*` tools and five of the six `vaultmcp_skills_*` tools carry.
 
 ### 3. Issue #381's whole-vault-read question is RESOLVED for these two tools
 
@@ -94,7 +94,7 @@ For this satellite's two tools the question is now moot, and the honest framing 
 - **What changed is WHERE the boundary is enforced.** As untrusted external tools with no recognized path-key argument, both are **blocked wholesale by the host's F3 gate while a path allowlist is active** — which is STRICTER than the documented-exception outcome #381 was weighing, and stricter than the in-module non-filtering it replaces. With NO allowlist configured nothing changes at all, because there was nothing to filter against.
 - **So #381's three-tool list shrinks to two** — `provenance_reconcile` and `obsidian_conformance_debt`, both still in the host, both still owed the enumerate-or-filter decision the issue asks for. This paragraph is written for the issue's reader: the health entry can be struck, and it was struck by a structural change rather than by an argument.
 
-This claim is about `vault_health_*` only. The sibling read-tier extractions (vocab, bases) are not on #381's list and nothing here says anything about them.
+This claim is about `vaultmcp_health_*` only. The sibling read-tier extractions (vocab, bases) are not on #381's list and nothing here says anything about them.
 
 ### 4. `resolveScope` was published into `@vault-mcp/core`, not copied
 
@@ -118,7 +118,7 @@ The handlers read that config through a **thunk, per call**. As a module the too
 
 **Refusals throw.** A handler returns plain data or throws; the host wraps the first in `ok()` and the second in `fail()`, and `fail()` renders a lowercase-snake `code` off the error as `Error [code]: message` — the same shape the module's `codedError` produced. The two ported refusals are byte-compatible with the folded era: `invalid_scope` and `out_of_allowlist` carry the same codes and the same message text, because `resolveScope`'s move into core reproduced the old `guardCall`-derived strings verbatim. Two things are additions rather than replacements: `invalid_argument` (the module had no re-applied schema bound to refuse with) and the backslash instance of `invalid_scope` (see §4).
 
-**Schema bounds are re-applied in the handler.** The SDK converts a zod shape to JSON Schema and the host converts it back through a deliberately small subset: `type`, `description` and string `enum` survive; `default`, `min`, `max` and `pattern` do not. So `scope`'s `.min(1)` runs again in the handler, where it actually executes. This is the `vault_skills_release` semver lesson, applied before it could bite.
+**Schema bounds are re-applied in the handler.** The SDK converts a zod shape to JSON Schema and the host converts it back through a deliberately small subset: `type`, `description` and string `enum` survive; `default`, `min`, `max` and `pattern` do not. So `scope`'s `.min(1)` runs again in the handler, where it actually executes. This is the `vaultmcp_skills_release` semver lesson, applied before it could bite.
 
 ## Caveats that travel with the findings
 

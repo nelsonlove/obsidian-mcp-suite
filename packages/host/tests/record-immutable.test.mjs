@@ -93,7 +93,7 @@ describe("recordImmutableRefusal (pure core)", () => {
     assert.deepEqual([...RECORD_EXEMPT_OPS], ["obsidian_append_note"]);
   });
 
-  test("vault_crosssession_post is NOT exempt — pinned deliberately, not by oversight", () => {
+  test("vaultmcp_crosssession_post is NOT exempt — pinned deliberately, not by oversight", () => {
     // The one other tool whose contract is a dated end-of-file append. It never
     // reaches this check (its target arrives as `channel`, which is not a
     // PATH_KEY, so collectPaths yields nothing, and the file it appends to is
@@ -103,13 +103,13 @@ describe("recordImmutableRefusal (pure core)", () => {
     // resulting refusal is a decision someone makes here rather than a surprise
     // in production.
     //
-    // S6 moved the tool into the `vault-crosssession` satellite, which renamed
-    // it — the wire name is now `vault_crosssession_post`. That did NOT make it
+    // S6 moved the tool into the `vaultmcp-crosssession` satellite, which renamed
+    // it — the wire name is now `vaultmcp_crosssession_post`. That did NOT make it
     // reachable: a published external tool registers through the same
     // guard-patched path as a built-in (it always did, as a module tool), and
     // its argument names are unchanged. Both spellings are pinned so neither
     // era's name can quietly slip into the set.
-    for (const op of ["vault_crosssession_post", "crosssession_post"]) {
+    for (const op of ["vaultmcp_crosssession_post", "crosssession_post"]) {
       const err = recordImmutableRefusal(op, ["Records/2026-08.md"], record);
       assert.ok(err instanceof RecordImmutableError, `${op}: unexempted today — change this only on purpose`);
     }

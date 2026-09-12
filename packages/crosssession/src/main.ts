@@ -3,23 +3,23 @@
 //
 // Published to the Governor host through vault-mcp-api as four MCP tools:
 //
-//   vault_crosssession_channels — discover channels by fileClass + `audience:`
+//   vaultmcp_crosssession_channels — discover channels by fileClass + `audience:`
 //                                 frontmatter (read-only in intent; the host
 //                                 distrusts that claim, see below);
-//   vault_crosssession_delta    — entries newer than your attested position;
-//   vault_crosssession_attest   — record a read receipt (mutating: plugin
+//   vaultmcp_crosssession_delta    — entries newer than your attested position;
+//   vaultmcp_crosssession_attest   — record a read receipt (mutating: plugin
 //                                 state, journaled by the host);
-//   vault_crosssession_post     — append one entry, refused while you are stale.
+//   vaultmcp_crosssession_post     — append one entry, refused while you are stale.
 //
 // SATELLITE OF THE SUITE (suite-split design §6). Extracted out of the host at
-// S6, following the quickadd-choices-compile pilot, the vault-skills satellite
-// (S4) and the vault-triage satellite (S5). Consequences of the publishing
+// S6, following the quickadd-choices-compile pilot, the vaultmcp-skills satellite
+// (S4) and the vaultmcp-triage satellite (S5). Consequences of the publishing
 // contract, each deliberate:
 //
 //   * THE PUBLISHED TOOL NAMES CHANGED — `crosssession_*` became
-//     `vault_crosssession_*`. The host publishes an external tool as
+//     `vaultmcp_crosssession_*`. The host publishes an external tool as
 //     `<sanitized publisher id>_<bare name>`, so the plugin id IS the tool
-//     namespace; `vault-crosssession` sanitizes to `vault_crosssession`. Same
+//     namespace; `vaultmcp-crosssession` sanitizes to `vaultmcp_crosssession`. Same
 //     rename class as triage. Recorded in CLAUDE.md, not buried here.
 //   * THE ALLOWLIST BOUNDARY MOVED TO THE HOST, and for this surface it closes
 //     harder than the in-tool filter it replaces: none of the four tools
@@ -151,7 +151,7 @@ export default class VaultCrosssessionPlugin extends Plugin {
         }),
       );
     } catch (e) {
-      console.error("[vault-crosssession] publishing the tool surface failed", e);
+      console.error("[vaultmcp-crosssession] publishing the tool surface failed", e);
     }
   }
 
@@ -183,7 +183,7 @@ export default class VaultCrosssessionPlugin extends Plugin {
     if (!adopted) return;
     this.settings = adopted;
     await this.saveData(this.settings);
-    console.info("[vault-crosssession] adopted the Governor host's modules.crosssession.config (one shot; the host's copy is untouched)");
+    console.info("[vaultmcp-crosssession] adopted the Governor host's modules.crosssession.config (one shot; the host's copy is untouched)");
   }
 
   /**
@@ -220,13 +220,13 @@ export default class VaultCrosssessionPlugin extends Plugin {
     for (const dir of dirs) {
       const incoming = await this.receipts.loadFrom(dir);
       if (incoming === null) {
-        console.error(`[vault-crosssession] could not read the host's receipt file in ${dir}; will retry next load`);
+        console.error(`[vaultmcp-crosssession] could not read the host's receipt file in ${dir}; will retry next load`);
         return;
       }
       if (Object.keys(incoming).length === 0) continue;
       const result = await this.receipts.merge(incoming);
       if (!result.persisted) {
-        console.error("[vault-crosssession] adopted receipts could not be persisted; will retry next load");
+        console.error("[vaultmcp-crosssession] adopted receipts could not be persisted; will retry next load");
         return;
       }
       adopted = result.adopted;
@@ -238,7 +238,7 @@ export default class VaultCrosssessionPlugin extends Plugin {
     this.settings = { ...this.settings, adoptedReceiptsFromHost: true };
     await this.saveData(this.settings);
     if (adopted > 0) {
-      console.info(`[vault-crosssession] adopted ${adopted} read receipt(s) from the Governor host (one shot; the host's copy is untouched)`);
+      console.info(`[vaultmcp-crosssession] adopted ${adopted} read receipt(s) from the Governor host (one shot; the host's copy is untouched)`);
     }
   }
 }

@@ -363,9 +363,9 @@ describe("reindex_category", () => {
     const allPaths = ["10-19 Personal/06 Digital tools/06.00 JDex.md", "10-19 Personal/06 Digital tools/06.13 Bar.md"];
     const { call } = build({ allPaths, noteContent: { "10-19 Personal/06 Digital tools/06.00 JDex.md": "# JDex\n" } });
     const res = await call("reindex_category", { note_path: "10-19 Personal/06 Digital tools/06.00 JDex.md", dry_run: true });
-    assert.match(res.structuredContent.new_content, /vault_jd_scaffold_reindex_category/);
+    assert.match(res.structuredContent.new_content, /vaultmcp_jd_scaffold_reindex_category/);
     assert.doesNotMatch(res.structuredContent.new_content, /obsidian_jd_/);
-    assert.match(CONTENTS_CALLOUT, /vault_jd_scaffold_reindex_category/);
+    assert.match(CONTENTS_CALLOUT, /vaultmcp_jd_scaffold_reindex_category/);
   });
 
   test("a preserved description round-trips through the tool", async () => {
@@ -870,7 +870,7 @@ describe("argument validation the schema cannot carry across the boundary", () =
   test("the `.min(1)` bounds are re-applied in the HANDLER, because the schema's do not survive the boundary", async () => {
     // The SDK converts zod to JSON Schema and the host converts it back through
     // a small subset: type, description and string enums survive; min, max,
-    // default and pattern do not. This is the vault_skills_release semver lesson.
+    // default and pattern do not. This is the vaultmcp_skills_release semver lesson.
     const { call } = build({ allPaths: ["06 Digital tools/06.13 Bar.md"] });
     for (const [bare, args] of [
       ["standard_zeros", { folder_path: "", prefix: "06", dry_run: true }],
@@ -901,8 +901,8 @@ describe("argument validation the schema cannot carry across the boundary", () =
 describe("publication: names, flags, and what the host's guard can scope", () => {
   const specs = () => buildJdScaffoldTools(emptyJdScaffoldSource(), {});
 
-  test("the plugin id sanitizes to `vault_jd_scaffold`, so the wire names are vault_jd_scaffold_*", () => {
-    assert.equal(OWNER, "vault_jd_scaffold");
+  test("the plugin id sanitizes to `vaultmcp_jd_scaffold`, so the wire names are vaultmcp_jd_scaffold_*", () => {
+    assert.equal(OWNER, "vaultmcp_jd_scaffold");
     assert.deepEqual(specs().map((t) => t.name), [
       "standard_zeros",
       "ensure_category_indexes",
@@ -914,13 +914,13 @@ describe("publication: names, flags, and what the host's guard can scope", () =>
     ]);
     const { tools } = publishInto(specs());
     assert.deepEqual([...tools.keys()], [
-      "vault_jd_scaffold_standard_zeros",
-      "vault_jd_scaffold_ensure_category_indexes",
-      "vault_jd_scaffold_promote_to_folder",
-      "vault_jd_scaffold_reindex_category",
-      "vault_jd_scaffold_new_standard_zero",
-      "vault_jd_scaffold_new_generic_id",
-      "vault_jd_scaffold_new_stem",
+      "vaultmcp_jd_scaffold_standard_zeros",
+      "vaultmcp_jd_scaffold_ensure_category_indexes",
+      "vaultmcp_jd_scaffold_promote_to_folder",
+      "vaultmcp_jd_scaffold_reindex_category",
+      "vaultmcp_jd_scaffold_new_standard_zero",
+      "vaultmcp_jd_scaffold_new_generic_id",
+      "vaultmcp_jd_scaffold_new_stem",
     ]);
   });
 

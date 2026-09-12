@@ -3,7 +3,7 @@
 // DetectConfig. Obsidian-free (node built-ins only), so it moves with the
 // rest of the pure core and is headless-testable.
 //
-// In the STANDALONE vault-skills plugin this logic lived in `settings.ts`
+// In the STANDALONE vaultmcp-skills plugin this logic lived in `settings.ts`
 // (coupled to `PluginSettingTab`) and `paths.ts`. Here only the pure halves
 // come across: the settings-tab UI is replaced by the config-host's generic,
 // manifest-driven renderer (SKILLS_MANIFEST in mcp/modules-mount.ts).
@@ -24,7 +24,7 @@ import { DEFAULT_PRELOAD_CAP } from "./transform.js";
  * the field/detection config plus the two write destinations (export +
  * release) and the optional supporting-files root. */
 export interface SkillsConfig {
-  /** Where `vault_skills_export` writes the generated Claude Code plugin. `~` expanded. */
+  /** Where `vaultmcp_skills_export` writes the generated Claude Code plugin. `~` expanded. */
   outputDir: string;
   /** Claude Code plugin name — also the command/subagent namespace. */
   pluginName: string;
@@ -32,7 +32,7 @@ export interface SkillsConfig {
   typeSource: "frontmatter" | "tags";
   /** Tags mode: `#{tagPrefix}{kind}` (e.g. `agent/` -> `#agent/skill`). */
   tagPrefix: string;
-  /** How the vault-skills frontmatter fields are namespaced. */
+  /** How the vaultmcp-skills frontmatter fields are namespaced. */
   fieldMode: "prefix" | "nested";
   /** prefix mode: prefixes each field (blank => bare top-level fields). */
   fieldPrefix: string;
@@ -40,7 +40,7 @@ export interface SkillsConfig {
   fieldKey: string;
   /** Root of a parallel filesystem tree of skills' supporting files. Blank => none. `~` expanded. */
   assetsRoot: string;
-  /** A git checkout `vault_skills_release` targets. Blank => release disabled. `~` expanded. */
+  /** A git checkout `vaultmcp_skills_release` targets. Blank => release disabled. `~` expanded. */
   releaseDir: string;
   /** GUI only: re-export automatically when a skill/agent/policy/command note
    *  (or a transcluded source note) changes. Debounced; opt-in (default false).
@@ -57,13 +57,13 @@ export interface SkillsConfig {
  * renders them and `register()` receives them merged under any user override.
  * `exportOnSave` defaults OFF: the GUI's on-save export is opt-in. */
 export const DEFAULT_SKILLS_CONFIG: SkillsConfig = {
-  outputDir: "~/.claude/skills/vault-skills",
-  pluginName: "vault-skills",
+  outputDir: "~/.claude/skills/vaultmcp-skills",
+  pluginName: "vaultmcp-skills",
   typeSource: "frontmatter",
   tagPrefix: "agent/",
   fieldMode: "prefix",
   fieldPrefix: "",
-  fieldKey: "vault-skills",
+  fieldKey: "vaultmcp-skills",
   assetsRoot: "",
   releaseDir: "",
   exportOnSave: false,

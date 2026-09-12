@@ -1,6 +1,6 @@
 /**
- * health-module.test.mjs — the vault-health satellite: src/kernel/* (the pure
- * tiered-findings scanner, ported from the standalone obsidian-vault-health) and
+ * health-module.test.mjs — the vaultmcp-health satellite: src/kernel/* (the pure
+ * tiered-findings scanner, ported from the standalone obsidian-vaultmcp-health) and
  * src/tools.ts (the two published tools), all headless.
  *
  * Covered:
@@ -11,8 +11,8 @@
  *   • the empty-char threshold boundary and the single-candidate guard;
  *   • the lint tool's scope post-filter (source-note attribution; tags dropped);
  *   • config coercion / validation of the emptyChars threshold;
- *   • THE PUBLICATION CONTRACT: the wire names `vault_health_scan` /
- *     `vault_health_lint`, the untrusted read-only claim, the fact that NEITHER
+ *   • THE PUBLICATION CONTRACT: the wire names `vaultmcp_health_scan` /
+ *     `vaultmcp_health_lint`, the untrusted read-only claim, the fact that NEITHER
  *     tool carries a host path key (which is what makes the host block both under
  *     an allowlist), the coded-error rendering, and the re-applied schema bound;
  *   • the `resolveScope` guard THROUGH the published tool — out-of-allowlist,
@@ -338,7 +338,7 @@ describe("health tools: handlers answer over the injected source", () => {
       unresolved: { "Notes/Src.md": { Unique: 1 } },
     });
 
-  test("vault_health_scan returns the full tiered findings + a summary + counts", async () => {
+  test("vaultmcp_health_scan returns the full tiered findings + a summary + counts", async () => {
     const { call } = build({ source: source() });
     const res = await call("scan");
     assert.equal(res.isError, undefined);
@@ -348,7 +348,7 @@ describe("health tools: handlers answer over the injected source", () => {
     assert.equal(res.structuredContent.emptyChars, 40);
   });
 
-  test("vault_health_lint restricts to a scope and echoes it", async () => {
+  test("vaultmcp_health_lint restricts to a scope and echoes it", async () => {
     const { call } = build({ source: source() });
     const res = await call("lint", { scope: "Archive" });
     assert.equal(res.isError, undefined);
@@ -402,17 +402,17 @@ describe("health tools: handlers answer over the injected source", () => {
 describe("publication: names, flags, and what the host's guard can scope", () => {
   const specs = () => buildHealthTools(fakeSource(), { config: () => ({}) });
 
-  test("the plugin id sanitizes to `vault_health`, so the wire names are vault_health_scan / _lint", () => {
-    assert.equal(OWNER, "vault_health");
+  test("the plugin id sanitizes to `vaultmcp_health`, so the wire names are vaultmcp_health_scan / _lint", () => {
+    assert.equal(OWNER, "vaultmcp_health");
     assert.deepEqual(specs().map((t) => t.name), ["scan", "lint"]);
     const { tools } = publishInto(specs());
-    assert.deepEqual([...tools.keys()], ["vault_health_scan", "vault_health_lint"]);
+    assert.deepEqual([...tools.keys()], ["vaultmcp_health_scan", "vaultmcp_health_lint"]);
   });
 
   test("the bare names shed `obsidian_` — a CHOICE, and the published names clear the host's F1 check", () => {
     // The rename was NOT forced. `external-tools.ts`'s F1 tests the PUBLISHED
     // name (`${owner}_${bare}`), not the bare one, so keeping `obsidian_health`
-    // would have published `vault_health_obsidian_health` — legal, and merely
+    // would have published `vaultmcp_health_obsidian_health` — legal, and merely
     // stuttering. `obsidian_` was the HOST's built-in namespace, never this
     // module's own name, which is why the bare names shed it (the bases
     // satellite's `base_` reasoning). What this pins is only the half the
@@ -434,12 +434,12 @@ describe("publication: names, flags, and what the host's guard can scope", () =>
     // blocked outright under an allowlist.
     const untrusted = publishInto(specs()).tools;
     for (const bare of ["scan", "lint"]) {
-      assert.equal(untrusted.get(`vault_health_${bare}`).def.claimsReadOnly, true, bare);
-      assert.equal(untrusted.get(`vault_health_${bare}`).def.annotations.readOnlyHint, false, bare);
+      assert.equal(untrusted.get(`vaultmcp_health_${bare}`).def.claimsReadOnly, true, bare);
+      assert.equal(untrusted.get(`vaultmcp_health_${bare}`).def.annotations.readOnlyHint, false, bare);
     }
     const trusted = publishInto(specs(), { trusted: true }).tools;
     for (const bare of ["scan", "lint"]) {
-      assert.equal(trusted.get(`vault_health_${bare}`).def.annotations.readOnlyHint, true, bare);
+      assert.equal(trusted.get(`vaultmcp_health_${bare}`).def.annotations.readOnlyHint, true, bare);
     }
   });
 
@@ -479,7 +479,7 @@ describe("publication: names, flags, and what the host's guard can scope", () =>
     // small subset: type, description and string enums survive; min, max, default
     // and pattern do not. So an empty-string / missing / non-string `scope`
     // reaches the handler and must refuse there. This is the
-    // vault_skills_release semver lesson.
+    // vaultmcp_skills_release semver lesson.
     const { call } = build();
     for (const args of [{ scope: "" }, {}, { scope: 7 }, { scope: null }]) {
       const res = await call("lint", args);
@@ -549,7 +549,7 @@ describe("publication: names, flags, and what the host's guard can scope", () =>
 // splits on "/" alone. Core's own tests pin the function; what THIS suite pins is
 // that the tool SURFACES each refusal, in the envelope an agent reads.
 
-describe("vault_health_lint: the scope argument is guarded by hand, since the host guard cannot see it", () => {
+describe("vaultmcp_health_lint: the scope argument is guarded by hand, since the host guard cannot see it", () => {
   const corpus = () =>
     fakeSource({
       md: [

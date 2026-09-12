@@ -1,6 +1,6 @@
 // The skills GUI wiring — the in-Obsidian HUMAN surface: the Preview pane, the six commands,
 // the ribbon icon, and the (opt-in) export-on-save trigger. Written for the standalone
-// vault-skills plugin, folded into the Governor host (#82 residuals), and extracted back into
+// vaultmcp-skills plugin, folded into the Governor host (#82 residuals), and extracted back into
 // this satellite at the suite split's S4. `wireSkills(plugin, deps)` is called ONCE from
 // main.ts's onload — UNCONDITIONALLY now, because this plugin being installed and enabled IS
 // the toggle. There is no host module flag to consult any more.
@@ -16,7 +16,7 @@
 //
 // ── What routes through the guarded core ─────────────────────────────────────
 // The mutating command `mark` writes note frontmatter through `guardSkillsMark` — the SAME
-// accept-forbidden guard the `vault_skills_mark` tool uses (see commands.ts). `export` /
+// accept-forbidden guard the `vaultmcp_skills_mark` tool uses (see commands.ts). `export` /
 // `release` call `runExport` directly — the exact function the tools call — materializing to a
 // disk dir outside the vault (no note frontmatter touched, so no accept guard needed). Nothing
 // here reimplements a write or bypasses the mark guard. Extraction changed none of that: the

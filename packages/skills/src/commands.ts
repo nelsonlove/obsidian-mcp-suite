@@ -1,5 +1,5 @@
 // The skills GUI commands — validate / tree / mark / release, plus the shared modals and the
-// version-bump helper. Ported from the standalone vault-skills plugin (obsidian/src/commands.ts)
+// version-bump helper. Ported from the standalone vaultmcp-skills plugin (obsidian/src/commands.ts)
 // as part of the GUI fold (#82 residuals), refactored to take a plain `SkillsGuiCtx` instead of
 // the whole plugin so the pure helpers (`bumpPatch`) stay unit-testable.
 //
@@ -7,11 +7,11 @@
 // These are HUMAN gestures in Obsidian, not MCP calls, so they don't ride the MCP transport's
 // per-connection guard/queue/journal. But the ONE security-critical path — `cmdMark`, which
 // writes note frontmatter — routes through the SAME accept-forbidden guard the MCP
-// `vault_skills_mark` tool uses (`guardSkillsMark` in tools.ts, which runs the
+// `vaultmcp_skills_mark` tool uses (`guardSkillsMark` in tools.ts, which runs the
 // shared `acceptTransitionReason` predicate). A mark that would introduce/change an
 // acceptance assertion throws and nothing is written. `cmdValidate`/`cmdTree` are read-only;
 // `cmdRelease` calls the folded `runExport` core directly (the exact function the MCP
-// `vault_skills_release` tool calls), which materializes to a disk dir outside the vault and
+// `vaultmcp_skills_release` tool calls), which materializes to a disk dir outside the vault and
 // touches no note frontmatter, so it needs no accept guard.
 
 import { App, FuzzySuggestModal, Modal, Notice, Setting } from "obsidian";
@@ -140,7 +140,7 @@ export async function cmdMark(ctx: SkillsGuiCtx): Promise<void> {
   }
 
   try {
-    // The SAME accept-forbidden guard the MCP `vault_skills_mark` tool runs: computes the
+    // The SAME accept-forbidden guard the MCP `vaultmcp_skills_mark` tool runs: computes the
     // frontmatter the mark would land and refuses it if it would introduce/change an
     // acceptance assertion — nothing is written on refusal.
     const before = ctx.backend.frontmatterOf(file.path) ?? {};
@@ -171,7 +171,7 @@ export async function cmdRelease(ctx: SkillsGuiCtx): Promise<void> {
   }
   try {
     // Calls the folded `runExport` core directly — the exact function the MCP
-    // vault_skills_release tool calls. Materializes to the release dir; no note write.
+    // vaultmcp_skills_release tool calls. Materializes to the release dir; no note write.
     const summary = await runExport(ctx.backend, {
       outputDir: releaseDir,
       pluginName: cfg.pluginName,

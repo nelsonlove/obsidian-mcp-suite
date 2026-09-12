@@ -1,6 +1,6 @@
 {
-  "id": "vault-triage",
-  "name": "Vault Triage",
+  "id": "vaultmcp-triage",
+  "name": "Vault MCP Triage",
   "version": "0.1.0",
   "minAppVersion": "1.5.0",
   "description": "Inbox triage for agents: a read-only queue view and one guarded, dry-run-by-default disposition verb (trash / move / stamp plus human-declared rows), published as MCP tools through the Governor host.",

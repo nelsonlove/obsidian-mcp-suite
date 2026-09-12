@@ -31,7 +31,7 @@ export type { GuardSettings };
 // mutating concern — the record guard, the lock consult and the journal target
 // all bind at the mutating dequeue — so a READ gains nothing from being here
 // and loses F3's refusal. Reads whose answers can name paths their caller
-// cannot see (`vault_fileclass_explain` / `_get`, `vault_provenance_check`)
+// cannot see (`vaultmcp_fileclass_explain` / `_get`, `vaultmcp_provenance_check`)
 // spell it `note` deliberately, which this list does NOT contain, so F3 refuses
 // them wholesale under an allowlist. Bulk tools that name no note stay pathless
 // for the same reason. Do not add `note` here.

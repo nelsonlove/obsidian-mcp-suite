@@ -272,7 +272,7 @@ export function registerComplementaryTools(server: McpServer, app: App, ctx: Ser
         // a non-QuickAdd id carrying `variables` falls through to the plain
         // command path below rather than misrouting into a choice lookup
         // that was never going to resolve. The resolution + invocation seam
-        // is SHARED with the vault-triage satellite's declared choice
+        // is SHARED with the vaultmcp-triage satellite's declared choice
         // dispositions — one executeChoice path, two policy gates (the
         // cli-policy deny above for agent-named ids here; human-only config
         // binding there). The seam moved to `@vault-mcp/core` at the triage

@@ -133,7 +133,7 @@ Session lifecycle and refusal state now live in different places. The host owns 
 | Replayable observation payload | Governor response after scope | Review, recovery, and dependent governed operations | Content-addressed local operation storage; may reference an in-scope Git blob | No |
 | Paths and stable identifiers | Vault/arguments | Governor and connected client | Journal, receipts, pending index | No in core public design |
 | Properties, tags, and links | Obsidian metadata | Requested capability within scope | Review baseline when needed | No in core public design |
-| View results | Obsidian Bases, through the `vault-bases` satellite plugin (one of this plugin's modules until the S7 extraction) | Connected client | Evidence metadata or exact replay payload according to capture policy | No in core public design |
+| View results | Obsidian Bases, through the `vaultmcp-bases` satellite plugin (one of this plugin's modules until the S7 extraction) | Connected client | Evidence metadata or exact replay payload according to capture policy | No in core public design |
 | Client label and Governor actor binding | Client/connection registrar | Governor | Mutation journal, session, attestations | No in core public design |
 | Agent intent | Client | Review center | Journal | No in core public design |
 | Settings | Human | Governor | Plugin data | No |
@@ -157,7 +157,7 @@ Typical state includes:
 - observation/effect manifests and replayable response objects;
 - review baselines and history;
 - pending review index;
-- module-specific operational state such as coordination receipts (the cross-session read receipts moved out of this plugin's directory with the `vault-crosssession` satellite at S6 — see [crosssession.md](crosssession.md); they are still plugin-directory state, just that plugin's);
+- module-specific operational state such as coordination receipts (the cross-session read receipts moved out of this plugin's directory with the `vaultmcp-crosssession` satellite at S6 — see [crosssession.md](crosssession.md); they are still plugin-directory state, just that plugin's);
 - persisted rename evidence when needed for mechanical verification;
 - local Git objects and proposal/standing refs outside the Sync file set;
 - signing-key registrations and revocations; and

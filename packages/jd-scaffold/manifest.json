@@ -1,6 +1,6 @@
 {
-  "id": "vault-jd-scaffold",
-  "name": "Vault JD Scaffold",
+  "id": "vaultmcp-jd-scaffold",
+  "name": "Vault MCP JD Scaffold",
   "version": "0.1.0",
   "minAppVersion": "1.5.0",
   "description": "Johnny Decimal scaffolding for agents: create a category's standard zeros, self-heal missing XX.00 index files, promote an id note to a folder, rebuild an index's Contents section, and create notes from classified templates. Every tool previews with dry_run. Published as MCP tools through the Governor host.",

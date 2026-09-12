@@ -46,7 +46,7 @@ Review full mode, compact code mode, in-app tool runner, batch operations, inter
 
 ### 4. Scope
 
-Review normalization, traversal, segment boundaries, source/destination checks, batch items, stable/scheme references, discovery filtering, hidden counts, pending index, backlinks, and discovered-blast-radius operations. (Base-row filtering left this bundle at S7 with the `vault-bases` satellite. What replaces it here is the external-publisher gate: a published tool's read-only claim is distrusted unless its plugin id is in `trustedReadOnlyPlugins`, and under an active path allowlist a published tool whose call arguments carry no recognized path key is refused outright.)
+Review normalization, traversal, segment boundaries, source/destination checks, batch items, stable/scheme references, discovery filtering, hidden counts, pending index, backlinks, and discovered-blast-radius operations. (Base-row filtering left this bundle at S7 with the `vaultmcp-bases` satellite. What replaces it here is the external-publisher gate: a published tool's read-only claim is distrusted unless its plugin id is in `trustedReadOnlyPlugins`, and under an active path allowlist a published tool whose call arguments carry no recognized path key is refused outright.)
 
 Tools that cannot be path-scoped honestly should refuse under scope or remain absent publicly.
 
@@ -108,11 +108,11 @@ Any intentional non-public API hop must be feature-checked, isolated, documented
 
 ### 11. Optional dependencies
 
-For schemes, conformance, and external publishers, verify disabled/missing/incompatible/unavailable behavior. A missing source must not become a convincing empty result. (Bases evaluation and vocabulary validation headed this list until S7; they now ship as the separate `vault-bases` and `vault-vocab` satellite plugins, alongside `vault-health`, so from this plugin's side all three are external publishers like any other and are covered by that case. The Fileclass dependency check was the sharpest example of the missing-source case and it left with the mutating tier: the `vault-fileclass` satellite publishes nothing at all unless BOTH the Fileclass plugin is loaded and its CLI binary resolves. JD scaffolding and provenance regeneration were the stronger, target-private check here; both are now separate satellite plugins (`vault-jd-scaffold`, and regeneration inside `vault-provenance`), so their absence from the Community bundle is structural rather than something to verify inside this plugin. Triage mutations and cross-session coordination reached that position at S5 and S6.)
+For schemes, conformance, and external publishers, verify disabled/missing/incompatible/unavailable behavior. A missing source must not become a convincing empty result. (Bases evaluation and vocabulary validation headed this list until S7; they now ship as the separate `vaultmcp-bases` and `vaultmcp-vocab` satellite plugins, alongside `vaultmcp-health`, so from this plugin's side all three are external publishers like any other and are covered by that case. The Fileclass dependency check was the sharpest example of the missing-source case and it left with the mutating tier: the `vaultmcp-fileclass` satellite publishes nothing at all unless BOTH the Fileclass plugin is loaded and its CLI binary resolves. JD scaffolding and provenance regeneration were the stronger, target-private check here; both are now separate satellite plugins (`vaultmcp-jd-scaffold`, and regeneration inside `vaultmcp-provenance`), so their absence from the Community bundle is structural rather than something to verify inside this plugin. Triage mutations and cross-session coordination reached that position at S5 and S6.)
 
 ### 12. Startup and large-vault cost
 
-Inspect work performed during `onload`, layout-ready initialization, connection construction, metadata indexing, review refresh, and journal handling (Base evaluation left this list at S7 — it is the `vault-bases` satellite's cost now, not this bundle's). Verify caps, pagination, cancellation, hidden-view cleanup, and occluded-window timing.
+Inspect work performed during `onload`, layout-ready initialization, connection construction, metadata indexing, review refresh, and journal handling (Base evaluation left this list at S7 — it is the `vaultmcp-bases` satellite's cost now, not this bundle's). Verify caps, pagination, cancellation, hidden-view cleanup, and occluded-window timing.
 
 ## Data-flow summary
 
@@ -136,7 +136,7 @@ Reviewers should be able to confirm these are absent, not merely default-off:
 - destructive import; and
 - authority-restoring version restoration.
 
-Private-pack documentation exists to make the boundary explicit. It is not evidence that private code belongs in the submitted bundle. Every target-private in-repo capability is now outside this plugin. Skills/policy compilation, triage mutations, cross-session coordination, QuickAdd execution, JD scaffolding, and provenance regeneration have each been extracted into their own satellite plugin in this monorepo (`packages/skills`, id `vault-skills`; `packages/triage`, id `vault-triage`; `packages/crosssession`, id `vault-crosssession`; `packages/quickadd-choices-compile`; `packages/jd-scaffold`, id `vault-jd-scaffold`; and regeneration inside `packages/provenance`, id `vault-provenance`), built as separate artifacts from separate manifests. They are absent from the submitted bundle structurally — the bundle is one plugin's `main.js` and `manifest.json` — rather than by an in-plugin exclusion a reviewer has to verify ([Status and compatibility](../docs/status-and-compatibility.md) owns the matrix).
+Private-pack documentation exists to make the boundary explicit. It is not evidence that private code belongs in the submitted bundle. Every target-private in-repo capability is now outside this plugin. Skills/policy compilation, triage mutations, cross-session coordination, QuickAdd execution, JD scaffolding, and provenance regeneration have each been extracted into their own satellite plugin in this monorepo (`packages/skills`, id `vaultmcp-skills`; `packages/triage`, id `vaultmcp-triage`; `packages/crosssession`, id `vaultmcp-crosssession`; `packages/quickadd-choices-compile`; `packages/jd-scaffold`, id `vaultmcp-jd-scaffold`; and regeneration inside `packages/provenance`, id `vaultmcp-provenance`), built as separate artifacts from separate manifests. They are absent from the submitted bundle structurally — the bundle is one plugin's `main.js` and `manifest.json` — rather than by an in-plugin exclusion a reviewer has to verify ([Status and compatibility](../docs/status-and-compatibility.md) owns the matrix).
 
 ## Known residual risks
 
@@ -164,7 +164,7 @@ These are documented in the [Threat model](../docs/threat-model.md), not hidden 
 - supported Obsidian API review;
 - clean-vault onboarding recording or steps/results;
 - minimum-version and optional-dependency matrix;
-- startup, large-vault, queue, and review performance measurements (Bases measurements moved to the `vault-bases` satellite at S7);
+- startup, large-vault, queue, and review performance measurements (Bases measurements moved to the `vaultmcp-bases` satellite at S7);
 - keyboard/accessibility results;
 - migration closure and old-surface audit;
 - session/mandate/cohort, Git/attestation, key trust, and two-replica Sync evidence;

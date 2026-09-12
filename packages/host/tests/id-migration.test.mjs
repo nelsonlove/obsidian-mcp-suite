@@ -84,7 +84,7 @@ describe("planHostAdoption", () => {
     assert.deepEqual(plan.entries, ["journal", "install-id.json"]);
     assert.equal(plan.settings, true);
     assert.ok(!plan.entries.includes("governance"), "the authority state stays with the plugin that kept the id");
-    assert.ok(!plan.entries.includes("crosssession-receipts.json"), "the vault-crosssession satellite adopted that file at S6 and its copy is authoritative");
+    assert.ok(!plan.entries.includes("crosssession-receipts.json"), "the vaultmcp-crosssession satellite adopted that file at S6 and its copy is authoritative");
     for (const artifact of CODE_ARTIFACTS) {
       assert.ok(!plan.entries.includes(artifact), `${artifact} is the provider's own build and must never travel`);
     }
