@@ -12,8 +12,8 @@
 // This shim reproduces exactly three host behaviours and nothing else:
 //
 //   1. THE PUBLISHED NAME. `<sanitized plugin id>_<bare name>`, and this
-//      plugin's id is `vault-fileclass`, so `set_where` is on the wire as
-//      `vault_fileclass_set_where`. The sanitizer is the host's
+//      plugin's id is `vaultmcp-fileclass`, so `set_where` is on the wire as
+//      `vaultmcp_fileclass_set_where`. The sanitizer is the host's
 //      `sanitizeOwnerId`, reproduced here as the same two replaces.
 //   2. THE ENVELOPE. ok / fail, including `fail`'s coded rendering and its
 //      lowercase-snake gate (a Node error's UPPERCASE `.code` renders plain).
@@ -33,7 +33,17 @@
 // a note spell it `note`, which is not a key. So seven are refused wholesale
 // under an allowlist and one is scoped per-path (see the `publication` tests).
 
-const PLUGIN_ID = "vault-fileclass";
+import { readFileSync } from "node:fs";
+
+// The plugin id is READ from the manifest, never repeated here. The published
+// tool name is `<sanitized plugin id>_<bare name>`, so a shim holding its own
+// copy of the id lets manifest.json drift while every tool-name assertion in
+// this suite keeps passing against the stale spelling. Found by mutation on
+// 2026-09-12: reverting the manifest id to its pre-rename value changed nothing
+// in these tests, because this line was the only thing they consulted.
+const PLUGIN_ID = JSON.parse(
+  readFileSync(new URL("../manifest.json", import.meta.url), "utf8"),
+).id;
 
 /** The host's `sanitizeOwnerId`, verbatim. */
 export function sanitizeOwnerId(id) {

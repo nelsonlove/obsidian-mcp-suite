@@ -20,7 +20,7 @@
 // attachment-folder, not a new scope container"). Extending the ScopeProvider
 // interface for this one pane's sake would touch jd.ts, a shared, tested,
 // load-bearing file, for a feature only this module needs — so `.01`
-// = "Inbox" (also named as such in the `vault-jd-scaffold` satellite's
+// = "Inbox" (also named as such in the `vaultmcp-jd-scaffold` satellite's
 // `src/kernel/standard-zeros.ts` ZeroSpec table — it was this plugin's
 // `kernel/jd-scaffold/` until the mutating-tier extraction) is treated as
 // JD-domain knowledge local to this file,

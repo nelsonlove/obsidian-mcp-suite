@@ -1,4 +1,4 @@
-// scan.ts — the pure tiered-findings core of the vault-health scanner, ported
+// scan.ts — the pure tiered-findings core of the vaultmcp-health scanner, ported
 // verbatim (behavior-for-behavior) from the standalone `obsidian-vault-health`'s
 // Python classifier. Obsidian-free: it runs over an injected `HealthSource`, so
 // it is headless-testable against a synthetic vault. READ-ONLY — it emits
@@ -111,8 +111,8 @@ export interface HealthCounts {
   duplicateGroups: number;
 }
 
-/** The full tiered findings — the structure both `vault_health_scan` and
- *  `vault_health_lint` return (lint returns a scope-filtered copy). */
+/** The full tiered findings — the structure both `vaultmcp_health_scan` and
+ *  `vaultmcp_health_lint` return (lint returns a scope-filtered copy). */
 export interface HealthFindings {
   counts: HealthCounts;
   autoSafe: { repointableLinks: RepointableLink[] };
@@ -284,7 +284,7 @@ function underScope(path: string, scope: string): boolean {
 }
 
 /**
- * Restrict findings to a single folder/note scope, for `vault_health_lint`. A pure
+ * Restrict findings to a single folder/note scope, for `vaultmcp_health_lint`. A pure
  * POST-filter over the full (globally-correct) scan — link resolution and the
  * orphan inbound-set are computed vault-wide first, so an attachment referenced
  * from OUTSIDE the scope is still (correctly) not an orphan.

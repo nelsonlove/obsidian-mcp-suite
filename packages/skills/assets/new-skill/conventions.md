@@ -61,6 +61,6 @@ Prefix keeps the `parent` wikilink's backlinks / graph edges.
 
 Source of truth is the vault; the generated `skills/` + `agents/` + `commands/` are output —
 never hand-edit them. After writing/editing a note: run the **Vault Skills** export in Obsidian
-(or the `vault_skills_export` MCP tool), then `/reload-plugins`. Invoke as `/vault-skills:<name>`
-(skill **or** command) or `vault-skills:<name>` (subagent); a policy has no invocation — it's
+(or the `vaultmcp_skills_export` MCP tool), then `/reload-plugins`. Invoke as `/vaultmcp-skills:<name>`
+(skill **or** command) or `vaultmcp-skills:<name>` (subagent); a policy has no invocation — it's
 injected.

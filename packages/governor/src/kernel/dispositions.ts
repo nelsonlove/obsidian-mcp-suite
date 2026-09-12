@@ -32,7 +32,7 @@
 //  (#221 phase 2) and, at the suite split's S3 (condition 9), published to
 //  `@vault-mcp/core` — the provider must not depend on the triage instance,
 //  which was destined to become its own satellite plugin and DID at S5
-//  (`packages/triage`, id `vault-triage`). The foresight paid off exactly as
+//  (`packages/triage`, id `vaultmcp-triage`). The foresight paid off exactly as
 //  intended: triage left the host without this file changing a line of code,
 //  because both instances already declared against a published shape rather
 //  than against each other. This file keeps the

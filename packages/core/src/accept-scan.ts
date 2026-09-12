@@ -5,7 +5,7 @@
 // host's `src/mcp/tools-cli.ts`. It had two callers there — the `obsidian_cli`
 // template/content guard and the jd-scaffold module's `applyTemplate` — and
 // after S8 those two callers live in DIFFERENT PLUGINS (the host's CLI proxy
-// and the `vault-jd-scaffold` satellite). That is exactly the shape the
+// and the `vaultmcp-jd-scaffold` satellite). That is exactly the shape the
 // vocabulary kernel had at S7, and it has the same forbidden answer: two copies
 // of an accept predicate is how one vault gets two definitions of "accepted".
 // The host imports it from here and re-exports it, so no host call site or test

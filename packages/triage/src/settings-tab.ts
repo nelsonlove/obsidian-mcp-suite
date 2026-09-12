@@ -84,7 +84,7 @@ export class TriageSettingTab extends PluginSettingTab {
     containerEl.createEl("p", {
       cls: "setting-item-description",
       text: hostLoaded
-        ? "Governor is installed: the vault_triage_queue and vault_triage_dispose MCP tools are published to it. Note that under an active Governor path allowlist vault_triage_queue is refused — it carries no path argument to scope by — while vault_triage_dispose is scoped by its `path` and `target_path` arguments."
+        ? "Governor is installed: the vaultmcp_triage_queue and vaultmcp_triage_dispose MCP tools are published to it. Note that under an active Governor path allowlist vaultmcp_triage_queue is refused — it carries no path argument to scope by — while vaultmcp_triage_dispose is scoped by its `path` and `target_path` arguments."
         : "Governor is NOT installed. This plugin's entire surface is the two MCP tools it publishes to the Governor host, so nothing here does anything until Governor is installed and enabled.",
     });
   }

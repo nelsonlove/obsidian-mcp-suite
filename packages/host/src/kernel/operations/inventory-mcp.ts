@@ -167,7 +167,7 @@ const CORE_DIRECT: McpSurfaceRow[] = [
 // governance PROVIDER now (`packages/governor`, plugin id `governor`), through
 // the external-tool registry like every satellite's tools — so, like every
 // external tool, they are outside this inventory by design. Same removal as the
-// six `vault_skills_*` rows at S4, the two triage rows at S5, the four
+// six `vaultmcp_skills_*` rows at S4, the two triage rows at S5, the four
 // cross-session rows at S6 and the eight read-tier rows at S7.
 //
 // ONE THING IS DIFFERENT HERE AND IT IS THE WHOLE POINT: their NAMES did not
@@ -277,12 +277,12 @@ const SCHEME: McpSurfaceRow[] = [
 
 // The four `obsidian_vocab*` rows, the two `base_*` rows and the two health
 // rows were HERE until the S7 read-tier satellite extraction, for the same
-// reason the six `vault_skills_*` rows left at S4, the two `triage_*` rows at
+// reason the six `vaultmcp_skills_*` rows left at S4, the two `triage_*` rows at
 // S5 and the four `crosssession_*` rows at S6: all three are separate plugins
 // now (`packages/vocab`, `packages/bases`, `packages/health`) publishing
 // through the external-tool registry. On the wire they are
-// `vault_vocab_{vocabularies,resolve_term,validate_terms,list_vocabulary}`,
-// `vault_bases_{list,query}` and `vault_health_{scan,lint}` — the plugin id IS
+// `vaultmcp_vocab_{vocabularies,resolve_term,validate_terms,list_vocabulary}`,
+// `vaultmcp_bases_{list,query}` and `vaultmcp_health_{scan,lint}` — the plugin id IS
 // the tool namespace — and, like every external tool, they are outside this
 // inventory by design.
 
@@ -301,8 +301,8 @@ const CONFORMANCE: McpSurfaceRow[] = [
 // The three `provenance_*` rows were HERE until the mutating-tier satellite
 // extraction, for the same reason the read tier's rows left at S7: derived-
 // content freshness is now a separate plugin (`packages/provenance`, id
-// `vault-provenance`) publishing through the external-tool registry. Its tools
-// are on the wire as `vault_provenance_check` / `_reconcile` / `_regen` — the
+// `vaultmcp-provenance`) publishing through the external-tool registry. Its tools
+// are on the wire as `vaultmcp_provenance_check` / `_reconcile` / `_regen` — the
 // plugin id IS the tool namespace — and, like every external tool, they are
 // outside this inventory by design.
 
@@ -322,39 +322,39 @@ const SURVEY: McpSurfaceRow[] = [
 // #9 keeps out of the public surface. The tension was put to Nelson with both
 // readings stated and he chose PRIVATE (2026-08-21). That ruling stands and now
 // applies to a whole plugin rather than a module: `packages/fileclass`, id
-// `vault-fileclass`, publishing eight `vault_fileclass_*` tools through the
+// `vaultmcp-fileclass`, publishing eight `vaultmcp_fileclass_*` tools through the
 // external-tool registry, outside this inventory like every external tool.
 
-// The six `vault_skills_*` rows were HERE until the S4 satellite extraction.
+// The six `vaultmcp_skills_*` rows were HERE until the S4 satellite extraction.
 // This inventory describes THIS PLUGIN's surface, and the skills compiler is
-// now a separate plugin (`packages/skills`, id `vault-skills`) that publishes
+// now a separate plugin (`packages/skills`, id `vaultmcp-skills`) that publishes
 // its tools through the external-tool registry like any third-party publisher.
 // External tools are deliberately outside this inventory: they are not ours to
 // declare, and the surface scan that pins this file against the source would
 // find no registration for them here.
 
 // The four `crosssession_*` rows were HERE until the S6 satellite extraction,
-// for the same reason the six `vault_skills_*` rows left at S4 and the two
+// for the same reason the six `vaultmcp_skills_*` rows left at S4 and the two
 // `triage_*` rows at S5: fleet coordination is now a separate plugin
-// (`packages/crosssession`, id `vault-crosssession`) publishing through the
+// (`packages/crosssession`, id `vaultmcp-crosssession`) publishing through the
 // external-tool registry. Its tools are on the wire as
-// `vault_crosssession_channels` / `_delta` / `_attest` / `_post` — the plugin
+// `vaultmcp_crosssession_channels` / `_delta` / `_attest` / `_post` — the plugin
 // id IS the tool namespace — and, like every external tool, they are outside
 // this inventory by design.
 
 // The seven `obsidian_jd_*` rows were HERE until the mutating-tier satellite
 // extraction: JD scaffolding is now a separate plugin (`packages/jd-scaffold`,
-// id `vault-jd-scaffold`) publishing through the external-tool registry. Their
+// id `vaultmcp-jd-scaffold`) publishing through the external-tool registry. Their
 // rename was the one in the whole split that was FORCED rather than chosen —
 // `external-tools.ts` refuses a published name beginning `obsidian_`, so the
-// seven are on the wire as `vault_jd_scaffold_*`. That is also why their
+// seven are on the wire as `vaultmcp_jd_scaffold_*`. That is also why their
 // departure shrinks the `obsidian_*` family this inventory declares.
 
 // The two `triage_*` rows were HERE until the S5 satellite extraction, for the
-// same reason the six `vault_skills_*` rows left at S4: inbox triage is now a
-// separate plugin (`packages/triage`, id `vault-triage`) publishing through the
-// external-tool registry. Its tools are on the wire as `vault_triage_queue` /
-// `vault_triage_dispose` — the plugin id IS the tool namespace — and, like every
+// same reason the six `vaultmcp_skills_*` rows left at S4: inbox triage is now a
+// separate plugin (`packages/triage`, id `vaultmcp-triage`) publishing through the
+// external-tool registry. Its tools are on the wire as `vaultmcp_triage_queue` /
+// `vaultmcp_triage_dispose` — the plugin id IS the tool namespace — and, like every
 // external tool, they are outside this inventory.
 
 /** Every declared MCP surface, in one list. */

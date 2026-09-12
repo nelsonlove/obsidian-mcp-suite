@@ -54,7 +54,7 @@ export const MAX_TIMEOUT_MS = 300_000;
 const MAX_BUFFER = 4 * 1024 * 1024;
 
 // `findObsidianBinary` was DEFINED here until the mutating tier's extraction.
-// The `vault-fileclass` satellite points the fileclass CLI's `obsidian eval`
+// The `vaultmcp-fileclass` satellite points the fileclass CLI's `obsidian eval`
 // bridge at the same binary through `OBSIDIAN_BIN`, so the probe (candidate
 // list included) had to be one copy across two plugins — published to
 // `@vault-mcp/core` and re-exported here unchanged, so `tools-core.ts`,
@@ -588,7 +588,7 @@ export function templateContentAcceptRefusal(content: string, parseYaml?: (yaml:
 // until the mutating tier's extraction. They moved VERBATIM to
 // `@vault-mcp/core` (`src/accept-scan.ts`) because their two callers now live
 // in DIFFERENT PLUGINS — this file's template/content guard and the
-// `vault-jd-scaffold` satellite's template apply — and two copies of an accept
+// `vaultmcp-jd-scaffold` satellite's template apply — and two copies of an accept
 // predicate is how one vault gets two definitions of "accepted". The move is
 // behaviour-preserving by construction: every symbol the predicate is defined
 // over (`leadingFrontmatterBlock`, `stripLeadingBom`, `acceptForbiddenReason`,

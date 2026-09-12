@@ -405,7 +405,7 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   // `quickadd_choices_compile_run` through vault-mcp-api like any third-party
   // plugin. The execution seam (running a choice) moved to `@vault-mcp/core`
   // at S5, when triage left too: its two callers — obsidian_run_command here
-  // and the vault-triage satellite's declared choice rows — are now in
+  // and the vaultmcp-triage satellite's declared choice rows — are now in
   // different plugins, and the seam exists so they cannot drift.
   registerComplementaryTools(server, app, ctx);
   // ctx: obsidian_list_bookmarks enumerates paths the human bookmarked, which
@@ -490,7 +490,7 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   // ── conformance debt register (issue #211, Parts A2 + B) ────────────────────
   // The READ tool reports the carried debt (baseline + sidecar + live run:
   // burn-down counts, staleness, budget) — whole-vault, like the health scan
-  // (now the `vault-health` satellite's `vault_health_scan`).
+  // (now the `vaultmcp-health` satellite's `vaultmcp_health_scan`).
   // The RENDER tool (Part B) materializes the same report as a generated
   // register note beside the baseline; it is mutating (readOnlyHint: false), so
   // it rides the guard-patched registrar (read-only mode, queue, journal) and

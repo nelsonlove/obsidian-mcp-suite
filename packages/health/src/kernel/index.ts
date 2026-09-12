@@ -1,4 +1,4 @@
-// src/kernel — the pure vault-health scanner core, folded in from the standalone
+// src/kernel — the pure vaultmcp-health scanner core, folded in from the standalone
 // `obsidian-vault-health` Bash+eval scanner (first as a Governor capability
 // module, since the suite split's S7 as this satellite's kernel). READ-ONLY: it
 // emits tiered findings and never mutates the vault (the fixing is a separate

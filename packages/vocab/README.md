@@ -1,10 +1,10 @@
-# Vault Vocabulary (plugin id `vault-vocab`)
+# Vault Vocabulary (plugin id `vaultmcp-vocab`)
 
 The vault's controlled vocabulary given an agent surface: enumerate the configured vocabulary sources, resolve a tag / property key / type name / glossary term to its canonical entry, report a note's own vocabulary, and check one note's frontmatter against the registries. Report-only — nothing here writes to a note. Like the triage and cross-session satellites and unlike the skills one, this plugin has no human surface beyond configuration: no pane, no palette command, no ribbon. Its entire surface is four MCP tools published to the Governor host through `vault-mcp-api`, plus a settings tab for the human who configures what counts as a vocabulary.
 
 ## Lineage
 
-Built as the host's `vocab` capability module (`src/kernel/vocab/` + `src/mcp/tools-vocab.ts`). Extracted to its own plugin at the suite split's **S7** — the design doc's `docs/suite-split-design.md` §6 row *"Vocabulary provider | public optional | satellite"*. It follows `packages/quickadd-choices-compile` (the pilot), `packages/skills` (`vault-skills`, S4), `packages/triage` (`vault-triage`, S5) and `packages/crosssession` (`vault-crosssession`, S6).
+Built as the host's `vocab` capability module (`src/kernel/vocab/` + `src/mcp/tools-vocab.ts`). Extracted to its own plugin at the suite split's **S7** — the design doc's `docs/suite-split-design.md` §6 row *"Vocabulary provider | public optional | satellite"*. It follows `packages/quickadd-choices-compile` (the pilot), `packages/skills` (`vaultmcp-skills`, S4), `packages/triage` (`vaultmcp-triage`, S5) and `packages/crosssession` (`vaultmcp-crosssession`, S6).
 
 **The kernel did NOT come with it.** The providers, the registry and the findings live in `@vault-mcp/core` at `packages/core/src/vocab/`, because they have TWO consumers and always did: these four tools, and the HOST's conformance rail (`conformance/packs/vocab.ts` wraps `noteVocabFindings`, `conformance/cli.ts` builds a `VocabRegistry` per run, and `conformance/snapshot.ts` / `rule-pack.ts` are typed over `VocabNote`). That is a dependency on the kernel, not on the user's configured list — the rail runs on `DEFAULT_VOCABULARIES`, which is a separate host fact covered in §5. Two copies of a rule core is how one vault gets two vocabularies, so publishing into core was the only non-forking answer — the `isVisible` (S4) and `executeQuickAddChoice` (S5) precedent. **There is no `src/kernel/` in this package and there must not be one.**
 
@@ -12,7 +12,7 @@ Built as the host's `vocab` capability module (`src/kernel/vocab/` + `src/mcp/to
 
 ```text
 packages/vocab/
-├── manifest.json          plugin id `vault-vocab`, isDesktopOnly
+├── manifest.json          plugin id `vaultmcp-vocab`, isDesktopOnly
 ├── esbuild.config.mjs     bundles src/main.ts → main.js (no assets, no defines)
 ├── src/
 │   ├── main.ts            onload: settings + the one-shot adoption, settings tab, publishTools (re-published on every settings write)
@@ -44,14 +44,14 @@ Same as the triage and cross-session satellites. The four published tools ARE th
 
 | shipped (module)           | bare name in this package | published (satellite)         |
 |----------------------------|---------------------------|-------------------------------|
-| `obsidian_vocabularies`    | `vocabularies`            | `vault_vocab_vocabularies`    |
-| `obsidian_resolve_term`    | `resolve_term`            | `vault_vocab_resolve_term`    |
-| `obsidian_validate_terms`  | `validate_terms`          | `vault_vocab_validate_terms`  |
-| `obsidian_list_vocabulary` | `list_vocabulary`         | `vault_vocab_list_vocabulary` |
+| `obsidian_vocabularies`    | `vocabularies`            | `vaultmcp_vocab_vocabularies`    |
+| `obsidian_resolve_term`    | `resolve_term`            | `vaultmcp_vocab_resolve_term`    |
+| `obsidian_validate_terms`  | `validate_terms`          | `vaultmcp_vocab_validate_terms`  |
+| `obsidian_list_vocabulary` | `list_vocabulary`         | `vaultmcp_vocab_list_vocabulary` |
 
 **This breaks any agent session or saved prompt that calls the old names.** They are gone; the new ones are what the host publishes.
 
-Two separate decisions produced that table. The host publishes an external tool as `<sanitized publisher id>_<bare name>`, so **the plugin id and the tool namespace are the same string**, and `vault-vocab` sanitizes to `vault_vocab` — that part is a consequence of the id, exactly like the triage and cross-session renames. Stripping `obsidian_` from the bare names is the second, and it is a CHOICE, not a forced move: the host's F1 check (`external-tools.ts:72-74`) tests the PUBLISHED name for an `obsidian_` prefix, and `vault_vocab_obsidian_vocabularies` does not start with `obsidian_`, so it would have registered fine. It would just have said the module twice and the namespace not at all — `obsidian_` was the HOST's built-in namespace, never this module's name.
+Two separate decisions produced that table. The host publishes an external tool as `<sanitized publisher id>_<bare name>`, so **the plugin id and the tool namespace are the same string**, and `vaultmcp-vocab` sanitizes to `vaultmcp_vocab` — that part is a consequence of the id, exactly like the triage and cross-session renames. Stripping `obsidian_` from the bare names is the second, and it is a CHOICE, not a forced move: the host's F1 check (`external-tools.ts:72-74`) tests the PUBLISHED name for an `obsidian_` prefix, and `vaultmcp_vocab_obsidian_vocabularies` does not start with `obsidian_`, so it would have registered fine. It would just have said the module twice and the namespace not at all — `obsidian_` was the HOST's built-in namespace, never this module's name.
 
 **Reversing the namespace is a one-line change**: `manifest.json`'s `id`, plus the strings in `tests/host-shim.mjs` and the settings tab's status line. Nothing else in the package encodes the prefix — the specs carry BARE names, and the prefix is the host's.
 
@@ -59,26 +59,26 @@ Two separate decisions produced that table. The host publishes an external tool 
 
 The host's external-tool gate is now what enforces scope, and it refuses on two independent grounds:
 
-- An external tool's `readOnlyHint: true` is a CLAIM the host distrusts unless the publisher's raw plugin id appears in its `trustedReadOnlyPlugins` setting. Untrusted, **all four** register as mutating — so **read-only mode blocks all four**, and each takes a write-queue slot and a journal record. Adding `vault-vocab` to `trustedReadOnlyPlugins` restores read-only-mode availability. It does NOT change anything below: trust answers read-only mode, never scoping (closed 2026-09-05 by the skills satellite's review).
+- An external tool's `readOnlyHint: true` is a CLAIM the host distrusts unless the publisher's raw plugin id appears in its `trustedReadOnlyPlugins` setting. Untrusted, **all four** register as mutating — so **read-only mode blocks all four**, and each takes a write-queue slot and a journal record. Adding `vaultmcp-vocab` to `trustedReadOnlyPlugins` restores read-only-mode availability. It does NOT change anything below: trust answers read-only mode, never scoping (closed 2026-09-05 by the skills satellite's review).
 - A mutating external tool whose arguments carry **no recognized path key** is **blocked outright** while a path allowlist is active, trusted or not. Critically, that gate (`external-tools.ts:209-229`) is evaluated **at CALL TIME on the ACTUAL ARGUMENTS** — `settings.allowlist.length > 0 && collectPaths(args ?? {}).length === 0` — not once on the declared schema.
 
 Which makes this surface's posture per-tool, and for one tool per-call:
 
 | tool | arguments | under an active allowlist |
 |---|---|---|
-| `vault_vocab_vocabularies` | none | **blocked outright** — nothing to scope by |
-| `vault_vocab_list_vocabulary` | `kind`, `scope`, `vocabulary` | **blocked outright** — none is a path key |
-| `vault_vocab_validate_terms` | `path` (**required**) | **available and scoped** — the host checks `path`; a hidden note refuses `out_of_allowlist` |
-| `vault_vocab_resolve_term` | `path` (**optional**), `token`, `kind`, `parse`, `vocabulary` | **depends on the call** |
+| `vaultmcp_vocab_vocabularies` | none | **blocked outright** — nothing to scope by |
+| `vaultmcp_vocab_list_vocabulary` | `kind`, `scope`, `vocabulary` | **blocked outright** — none is a path key |
+| `vaultmcp_vocab_validate_terms` | `path` (**required**) | **available and scoped** — the host checks `path`; a hidden note refuses `out_of_allowlist` |
+| `vaultmcp_vocab_resolve_term` | `path` (**optional**), `token`, `kind`, `parse`, `vocabulary` | **depends on the call** |
 
 That last row is the single most surprising fact about this extraction, so it is worth spelling out. The same tool, in the same session, under the same allowlist:
 
 ```jsonc
 // BLOCKED — the arguments carry no path key, so the host cannot scope the call
-{ "name": "vault_vocab_resolve_term", "arguments": { "token": "note/task", "kind": "tag" } }
+{ "name": "vaultmcp_vocab_resolve_term", "arguments": { "token": "note/task", "kind": "tag" } }
 
 // SCOPED — `path` is a recognized path key, so the host checks it and lets the call through
-{ "name": "vault_vocab_resolve_term", "arguments": { "path": "Projects/Alpha/Note.md" } }
+{ "name": "vaultmcp_vocab_resolve_term", "arguments": { "path": "Projects/Alpha/Note.md" } }
 ```
 
 `scope` was deliberately NOT renamed into a path key. It is a prefix filter over the *declaring paths of entries already in the listing*, not the path the call reads — handing the guard a prefix while the actual reads stay unscoped is the illusion of a check, the same reasoning that kept `channel` off the path-key list in the cross-session satellite.
@@ -94,8 +94,8 @@ That last row is the single most surprising fact about this extraction, so it is
 
 Precisely what a session under an allowlist can learn, which is narrower than a body read and wider than nothing:
 
-- `vault_vocab_validate_terms` on a VISIBLE note: for each token that note already carries, whether a possibly-hidden registry declares it and whether it is retired — and, through the `ambiguous` finding's detail (which renders `VocabAmbiguousError.candidates`), the PATHS of the registry notes claiming a duplicated token. That last one is a genuine path oracle.
-- `vault_vocab_resolve_term` with `path` on a VISIBLE note: for each token that note already carries, its canonical form, its declaring vocabulary id, and its `definition` gloss — frontmatter text lifted from a registry note that may itself be hidden. Path mode never emits candidate paths (it catches `VocabAmbiguousError` and reports a bare `ambiguous: true`); that is pinned by test.
+- `vaultmcp_vocab_validate_terms` on a VISIBLE note: for each token that note already carries, whether a possibly-hidden registry declares it and whether it is retired — and, through the `ambiguous` finding's detail (which renders `VocabAmbiguousError.candidates`), the PATHS of the registry notes claiming a duplicated token. That last one is a genuine path oracle.
+- `vaultmcp_vocab_resolve_term` with `path` on a VISIBLE note: for each token that note already carries, its canonical form, its declaring vocabulary id, and its `definition` gloss — frontmatter text lifted from a registry note that may itself be hidden. Path mode never emits candidate paths (it catches `VocabAmbiguousError` and reports a bare `ambiguous: true`); that is pinned by test.
 
 Both are bounded by the tokens the caller's own visible note already carries: a session cannot ask "what else is in the hidden registry", only "is this token, which I can already read, registered somewhere". It is still a loosening relative to the folded module, and it is not fixable from inside a satellite. It becomes fixable the day `vault-mcp-api` can carry the caller's scope to a publisher (apiVersion 2), at which point `ctx.visible` goes live with no code change here — which is exactly why the seam is kept, why the tests supply it, and why one test pins what its absence does.
 

@@ -1,4 +1,4 @@
-# Vault JD Scaffold (plugin id `vault-jd-scaffold`)
+# Vault JD Scaffold (plugin id `vaultmcp-jd-scaffold`)
 
 Johnny Decimal scaffolding, given an agent surface: create a category's fixed standard-zeros set, self-heal missing `XX.00` index files across the vault, promote an id note into a same-named folder (link-healing), rebuild an index file's `## Contents` section from the vault's own structure, and create standard-zero / generic-id / stem notes from templates classified by their own `jd-id` frontmatter. Every tool previews with `dry_run: true`.
 
@@ -6,13 +6,13 @@ Like the triage, cross-session and bases satellites and unlike the skills one, t
 
 ## Lineage
 
-Built as the host's `jd-scaffold` capability module — Stages A, A2 and A3 of the jd-dashboard fold, ported from `obsidian-jd-dashboard`'s `standard-zeros.ts`, `promote-to-folder.ts`, `category-index.ts` and `templates.ts` / `new-from-template.ts`. Extracted to its own plugin with the suite split's **mutating tier**, following `packages/quickadd-choices-compile` (the pilot) and the satellites `packages/skills` (`vault-skills`, S4), `packages/triage` (`vault-triage`, S5), `packages/crosssession` (`vault-crosssession`, S6) and `packages/bases` (`vault-bases`, S7). The planners, the template classifier, the placeholder engine and the three reindex tiers are the same code through both homes; only who mounts them differs.
+Built as the host's `jd-scaffold` capability module — Stages A, A2 and A3 of the jd-dashboard fold, ported from `obsidian-jd-dashboard`'s `standard-zeros.ts`, `promote-to-folder.ts`, `category-index.ts` and `templates.ts` / `new-from-template.ts`. Extracted to its own plugin with the suite split's **mutating tier**, following `packages/quickadd-choices-compile` (the pilot) and the satellites `packages/skills` (`vaultmcp-skills`, S4), `packages/triage` (`vaultmcp-triage`, S5), `packages/crosssession` (`vaultmcp-crosssession`, S6) and `packages/bases` (`vaultmcp-bases`, S7). The planners, the template classifier, the placeholder engine and the three reindex tiers are the same code through both homes; only who mounts them differs.
 
 ## Package layout
 
 ```text
 packages/jd-scaffold/
-├── manifest.json          plugin id `vault-jd-scaffold`, isDesktopOnly
+├── manifest.json          plugin id `vaultmcp-jd-scaffold`, isDesktopOnly
 ├── esbuild.config.mjs     bundles src/main.ts → main.js (no assets, no defines)
 ├── src/
 │   ├── main.ts            onload: settings, settings tab, publishTools (once — there is no config to re-publish for)
@@ -51,19 +51,19 @@ Same as the triage, cross-session and bases satellites. The seven published tool
 
 | shipped by the module | bare name in this package | published by the satellite |
 |---|---|---|
-| `obsidian_jd_standard_zeros` | `standard_zeros` | **`vault_jd_scaffold_standard_zeros`** |
-| `obsidian_jd_ensure_category_indexes` | `ensure_category_indexes` | **`vault_jd_scaffold_ensure_category_indexes`** |
-| `obsidian_jd_promote_to_folder` | `promote_to_folder` | **`vault_jd_scaffold_promote_to_folder`** |
-| `obsidian_jd_reindex_category` | `reindex_category` | **`vault_jd_scaffold_reindex_category`** |
-| `obsidian_jd_new_standard_zero` | `new_standard_zero` | **`vault_jd_scaffold_new_standard_zero`** |
-| `obsidian_jd_new_generic_id` | `new_generic_id` | **`vault_jd_scaffold_new_generic_id`** |
-| `obsidian_jd_new_stem` | `new_stem` | **`vault_jd_scaffold_new_stem`** |
+| `obsidian_jd_standard_zeros` | `standard_zeros` | **`vaultmcp_jd_scaffold_standard_zeros`** |
+| `obsidian_jd_ensure_category_indexes` | `ensure_category_indexes` | **`vaultmcp_jd_scaffold_ensure_category_indexes`** |
+| `obsidian_jd_promote_to_folder` | `promote_to_folder` | **`vaultmcp_jd_scaffold_promote_to_folder`** |
+| `obsidian_jd_reindex_category` | `reindex_category` | **`vaultmcp_jd_scaffold_reindex_category`** |
+| `obsidian_jd_new_standard_zero` | `new_standard_zero` | **`vaultmcp_jd_scaffold_new_standard_zero`** |
+| `obsidian_jd_new_generic_id` | `new_generic_id` | **`vaultmcp_jd_scaffold_new_generic_id`** |
+| `obsidian_jd_new_stem` | `new_stem` | **`vaultmcp_jd_scaffold_new_stem`** |
 
 **This breaks any agent session or saved prompt that calls the old names.** That cost is real and should not be understated: the host's own locked decision says renaming shipped tool names breaks agent sessions for zero semantic gain.
 
 What makes this one different from its predecessors is that it was not a trade anyone could decline. Two compositions produce the new spelling — the host publishes an external tool as `<sanitized publisher id>_<bare name>`, and the bare names shed the `obsidian_jd_` prefix — and the second is **forced by the boundary**. The host refuses a published external tool whose name lands in the built-in namespace (`external-tools.ts`: a `toolName` starting `obsidian_` throws "collides with the reserved `obsidian_*` namespace"), so no plugin id whatsoever could have carried the shipped spellings through. The bases satellite's `base_` strip was a readability choice about a name the host would have accepted; this was not a choice.
 
-**Reversing the namespace half is a one-line change** — `manifest.json`'s `id`, plus the strings in `tests/host-shim.mjs` and the settings tab's status line; nothing else encodes the prefix, since the specs carry BARE names. But be honest about what that reverses: `vault_jd_scaffold_*` could become `jd_scaffold_*`. It could never become `obsidian_jd_*` again.
+**Reversing the namespace half is a one-line change** — `manifest.json`'s `id`, plus the strings in `tests/host-shim.mjs` and the settings tab's status line; nothing else encodes the prefix, since the specs carry BARE names. But be honest about what that reverses: `vaultmcp_jd_scaffold_*` could become `jd_scaffold_*`. It could never become `obsidian_jd_*` again.
 
 ### 2. The allowlist boundary moved to the host — five tools refused, two scoped, one residual ratified
 
@@ -105,7 +105,7 @@ Three codes are **new**, and each refuses input the module accepted:
 - **`invalid_prefix`** — a `prefix` that is not exactly two digits. The module did not validate it at all, and it is concatenated straight into every computed destination, so `..`-shaped input introduced extra path segments into the write target. Same class as the stem-code check the module already had.
 - **`invalid_argument`** — the re-applied non-empty-string bounds, and a non-boolean `dry_run` (which refuses rather than being read as "write for real").
 
-**Schema bounds are re-applied in the handler.** The SDK converts a zod shape to JSON Schema and the host converts it back through a deliberately small subset: `type`, `description` and string `enum` survive; `default`, `min`, `max` and `pattern` do not. So every `.min(1)` and every type check runs again where it actually executes. This is the `vault_skills_release` semver lesson, applied before it could bite.
+**Schema bounds are re-applied in the handler.** The SDK converts a zod shape to JSON Schema and the host converts it back through a deliberately small subset: `type`, `description` and string `enum` survive; `default`, `min`, `max` and `pattern` do not. So every `.min(1)` and every type check runs again where it actually executes. This is the `vaultmcp_skills_release` semver lesson, applied before it could bite.
 
 ### 4. There was no configuration to migrate — checked, not assumed
 
@@ -115,7 +115,7 @@ The module host's `enabled: false` toggle did not survive either, and could not:
 
 ### 5. One user-visible byte change: the auto-generated callout
 
-The warning callout `reindex_category` writes into every regenerated `XX.00` index used to say "Regenerated by `obsidian_jd_reindex_category`". It now names `vault_jd_scaffold_reindex_category`, because the old spelling names a tool that cannot exist. The change lands in each index file the next time it is reindexed. Nothing parses the callout — the whole `## Contents` region is replaced on every run — but it is bytes in your vault, so it is named here rather than left to surprise a diff.
+The warning callout `reindex_category` writes into every regenerated `XX.00` index used to say "Regenerated by `obsidian_jd_reindex_category`". It now names `vaultmcp_jd_scaffold_reindex_category`, because the old spelling names a tool that cannot exist. The change lands in each index file the next time it is reindexed. Nothing parses the callout — the whole `## Contents` region is replaced on every run — but it is bytes in your vault, so it is named here rather than left to surprise a diff.
 
 ## What the host still owns
 

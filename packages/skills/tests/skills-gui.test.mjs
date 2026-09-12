@@ -57,7 +57,7 @@ describe("debounce", () => {
 
 // ── 2. handleNoteChanged ─────────────────────────────────────────────────────
 
-const PREFIX = { mode: "prefix", prefix: "", key: "vault-skills", typeSource: "frontmatter", tagPrefix: "agent/" };
+const PREFIX = { mode: "prefix", prefix: "", key: "vaultmcp-skills", typeSource: "frontmatter", tagPrefix: "agent/" };
 
 function tracker(overrides = {}) {
   let exports = 0;
@@ -103,7 +103,7 @@ describe("handleNoteChanged", () => {
   });
 
   test("tags mode: the kind tag decides", () => {
-    const tags = { mode: "prefix", prefix: "", key: "vault-skills", typeSource: "tags", tagPrefix: "agent/" };
+    const tags = { mode: "prefix", prefix: "", key: "vaultmcp-skills", typeSource: "tags", tagPrefix: "agent/" };
     const t = tracker({ fields: () => tags, getFrontmatter: () => ({ tags: ["agent/skill"] }) });
     handleNoteChanged({ path: "T.md" }, t.deps);
     assert.equal(t.exports(), 1);

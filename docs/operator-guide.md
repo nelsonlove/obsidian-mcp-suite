@@ -10,7 +10,7 @@ Read-heavy, scope-first, preview-first, with human review. Use this profile unle
 
 ### Advanced governed
 
-Adds configured schemes, vocabulary, Bases evaluation, the health scan, and conformance. (Only schemes and conformance are still the host's own modules — since the host/Governor plugin split, the `acceptance` module has left the host's registry entirely and its settings now live in the Governor plugin's own `data.json` and settings tab. Triage and cross-session coordination ship as the separate `vault-triage` and `vault-crosssession` satellite plugins; since the S7 read-tier extraction, vocabulary, health and Bases ship as the separate `vault-vocab`, `vault-health` and `vault-bases` satellite plugins. Each is installed, enabled and configured on its own, and publishes its tools to the host, Vault MCP, through `vault-mcp-api`.) These remain bounded and observable but require maintenance of their declarations and baselines.
+Adds configured schemes, vocabulary, Bases evaluation, the health scan, and conformance. (Only schemes and conformance are still the host's own modules — since the host/Governor plugin split, the `acceptance` module has left the host's registry entirely and its settings now live in the Governor plugin's own `data.json` and settings tab. Triage and cross-session coordination ship as the separate `vaultmcp-triage` and `vaultmcp-crosssession` satellite plugins; since the S7 read-tier extraction, vocabulary, health and Bases ship as the separate `vaultmcp-vocab`, `vaultmcp-health` and `vaultmcp-bases` satellite plugins. Each is installed, enabled and configured on its own, and publishes its tools to the host, Vault MCP, through `vault-mcp-api`.) These remain bounded and observable but require maintenance of their declarations and baselines.
 
 ### Private high-authority
 
@@ -79,7 +79,7 @@ Revoke stale connections.
 
 ## Controlled vocabulary
 
-The vocabulary tools are no longer part of this plugin: since the S7 satellite extraction they ship as the separate `vault-vocab` plugin, which publishes its four tools to the host, Vault MCP, through `vault-mcp-api` (see [vocabulary-module.md](vocabulary-module.md)). The requirements below are unchanged and are that plugin's to satisfy; what changes for an operator is that it is installed and configured separately, and that its tools are named `vault_vocab_*`. The vocabulary rule core itself lives in `@vault-mcp/core`, shared with the host's conformance rail, so one vault keeps one vocabulary.
+The vocabulary tools are no longer part of this plugin: since the S7 satellite extraction they ship as the separate `vaultmcp-vocab` plugin, which publishes its four tools to the host, Vault MCP, through `vault-mcp-api` (see [vocabulary-module.md](vocabulary-module.md)). The requirements below are unchanged and are that plugin's to satisfy; what changes for an operator is that it is installed and configured separately, and that its tools are named `vaultmcp_vocab_*`. The vocabulary rule core itself lives in `@vault-mcp/core`, shared with the host's conformance rail, so one vault keeps one vocabulary.
 
 Use controlled vocabulary only when a term changes validation, permission, lifecycle, filing, retrieval, receipt, or recovery. Every vocabulary source has:
 
@@ -150,7 +150,7 @@ Opaque macro-backed dispositions belong in a private profile. Their effects rema
 
 Coordination channels provide discovery, delta reads, read-position attestation, and guarded posting. Handles are cooperative assertions, not authentication.
 
-This capability is no longer part of this plugin: since the S6 satellite extraction it ships as the separate `vault-crosssession` plugin, which publishes its four tools to the host, Vault MCP, through `vault-mcp-api` (see [crosssession.md](crosssession.md)). The requirements below are unchanged and are that plugin's to satisfy; what changes for an operator is that it is installed and configured separately, and that its tools are named `vault_crosssession_*`.
+This capability is no longer part of this plugin: since the S6 satellite extraction it ships as the separate `vaultmcp-crosssession` plugin, which publishes its four tools to the host, Vault MCP, through `vault-mcp-api` (see [crosssession.md](crosssession.md)). The requirements below are unchanged and are that plugin's to satisfy; what changes for an operator is that it is installed and configured separately, and that its tools are named `vaultmcp_crosssession_*`.
 
 Operational requirements:
 

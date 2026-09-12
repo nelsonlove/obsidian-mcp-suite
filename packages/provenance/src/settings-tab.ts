@@ -78,7 +78,7 @@ export class ProvenanceSettingTab extends PluginSettingTab {
     containerEl.createEl("p", {
       cls: "setting-item-description",
       text: hostLoaded
-        ? "Governor is installed: the vault_provenance_check, _reconcile and _regen MCP tools are published to it. " +
+        ? "Governor is installed: the vaultmcp_provenance_check, _reconcile and _regen MCP tools are published to it. " +
           "Note that under an active Governor path allowlist ALL THREE are refused outright — none of them carries " +
           "an argument the host recognizes as a path, so none can be scoped. That is deliberate: the freshness " +
           "answer names every file a note derives from, and the audit reads the whole notes root, so a scoped " +

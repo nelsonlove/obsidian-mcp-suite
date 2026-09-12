@@ -91,7 +91,7 @@ export class FileclassSettingTab extends PluginSettingTab {
       );
     } else {
       say(
-        `Governor is installed and the fileclass CLI was found at ${binary}: the vault_fileclass_list, _schema, ` +
+        `Governor is installed and the fileclass CLI was found at ${binary}: the vaultmcp_fileclass_list, _schema, ` +
           "_explain, _query, _get, _validate, _set and _set_where MCP tools are published to it.",
       );
     }

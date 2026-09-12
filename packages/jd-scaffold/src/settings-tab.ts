@@ -49,7 +49,7 @@ export class JdScaffoldSettingTab extends PluginSettingTab {
     containerEl.createEl("p", {
       cls: "setting-item-description",
       text: hostLoaded
-        ? "The Vault MCP host is installed: the vault_jd_scaffold_standard_zeros, _ensure_category_indexes, _promote_to_folder, _reindex_category, _new_standard_zero, _new_generic_id and _new_stem MCP tools are published to it."
+        ? "The Vault MCP host is installed: the vaultmcp_jd_scaffold_standard_zeros, _ensure_category_indexes, _promote_to_folder, _reindex_category, _new_standard_zero, _new_generic_id and _new_stem MCP tools are published to it."
         : "The Vault MCP host is NOT installed. This plugin's entire surface is the seven MCP tools it publishes to that host, so nothing here does anything until Vault MCP is installed and enabled. (The Governor governance provider is a separate plugin and is not the host — installing it alone does not make these tools reachable.)",
     });
 

@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { promisify } from "node:util";
 // `spawnEnv` (PATH augmentation for spawned processes) and `findBinary` (the
 // executable-file probe) were DEFINED here until the mutating tier's
-// extraction, when the `vault-fileclass` satellite — which spawns the
+// extraction, when the `vaultmcp-fileclass` satellite — which spawns the
 // `fileclass` CLI out of its own plugin — needed both to behave identically to
 // the host's. Publishing beat forking a pair of one-line functions whose whole
 // value is that both sides agree (the `isVisible` / `executeQuickAddChoice` /

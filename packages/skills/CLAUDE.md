@@ -1,10 +1,10 @@
-# Vault Skills (plugin id `vault-skills`) — architecture & working notes for Claude Code
+# Vault Skills (plugin id `vaultmcp-skills`) — architecture & working notes for Claude Code
 
 The skills compiler as its own Obsidian plugin: it compiles the vault's skill / agent / policy / command notes into a Claude Code plugin on disk, and publishes six MCP tools to the Governor host through `vault-mcp-api`. Extracted from the host at the suite split's S4 (`docs/suite-split-design.md` §6, "Skills compiler | private operator | satellite"), following the `packages/quickadd-choices-compile` pilot. Package layout, build/test commands, and the extraction's two consequences are in `README.md`; the user-facing model is `docs/skills.md` at the repo root.
 
 ## Locked decisions (don't relitigate without reason)
 
-- **The six tool names are historical and do NOT change.** `vault_skills_validate`, `_tree`, `_preview`, `_export`, `_release`, `_mark`. Each spec in `src/tools.ts` carries only the BARE half (`validate`, …); the host publishes an external tool as `<sanitized publisher id>_<bare name>`, and `vault-skills` sanitizes to `vault_skills`, so the shipped spellings reproduce exactly. This is the host's own precedent for `governance_revisions` / `governance_submit_revision`: renaming shipped tool names breaks agent sessions for zero semantic gain. **A consequence to keep in mind: the plugin id and the tool namespace are the same string.** Renaming the plugin id renames every tool.
+- **The six tool names are historical and do NOT change.** `vaultmcp_skills_validate`, `_tree`, `_preview`, `_export`, `_release`, `_mark`. Each spec in `src/tools.ts` carries only the BARE half (`validate`, …); the host publishes an external tool as `<sanitized publisher id>_<bare name>`, and `vaultmcp-skills` sanitizes to `vaultmcp_skills`, so the shipped spellings reproduce exactly. This is the host's own precedent for `governance_revisions` / `governance_submit_revision`: renaming shipped tool names breaks agent sessions for zero semantic gain. **A consequence to keep in mind: the plugin id and the tool namespace are the same string.** Renaming the plugin id renames every tool.
 
 - **The compile is WHOLE-VAULT and stays that way.** Parent edges span the tree, so a partial compile produces a broken plugin. Everything that scopes or filters therefore acts on what is RETURNED, never on what is compiled.
 
@@ -12,7 +12,7 @@ The skills compiler as its own Obsidian plugin: it compiles the vault's skill / 
 
 - **`isVisible` / `GuardSettings` come from `@vault-mcp/core`, never a local copy.** They were published there at this extraction precisely so the host's `guard.ts` and this plugin ask one question. A second copy of a guard predicate is the drift this repo has paid for twice.
 
-- **`vault_skills_mark` runs the accept-forbidden guard before any write** (`guardSkillsMark` in `src/tools.ts`): it computes the frontmatter the mark WOULD land and runs `acceptTransitionReason` from `@vault-mcp/core` — the same predicate the fs and Obsidian write primitives use. A mark can never introduce or change an `accepted` / `accepted-by` / `accepted-on` field, or set `acceptance-status` to an accepted value; carrying an existing human-granted value forward unchanged is allowed. The GUI `mark` command routes through the identical function, so the human path is not a bypass. Extraction did not weaken this: the predicate is a published core contract. Pinned by `tests/skills-module.test.mjs` — including that a refusal blocks the WRITE, not just the response.
+- **`vaultmcp_skills_mark` runs the accept-forbidden guard before any write** (`guardSkillsMark` in `src/tools.ts`): it computes the frontmatter the mark WOULD land and runs `acceptTransitionReason` from `@vault-mcp/core` — the same predicate the fs and Obsidian write primitives use. A mark can never introduce or change an `accepted` / `accepted-by` / `accepted-on` field, or set `acceptance-status` to an accepted value; carrying an existing human-granted value forward unchanged is allowed. The GUI `mark` command routes through the identical function, so the human path is not a bypass. Extraction did not weaken this: the predicate is a published core contract. Pinned by `tests/skills-module.test.mjs` — including that a refusal blocks the WRITE, not just the response.
 
 - **Handlers return plain data and THROW on refusal.** The host wraps a return value in `ok()` and a thrown error in `fail()`, so the envelopes agents see are unchanged from the folded era. There is no `ok`/`fail` import here; those helpers are host-internal.
 
@@ -28,7 +28,7 @@ The skills compiler as its own Obsidian plugin: it compiles the vault's skill / 
 
 - `npm run build` — esbuild, emits `main.js`. The build embeds `assets/new-skill/SKILL.md` and `conventions.md` as the `__NEW_SKILL_MD__` / `__NEW_SKILL_CONVENTIONS__` defines that `src/kernel/static-skills.ts` reads; absent assets ⇒ empty defines ⇒ `STATIC_FILES` is empty, which is exactly what happens under `tsx` in tests.
 - `npm test` — `pretest` builds `@vault-mcp/core`, then `tsc --noEmit && node --import tsx --test`. **The `pretest` is load-bearing, not tidiness:** the tests import published core contracts, which resolve to `packages/core/dist` — the COMPILED output. Without the rebuild you test the previous build's bytes.
-- Install for testing: copy `main.js` + `manifest.json` into `<vault>/.obsidian/plugins/vault-skills/` and reload the plugin. During development add an empty `.hotreload` file in that directory so the hot-reload plugin picks up rebuilds — it belongs to the vault install, not to this repo.
+- Install for testing: copy `main.js` + `manifest.json` into `<vault>/.obsidian/plugins/vaultmcp-skills/` and reload the plugin. During development add an empty `.hotreload` file in that directory so the hot-reload plugin picks up rebuilds — it belongs to the vault install, not to this repo.
 
 ## Headless testing
 

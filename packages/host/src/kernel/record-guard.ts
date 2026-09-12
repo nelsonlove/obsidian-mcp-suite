@@ -64,7 +64,7 @@ export class RecordImmutableError extends Error {
  * does not, and an exemption keyed on a tool whose contract is only
  * sometimes an append is exactly the guess this set avoids.)
  *
- * KNOWN, deliberately NOT exempted: `vault_crosssession_post` — the cross-
+ * KNOWN, deliberately NOT exempted: `vaultmcp_crosssession_post` — the cross-
  * session channel plugin's posting tool (`packages/crosssession/src/tools.ts`;
  * spelled `crosssession_post` before the S6 satellite extraction, when it was
  * this plugin's own module tool). It is the one other tool whose whole

@@ -24,7 +24,7 @@ sidebar panes from prior standalone plugins:
 - `governance/pane.ts` (`GovernanceReviewView`) — ported from `obsidian-stewardship`
   (#83). Sidebar `ItemView`, ribbon icon, ordinary `Component`-scoped mount/unmount
   via `governance/wiring.ts`.
-- `skills/pane.ts` (`SkillsPreviewView`) — ported from the standalone `vault-skills`
+- `skills/pane.ts` (`SkillsPreviewView`) — ported from the standalone `vaultmcp-skills`
   plugin (#82 residuals). Same pane+wiring shape; explicitly documented as
   "read-only... compiles the vault through the folded skills core... the exact
   same core the read-only MCP tool runs, so the pane and the tool can never

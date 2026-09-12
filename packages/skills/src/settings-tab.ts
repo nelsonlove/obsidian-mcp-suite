@@ -78,8 +78,8 @@ export class SkillsSettingTab extends PluginSettingTab {
     containerEl.createEl("p", {
       cls: "setting-item-description",
       text: hostLoaded
-        ? "Governor is installed: the six vault_skills_* MCP tools are published to it. Note that under an active Governor path allowlist all of them except vault_skills_mark are refused — they carry no path argument to scope."
-        : "Governor is not installed. The pane, commands, and export all still work; only the six vault_skills_* MCP tools are unpublished.",
+        ? "Governor is installed: the six vaultmcp_skills_* MCP tools are published to it. Note that under an active Governor path allowlist all of them except vaultmcp_skills_mark are refused — they carry no path argument to scope."
+        : "Governor is not installed. The pane, commands, and export all still work; only the six vaultmcp_skills_* MCP tools are unpublished.",
     });
   }
 }

@@ -723,7 +723,7 @@ describe("MCP mandate tools — draft-and-list only, allowlist-disciplined", () 
     // a subset where an object-typed property degrades to `z.unknown()`: it
     // validates nothing and strips nothing, so `delegate` reaches the handler
     // exactly as the caller sent it. Same for `transformation`, `budgets` and
-    // the two {id, version} arrays. This is the `vault_skills_release` semver
+    // the two {id, version} arrays. This is the `vaultmcp_skills_release` semver
     // bug avoided rather than repeated.
     const { tools, store } = mountedTools();
     const draftTool = tools.get("governance_mandate_draft");

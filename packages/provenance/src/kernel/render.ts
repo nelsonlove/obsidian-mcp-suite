@@ -42,7 +42,7 @@ export function reinsertSections(rendered: string, preserved: Record<string, str
  *  acceptance field.
  *
  *  `sourceCount` is the number of files the `derived-from` set resolved to at
- *  generation time; stamping it lets `vault_provenance_check` later detect sources
+ *  generation time; stamping it lets `vaultmcp_provenance_check` later detect sources
  *  DELETED out of the globbed set, which no mtime comparison can see. Omitted
  *  (or not a non-negative integer) ⇒ the field is not emitted and the note
  *  checks exactly as it did before the witness existed. */

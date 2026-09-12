@@ -75,11 +75,11 @@ interface VaultMcpSettings {
    * mirroring the scheme settings shape.
    *
    * MIGRATION-ONLY SINCE S7. Nothing in this plugin reads it any more — the
-   * four vocabulary tools and their settings form left for the `vault-vocab`
+   * four vocabulary tools and their settings form left for the `vaultmcp-vocab`
    * satellite at the read-tier extraction, and the host's conformance rail
    * builds its registry from `DEFAULT_VOCABULARIES` (it always did; it never
    * read this field). It is deliberately still declared, still defaulted, and
-   * still persisted, because it is the ADOPTION SOURCE: `vault-vocab` copies
+   * still persisted, because it is the ADOPTION SOURCE: `vaultmcp-vocab` copies
    * it once on its first load and never writes back. Deleting it here would
    * destroy a user's configuration before the plugin that inherits it had a
    * chance to read it. Remove it only after the adoption window is closed,

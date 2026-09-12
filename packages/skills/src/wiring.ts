@@ -16,7 +16,7 @@
 //
 // ── What routes through the guarded core ─────────────────────────────────────
 // The mutating command `mark` writes note frontmatter through `guardSkillsMark` — the SAME
-// accept-forbidden guard the `vault_skills_mark` tool uses (see commands.ts). `export` /
+// accept-forbidden guard the `vaultmcp_skills_mark` tool uses (see commands.ts). `export` /
 // `release` call `runExport` directly — the exact function the tools call — materializing to a
 // disk dir outside the vault (no note frontmatter touched, so no accept guard needed). Nothing
 // here reimplements a write or bypasses the mark guard. Extraction changed none of that: the

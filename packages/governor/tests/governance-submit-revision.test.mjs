@@ -292,7 +292,7 @@ describe("re-applied schema bounds — the boundary keeps `type`, not `min`/`max
   // `description` and string `enum` survive; `min`, `max`, `default` and NESTED
   // OBJECT SHAPES do not. So `z.string().min(1)` validates nothing once
   // published, and every bound has to run again in the handler. This is the
-  // `vault_skills_release` semver bug avoided rather than repeated — and it is
+  // `vaultmcp_skills_release` semver bug avoided rather than repeated — and it is
   // pinned here because a schema that LOOKS constrained is the failure mode.
   test("an empty `path` refuses invalid_argument rather than reaching the read", async () => {
     let reads = 0;

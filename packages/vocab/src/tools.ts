@@ -1,4 +1,4 @@
-// tools.ts — the vault-vocab satellite's tool surface: the controlled
+// tools.ts — the vaultmcp-vocab satellite's tool surface: the controlled
 // vocabulary's READ surface, four tools published to the Governor host through
 // `vault-mcp-api` (see main.ts):
 //
@@ -42,16 +42,16 @@
 // ── The published names CHANGED, and the `obsidian_` prefix went with them ──
 //
 // The host publishes an external tool as `<sanitized publisher id>_<bare name>`
-// (`sanitizeOwnerId`). This plugin's id is `vault-vocab`, which sanitizes to
-// `vault_vocab`, so the four bare names below go on the wire as
-// `vault_vocab_vocabularies` / `_resolve_term` / `_validate_terms` /
+// (`sanitizeOwnerId`). This plugin's id is `vaultmcp-vocab`, which sanitizes to
+// `vaultmcp_vocab`, so the four bare names below go on the wire as
+// `vaultmcp_vocab_vocabularies` / `_resolve_term` / `_validate_terms` /
 // `_list_vocabulary`. The shipped module spelled them `obsidian_vocabularies`
 // and friends; the `obsidian_` prefix was the HOST's built-in namespace, not
 // this module's name, so keeping it would have published
-// `vault_vocab_obsidian_vocabularies` — a name that says the module twice and
+// `vaultmcp_vocab_obsidian_vocabularies` — a name that says the module twice and
 // the namespace not at all. Stripping it is a CHOICE, not a forced move: the
 // host's F1 check (`external-tools.ts`) tests the PUBLISHED name for an
-// `obsidian_` prefix, and `vault_vocab_obsidian_vocabularies` does not start
+// `obsidian_` prefix, and `vaultmcp_vocab_obsidian_vocabularies` does not start
 // with `obsidian_`, so it would have registered. See CLAUDE.md for the rename
 // table and the one-line reversal.
 //
@@ -75,7 +75,7 @@
 //     surprising fact about this extraction and it is pinned by test.
 //
 // All four declare `readOnly: true`, which the host DISTRUSTS unless
-// `vault-vocab` appears in the user's `trustedReadOnlyPlugins` setting.
+// `vaultmcp-vocab` appears in the user's `trustedReadOnlyPlugins` setting.
 // Untrusted ⇒ all four register as MUTATING ⇒ read-only mode blocks all four,
 // and each takes a write-queue slot and a journal record. Trust restores
 // read-only-mode availability but does NOT change F3 (trust answers read-only
@@ -98,7 +98,7 @@
 //     it lets through it is reachable: the host scopes the `path` ARGUMENT, but
 //     the vocabulary the answer is computed against is not the argument and is
 //     named by no argument — the same "discovered target" shape as
-//     `vault_crosssession_post`'s log file.
+//     `vaultmcp_crosssession_post`'s log file.
 //
 // What that discloses to a session under an allowlist, precisely (it is
 // narrower than a body read, and wider than nothing):
@@ -142,7 +142,7 @@
 // through a deliberately small subset (`json-schema-to-zod.ts`): `type`,
 // `description`, STRING `enum` and the object's `required` list survive;
 // `default`, `min`, `max` and `pattern` DO NOT. So every `.min(1)` below is
-// re-applied in the handler (`requireText`) — the `vault_skills_release` semver
+// re-applied in the handler (`requireText`) — the `vaultmcp_skills_release` semver
 // lesson. `kind`'s enum and `list_vocabulary`'s requirement of it do survive,
 // and are re-checked anyway because both handlers branch on the value.
 //
