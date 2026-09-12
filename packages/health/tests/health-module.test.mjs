@@ -1,6 +1,6 @@
 /**
  * health-module.test.mjs — the vaultmcp-health satellite: src/kernel/* (the pure
- * tiered-findings scanner, ported from the standalone obsidian-vaultmcp-health) and
+ * tiered-findings scanner, ported from the standalone obsidian-vault-health) and
  * src/tools.ts (the two published tools), all headless.
  *
  * Covered:

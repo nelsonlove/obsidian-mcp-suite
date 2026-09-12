@@ -7,7 +7,9 @@
 //      and an opt-in export-on-save trigger (wiring.ts);
 //   2. the AGENT surface — six MCP tools published to the Governor host through
 //      vault-mcp-api (tools.ts), on the wire as `vaultmcp_skills_validate` …
-//      `vaultmcp_skills_mark`, the same names they have always had.
+//      `vaultmcp_skills_mark` — spelled `vault_skills_*` from the S4
+//      extraction until #394 moved the plugin id into the `vaultmcp-`
+//      namespace. See THE NAMESPACE MOVE below.
 //
 // SATELLITE OF THE SUITE (suite-split design §6: "Skills compiler | private
 // operator | satellite — the biggest single extraction; least entangled").

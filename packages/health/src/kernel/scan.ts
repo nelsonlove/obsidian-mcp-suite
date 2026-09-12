@@ -1,5 +1,5 @@
 // scan.ts — the pure tiered-findings core of the vaultmcp-health scanner, ported
-// verbatim (behavior-for-behavior) from the standalone `obsidian-vaultmcp-health`'s
+// verbatim (behavior-for-behavior) from the standalone `obsidian-vault-health`'s
 // Python classifier. Obsidian-free: it runs over an injected `HealthSource`, so
 // it is headless-testable against a synthetic vault. READ-ONLY — it emits
 // findings and never mutates; the fixing is a separate skill, out of scope.

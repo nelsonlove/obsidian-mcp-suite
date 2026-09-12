@@ -1,6 +1,6 @@
 // The skills GUI wiring — the in-Obsidian HUMAN surface: the Preview pane, the six commands,
 // the ribbon icon, and the (opt-in) export-on-save trigger. Written for the standalone
-// vaultmcp-skills plugin, folded into the Governor host (#82 residuals), and extracted back into
+// vault-skills plugin, folded into the Governor host (#82 residuals), and extracted back into
 // this satellite at the suite split's S4. `wireSkills(plugin, deps)` is called ONCE from
 // main.ts's onload — UNCONDITIONALLY now, because this plugin being installed and enabled IS
 // the toggle. There is no host module flag to consult any more.

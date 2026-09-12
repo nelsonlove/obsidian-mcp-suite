@@ -1,5 +1,5 @@
 // The skills Preview pane — the compiled Claude Code output, browsable before export.
-// Ported from the standalone vaultmcp-skills plugin (obsidian/src/preview-view.ts) as part of
+// Ported from the standalone vault-skills plugin (obsidian/src/preview-view.ts) as part of
 // the GUI fold (#82 residuals). READ-ONLY: it never writes; it compiles the vault through
 // the folded skills core (`previewVault`, kernel/skills) and diffs it against the current
 // export dir — the exact same core the read-only MCP `vaultmcp_skills_preview` tool runs, so the

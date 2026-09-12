@@ -4,7 +4,7 @@
 
 ## What vaultmcp-skills is (so "fold" means something concrete)
 
-`~/repos/obsidian-vaultmcp-skills` (GitHub `nelsonlove/obsidian-vaultmcp-skills`, v0.8.0) is **an Obsidian plugin that compiles vault notes into a Claude Code plugin**. Two parts in one repo:
+`~/repos/obsidian-vault-skills` (GitHub `nelsonlove/obsidian-vault-skills`, v0.8.0) is **an Obsidian plugin that compiles vault notes into a Claude Code plugin**. Two parts in one repo:
 
 1. **The producer** — an Obsidian plugin (`obsidian/`, id `vaultmcp-skills`) that reads `type:`-marked notes (skill / agent / policy / command — "frontmatter over geography") from the metadata cache, builds + validates a hierarchy (parent wikilinks, policy injection by lineage, transclusion inlining, a 5-level cap), and **materializes a Claude Code plugin to disk** at `~/.claude/skills/vaultmcp-skills` (skills/agents/commands + a bundled `new-skill` helper).
 2. **An embedded MCP server** — 6 `vaultmcp_skills_*` tools (`validate`/`tree`/`preview` read-only, `export`/`release`/`mark` read-write), reached over a **unix-socket + stdio bridge that explicitly mirrors vault-mcp's** (its 0.7.0 bridge is a copy of vault-mcp 0.3.0/#51 — same restart-survival, same handshake replay, same reconnect).

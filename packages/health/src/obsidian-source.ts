@@ -10,7 +10,7 @@
 //
 // The live `metadataCache.resolvedLinks` / `unresolvedLinks` are returned
 // DIRECTLY — the scan only READS them, and they already handle basename / alias /
-// embed resolution, which is exactly why the standalone `obsidian-vaultmcp-health`
+// embed resolution, which is exactly why the standalone `obsidian-vault-health`
 // scanner reached into the live app for this half rather than re-implementing a
 // resolver on disk. Inside a plugin the standalone's whole launch / wait-for-
 // metadataCache / eval / quit dance disappears: the cache is simply there.

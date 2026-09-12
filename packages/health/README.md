@@ -6,7 +6,7 @@ It never writes. There is no mutating registrar, no write guard and no accept/ap
 
 ## Lineage
 
-Born as the standalone `obsidian-vaultmcp-health` Bash + Advanced-URI-`eval` scanner: launch Obsidian, wait for `metadataCache` to settle, read the resolver through one `eval`, quit. Folded into the Governor host as the `health` capability module, which deleted that whole launch/readiness/quit dance — a plugin simply holds a live `app.metadataCache`. Extracted to its own plugin at the suite split's **S7**, the read-tier satellites, following `packages/quickadd-choices-compile` (the pilot), `packages/skills` (S4), `packages/triage` (S5) and `packages/crosssession` (S6). The tiered classifier is the same code through all three homes; only who mounts it differs.
+Born as the standalone `obsidian-vault-health` Bash + Advanced-URI-`eval` scanner: launch Obsidian, wait for `metadataCache` to settle, read the resolver through one `eval`, quit. Folded into the Governor host as the `health` capability module, which deleted that whole launch/readiness/quit dance — a plugin simply holds a live `app.metadataCache`. Extracted to its own plugin at the suite split's **S7**, the read-tier satellites, following `packages/quickadd-choices-compile` (the pilot), `packages/skills` (S4), `packages/triage` (S5) and `packages/crosssession` (S6). The tiered classifier is the same code through all three homes; only who mounts it differs.
 
 ## Package layout
 

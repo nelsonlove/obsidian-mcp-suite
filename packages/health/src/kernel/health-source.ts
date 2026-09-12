@@ -6,7 +6,7 @@
 // system was built around (ProvenanceSource / LinkSource / VocabSource) and that
 // every satellite in the suite keeps.
 //
-// Ported from the standalone `obsidian-vaultmcp-health` Bash+eval scanner, whose
+// Ported from the standalone `obsidian-vault-health` Bash+eval scanner, whose
 // live half read Obsidian's resolver via one Advanced-URI `eval` (link/attachment/
 // tag state) and whose on-disk half read the vault directory (empty notes,
 // duplicate bodies). Here that whole launch/readiness/quit dance disappears — the

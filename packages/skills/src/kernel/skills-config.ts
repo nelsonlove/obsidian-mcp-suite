@@ -3,7 +3,7 @@
 // DetectConfig. Obsidian-free (node built-ins only), so it moves with the
 // rest of the pure core and is headless-testable.
 //
-// In the STANDALONE vaultmcp-skills plugin this logic lived in `settings.ts`
+// In the STANDALONE vault-skills plugin this logic lived in `settings.ts`
 // (coupled to `PluginSettingTab`) and `paths.ts`. Here only the pure halves
 // come across: the settings-tab UI is replaced by the config-host's generic,
 // manifest-driven renderer (SKILLS_MANIFEST in mcp/modules-mount.ts).
@@ -32,7 +32,7 @@ export interface SkillsConfig {
   typeSource: "frontmatter" | "tags";
   /** Tags mode: `#{tagPrefix}{kind}` (e.g. `agent/` -> `#agent/skill`). */
   tagPrefix: string;
-  /** How the vaultmcp-skills frontmatter fields are namespaced. */
+  /** How the vault-skills frontmatter fields are namespaced. */
   fieldMode: "prefix" | "nested";
   /** prefix mode: prefixes each field (blank => bare top-level fields). */
   fieldPrefix: string;
@@ -57,13 +57,13 @@ export interface SkillsConfig {
  * renders them and `register()` receives them merged under any user override.
  * `exportOnSave` defaults OFF: the GUI's on-save export is opt-in. */
 export const DEFAULT_SKILLS_CONFIG: SkillsConfig = {
-  outputDir: "~/.claude/skills/vaultmcp-skills",
-  pluginName: "vaultmcp-skills",
+  outputDir: "~/.claude/skills/vault-skills",
+  pluginName: "vault-skills",
   typeSource: "frontmatter",
   tagPrefix: "agent/",
   fieldMode: "prefix",
   fieldPrefix: "",
-  fieldKey: "vaultmcp-skills",
+  fieldKey: "vault-skills",
   assetsRoot: "",
   releaseDir: "",
   exportOnSave: false,

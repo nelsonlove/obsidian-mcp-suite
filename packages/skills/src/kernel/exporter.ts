@@ -10,13 +10,13 @@ import type { SkillsSource } from "./skills-source.js";
 import { STATIC_FILES } from "./static-skills.js";
 import { assetDirFor, collectAssets, copyAsset, type CollectAssetsOptions } from "./assets.js";
 
-const MANIFEST_NAME = ".vaultmcp-skills-manifest.json";
+const MANIFEST_NAME = ".vault-skills-manifest.json";
 
-/** How the vaultmcp-skills fields are namespaced in a note's frontmatter. */
+/** How the vault-skills fields are namespaced in a note's frontmatter. */
 export interface FieldConfig {
   mode: "prefix" | "nested";
   prefix: string; // e.g. "vs-" → vs-type, vs-parent (prefix mode)
-  key: string;    // e.g. "vaultmcp-skills" → nested object (nested mode)
+  key: string;    // e.g. "vault-skills" → nested object (nested mode)
 }
 
 /** FieldConfig plus how a note's *kind* (skill/agent/policy) is declared. In "tags" mode the
@@ -28,7 +28,7 @@ export interface DetectConfig extends FieldConfig {
   tagPrefix?: string; // e.g. "agent/" → #agent/skill, #agent/agent, #agent/policy
 }
 
-export const DEFAULT_FIELDS: FieldConfig = { mode: "prefix", prefix: "", key: "vaultmcp-skills" };
+export const DEFAULT_FIELDS: FieldConfig = { mode: "prefix", prefix: "", key: "vault-skills" };
 export const DEFAULT_TAG_PREFIX = "agent/";
 
 /** The note `type` values that produce plugin output (skills, agents, the policies folded into
@@ -125,12 +125,12 @@ function resolveParents(src: SkillsSource, sourcePath: string, v: unknown): stri
   return parentLinkpaths(v).map((lp) => src.resolveLink(lp, sourcePath) ?? `⟂unresolved:${lp}`);
 }
 
-// The vaultmcp-skills fields the transform reads (parent is handled separately, resolved to
+// The vault-skills fields the transform reads (parent is handled separately, resolved to
 // paths), plus the SKILL.md passthrough fields — all namespaced the same way.
 const VS_FIELDS = [...new Set(["type", "root", "name", "id", "label", "description", "version", "tools", "model",
   "crosscutting", "slot", "severity", PRELOAD_FIELD, NO_SKILLS_FIELD, ...SKILL_PASSTHROUGH_FIELDS])];
 
-/** Extract a bare view of the vaultmcp-skills fields (+ the raw parent value) per the field mode,
+/** Extract a bare view of the vault-skills fields (+ the raw parent value) per the field mode,
  *  so the pure transform stays namespace-agnostic. */
 export function fieldView(fm: Record<string, unknown>, cfg: FieldConfig): { view: Record<string, unknown>; parent: unknown } {
   if (cfg.mode === "nested") {
@@ -159,7 +159,7 @@ export async function collectNotes(src: SkillsSource, fields: DetectConfig = DEF
     const { view, parent } = fieldView(fm, fields);
     const kind = detectKind(view, fm, fields);
     if (kind === "ambiguous") {
-      warnings?.push(`${note.path}: multiple vaultmcp-skills kind tags — skipped (tag it as exactly one of skill/agent/policy)`);
+      warnings?.push(`${note.path}: multiple vault-skills kind tags — skipped (tag it as exactly one of skill/agent/policy)`);
       continue;
     }
     if (!kind) continue;
@@ -245,7 +245,7 @@ export async function runExport(src: SkillsSource, opts: ExportOptions): Promise
   }
 
   fs.writeFileSync(manifestPath, JSON.stringify({
-    generatedFrom: "obsidian-vaultmcp-skills",
+    generatedFrom: "obsidian-vault-skills",
     vault: vaultPath ?? null,
     count: nextFiles.length,
     files: nextFiles.sort(),
@@ -329,7 +329,7 @@ function readManifestFiles(outputDir: string): string[] {
 }
 
 /** Shared read-only core for `validate` and `tree`: collect + transform, no write. */
-export async function analyzeVault(src: SkillsSource, fields: DetectConfig = DEFAULT_FIELDS, pluginName = "vaultmcp-skills", preloadCap?: number): Promise<Analysis> {
+export async function analyzeVault(src: SkillsSource, fields: DetectConfig = DEFAULT_FIELDS, pluginName = "vault-skills", preloadCap?: number): Promise<Analysis> {
   const c = await collectAndTransform(src, fields, pluginName, preloadCap);
   return {
     tree: c.tree, errors: c.errors, warnings: c.warnings, counts: countsOf(c.tree, c.notes),

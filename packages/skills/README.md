@@ -6,7 +6,7 @@ The user-facing deep reference — the flat output model, the multi-valued `pare
 
 ## Lineage
 
-Written as the standalone `obsidian-vaultmcp-skills` plugin, folded into the Governor host as a capability module (`modules.skills`, issue #82), and extracted back out to its own plugin at the suite split's S4 — the design doc's `docs/suite-split-design.md` §6 row *"Skills compiler | private operator | satellite — the biggest single extraction; least entangled"*. It follows `packages/quickadd-choices-compile`, the pilot satellite. The compiler code is the same code through all three homes; only who mounts it differs.
+Written as the standalone `obsidian-vault-skills` plugin, folded into the Governor host as a capability module (`modules.skills`, issue #82), and extracted back out to its own plugin at the suite split's S4 — the design doc's `docs/suite-split-design.md` §6 row *"Skills compiler | private operator | satellite — the biggest single extraction; least entangled"*. It follows `packages/quickadd-choices-compile`, the pilot satellite. The compiler code is the same code through all three homes; only who mounts it differs.
 
 ## Package layout
 

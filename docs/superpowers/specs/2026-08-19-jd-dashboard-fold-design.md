@@ -15,7 +15,7 @@ twelve commands, and assorted vault-scaffolding logic. Its sibling repo
 jd-dashboard is the other half of the "companion to jd-cli" pair, and the same
 consolidation question applies: does its remaining functionality belong as a
 standalone plugin, or does it fold into vault-mcp the way survey, governance
-(`obsidian-stewardship`), and skills (`obsidian-vaultmcp-skills`) already did?
+(`obsidian-stewardship`), and skills (`obsidian-vault-skills`) already did?
 
 ## Precedent (two, both already load-bearing)
 

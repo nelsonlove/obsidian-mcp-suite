@@ -1,5 +1,5 @@
 // Export-on-save trigger — the pure half of the skills GUI's save hook, ported
-// verbatim from the standalone vaultmcp-skills plugin (obsidian/src/export-trigger.ts)
+// verbatim from the standalone vault-skills plugin (obsidian/src/export-trigger.ts)
 // as part of the GUI fold (#82 residuals). Obsidian-free by construction, so the
 // debounce coalescing and the change-relevance predicate are unit-testable
 // outside the Obsidian runtime (see tests/skills-gui.test.mjs).

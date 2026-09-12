@@ -8,7 +8,7 @@
 // `modules.skills.config` — output dir, plugin name, detection mode, field
 // namespacing, assets root, release dir, export-on-save, preload cap. A user who
 // upgrades gets a brand-new plugin with a brand-new, EMPTY data.json, and would
-// silently start exporting to the default `~/.claude/skills/vaultmcp-skills`
+// silently start exporting to the default `~/.claude/skills/vault-skills`
 // instead of wherever they actually publish. That is a data-shaped surprise, so
 // the satellite adopts the host's values once, on first load.
 //
@@ -99,7 +99,7 @@ export function adoptHostConfig(
 // Ported verbatim from SKILLS_CONFIG_FIELDS in the host's mcp/modules-mount.ts —
 // same keys, same labels, same help text. The host rendered them through its
 // generic manifest-driven config tab; this plugin renders them itself, which is
-// the settings tab the standalone vaultmcp-skills plugin had before the fold. The
+// the settings tab the standalone vault-skills plugin had before the fold. The
 // help text is the user-facing documentation of each key, so it moves with the
 // keys rather than being rewritten.
 
@@ -118,9 +118,9 @@ export const SKILLS_FIELDS: SkillsField[] = [
   { key: "pluginName", label: "Plugin name", type: "text", help: "Claude Code plugin name — also the command/subagent namespace." },
   { key: "typeSource", label: "Type source", type: "select", options: ["frontmatter", "tags"], help: "How a note declares its kind: the `type` frontmatter field, or a kind tag." },
   { key: "tagPrefix", label: "Tag prefix", type: "text", help: "Tags mode: kind tags are #{prefix}skill / #{prefix}agent / … (e.g. agent/ → #agent/skill)." },
-  { key: "fieldMode", label: "Frontmatter field mode", type: "select", options: ["prefix", "nested"], help: "How vaultmcp-skills fields are namespaced: prefix (bare/prefixed top-level fields) or nested (all under one key)." },
+  { key: "fieldMode", label: "Frontmatter field mode", type: "select", options: ["prefix", "nested"], help: "How vault-skills fields are namespaced: prefix (bare/prefixed top-level fields) or nested (all under one key)." },
   { key: "fieldPrefix", label: "Field prefix", type: "text", help: "prefix mode: prefixes each field, e.g. vs- → vs-type. Blank ⇒ bare top-level fields (type, parent, …)." },
-  { key: "fieldKey", label: "Field key", type: "text", help: "nested mode: nests every field under this one key, e.g. vaultmcp-skills." },
+  { key: "fieldKey", label: "Field key", type: "text", help: "nested mode: nests every field under this one key, e.g. vault-skills." },
   { key: "assetsRoot", label: "Supporting-files tree", type: "text", help: "Root of a parallel filesystem tree of skills' supporting files. Blank ⇒ none. ~ is expanded." },
   { key: "releaseDir", label: "Release repo directory", type: "text", help: "A git checkout vaultmcp_skills_release targets. Blank ⇒ release disabled. ~ is expanded." },
   { key: "exportOnSave", label: "Export on save", type: "toggle", help: "When on, this plugin re-exports automatically (debounced) whenever a skill/agent/policy/command note changes. Off ⇒ export only when you run it. Ignored by the MCP tool surface." },

@@ -1,5 +1,5 @@
 // The skills GUI commands — validate / tree / mark / release, plus the shared modals and the
-// version-bump helper. Ported from the standalone vaultmcp-skills plugin (obsidian/src/commands.ts)
+// version-bump helper. Ported from the standalone vault-skills plugin (obsidian/src/commands.ts)
 // as part of the GUI fold (#82 residuals), refactored to take a plain `SkillsGuiCtx` instead of
 // the whole plugin so the pure helpers (`bumpPatch`) stay unit-testable.
 //

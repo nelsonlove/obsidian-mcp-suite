@@ -3,7 +3,7 @@
 // While the compiler was a capability module inside the Governor host, its
 // configuration was rendered by the host's generic, manifest-driven config tab.
 // A satellite has no such host, so it renders its own — which is what the
-// standalone vaultmcp-skills plugin did before the fold. The FIELDS themselves
+// standalone vault-skills plugin did before the fold. The FIELDS themselves
 // (keys, labels, help text) live in settings.ts as pure data, so they stay
 // headless-testable and the tab is only the rendering.
 //
