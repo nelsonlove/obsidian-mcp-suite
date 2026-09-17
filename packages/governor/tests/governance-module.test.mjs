@@ -145,11 +145,15 @@ describe("provider settings tab: config keys match what the pane actually reads"
     assert.ok(written.viaHelper.length >= 2, "the tab must still write badge toggles through toggleField");
     assert.ok(written.literal.length >= 3, "the tab must still write the acceptance fields directly");
 
-    const readers = [...Object.keys(DEFAULT_GOVERNANCE_SETTINGS), ...Object.keys(DEFAULT_ACCEPTANCE_SETTINGS)];
+    // `guardedTerritories` (#321) has no DEFAULT_* object of its own — its default is the
+    // CALLER-supplied EXCLUDED_PREFIXES, not a fixed record — so it is named explicitly rather
+    // than harvested from a defaults object like the other two families.
+    const readers = [...Object.keys(DEFAULT_GOVERNANCE_SETTINGS), ...Object.keys(DEFAULT_ACCEPTANCE_SETTINGS), "guardedTerritories"];
     assert.deepEqual([...written.all].sort(), [...readers].sort());
 
-    // And the defaults ARE read: every key the two DEFAULT_ objects declare is actually consulted
-    // by the coercers, so a default cannot become decorative.
+    // And the defaults ARE read: every key the two DEFAULT_ objects declare (plus
+    // guardedTerritories) is actually consulted by the coercers, so a default cannot become
+    // decorative.
     const read = keysReadByCoercers(code("kernel/settings.ts"));
     for (const key of readers) assert.ok(read.has(key), `${key} is defaulted but never read out of the config`);
   });
