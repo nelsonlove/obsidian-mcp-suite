@@ -16,7 +16,7 @@
 // bundles.
 
 import { App, PluginSettingTab, Setting, type Plugin } from "obsidian";
-import { DEFAULT_ACCEPTANCE_SETTINGS } from "./kernel/settings.js";
+import { DEFAULT_ACCEPTANCE_SETTINGS, governanceTerritoriesSettings, EXCLUDED_PREFIXES } from "./kernel/settings.js";
 import { renderGovernanceSettings } from "./wiring/wiring.js";
 import type { GovernorSettings } from "./settings.js";
 
@@ -44,6 +44,31 @@ export class GovernorSettingTab extends PluginSettingTab {
         "serve them. With the host plugin absent or disabled, nothing here has anything to govern — install and " +
         "enable Vault MCP first.",
     });
+
+    containerEl.createEl("h4", { text: "Guarded territories" });
+    new Setting(containerEl)
+      .setName("Guarded territories")
+      .setDesc(
+        "One vault path prefix per line. A guarded territory is a top-level area Governor must " +
+          "never review, propose against, record into local history, or otherwise retain a copy " +
+          "of — archival or legally sensitive folders, not live governed content. Every part of " +
+          "this plugin (the review pane, proposals, auto-accept, local history) checks this list " +
+          "before touching a note. Blank ⇒ the built-in default below, so leaving this untouched " +
+          "changes nothing (#321)."
+      )
+      .addTextArea((t) => {
+        t.inputEl.rows = 4;
+        t
+          .setPlaceholder(EXCLUDED_PREFIXES.join("\n"))
+          .setValue(governanceTerritoriesSettings(this.plugin.settings.config, EXCLUDED_PREFIXES).territories.join("\n"))
+          .onChange(async (value) => {
+            this.plugin.settings.config.guardedTerritories = value
+              .split("\n")
+              .map((x) => x.trim())
+              .filter(Boolean);
+            await this.plugin.saveSettings();
+          });
+      });
 
     new Setting(containerEl)
       .setName("Review pane")

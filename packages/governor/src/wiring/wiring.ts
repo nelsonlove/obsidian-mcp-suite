@@ -108,7 +108,7 @@ import {
 import { autoAcceptPolicyOf, protectedPropertyDrift } from "../kernel/protected-policy.js";
 import type { RenameIndex } from "../kernel/auto-accept/detectors.js";
 import { badgeVisible } from "../kernel/badge.js";
-import { governanceDisplaySettings, governanceAcceptanceSettings } from "../kernel/settings.js";
+import { governanceDisplaySettings, governanceAcceptanceSettings, governanceTerritoriesSettings } from "../kernel/settings.js";
 import { isRealGesture } from "../kernel/gesture.js";
 import {
   isAcceptEligible,
@@ -116,7 +116,7 @@ import {
   type AcceptEligibilityCtx,
 } from "../kernel/menu-eligibility.js";
 import { GovernanceReviewView, VIEW_TYPE_GOVERNANCE, confirmAdopt, confirmMenuAccept, renderAllowlist, wireAdoptButton, ADOPT_BASELINE_DESC, acceptThroughGate, type ReviewController, type RevisingItem, renderLegacyRetiredNotice, confirmCutover, confirmRollbackCutover, noticeGestureBlocked, confirmBindChain } from "./pane.js";
-import { isExcludedTerritory } from "@vault-mcp/core";
+import { isExcludedTerritory, EXCLUDED_PREFIXES } from "@vault-mcp/core";
 
 // Guarded territories moved to ./territories.ts when observation capture became
 // the second consumer — one list, so the pane and capture can never disagree
@@ -505,11 +505,19 @@ async function journalSignature(plugin: Plugin): Promise<string> {
 }
 
 // ── governed-note enumeration (module-scope helpers) ─────────────────────────
-function isExcluded(path: string): boolean {
-  return isExcludedTerritory(path);
+// Guarded territories (#321): read live off the plugin's config, exactly like
+// displaySettings/acceptanceSettings above, so a human edit in the settings tab
+// takes effect on the next call — no reload. A blank/absent config falls back
+// to @vault-mcp/core's EXCLUDED_PREFIXES, which is what keeps upgrades from a
+// pre-#321 install behaving identically.
+function territoriesOf(plugin: Plugin): string[] {
+  return governanceTerritoriesSettings(configReaders.get(plugin)?.() ?? {}, EXCLUDED_PREFIXES).territories;
+}
+function isExcluded(plugin: Plugin, path: string): boolean {
+  return isExcludedTerritory(path, territoriesOf(plugin));
 }
 function governedMarkdownFiles(plugin: Plugin): TFile[] {
-  return plugin.app.vault.getMarkdownFiles().filter((f) => !isExcluded(f.path));
+  return plugin.app.vault.getMarkdownFiles().filter((f) => !isExcluded(plugin, f.path));
 }
 
 // ── accept / revert / adopt — module-scope, closure-captured only by UI handlers ──
@@ -680,7 +688,7 @@ function listProposed(plugin: Plugin): ProposedItem[] {
     ],
     mtime: file.stat.mtime,
   }));
-  return buildProposedList(candidates, getCachedPending(plugin).map((p) => p.path), isExcluded);
+  return buildProposedList(candidates, getCachedPending(plugin).map((p) => p.path), (path) => isExcluded(plugin, path));
 }
 // The metadata-cache acceptance-status of ONE note — plain display data for the pane's
 // context-aware Accept surfacing (button tooltip + Notice). Read-only; confers nothing.
@@ -746,7 +754,7 @@ function buildController(
 // ── silent human-edit baseline advance (module-scope; driven by the vault modify event) ──
 function scheduleReconcile(plugin: Plugin, file: TFile): void {
   const path = file.path;
-  if (isExcluded(path)) return;
+  if (isExcluded(plugin, path)) return;
   const timers = timersFor(plugin);
   const existing = timers.get(path);
   if (existing) clearTimeout(existing);
@@ -816,7 +824,7 @@ async function reconcile(plugin: Plugin, file: TFile): Promise<void> {
 // Reads NO agent-supplied field — eligibility is bytes + rename index.
 async function maybeAutoAccept(plugin: Plugin, path: string): Promise<boolean> {
   try {
-    if (isExcluded(path)) return false;
+    if (isExcluded(plugin, path)) return false;
     const store = getStore(plugin);
     const baseline = store.get(path);
     if (!baseline) return false;
@@ -1443,7 +1451,7 @@ export async function wireGovernance(plugin: Plugin, deps: GovernanceWireDeps): 
     //    pane still pays only for queue-hitting deletes.
     const paneOpen = plugin.app.workspace.getLeavesOfType(VIEW_TYPE_GOVERNANCE).length > 0;
     const hitsQueue = deleteInvalidatesQueue(file.path, isFolder, getCachedPending(plugin).map((p) => p.path));
-    if (!hitsQueue && !(paneOpen && !isExcluded(file.path))) return;
+    if (!hitsQueue && !(paneOpen && !isExcluded(plugin, file.path))) return;
     const timers = timersFor(plugin);
     const key = QUEUE_DELETE_TIMER;
     const existing = timers.get(key);
@@ -1491,7 +1499,7 @@ export async function wireGovernance(plugin: Plugin, deps: GovernanceWireDeps): 
   const menuEligibilityCtx = (): AcceptEligibilityCtx => ({
     pendingPaths: new Set(getCachedPending(plugin).map((p) => p.path)),
     statusOf: (p) => acceptanceStatusFor(plugin, p),
-    isExcluded,
+    isExcluded: (path) => isExcluded(plugin, path),
     // Read at menu-OPEN time, not at registration: the cutover can happen while
     // the plugin stays loaded, and a value captured once would keep offering a
     // control the store has already retired.

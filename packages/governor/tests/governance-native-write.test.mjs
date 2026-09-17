@@ -404,7 +404,11 @@ describe("wiring pins — the mechanism-exists-but-unwired lesson, again", async
 
   test("main.ts wires the history repository behind the effective scope", () => {
     const main = read("main.ts");
-    assert.match(main, /effectiveScope\(this\.settings\.historyScope, EXCLUDED_PREFIXES\)/, "the composed scope gates recording — the WP4 contract consumed");
+    assert.match(
+      main,
+      /effectiveScope\(\s*this\.settings\.historyScope,\s*governanceTerritoriesSettings\(this\.settings\.config,\s*EXCLUDED_PREFIXES\)\.territories\s*\)/,
+      "the composed scope gates recording — the WP4 contract consumed, guarded territories now configurable (#321)"
+    );
     assert.match(main, /openGitRepository\(/, "the real history store is the recording target");
     assert.match(main, /proposalRef\(proposalId\)/, "snapshots land on the proposal's own ref");
   });

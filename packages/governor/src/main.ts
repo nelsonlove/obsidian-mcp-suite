@@ -51,7 +51,7 @@ import { budgetBreach } from "./kernel/mandates/budgets.js";
 import { createTransformationRegistry } from "./kernel/transformations/transformation.js";
 import { createPromotionStore } from "./kernel/transformations/promotion.js";
 import { createDefaultPredicateRegistry } from "./kernel/verification/predicates.js";
-import { governanceAcceptanceSettings } from "./kernel/settings.js";
+import { governanceAcceptanceSettings, governanceTerritoriesSettings } from "./kernel/settings.js";
 import { effectiveScope, isTracked } from "./kernel/history-store/history-scope.js";
 import { proposalRef } from "./kernel/history-store/refs.js";
 import type { HistoryRepository } from "./kernel/history-store/repository.js";
@@ -468,7 +468,10 @@ export default class GovernorPlugin extends Plugin {
         // history scope: an untracked path is ungoverned by the new system, and
         // the producer skips the proposal rather than opening a dead one.
         record: async (proposalId: string, path: string, baseBytes: Uint8Array | null, proposedBytes: Uint8Array) => {
-          const scope = effectiveScope(this.settings.historyScope, EXCLUDED_PREFIXES);
+          const scope = effectiveScope(
+            this.settings.historyScope,
+            governanceTerritoriesSettings(this.settings.config, EXCLUDED_PREFIXES).territories
+          );
           if (!isTracked(scope, path)) return null;
           const repo = await lazyHistoryRepo();
           const ref = proposalRef(proposalId);
