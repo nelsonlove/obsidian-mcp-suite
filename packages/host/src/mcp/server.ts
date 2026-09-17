@@ -263,10 +263,15 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
     store: observationStore,
     enabled: () => ctx.getSettings().captureObservations === true,
     maxBytes: ctx.getSettings().captureMaxBytes ?? 50 * 1024 * 1024,
-    // The same territory list the governance pane enumerates by — one list,
-    // one meaning (@vault-mcp/core territories.ts). Reads in a guarded territory
-    // stay legal; RETAINING copies of them outside the territory is what this
-    // forbids (issue #322).
+    // @vault-mcp/core's default territory list (issue #322: reads in a guarded
+    // territory stay legal; RETAINING copies of them outside the territory is
+    // what this forbids). NOT the same list the governance pane enumerates by
+    // any more: #321 made the pane's copy (packages/governor) a per-operator
+    // setting, defaulting to this same list but editable independently. This
+    // call still consults only the hardcoded default, so a territory a human
+    // adds in Governor's settings tab is NOT yet honored here — capture can
+    // retain a note body from a territory the pane has been told to skip.
+    // Tracked as a residual gap, not fixed by #321/#396.
     excludedSource: isExcludedTerritory,
   });
 

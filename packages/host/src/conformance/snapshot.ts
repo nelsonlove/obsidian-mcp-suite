@@ -105,8 +105,14 @@ const DEFAULT_SKIP = new Set([".git", ".obsidian", ".trash", "node_modules"]);
  * `_keep/`, which this file never denied. The suite split's S3b published
  * `EXCLUDED_PREFIXES` precisely so there is ONE list — the failure it names is
  * a prefix present in one copy and missing from another, which is how guarded
- * content reaches somewhere it should never be. Deriving keeps this rail in
- * step with issue #321 when the list finally becomes real configuration.
+ * content reaches somewhere it should never be. Deriving keeps this rail from
+ * hardcoding its OWN second copy of the DEFAULT list.
+ *
+ * #321 landed (packages/governor's settings tab) as a per-operator setting on
+ * the Governor plugin only, not as a change to this core default — this rail
+ * still derives from the hardcoded `EXCLUDED_PREFIXES`, so a territory a
+ * human adds in Governor's settings is NOT yet honored by adopt-baseline's
+ * conformance check here. Residual gap, not fixed by #321/#396.
  *
  * The SEGMENT semantics stay local and are deliberately stricter than core's
  * path-prefix matching: every segment of a resolved real path is checked, so a
