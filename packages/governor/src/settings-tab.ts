@@ -54,7 +54,9 @@ export class GovernorSettingTab extends PluginSettingTab {
           "of — archival or legally sensitive folders, not live governed content. Every part of " +
           "this plugin (the review pane, proposals, auto-accept, local history) checks this list " +
           "before touching a note. Blank ⇒ the built-in default below, so leaving this untouched " +
-          "changes nothing (#321)."
+          "changes nothing (#321). Scope: this governs Governor only. The separate Vault MCP " +
+          "host plugin's observation-capture retention and its conformance/adopt-baseline check " +
+          "still use the built-in default list regardless of what you set here."
       )
       .addTextArea((t) => {
         t.inputEl.rows = 4;

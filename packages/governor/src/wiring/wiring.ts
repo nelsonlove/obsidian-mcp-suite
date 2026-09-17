@@ -120,7 +120,14 @@ import { isExcludedTerritory, EXCLUDED_PREFIXES } from "@vault-mcp/core";
 
 // Guarded territories moved to ./territories.ts when observation capture became
 // the second consumer — one list, so the pane and capture can never disagree
-// about what is off-limits.
+// about what is off-limits. #321 made the list a Governor setting (see
+// territoriesOf/isExcluded below): that guarantee now holds for every
+// consumer INSIDE THIS PLUGIN (this pane, proposals, auto-accept, local
+// history), all reading the same configured list. It does NOT yet reach
+// packages/host's observation-capture retention gate or conformance rail —
+// those are a separate plugin and still consult only the core default. A
+// human-added territory is therefore honored here but not there until that
+// gap is closed (tracked separately).
 
 const LOCAL_USER = "local-human";
 const RECENT_WRITE_WINDOW_MS = 15_000;
