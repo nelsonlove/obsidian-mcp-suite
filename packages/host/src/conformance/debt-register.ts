@@ -192,6 +192,13 @@ export function renderDebtRegister(opts: RegisterRenderOpts): string {
     `- New: ${summary.new}${summary.new ? " (regressions — the conformance run fails)" : ""}`,
     `- ${staleLine}`,
     `- Budget: ${budgetLine}`,
+    ...(report.skippedTerritories.length
+      ? [
+          `- Guarded (not scanned, no claim made): ${report.skippedTerritories
+            .map((t) => `${t.path} (guarded territory '${t.territory}')`)
+            .join(", ")} — listed in guarded territories`,
+        ]
+      : []),
     "",
     "## Carried debt",
     "",

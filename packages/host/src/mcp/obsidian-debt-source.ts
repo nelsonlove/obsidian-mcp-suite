@@ -11,6 +11,7 @@ import { join, posix } from "node:path";
 import type { App } from "obsidian";
 import type { DebtSource, DebtRegisterSource } from "./tools-conformance-debt.js";
 import type { Finding } from "../conformance/finding.js";
+import type { SkippedTerritory } from "../conformance/snapshot.js";
 import { parseSidecar, sidecarPathFor, type DebtSidecar } from "../conformance/debt-sidecar.js";
 import { runConformance, baselineRelFrom, excludedRootsFrom } from "../conformance/cli.js";
 import { DEFAULT_VOCABULARIES } from "@vault-mcp/core";
@@ -43,25 +44,33 @@ export function obsidianDebtSource(app: App, territories?: () => readonly string
   const root = vaultRoot(app);
   const baselinePath = join(root, baselineRelFrom(process.env));
   const excludedRoots = excludedRootsFrom([], process.env);
+  // What the last live run stepped around (#398) — read by the tools after
+  // `liveFindings()` resolves, so the report and the register can name it.
+  let lastSkipped: readonly SkippedTerritory[] = [];
+  const baselineText = async () => (await readOrNull(baselinePath)) ?? "";
 
   return {
     async liveFindings(): Promise<Finding[]> {
       const res = await runConformance({
         root,
-        // Findings are independent of the baseline (it only feeds the ratchet
-        // diff, which this path discards) — pass empty to skip a disk read.
-        baselineText: "",
+        // The REAL baseline, not "" (#400 review): `runConformance` refuses a
+        // run whose skipped territories hold accepted keys, and that refusal
+        // only exists if it can see them. The tools re-parse the same text for
+        // their own diff, which is the one extra disk read this costs.
+        baselineText: await baselineText(),
         vocabularies: DEFAULT_VOCABULARIES,
         schemes: DEFAULT_SCHEMES,
         excludedRoots,
         legacyPacks: true,
         territories: territories?.(),
       });
+      lastSkipped = res.skippedTerritories;
       return res.findings;
     },
-    async baselineText(): Promise<string> {
-      return (await readOrNull(baselinePath)) ?? "";
+    skippedTerritories(): readonly SkippedTerritory[] {
+      return lastSkipped;
     },
+    baselineText,
     async sidecar(): Promise<DebtSidecar> {
       return parseSidecar(await readOrNull(sidecarPathFor(baselinePath)));
     },

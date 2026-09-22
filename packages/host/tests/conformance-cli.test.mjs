@@ -10,7 +10,9 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { runConformance } from "../src/conformance/cli.ts";
+import { runConformance, guardedTerritoryRefusal, NON_PATH_KEYED_CHECKS } from "../src/conformance/cli.ts";
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 
 async function vault() {
   const root = await mkdtemp(path.join(tmpdir(), "conf-cli-"));
@@ -146,5 +148,93 @@ describe("baselineMissingRefusal (#116 — a missing baseline must fail loudly)"
     // missing + explicit opt-in => allowed; missing + no opt-in => refused.
     assert.equal(baselineMissingRefusal("/x", false, true), null);
     assert.ok(baselineMissingRefusal("/x", false, false));
+  });
+});
+
+describe("#398 — a guarded territory inside the root is skipped, reported, and never a silent CLEARED", () => {
+  const vocab = [{ id: "reg", provider: "blueprint", root: "Reg" }];
+
+  test("the run completes, the skipped folder is in the result and named in the report, and nothing under it was read", async () => {
+    const root = await vault();
+    try {
+      await mkdir(path.join(root, "80-89 Legal"), { recursive: true });
+      await writeFile(path.join(root, "80-89 Legal", "L.md"), "---\ntitle: L\ntags:\n  - rogue\n---\nprivate\n");
+      const res = await runConformance({ root, baselineText: "", vocabularies: vocab, schemes: [], territories: ["80-89"] });
+      assert.deepEqual(res.skippedTerritories, [{ path: "80-89 Legal", territory: "80-89" }]);
+      assert.match(res.report, /guarded \(not scanned, no claim made\): 80-89 Legal \(guarded territory '80-89'\)/, "the report names the folder and the entry");
+      assert.ok(!res.findings.some((f) => f.target.startsWith("80-89 Legal/")), "no finding came out of the territory — it was never read");
+      assert.ok(res.findings.some((f) => f.target === "Notes/A.md"), "the rest of the vault was measured");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("an accepted-baseline key under a skipped territory REFUSES the run instead of reporting CLEARED", async () => {
+    const root = await vault();
+    try {
+      await mkdir(path.join(root, "80-89 Legal"), { recursive: true });
+      await writeFile(path.join(root, "80-89 Legal", "L.md"), "---\ntitle: L\ntags:\n  - rogue\n---\nprivate\n");
+      // Baseline taken while the territory was NOT listed: its key is accepted debt.
+      const first = await runConformance({ root, baselineText: "", vocabularies: vocab, schemes: [] });
+      assert.ok(first.rebaseline.includes("80-89 Legal/L.md"), "fixture: the baseline holds a key inside the folder");
+      const baselineText = "```ratchet-baseline\n" + first.rebaseline + "\n```\n";
+      await assert.rejects(
+        () => runConformance({ root, baselineText, vocabularies: vocab, schemes: [], territories: ["80-89"] }),
+        /refusing to run: a guarded territory was skipped \(80-89 Legal\)[\s\S]*inside a guarded territory this run skipped[\s\S]*CLEARED/,
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("guardedTerritoryRefusal: segment-bounded, names the way out, silent when nothing is stranded", () => {
+    assert.equal(guardedTerritoryRefusal(new Set(["ste_lint|editable|Notes/x.md|"]), ["80-89 Legal"]), null);
+    assert.equal(guardedTerritoryRefusal(new Set(["ste_lint|editable|80-89 Legal notes/x.md|"]), ["80-89 Legal"]), null, "a sibling folder is not swept in");
+    const r = guardedTerritoryRefusal(new Set(["ste_lint|editable|80-89 Legal/x.md|"]), ["80-89 Legal"]);
+    assert.ok(r);
+    assert.match(r, /take the folder off the guarded-territories list|remove the keys from the baseline/);
+    assert.equal(guardedTerritoryRefusal(new Set(["ste_lint|editable|80-89 Legal/x.md|"]), []), null, "nothing skipped, nothing stranded");
+  });
+});
+
+describe("#398 / #400 review — a uid-keyed baseline key must not clear silently behind a skip", () => {
+  const vocab = [{ id: "reg", provider: "blueprint", root: "Reg" }];
+
+  test("a uid-keyed baseline key the live run does not reproduce: CLEARED when nothing was skipped, REFUSED when something was", async () => {
+    // Drift's E/F keys carry a uid or a bare token, not a path, so the strand
+    // check cannot place them inside or outside a skipped folder. The bare
+    // fixture cannot make the drift pack emit one (it needs vault scaffolding —
+    // #298), so the key is planted in the baseline: what is under test is the
+    // rule, not drift's appetite.
+    const root = await vault();
+    try {
+      await mkdir(path.join(root, "80-89 Legal"), { recursive: true });
+      await writeFile(path.join(root, "80-89 Legal", "L.md"), "---\ntitle: L\n---\nprivate\n");
+      const eKey = "drift_audit|E|01234567-89ab-7cde-8f01-23456789abcd|dup-uid";
+      const baselineText = "```ratchet-baseline\n" + eKey + "\n```\n";
+      const plain = await runConformance({ root, baselineText, vocabularies: vocab, schemes: [] });
+      assert.ok(plain.ratchet.clearedKeys.includes(eKey), "nothing skipped: the unreproduced key is an ordinary CLEARED");
+      await assert.rejects(
+        () => runConformance({ root, baselineText, vocabularies: vocab, schemes: [], territories: ["80-89"] }),
+        /keyed by uid, not by path[\s\S]*\|E\|/,
+        "a skip plus a cleared uid key refuses: nothing can tell whether the skip is what cleared it",
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("NON_PATH_KEYED_CHECKS names exactly the checks drift.ts keys without a path (pinned at the source)", () => {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const drift = fs.readFileSync(path.join(here, "..", "src", "conformance", "packs", "drift.ts"), "utf8");
+    assert.match(drift, /push\("E",[\s\S]{0,200}target: uid,/, "E is keyed by uid");
+    assert.match(drift, /push\(\s*"F",[\s\S]{0,300}target: "uid-coverage"/, "F is keyed by a bare token");
+    assert.deepEqual([...NON_PATH_KEYED_CHECKS].sort(), ["drift_audit|E", "drift_audit|F"]);
+  });
+
+  test("guardedTerritoryRefusal is silent with nothing skipped, even over a cleared uid key", () => {
+    assert.equal(guardedTerritoryRefusal(new Set(), [], ["drift_audit|E|x|dup-uid"]), null);
+    assert.ok(guardedTerritoryRefusal(new Set(), ["80-89 Legal"], ["drift_audit|E|x|dup-uid"]));
+    assert.equal(guardedTerritoryRefusal(new Set(), ["80-89 Legal"], ["ste_lint|editable|Notes/x.md|"]), null, "a path-keyed clear outside the folder is a real clear");
   });
 });

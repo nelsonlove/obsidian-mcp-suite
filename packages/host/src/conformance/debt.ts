@@ -1,3 +1,4 @@
+import type { SkippedTerritory } from "./snapshot.js";
 // debt.ts — the pure conformance-debt report core (issue #211, Part A2 + teeth).
 //
 // Given the accepted-debt baseline keyset, the live findings, and the metadata
@@ -58,6 +59,9 @@ export interface DebtBudgetStatus {
 
 export interface DebtReport {
   items: DebtItem[];
+  /** Guarded territories the live run stepped around (#398) — reported so a
+   * folder that is absent from the register is never mistaken for clean. */
+  skippedTerritories: SkippedTerritory[];
   summary: DebtSummary;
   /** The subset of `items` flagged stale (empty when staleness is off). */
   stale: DebtItem[];
@@ -81,6 +85,8 @@ export interface DebtReportOpts {
   debtBudget?: number | null;
   /** Treat over-budget as a hard failure (report-only flips to a fail signal). */
   strictBudget?: boolean;
+  /** Guarded territories the live run skipped (#398); absent ⇒ none. */
+  skippedTerritories?: readonly SkippedTerritory[];
 }
 
 /** Narrowing filter over debt items. All fields optional and ANDed together. */
@@ -198,7 +204,7 @@ export function buildDebtReport(opts: DebtReportOpts): DebtReport {
   const budget = budgetStatus(items.length, opts.debtBudget ?? null, opts.strictBudget ?? false);
   const stale = staleAfter != null ? items.filter((it) => it.stale) : [];
 
-  return { items, summary, stale, budget, staleAfterDays: staleAfter };
+  return { items, summary, stale, budget, staleAfterDays: staleAfter, skippedTerritories: [...(opts.skippedTerritories ?? [])] };
 }
 
 /** Compute the debt-budget status for a carried count. Warn-only unless
