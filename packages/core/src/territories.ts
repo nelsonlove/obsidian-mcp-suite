@@ -46,3 +46,20 @@ export function isExcludedTerritory(path: string, prefixes: readonly string[] = 
   if (p.startsWith("..")) return true;
   return prefixes.some((prefix) => p.startsWith(prefix));
 }
+
+/**
+ * The configured list, or the built-in default when it is blank.
+ *
+ * ONE definition of "blank means default", because there are now two plugins
+ * asking the question and a second copy of this three-line rule is exactly the
+ * drift `EXCLUDED_PREFIXES` was centralized to prevent. Entries are trimmed and
+ * empties dropped first, so a textarea that a human left with a trailing blank
+ * line does not read as a configured list of one empty prefix — which would
+ * match EVERY path, since `"".startsWith` is always true. That is the failure
+ * this normalization exists to stop, and it fails toward the default rather
+ * than toward guarding nothing.
+ */
+export function resolveTerritories(configured: readonly string[] | null | undefined): readonly string[] {
+  const list = (configured ?? []).map((p) => String(p).trim()).filter((p) => p.length > 0);
+  return list.length > 0 ? list : EXCLUDED_PREFIXES;
+}

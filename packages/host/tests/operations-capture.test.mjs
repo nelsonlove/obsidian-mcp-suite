@@ -369,14 +369,29 @@ describe("capture — a guarded territory is never retained outside itself", () 
     // the pin while disabling the guard that keeps capture from retaining 80-89
     // content. Found in the 2026-08-29 review; the companion import pin below was
     // already anchored, this one was not.
-    assert.match(server, /excludedSource:\s*isExcludedTerritory\s*[,)}]/, "createCapture must receive the territory predicate");
+      // #397 made the list the operator's SETTING, so the wiring is no longer a
+      // bare reference — it is a lambda resolving the configured list per call.
+      // The pin FOLLOWS the change rather than being relaxed, and each of the
+      // three parts it requires is a real failure mode:
+      //   • `isExcludedTerritory(` — the shared predicate is still the matcher;
+      //   • `resolveTerritories(` — skip it and a fresh install passes the raw
+      //     EMPTY array, and `"".startsWith` is true for every path, so nothing
+      //     would be guarded at all;
+      //   • `ctx.getSettings()` INSIDE the lambda — read per call. Hoisting it to
+      //     build time is the inert-toggle bug in a new costume: an operator's
+      //     edit would not take effect until the next reconnect.
+      assert.match(
+        server,
+        /excludedSource:\s*\(\s*p[^)]*\)\s*=>\s*isExcludedTerritory\(\s*p\s*,\s*resolveTerritories\(\s*ctx\.getSettings\(\)\.guardedTerritories\s*\)\s*\)/,
+        "createCapture must receive the predicate applied to the OPERATOR'S resolved list, read per call"
+      );
     // Matched as the WHOLE import statement binding this specific name, not a bare
     // `from "@vault-mcp/core"` — server.ts imports several things from the contract
     // package, so a package-only match would keep passing if `isExcludedTerritory`
     // were later re-bound to a local copy. The point of this pin is the BINDING.
     assert.match(
       server,
-      /import \{ isExcludedTerritory \} from "@vault-mcp\/core"/,
+        /import \{ isExcludedTerritory, resolveTerritories \} from "@vault-mcp\/core"/,
       "and it must be the SHARED list from the published contract, not a local copy"
     );
     const territories = fs.readFileSync(new URL("../../core/src/territories.ts", import.meta.url), "utf8");

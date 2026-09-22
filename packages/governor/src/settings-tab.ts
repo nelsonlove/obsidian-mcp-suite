@@ -16,7 +16,9 @@
 // bundles.
 
 import { App, PluginSettingTab, Setting, type Plugin } from "obsidian";
-import { DEFAULT_ACCEPTANCE_SETTINGS, governanceTerritoriesSettings, EXCLUDED_PREFIXES } from "./kernel/settings.js";
+import { DEFAULT_ACCEPTANCE_SETTINGS } from "./kernel/settings.js";
+import { resolveTerritories } from "@vault-mcp/core";
+import { hostGuardedTerritories } from "./host-lookup.js";
 import { renderGovernanceSettings } from "./wiring/wiring.js";
 import type { GovernorSettings } from "./settings.js";
 
@@ -49,28 +51,29 @@ export class GovernorSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Guarded territories")
       .setDesc(
-        "One vault path prefix per line. A guarded territory is a top-level area Governor must " +
-          "never review, propose against, record into local history, or otherwise retain a copy " +
-          "of — archival or legally sensitive folders, not live governed content. Every part of " +
-          "this plugin (the review pane, proposals, auto-accept, local history) checks this list " +
-          "before touching a note. Blank ⇒ the built-in default below, so leaving this untouched " +
-          "changes nothing (#321). Scope: this governs Governor only. The separate Vault MCP " +
-          "host plugin's observation-capture retention and its conformance/adopt-baseline check " +
-          "still use the built-in default list regardless of what you set here."
+        "A guarded territory is a top-level area Governor must never review, propose against, " +
+          "record into local history, or otherwise retain a copy of — archival or legally " +
+          "sensitive folders, not live governed content. Every part of this plugin (the review " +
+          "pane, proposals, auto-accept, local history) checks the list before touching a note. " +
+          "It is EDITED IN VAULT MCP'S SETTINGS, not here: the same list also governs that " +
+          "plugin's observation capture, which writes note bodies outside the vault, and that " +
+          "runs whether or not this plugin is installed — so the list belongs to the plugin you " +
+          "cannot uninstall (#397). This plugin reads it live; an edit there takes effect here " +
+          "with no reload."
       )
-      .addTextArea((t) => {
-        t.inputEl.rows = 4;
-        t
-          .setPlaceholder(EXCLUDED_PREFIXES.join("\n"))
-          .setValue(governanceTerritoriesSettings(this.plugin.settings.config, EXCLUDED_PREFIXES).territories.join("\n"))
-          .onChange(async (value) => {
-            this.plugin.settings.config.guardedTerritories = value
-              .split("\n")
-              .map((x) => x.trim())
-              .filter(Boolean);
-            await this.plugin.saveSettings();
-          });
-      });
+      .addExtraButton((b) =>
+        b
+          .setIcon("settings")
+          .setTooltip("Open Vault MCP settings")
+          .onClick(() => {
+            const app = this.plugin.app as any;
+            app?.setting?.openTabById?.("vault-mcp");
+          })
+      );
+    containerEl.createEl("p", {
+      text: `In effect now: ${territoriesInEffect(this.plugin).join(", ")}`,
+      cls: "setting-item-description",
+    });
 
     new Setting(containerEl)
       .setName("Review pane")
@@ -250,4 +253,11 @@ export class GovernorSettingTab extends PluginSettingTab {
         })
       );
   }
+}
+
+/** What the pane will actually guard by right now — the host's configured list,
+ * or the built-in default when no host is loaded. Shown rather than an editable
+ * field so there is visibly ONE list, not two that can disagree. */
+function territoriesInEffect(plugin: { app: unknown }): readonly string[] {
+  return resolveTerritories(hostGuardedTerritories((plugin.app as any)?.plugins?.plugins));
 }

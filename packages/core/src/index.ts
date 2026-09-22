@@ -159,7 +159,7 @@ export { uuidv7 } from "./uuidv7.js";
 // the split, and the alternative — two copies — is the failure its own header
 // names, where a prefix missing from capture's list means capture writes note
 // bodies to disk. Issue #321 still owns making the list real configuration.
-export { EXCLUDED_PREFIXES, isExcludedTerritory } from "./territories.js";
+export { EXCLUDED_PREFIXES, isExcludedTerritory, resolveTerritories } from "./territories.js";
 
 // Path-allowlist visibility — the one-path disclosure predicate, published at
 // the skills satellite extraction (suite split, S4). A satellite that filters

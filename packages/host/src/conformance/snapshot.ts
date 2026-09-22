@@ -26,6 +26,7 @@ import {
   parseAllFrontmatter,
   stripLeadingFrontmatter,
   EXCLUDED_PREFIXES,
+  resolveTerritories,
   type VocabNote,
 } from "@vault-mcp/core";
 import type { SourceFile, VaultSnapshot } from "./rule-pack.js";
@@ -35,6 +36,17 @@ import { envAliased } from "../env-alias.js";
 export interface SnapshotOpts {
   /** Absolute content root to walk. */
   root: string;
+  /**
+   * The guarded territories this rail refuses to walk into, as vault-path
+   * prefixes. Omitted or blank means `@vault-mcp/core`'s built-in default, so
+   * every existing caller — and every test — behaves exactly as before.
+   *
+   * Threaded rather than read from a module-level constant because #397: the
+   * list is the HOST's setting now, and a rail pinned to the compiled-in
+   * default would silently ignore a territory a human added. The SEGMENT
+   * semantics below stay stricter than core's prefix match on purpose.
+   */
+  territories?: readonly string[];
   /**
    * The boundary `root` must resolve inside (or equal). NOT optional in
    * effect: if this is omitted, `buildSnapshot` falls back to reading
@@ -108,19 +120,27 @@ const DEFAULT_SKIP = new Set([".git", ".obsidian", ".trash", "node_modules"]);
  * content reaches somewhere it should never be. Deriving keeps this rail from
  * hardcoding its OWN second copy of the DEFAULT list.
  *
- * #321 landed (packages/governor's settings tab) as a per-operator setting on
- * the Governor plugin only, not as a change to this core default — this rail
- * still derives from the hardcoded `EXCLUDED_PREFIXES`, so a territory a
- * human adds in Governor's settings is NOT yet honored by adopt-baseline's
- * conformance check here. Residual gap, not fixed by #321/#396.
+ * #321 landed as a per-operator setting and #397 moved it to the HOST, which
+ * is where it had to live: the other consumer is observation capture, which
+ * writes note bodies outside the vault and runs whether or not Governor is
+ * installed. This rail now derives its segments from `opts.territories` —
+ * the operator's list, resolved — and falls back to the core default when a
+ * caller supplies none, so every existing caller and test is unaffected.
  *
  * The SEGMENT semantics stay local and are deliberately stricter than core's
  * path-prefix matching: every segment of a resolved real path is checked, so a
  * symlink cannot launder a guarded directory into the middle of an allowed one.
  */
-const DENIED_SEGMENTS: ReadonlyArray<string> = EXCLUDED_PREFIXES.map((p) =>
-  p.replace(/\/+$/, "").toLowerCase()
-);
+const DENIED_SEGMENTS: ReadonlyArray<string> = deniedSegmentsOf(EXCLUDED_PREFIXES);
+
+/** A territory list as the SEGMENT forms this rail matches on — trailing
+ * separators stripped, lowercased. Derived rather than written twice: a second
+ * hand-maintained copy of the names is the exact drift `EXCLUDED_PREFIXES` was
+ * centralized to prevent. #397 makes the input configurable; the derivation is
+ * unchanged. */
+function deniedSegmentsOf(prefixes: readonly string[]): ReadonlyArray<string> {
+  return prefixes.map((p) => p.replace(/\/+$/, "").toLowerCase());
+}
 
 /** Human names for the territories that have one; others report generically. */
 const TERRITORY_NAMES: Readonly<Record<string, string>> = {
@@ -137,9 +157,9 @@ const TERRITORY_NAMES: Readonly<Record<string, string>> = {
  * during the walk, against an already-verified-real directory's own name
  * (cheap — no need to re-resolve a real path for something that is already
  * known not to be a symlink). */
-function deniedSegment(seg: string): string | null {
+function deniedSegment(seg: string, segments: ReadonlyArray<string> = DENIED_SEGMENTS): string | null {
   const s = seg.toLowerCase();
-  for (const denied of DENIED_SEGMENTS) {
+  for (const denied of segments) {
     // Equality, or the prefix followed by a non-alphanumeric — so `80-89` and
     // `80-89 Divorce` match while `80-891` does not (the `\b` the hand-rolled
     // regex used).
@@ -157,10 +177,10 @@ function deniedSegment(seg: string): string | null {
 /** Every segment of the RESOLVED real path, checked with `deniedSegment` — so
  * a symlink cannot launder past this either. Returns the human name of the
  * violated territory, or null when nothing matched. */
-function deniedTerritory(realPath: string): string | null {
+function deniedTerritory(realPath: string, segments: ReadonlyArray<string> = DENIED_SEGMENTS): string | null {
   for (const seg of realPath.split(sep)) {
     if (!seg) continue;
-    const hit = deniedSegment(seg);
+    const hit = deniedSegment(seg, segments);
     if (hit) return hit;
   }
   return null;
@@ -216,7 +236,7 @@ function assertRootPermitted(opts: SnapshotOpts): string {
     );
   }
 
-  const denied = deniedTerritory(realRoot);
+  const denied = deniedTerritory(realRoot, deniedSegmentsOf(resolveTerritories(opts.territories)));
   if (denied) {
     throw new Error(
       `buildSnapshot: refusing to walk ${opts.root} — it resolves into a permanently denied territory ` +
@@ -352,7 +372,7 @@ export async function buildSnapshot(opts: SnapshotOpts): Promise<VaultSnapshot> 
               `ancestor or a symlink loop). An indeterminate target is refused, never assumed safe.`,
           );
         }
-        const denied = deniedTerritory(real);
+        const denied = deniedTerritory(real, deniedSegmentsOf(resolveTerritories(opts.territories)));
         if (denied) {
           throw new Error(
             `buildSnapshot: refusing to read ${vaultPath} — it is a symlink resolving into a permanently denied ` +
@@ -411,7 +431,7 @@ export async function buildSnapshot(opts: SnapshotOpts): Promise<VaultSnapshot> 
       const vaultPath = toVaultPath(opts.root, abs);
       if (isExcluded(vaultPath, excluded)) continue;
       if (skip.has(entry.name)) continue;
-      const denied = deniedSegment(entry.name);
+      const denied = deniedSegment(entry.name, deniedSegmentsOf(resolveTerritories(opts.territories)));
       if (denied) {
         throw new Error(
           `buildSnapshot: refusing to descend into ${vaultPath} — it is a permanently denied territory ` +

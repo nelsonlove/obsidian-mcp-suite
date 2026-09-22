@@ -10,7 +10,7 @@ import { ConnectionSetupModal, VaultMcpSettingTab } from "./connection-ui.js";
 import { findClaudeBinary, claudeIsRegistered, claudeRegister, claudeRemove, claudeEnsureConnectPlugin } from "./claude-cli.js";
 import { ExternalToolRegistry, type VaultMcpApi } from "./mcp/external-tools.js";
 import { createGovernanceSeam, type GovernanceSeam } from "./mcp/seam.js";
-import { DEFAULT_VOCABULARIES, splitSettings, type VocabInstanceSettings } from "@vault-mcp/core";
+import { DEFAULT_VOCABULARIES, splitSettings, resolveTerritories, type VocabInstanceSettings } from "@vault-mcp/core";
 import { Kernel, WriteQueue, WriteJournal, IdempotencyStore, LockStore, UidIndex, loadInstallId, migrateLegacyModuleIds, type ModuleSettings } from "./kernel/index.js";
 import { createSessionLog } from "./kernel/sessions/session-log.js";
 import { obsidianProbe, obsidianServerIdentity, obsidianUidSource } from "./kernel/obsidian-probe.js";
@@ -145,6 +145,29 @@ interface VaultMcpSettings {
    */
   captureMaxBytes: number;
   /**
+   * The vault areas no host feature may RETAIN a copy of, as a human-editable
+   * list rather than a name baked into `@vault-mcp/core`. Blank means "use the
+   * built-in default" (`EXCLUDED_PREFIXES`), so an upgrade with no edit behaves
+   * exactly as before — this is what keeps the change default-preserving rather
+   * than a silent widen-or-narrow of the guard.
+   *
+   * WHY IT LIVES ON THE HOST AND NOT ON GOVERNOR (#397, closing #321 properly).
+   * #396 shipped this as a Governor setting, which reaches every consumer
+   * inside that plugin and none of the two inside this one. That is the wrong
+   * owner, and the reason is not tidiness: **Governor is optional and this
+   * plugin is not.** The riskiest consumer is here — observation capture writes
+   * note bodies to `~/.claude/vault-mcp/observations/`, outside the vault and
+   * outside Sync — so a vault running the host alone would have had capture
+   * with no way to configure what it must never retain. A guard that exists
+   * only on the plugin a user can uninstall is not a guard.
+   *
+   * So the host owns the list and Governor READS it (via `guardedTerritories()`
+   * on the api object). One list, one editor, and the dependency runs the way
+   * every other one in the suite does: the optional plugin depends on the
+   * mandatory one, never the reverse.
+   */
+  guardedTerritories: string[];
+  /**
    * The in-Obsidian dev tool-runner ("Vault MCP: Run tool…" — src/tool-runner.ts).
    * Default ON: it grants nothing the MCP surface doesn't already grant — it
    * invokes the same guarded captured tools a code-mode connection gets, so
@@ -205,6 +228,7 @@ const DEFAULT_SETTINGS: VaultMcpSettings = {
   devToolRunner: true,
   captureObservations: false,
   captureMaxBytes: 50 * 1024 * 1024,
+  guardedTerritories: [],
 };
 
 class DiagnosticsModal extends Modal {
@@ -247,6 +271,10 @@ export default class VaultMcpPlugin extends Plugin {
     registerTools: (owner, tools) => externalRegistryOf(this).registerTools(owner, tools),
     registerWriteObserver: (id, observe) => seamOf(this).seam.registerWriteObserver(id, observe),
     registerSessionRefusal: (id, refuse) => seamOf(this).seam.registerSessionRefusal(id, refuse),
+    // Resolved on every call, never captured: an operator edit reaches the
+    // provider without either plugin reloading. A copy is returned so a caller
+    // cannot mutate the host's own array through the reference.
+    guardedTerritories: () => [...resolveTerritories(this.settings.guardedTerritories)],
   };
 
   async loadSettings() {
@@ -605,6 +633,10 @@ export default class VaultMcpPlugin extends Plugin {
         cliPolicy: this.settings.cliPolicy,
         captureObservations: this.settings.captureObservations,
         captureMaxBytes: this.settings.captureMaxBytes,
+        // Forwarded RAW, resolved at the call site. Projecting the resolved list
+        // here would freeze it per connection, so an operator's edit would not
+        // reach capture until the next reconnect — the inert-toggle shape again.
+        guardedTerritories: this.settings.guardedTerritories,
       }),
       serverIdentity,
       sessions: {

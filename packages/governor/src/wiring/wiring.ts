@@ -108,7 +108,7 @@ import {
 import { autoAcceptPolicyOf, protectedPropertyDrift } from "../kernel/protected-policy.js";
 import type { RenameIndex } from "../kernel/auto-accept/detectors.js";
 import { badgeVisible } from "../kernel/badge.js";
-import { governanceDisplaySettings, governanceAcceptanceSettings, governanceTerritoriesSettings } from "../kernel/settings.js";
+import { governanceDisplaySettings, governanceAcceptanceSettings } from "../kernel/settings.js";
 import { isRealGesture } from "../kernel/gesture.js";
 import {
   isAcceptEligible,
@@ -116,18 +116,18 @@ import {
   type AcceptEligibilityCtx,
 } from "../kernel/menu-eligibility.js";
 import { GovernanceReviewView, VIEW_TYPE_GOVERNANCE, confirmAdopt, confirmMenuAccept, renderAllowlist, wireAdoptButton, ADOPT_BASELINE_DESC, acceptThroughGate, type ReviewController, type RevisingItem, renderLegacyRetiredNotice, confirmCutover, confirmRollbackCutover, noticeGestureBlocked, confirmBindChain } from "./pane.js";
-import { isExcludedTerritory, EXCLUDED_PREFIXES } from "@vault-mcp/core";
+import { isExcludedTerritory, resolveTerritories } from "@vault-mcp/core";
+import { hostGuardedTerritories } from "../host-lookup.js";
 
 // Guarded territories moved to ./territories.ts when observation capture became
 // the second consumer — one list, so the pane and capture can never disagree
-// about what is off-limits. #321 made the list a Governor setting (see
-// territoriesOf/isExcluded below): that guarantee now holds for every
-// consumer INSIDE THIS PLUGIN (this pane, proposals, auto-accept, local
-// history), all reading the same configured list. It does NOT yet reach
-// packages/host's observation-capture retention gate or conformance rail —
-// those are a separate plugin and still consult only the core default. A
-// human-added territory is therefore honored here but not there until that
-// gap is closed (tracked separately).
+// about what is off-limits. #321 made the list configurable and #397 settled
+// WHERE it lives: on the host, read from here through its api (see
+// territoriesOf below). One list now covers every consumer in both plugins —
+// this pane, proposals, auto-accept and local history on this side; the
+// observation-capture retention gate and the conformance rail on the host's.
+// This provider deliberately keeps no copy of its own, because two editable
+// lists is exactly the drift `EXCLUDED_PREFIXES` was centralized to prevent.
 
 const LOCAL_USER = "local-human";
 const RECENT_WRITE_WINDOW_MS = 15_000;
@@ -517,8 +517,13 @@ async function journalSignature(plugin: Plugin): Promise<string> {
 // takes effect on the next call — no reload. A blank/absent config falls back
 // to @vault-mcp/core's EXCLUDED_PREFIXES, which is what keeps upgrades from a
 // pre-#321 install behaving identically.
-function territoriesOf(plugin: Plugin): string[] {
-  return governanceTerritoriesSettings(configReaders.get(plugin)?.() ?? {}, EXCLUDED_PREFIXES).territories;
+// #397: the list is the HOST's setting, read live through its api. This
+// provider deliberately keeps no copy — see `hostGuardedTerritories`. When the
+// host is absent or too old to publish it, `resolveTerritories(null)` answers
+// with the built-in default, so this provider guards the legal material even
+// against a host it cannot ask.
+function territoriesOf(plugin: Plugin): readonly string[] {
+  return resolveTerritories(hostGuardedTerritories((plugin.app as any)?.plugins?.plugins));
 }
 function isExcluded(plugin: Plugin, path: string): boolean {
   return isExcludedTerritory(path, territoriesOf(plugin));

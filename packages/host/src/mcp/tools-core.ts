@@ -61,6 +61,10 @@ export interface ServerCtx {
   captureObservations?: boolean;
   /** Stopgap ceiling on total captured bytes, pending real retention. */
   captureMaxBytes?: number;
+  /** Guarded territories, as the operator configured them; blank/absent means
+   * `@vault-mcp/core`'s default (resolve with `resolveTerritories`, never read
+   * the raw array as a list to match on — an empty one matches every path). */
+  guardedTerritories?: string[];
   // `historyEnabled` / `historyScope` were here until S3c. They were always the
   // GOVERNANCE PROVIDER's facts — the Git history store, its D10 scope, and the
   // decision to record at all belong to whoever owns the standing chain — and

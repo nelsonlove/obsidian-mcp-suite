@@ -406,8 +406,8 @@ describe("wiring pins — the mechanism-exists-but-unwired lesson, again", async
     const main = read("main.ts");
     assert.match(
       main,
-      /effectiveScope\(\s*this\.settings\.historyScope,\s*governanceTerritoriesSettings\(this\.settings\.config,\s*EXCLUDED_PREFIXES\)\.territories\s*\)/,
-      "the composed scope gates recording — the WP4 contract consumed, guarded territories now configurable (#321)"
+        /effectiveScope\(\s*this\.settings\.historyScope,\s*resolveTerritories\(hostGuardedTerritories\(/,
+      "the composed scope gates recording — the WP4 contract consumed, reading the HOST's configured territories (#321/#397), never a copy of its own"
     );
     assert.match(main, /openGitRepository\(/, "the real history store is the recording target");
     assert.match(main, /proposalRef\(proposalId\)/, "snapshots land on the proposal's own ref");
