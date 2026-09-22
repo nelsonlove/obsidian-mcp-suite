@@ -100,7 +100,7 @@ See the official [Obsidian October plugin self-critique checklist](https://docs.
 - Accept vault-relative normalized paths only.
 - Reject absolute paths, traversal above root, whitespace-changing ambiguity, and non-Markdown targets where the operation is note-specific.
 - Match scope prefixes on path-segment boundaries.
-- Resolve symlink or real-path identity before enforcing permanently denied territories in filesystem-facing code.
+- Resolve symlink or real-path identity before enforcing the configured guarded territories in filesystem-facing code.
 - Check both source and destination for moves.
 - Check every item in a batch.
 - Bound discovered targets inside the handler before reading or writing.

@@ -176,7 +176,7 @@ Configuration may extend the protected set but cannot weaken the acceptance floo
 
 ## Records
 
-A note carrying `record: true` is treated as historical evidence. Governor refuses addressed in-place writes, moves, and replacement. Pure end-of-file append remains the allowed growth operation.
+A note carrying `record: true` (the default record identifier; the settings tab can name another property/value or a tag) is treated as historical evidence. Governor refuses addressed in-place writes, moves, and replacement. Pure end-of-file append remains the allowed growth operation.
 
 This guard protects against fallible addressed mutations. It does not make record bytes immutable against the operating system, another plugin, link-healing side effects, or a malicious process. Verified history and backups remain the durable protection.
 

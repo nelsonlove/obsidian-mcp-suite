@@ -135,7 +135,7 @@ A failed verifier found that the claimed invariant did not hold. A stale attesta
 
 ## A record refuses editing or moving
 
-A note declared `record: true` is append-only through Governor. Use a dated end-of-file append for new evidence. If an exceptional rewrite is genuinely required, make a verified backup, review the reason, disable record protection briefly, perform one bounded operation, verify, and re-enable protection.
+A note declared `record: true` (the default record identifier; the settings tab can name another property/value or a tag) is append-only through Governor. Use a dated end-of-file append for new evidence. If an exceptional rewrite is genuinely required, make a verified backup, review the reason, disable record protection briefly, perform one bounded operation, verify, and re-enable protection.
 
 Remember that link-healing side effects and writes outside Governor may still alter record bytes. Backups remain essential.
 

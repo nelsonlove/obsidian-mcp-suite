@@ -144,7 +144,7 @@ When one of these assumptions fails, Governor may still produce useful evidence 
 
 **Threat:** A historical record is replaced, moved, or edited in place.
 
-**Controls:** addressed mutations refuse `record: true`; pure end append remains available; use trash rather than hard delete publicly.
+**Controls:** addressed mutations refuse `record: true` (the default record identifier; the settings tab can name another property/value or a tag); pure end append remains available; use trash rather than hard delete publicly.
 
 **Residual:** Link-healing side effects, another plugin, direct disk writes, or metadata-cache failure may bypass or weaken the protective check. Backups and history remain required.
 
