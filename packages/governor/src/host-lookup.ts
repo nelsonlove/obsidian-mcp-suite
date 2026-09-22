@@ -58,6 +58,41 @@ export interface HostPluginLike {
 }
 
 /**
+ * The host's configured guarded territories, or null when they cannot be read.
+ *
+ * NULL IS NOT AN EMPTY LIST, and the distinction is the whole point: "no host,
+ * or a host too old to publish this" must fall back to the built-in default,
+ * whereas an empty list would mean "guard nothing" and silently unguard the
+ * legal material. The caller resolves null through `resolveTerritories`.
+ *
+ * WHY THIS READS THE HOST RATHER THAN A SETTING OF OUR OWN (#397). The list has
+ * consumers in both plugins, and the host holds the dangerous one — observation
+ * capture writes note bodies outside the vault, and it runs whether or not this
+ * plugin is installed. So the host owns the setting and this provider reads it.
+ * Two editable lists would be the exact drift `EXCLUDED_PREFIXES` was
+ * centralized to prevent, which is why this provider no longer keeps its own.
+ *
+ * Defensive about the shape because it is another plugin's object: anything but
+ * a function returning an array of strings reads as "cannot tell", i.e. null.
+ */
+export function hostGuardedTerritories(
+  plugins: Record<string, HostPluginLike | undefined> | undefined
+): readonly string[] | null {
+  const found = findHostPlugin(plugins);
+  if (!found) return null;
+  const api = found.plugin.api as { guardedTerritories?: unknown } | undefined;
+  if (typeof api?.guardedTerritories !== "function") return null;
+  try {
+    const list = (api.guardedTerritories as () => unknown)();
+    if (!Array.isArray(list)) return null;
+    const clean = list.filter((p): p is string => typeof p === "string");
+    return clean.length === list.length ? clean : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The loaded Vault MCP host, or null when none is loaded.
  *
  * A plugin found under a host id but exposing no `api` is SKIPPED, not treated

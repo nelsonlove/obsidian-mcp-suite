@@ -42,7 +42,7 @@ import { expiryRefusal, type SessionV1 } from "@vault-mcp/core";
 // them, and now both the host and the governance provider depend on the
 // published contract rather than the host reaching into the provider subtree.
 import { canonicalize, digestUtf8 } from "@vault-mcp/core";
-import { isExcludedTerritory } from "@vault-mcp/core";
+import { isExcludedTerritory, resolveTerritories } from "@vault-mcp/core";
 import { createObservationStore } from "../kernel/observations/store.js";
 import { createLocalBlobStore } from "../kernel/observations/local-store.js";
 import { vaultSlug } from "../paths.js";
@@ -263,16 +263,22 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
     store: observationStore,
     enabled: () => ctx.getSettings().captureObservations === true,
     maxBytes: ctx.getSettings().captureMaxBytes ?? 50 * 1024 * 1024,
-    // @vault-mcp/core's default territory list (issue #322: reads in a guarded
+    // The OPERATOR'S configured territory list (issue #322: reads in a guarded
     // territory stay legal; RETAINING copies of them outside the territory is
-    // what this forbids). NOT the same list the governance pane enumerates by
-    // any more: #321 made the pane's copy (packages/governor) a per-operator
-    // setting, defaulting to this same list but editable independently. This
-    // call still consults only the hardcoded default, so a territory a human
-    // adds in Governor's settings tab is NOT yet honored here — capture can
-    // retain a note body from a territory the pane has been told to skip.
-    // Tracked as a residual gap, not fixed by #321/#396.
-    excludedSource: isExcludedTerritory,
+    // what this forbids — capture writes note bodies to
+    // `~/.claude/vault-mcp/observations/`, outside the vault and outside Sync).
+    //
+    // Read LIVE per call, not captured at build time: an operator who adds a
+    // territory mid-session must have it honored by the next capture, not at
+    // the next reconnect. `resolveTerritories` supplies the core default when
+    // the setting is blank, so an install that never edits it behaves exactly
+    // as it did before #321.
+    //
+    // This closes #397. The list is the HOST's setting and Governor reads it
+    // from here, rather than the reverse: this consumer is the one that writes
+    // bytes outside the vault, and it exists whether or not Governor is
+    // installed at all.
+    excludedSource: (p: string) => isExcludedTerritory(p, resolveTerritories(ctx.getSettings().guardedTerritories)),
   });
 
   const executor = createOperationExecutor({

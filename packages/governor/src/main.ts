@@ -42,7 +42,7 @@
 import { Notice, Plugin, TFile, type Component } from "obsidian";
 import * as fs from "node:fs";
 import { registerGovernance, publishTools, type SeamRefusal, type WriteFacts } from "vault-mcp-api";
-import { uuidv7, EXCLUDED_PREFIXES } from "@vault-mcp/core";
+import { uuidv7, resolveTerritories } from "@vault-mcp/core";
 
 import { createSessionStore } from "./kernel/sessions/session-store.js";
 import { createProposalStore } from "./kernel/proposals/proposal-store.js";
@@ -51,7 +51,7 @@ import { budgetBreach } from "./kernel/mandates/budgets.js";
 import { createTransformationRegistry } from "./kernel/transformations/transformation.js";
 import { createPromotionStore } from "./kernel/transformations/promotion.js";
 import { createDefaultPredicateRegistry } from "./kernel/verification/predicates.js";
-import { governanceAcceptanceSettings, governanceTerritoriesSettings } from "./kernel/settings.js";
+import { governanceAcceptanceSettings } from "./kernel/settings.js";
 import { effectiveScope, isTracked } from "./kernel/history-store/history-scope.js";
 import { proposalRef } from "./kernel/history-store/refs.js";
 import type { HistoryRepository } from "./kernel/history-store/repository.js";
@@ -71,7 +71,7 @@ import { buildRevisionTools } from "./tools/revision.js";
 import { GovernorSettingTab } from "./settings-tab.js";
 import { DEFAULT_GOVERNOR_SETTINGS, mergeGovernorSettings, readGovernorSettings, type GovernorSettings } from "./settings.js";
 import { vaultSlug } from "./paths.js";
-import { hostPluginDir, type HostPluginLike } from "./host-lookup.js";
+import { hostPluginDir, type HostPluginLike, hostGuardedTerritories } from "./host-lookup.js";
 
 // "Which loaded plugin is the host?" lives in `host-lookup.ts` — Obsidian-free,
 // so it is testable headlessly, which is what `tests/host-lookup.test.mjs`
@@ -468,9 +468,14 @@ export default class GovernorPlugin extends Plugin {
         // history scope: an untracked path is ungoverned by the new system, and
         // the producer skips the proposal rather than opening a dead one.
         record: async (proposalId: string, path: string, baseBytes: Uint8Array | null, proposedBytes: Uint8Array) => {
+          // The HOST's configured territories (#397), read live through its api —
+          // the same list the pane, proposals and auto-accept use, and the same one
+          // the host's own capture gate consults. Falls back to the built-in default
+          // when no host is loaded, so the legal material stays out of history even
+          // then.
           const scope = effectiveScope(
             this.settings.historyScope,
-            governanceTerritoriesSettings(this.settings.config, EXCLUDED_PREFIXES).territories
+            resolveTerritories(hostGuardedTerritories((this.app as any)?.plugins?.plugins))
           );
           if (!isTracked(scope, path)) return null;
           const repo = await lazyHistoryRepo();

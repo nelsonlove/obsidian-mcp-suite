@@ -28,6 +28,8 @@ import {
   formatProtectedPropertyLines,
   normalizeProtectedProperties,
   parseProtectedPropertyLines,
+  EXCLUDED_PREFIXES,
+  resolveTerritories,
 } from "@vault-mcp/core";
 
 // ── tabbed settings UI: the pure, DOM-free half ─────────────────────────────
@@ -688,6 +690,45 @@ export class VaultMcpSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           })
       );
+
+    // Sits beside the capture settings on purpose: capture is the consumer that
+    // makes this list matter, because it is the one that writes note bodies out
+    // of the vault. The conformance/adopt-baseline rail reads the same list,
+    // and so does the Governor plugin when it is installed (#397) — its own
+    // settings tab shows this list read-only and points here, so there is one
+    // list with one editor rather than two that can disagree.
+    new Setting(containerEl)
+      .setName("Areas never to copy out of the vault")
+      .setDesc(
+        "One folder per line, matched from the start of the path. Nothing here is ever recorded by the setting above, walked by the conformance check, or reviewed by Governor — for archival or legally sensitive areas, not live notes. " +
+          "Leave it blank to use the built-in list, shown as the placeholder. Reading these notes still works; this only stops copies being kept outside the vault."
+      )
+      .addTextArea((t) => {
+        t.inputEl.rows = 4;
+        t
+          .setPlaceholder(EXCLUDED_PREFIXES.join("\n"))
+          // Shows the list IN FORCE, not the raw setting — so a blank setting
+          // renders the four built-in territories rather than an empty box.
+          // That matters because a configured list REPLACES the default rather
+          // than adding to it: from an empty box, typing one folder would
+          // silently stop guarding 80-89. Starting from the real list makes the
+          // edit additive in practice. Clearing the box entirely still saves []
+          // and returns to the default, so nothing is trapped.
+          .setValue(resolveTerritories(this.plugin.settings.guardedTerritories).join("\n"))
+          .onChange(async (value) => {
+            // Trim and drop blanks BEFORE saving: a trailing newline would
+            // otherwise persist an empty prefix, and `"".startsWith` is true for
+            // every path — one stray blank line would guard the entire vault and
+            // silently stop all capture. Storing [] for "nothing configured"
+            // keeps the blank-means-default rule in one place
+            // (core's resolveTerritories), not two.
+            this.plugin.settings.guardedTerritories = value
+              .split("\n")
+              .map((x) => x.trim())
+              .filter(Boolean);
+            await this.plugin.saveSettings();
+          });
+      });
 
     // ── the LOCAL HISTORY settings block used to be here (WP4, D10) ─────────
     //

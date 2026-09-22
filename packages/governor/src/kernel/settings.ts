@@ -74,27 +74,11 @@ function coerceKeyList(v: unknown): string[] {
   return [];
 }
 
-// ── guarded territories (#321) ───────────────────────────────────────────────
-// The vault areas Governor must never review, touch, or retain copies of
-// (`@vault-mcp/core`'s `EXCLUDED_PREFIXES`) as a human-editable list rather than
-// a name baked into that module. Read live at call time, like the badge and
-// acceptance settings above — an edit here takes effect without a plugin
-// reload. A blank or absent config falls back to the CALLER-SUPPLIED default
-// (the plugin passes `EXCLUDED_PREFIXES`), so an upgrade with no edit made to
-// this setting behaves exactly as before: this is what makes the change
-// default-preserving rather than a silent widen-the-guard on upgrade.
-export interface GuardedTerritoriesSettings {
-  territories: string[];
-}
-
-// Re-exported so callers that need the built-in default (the settings tab, for
-// its placeholder text) can get it from this module rather than reaching past
-// it into `@vault-mcp/core` directly — keeps this file the one place the
-// plugin's guarded-territories story is assembled.
-export { EXCLUDED_PREFIXES } from "@vault-mcp/core";
-
-export function governanceTerritoriesSettings(config: unknown, defaults: readonly string[]): GuardedTerritoriesSettings {
-  const c = (config ?? {}) as Record<string, unknown>;
-  const list = coerceKeyList(c.guardedTerritories);
-  return { territories: list.length > 0 ? list : [...defaults] };
-}
+// ── guarded territories (#321/#397) ─────────────────────────────────────────
+// NOT A SETTING OF THIS PLUGIN, deliberately. #396 first put the list here;
+// #397 moved it to the HOST, because the consumer that writes note bodies
+// outside the vault (observation capture) lives there and runs whether or not
+// this plugin is installed — a guard that only exists on the optional plugin is
+// not a guard. This plugin now READS the host's list live through its api; see
+// `hostGuardedTerritories` in ../host-lookup.ts and `territoriesOf` in
+// ../wiring/wiring.ts. Nothing here holds a copy, so the two cannot disagree.

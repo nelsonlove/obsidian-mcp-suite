@@ -47,6 +47,32 @@ export interface ExternalToolEntry {
 export interface VaultMcpApi {
   apiVersion: 1;
   registerTools(ownerPluginId: string, tools: ExternalToolSpec[]): () => void;
+  /**
+   * The operator's configured guarded territories, already resolved — a blank
+   * setting answers with `@vault-mcp/core`'s default rather than an empty list,
+   * so a caller can use the return value directly and never has to know the
+   * fallback rule.
+   *
+   * ADDITIVE, so `apiVersion` stays 1 (same reasoning as the seam's methods):
+   * an older `vault-mcp-api` build that never calls this keeps registering.
+   *
+   * WHY THE HOST PUBLISHES THIS AT ALL (#397). The list has consumers in both
+   * plugins, and #396 first put the setting on Governor — which left this
+   * plugin's observation capture, the one consumer that writes note bodies
+   * OUTSIDE the vault, pinned to the compiled-in default. The owner has to be
+   * the plugin that cannot be uninstalled, so the host holds the setting and
+   * publishes it here. Read it live per call: an operator's edit must take
+   * effect without either plugin reloading.
+   */
+  /**
+   * OPTIONAL, and that is the contract rather than laziness: `vault-mcp-api`
+   * builds already in the wild were compiled against a host without this, and a
+   * REQUIRED method would make every one of them fail to satisfy the type — the
+   * exact breakage `apiVersion: 1` promises not to cause. A caller must handle
+   * its absence; `hostGuardedTerritories` in packages/governor does, by reading
+   * a missing function as "cannot tell" and falling back to the built-in list.
+   */
+  guardedTerritories?(): readonly string[];
 }
 
 const NAME_RE = /^[a-z][a-z0-9_]*$/;
