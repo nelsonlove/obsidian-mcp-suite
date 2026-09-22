@@ -21,6 +21,17 @@ import { DEFAULT_PROTECTED_PROPERTIES, setDeclaredProtectedProperties } from "@v
 import { mountAction } from "./mount-state.js";
 import { wireSchemePanes, registerSchemeCommands } from "./scheme/wiring.js";
 import { runHostAdoption, LEGACY_PLUGIN_ID, PLUGIN_ID } from "./id-migration.js";
+import { territoriesOnLoad } from "./territory-policy.js";
+import {
+  DEFAULT_RECORD_IDENTIFICATION,
+  normalizeRecordIdentification,
+  type RecordIdentification,
+} from "./kernel/record-guard.js";
+
+/** How a note declares itself a record — the operator's convention, see
+ * `kernel/record-guard.ts` where the decision lives. Re-exported so the type
+ * keeps its old address. */
+export type { RecordIdentification };
 
 interface VaultMcpSettings {
   setupAcknowledged: boolean;
@@ -145,28 +156,28 @@ interface VaultMcpSettings {
    */
   captureMaxBytes: number;
   /**
-   * The vault areas no host feature may RETAIN a copy of, as a human-editable
-   * list rather than a name baked into `@vault-mcp/core`. Blank means "use the
-   * built-in default" (`EXCLUDED_PREFIXES`), so an upgrade with no edit behaves
-   * exactly as before — this is what keeps the change default-preserving rather
-   * than a silent widen-or-narrow of the guard.
+   * The vault areas no host feature may RETAIN a copy of. EMPTY BY DEFAULT and
+   * empty means "guard nothing" — honestly, and visibly: capture refuses to turn
+   * on while this is empty. The plugin used to ship a default here that was one
+   * operator's four folder names; that was a vault convention baked into a
+   * public plugin, and #397 retired it. An install that predates this setting
+   * has those four written into its OWN data.json once, on upgrade, so nothing
+   * changes for it (`loadSettings`).
    *
-   * WHY IT LIVES ON THE HOST AND NOT ON GOVERNOR (#397, closing #321 properly).
-   * #396 shipped this as a Governor setting, which reaches every consumer
-   * inside that plugin and none of the two inside this one. That is the wrong
-   * owner, and the reason is not tidiness: **Governor is optional and this
-   * plugin is not.** The riskiest consumer is here — observation capture writes
-   * note bodies to `~/.claude/vault-mcp/observations/`, outside the vault and
-   * outside Sync — so a vault running the host alone would have had capture
-   * with no way to configure what it must never retain. A guard that exists
-   * only on the plugin a user can uninstall is not a guard.
-   *
-   * So the host owns the list and Governor READS it (via `guardedTerritories()`
-   * on the api object). One list, one editor, and the dependency runs the way
-   * every other one in the suite does: the optional plugin depends on the
-   * mandatory one, never the reverse.
+   * Owned by the HOST, not Governor: observation capture writes note bodies to
+   * `~/.claude/vault-mcp/observations/`, outside the vault and outside Sync, and
+   * it runs whether or not Governor is installed. Governor reads this through
+   * `guardedTerritories()` on the api and keeps no copy.
    */
   guardedTerritories: string[];
+  /**
+   * How a note declares itself a RECORD — historical, byte-verified, extended
+   * only by end-of-file append (see `enforceRecordImmutability`). The same
+   * three knobs TaskNotes exposes for its task identifier: a frontmatter
+   * PROPERTY (name + value) or a TAG. `record: true` was hardcoded until #397;
+   * it is now this setting's default, so an existing install is unchanged.
+   */
+  recordIdentification: RecordIdentification;
   /**
    * The in-Obsidian dev tool-runner ("Vault MCP: Run tool…" — src/tool-runner.ts).
    * Default ON: it grants nothing the MCP surface doesn't already grant — it
@@ -229,6 +240,7 @@ const DEFAULT_SETTINGS: VaultMcpSettings = {
   captureObservations: false,
   captureMaxBytes: 50 * 1024 * 1024,
   guardedTerritories: [],
+  recordIdentification: { ...DEFAULT_RECORD_IDENTIFICATION },
 };
 
 class DiagnosticsModal extends Modal {
@@ -284,6 +296,22 @@ export default class VaultMcpPlugin extends Plugin {
     // has ever saved settings never re-reads the provider's copy.
     const seed = own ? null : this.adoptedSettings;
     this.settings = Object.assign({}, DEFAULT_SETTINGS, seed ?? {}, own ?? {});
+    // #397 — guarded territories. There is no shipped default any more, so an
+    // install that predates the setting must be seeded ONCE with what the old
+    // default guarded for it, or upgrading would silently unguard its legal
+    // material. The discriminator is "does this plugin already have a
+    // data.json": a fresh install has none and starts EMPTY (guard nothing;
+    // capture refuses to enable); an existing install has one without the key
+    // and gets the four seeded. The key is then always persisted — even as []
+    // — so this branch runs at most once per install, and a new user who saves
+    // any other setting before configuring territories can never inherit the
+    // legacy operator's folder names on a later load.
+    const territories = territoriesOnLoad(own);
+    this.settings.guardedTerritories = territories.territories;
+    // The record identifier: coerce a partial or malformed value to the default
+    // rather than crashing the probe or the settings tab. The rule is the
+    // kernel's (`normalizeRecordIdentification`), tested there.
+    this.settings.recordIdentification = normalizeRecordIdentification(this.settings.recordIdentification);
     // A hand-edited/corrupt data.json must not silently DISABLE a guard: any
     // value that isn't an explicit `false` reads as enforced (same
     // fail-toward-the-safe-default discipline as the cliPolicy/protected-
@@ -333,6 +361,9 @@ export default class VaultMcpPlugin extends Plugin {
     // data.json can extend the perimeter but never shrink or restate the
     // hardcoded accepted-family floor).
     setDeclaredProtectedProperties(this.settings.protectedProperties);
+    // Persist NOW if the territories key was absent (seeded or fresh), so the
+    // seeding branch above can never run a second time for this install.
+    if (territories.persist) await this.saveSettings();
   }
   async saveSettings() {
     await this.saveData(this.settings);
@@ -573,7 +604,7 @@ export default class VaultMcpPlugin extends Plugin {
     const kernel = new Kernel(
       writeQueue,
       journal,
-      obsidianProbe(this.app, () => this.settings.enforceRecordImmutability),
+      obsidianProbe(this.app, () => this.settings.enforceRecordImmutability, () => this.settings.recordIdentification),
       new IdempotencyStore(),
       new LockStore(),
       uidIndex,

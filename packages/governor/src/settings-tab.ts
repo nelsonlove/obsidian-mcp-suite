@@ -75,7 +75,10 @@ export class GovernorSettingTab extends PluginSettingTab {
           })
       );
     containerEl.createEl("p", {
-      text: `In effect now: ${territoriesInEffect(this.plugin).join(", ")}`,
+      text: (() => {
+        const t = territoriesInEffect(this.plugin);
+        return t.length ? `In effect now: ${t.join(", ")}` : "In effect now: none — nothing is guarded until Vault MCP has at least one territory configured.";
+      })(),
       cls: "setting-item-description",
     });
 
@@ -259,9 +262,9 @@ export class GovernorSettingTab extends PluginSettingTab {
   }
 }
 
-/** What the pane will actually guard by right now — the host's configured list,
- * or the built-in default when no host is loaded. Shown rather than an editable
- * field so there is visibly ONE list, not two that can disagree. */
+/** What the pane will actually guard by right now — the host's configured
+ * list, or nothing when no host is loaded (#397: no built-in default). Shown
+ * rather than an editable field so there is visibly ONE list, not two. */
 function territoriesInEffect(plugin: { app: unknown }): readonly string[] {
   return resolveTerritories(hostGuardedTerritories((plugin.app as any)?.plugins?.plugins));
 }

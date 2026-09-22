@@ -60,10 +60,11 @@ export interface HostPluginLike {
 /**
  * The host's configured guarded territories, or null when they cannot be read.
  *
- * NULL IS NOT AN EMPTY LIST, and the distinction is the whole point: "no host,
- * or a host too old to publish this" must fall back to the built-in default,
- * whereas an empty list would mean "guard nothing" and silently unguard the
- * legal material. The caller resolves null through `resolveTerritories`.
+ * NULL means "cannot tell" — no host, or a host too old to publish this. Since
+ * #397 there is no built-in default to fall back to: `resolveTerritories(null)`
+ * is `[]`, so a provider that cannot ask its host guards nothing. That is the
+ * honest reading, and it is safe because this provider can DO nothing without
+ * a host either — the pane refuses to mount, and no proposal is produced.
  *
  * WHY THIS READS THE HOST RATHER THAN A SETTING OF OUR OWN (#397). The list has
  * consumers in both plugins, and the host holds the dangerous one — observation

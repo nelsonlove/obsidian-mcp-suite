@@ -105,9 +105,18 @@ export const RECORD_EXEMPT_OPS: ReadonlySet<string> = new Set(["obsidian_append_
  * protective and a hand-typed `record: "true"` plainly meant to declare one.
  * Anything else — absent, false, prose — is not a record.
  */
-export function isRecordFlag(value: unknown): boolean {
-  if (value === true) return true;
-  return typeof value === "string" && value.trim().toLowerCase() === "true";
+export function isRecordFlag(value: unknown, expected: string = "true"): boolean {
+  const want = expected.trim().toLowerCase();
+  // A YAML boolean `true` matches an expected "true" — that is the shipped
+  // default and the way every existing record note is written.
+  if (value === true) return want === "true";
+  if (typeof value === "string") return value.trim().toLowerCase() === want;
+  // Nothing else counts — not `1`, not `"yes"`, not a list. The pin in
+  // record-immutable.test.mjs holds this deliberately: this predicate decides
+  // what an agent may not overwrite, and a wider match is a wider refusal
+  // surface, which must not grow by accident. A tag-identified record does not
+  // come through here at all (the probe uses getAllTags for that).
+  return false;
 }
 
 /**
@@ -139,4 +148,76 @@ export function recordImmutableRefusal(
     if (flagged === true) return new RecordImmutableError(op, path);
   }
   return null;
+}
+
+// ── How a note declares itself a record (#397) ────────────────────────────────
+//
+// The convention used to be hard-coded: frontmatter `record: true`. That is one
+// vault's spelling, and a plugin with a community directory cannot ship a
+// spelling. So the operator picks — the same choice TaskNotes offers with
+// `taskIdentificationMethod` / `taskTag`: a frontmatter property holding a
+// value, or a tag. The DECISION lives here, obsidian-free, so it is testable
+// without a metadata cache; `obsidian-probe.ts` only gathers the note's
+// frontmatter and tags and hands them in.
+
+/** Mirrors TaskNotes' `taskIdentificationMethod` / `taskTag` shape on purpose — one convention. */
+export interface RecordIdentification {
+  method: "property" | "tag";
+  /** Frontmatter key, when `method` is "property". */
+  property: string;
+  /** Value that key must hold (case-insensitive, trimmed; YAML `true` matches "true"). */
+  value: string;
+  /** Tag (without `#`), when `method` is "tag". Frontmatter and inline tags both count. */
+  tag: string;
+}
+
+/** The shipped default — the spelling every existing record note was written in. */
+export const DEFAULT_RECORD_IDENTIFICATION: Readonly<RecordIdentification> = Object.freeze({
+  method: "property",
+  property: "record",
+  value: "true",
+  tag: "record",
+});
+
+/**
+ * Coerce a stored (possibly partial, hand-edited, or wrong-typed) value to a
+ * complete identification, never throwing: a blank or non-string field takes
+ * the default, an unknown method reads as "property", and a leading `#` on the
+ * tag is stripped so `#record` and `record` mean the same thing.
+ */
+export function normalizeRecordIdentification(raw: unknown): RecordIdentification {
+  const ri = (raw && typeof raw === "object" ? raw : {}) as Partial<Record<keyof RecordIdentification, unknown>>;
+  const str = (v: unknown, fallback: string): string => (typeof v === "string" && v.trim() ? v.trim() : fallback);
+  return {
+    method: ri.method === "tag" ? "tag" : "property",
+    property: str(ri.property, DEFAULT_RECORD_IDENTIFICATION.property),
+    value: str(ri.value, DEFAULT_RECORD_IDENTIFICATION.value),
+    tag: str(ri.tag, DEFAULT_RECORD_IDENTIFICATION.tag).replace(/^#/, ""),
+  };
+}
+
+/** What the probe gathers from the metadata cache for one note. */
+export interface RecordEvidence {
+  /** Parsed frontmatter, or null/undefined when the cache has none. */
+  frontmatter?: Record<string, unknown> | null;
+  /** Every tag on the note, frontmatter and inline, with or without `#`. */
+  tags?: readonly string[];
+}
+
+/**
+ * Whether the note is a record under the operator's identification. Returns
+ * `undefined` — "cannot tell", which the kernel treats as NOT a record (fail
+ * open, see the header) — when the property method is asked about a note with
+ * no frontmatter or without the property at all. The tag method always answers,
+ * because an absent tag is a plain "no".
+ */
+export function identifiesRecord(id: RecordIdentification, note: RecordEvidence): boolean | undefined {
+  if (id.method === "tag") {
+    const want = id.tag.replace(/^#/, "").trim().toLowerCase();
+    if (!want) return false;
+    return (note.tags ?? []).some((t) => t.replace(/^#/, "").trim().toLowerCase() === want);
+  }
+  const fm = note.frontmatter;
+  if (!fm || !Object.prototype.hasOwnProperty.call(fm, id.property)) return undefined;
+  return isRecordFlag(fm[id.property], id.value);
 }

@@ -39,10 +39,12 @@ export interface RunOpts {
   vocabularies: VocabInstanceSettings[];
   schemes: SchemeInstanceConfig[];
   excludedRoots?: string[];
-  /** The operator's guarded territories (#397). Omitted means the built-in
-   * default, so every existing caller is unchanged. Threaded to `buildSnapshot`
-   * rather than read from a constant: the rail must refuse to walk a territory
-   * an operator added, and #397 was filed because it did not. */
+  /** The operator's guarded territories (#397). There is NO built-in default
+   * (ruled 2026-09-22): omitted or empty means the walk refuses nothing on
+   * territory grounds — honestly, rather than falling back to one vault's folder
+   * names. Threaded to `buildSnapshot` rather than read from a constant: the
+   * rail must refuse to walk a territory an operator added, and #397 was filed
+   * because it did not. The process entry fills this from `territoriesFrom`. */
   territories?: readonly string[];
   /**
    * Register the four ported legacy checks (structure/port/ste/drift — the
@@ -178,6 +180,27 @@ export function excludedRootsFrom(argv: string[], env: Record<string, string | u
     .filter(Boolean);
   if (flags.length) return flags;
   return (envAliased(env, "EXCLUDED_ROOTS") ?? "")
+    .split(",")
+    .map((r) => r.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Guarded territories for this invocation (#397): `--territory=<prefix>` flags,
+ * else `GOVERNOR_TERRITORIES` (comma-separated), else NONE. The same shape as
+ * `excludedRootsFrom`, for the same reason: the list is the operator's, so it
+ * arrives from the invocation and is never a source constant. Inside Obsidian
+ * the host passes its `guardedTerritories` setting instead; this is the
+ * standalone CLI's only way to receive one, and with neither the walk refuses
+ * nothing on territory grounds — which is the ruling, not a gap.
+ */
+export function territoriesFrom(argv: string[], env: Record<string, string | undefined>): string[] {
+  const flags = argv
+    .filter((a) => a.startsWith("--territory="))
+    .map((a) => a.slice("--territory=".length).trim())
+    .filter(Boolean);
+  if (flags.length) return flags;
+  return (envAliased(env, "TERRITORIES") ?? "")
     .split(",")
     .map((r) => r.trim())
     .filter(Boolean);
@@ -735,6 +758,9 @@ export async function runCli(argv: string[]): Promise<void> {
     legacyPacks: !argv.includes("--no-legacy-packs"),
     // The rail governs live content, not the frozen archive (#112 ruling).
     excludedRoots,
+    // Guarded territories the walk must refuse (#397) — from the invocation,
+    // never a constant; none given means none refused.
+    territories: territoriesFrom(argv, process.env),
     // Debt-budget tooth (#211): warn-only unless --strict-budget.
     debtBudget,
     strictBudget,
