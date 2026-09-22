@@ -113,6 +113,19 @@ Repository identity belongs to the vault. A connection scope cannot expand histo
 
 ## Observation capture and replay
 
+### Guarded territories
+
+| Field | Value |
+|---|---|
+| Default | **Empty — the plugin ships no list** (ruled 2026-09-22, #397). An install upgrading from a build that had a built-in list is seeded once with that list's four names, then the key is persisted so the seeding never repeats |
+| Effect | Vault-relative folder prefixes, one per line, that observation capture never retains and the conformance rail never walks — the areas that must not leave the vault. Committed when the field loses focus |
+| Takes effect | Live, per call |
+| Dependency | None; Governor reads this same list from the host and keeps none of its own |
+| Risk | An **empty list guards nothing**, honestly: nothing is refused on territory grounds, and capture refuses to turn on until at least one territory is listed. A renamed folder silently leaves the list |
+| Recovery | Add the prefix; review `~/.claude/vault-mcp/observations/` for anything retained before it was listed |
+
+The standalone conformance CLI has no settings; it receives the list from `--territory=<prefix>` (repeatable) or `GOVERNOR_TERRITORIES` (comma-separated), and with neither refuses nothing on territory grounds.
+
 ### Governed-session read capture
 
 | Field | Value |
@@ -120,7 +133,7 @@ Repository identity belongs to the vault. A connection scope cannot expand histo
 | Default | Replayable for substantive vault reads in governed sessions |
 | Effect | Preserves the exact Governor-returned payload and a content digest for review and playback |
 | Takes effect | New operations |
-| Dependency | Protected local observation store |
+| Dependency | Protected local observation store; **at least one guarded territory configured** — the toggle refuses to turn on while the list is empty, and the runtime gate enforces the same condition |
 | Risk | Historical note content and metadata remain after the visible note changes or is deleted |
 | Recovery | Shorten retention, delete eligible payloads through the audited control, or close the session and export only required evidence |
 
@@ -268,11 +281,22 @@ The acceptance family is a non-configurable floor. Configuration may extend it, 
 | Field | Value |
 |---|---|
 | Default | On |
-| Effect | Protects notes declared `record: true` from addressed in-place mutation; pure end append remains available |
+| Effect | Protects notes the record identifier marks (default `record: true`; see below) from addressed in-place mutation; pure end append remains available |
 | Takes effect | Immediately |
 | Dependency | Metadata cache can read the flag |
 | Risk | The protective check may fail open if metadata is unavailable; side-effect rewrites remain outside its addressed-path boundary |
 | Recovery | Keep backups; disable only for a reviewed exceptional operation |
+
+### Record identifier
+
+| Field | Value |
+|---|---|
+| Default | Frontmatter property `record` holding `true` |
+| Effect | How a note declares itself a record — the operator's convention, not the plugin's (#397). Either a frontmatter **property** with a required **value** (case-insensitive; YAML `true` matches `true`), or a **tag** (with or without `#`; frontmatter and inline tags both count). Mirrors TaskNotes' task identifier setting |
+| Takes effect | Live, per call |
+| Dependency | Metadata cache has parsed the note |
+| Risk | Changing the identifier stops protecting notes marked the old way until they are re-marked; a blank field falls back to the default rather than protecting nothing |
+| Recovery | Restore the previous identifier; notes are never rewritten by this setting |
 
 ## Modules
 
