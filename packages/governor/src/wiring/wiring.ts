@@ -122,7 +122,7 @@ import { excludedUnderHost, hostGuardedTerritories } from "../host-lookup.js";
 // the second consumer — one list, so the pane and capture can never disagree
 // about what is off-limits. #321 made the list configurable and #397 settled
 // WHERE it lives: on the host, read from here through its api (see
-// territoriesOf below). One list now covers every consumer in both plugins —
+// `isExcluded` below). One list now covers every consumer in both plugins —
 // this pane, proposals, auto-accept and local history on this side; the
 // observation-capture retention gate and the conformance rail on the host's.
 // This provider deliberately keeps no copy of its own, because two editable
@@ -511,9 +511,6 @@ async function journalSignature(plugin: Plugin): Promise<string> {
 }
 
 // ── governed-note enumeration (module-scope helpers) ─────────────────────────
-// Guarded territories (#321/#397): read live from the HOST's api, so a human
-// edit in its settings tab takes effect on the next call with no reload here.
-// This provider holds no copy of the list — see territoriesOf below.
 // #397: the list is the HOST's setting, read live through its api. This
 // provider deliberately keeps no copy — see `hostGuardedTerritories`. There is
 // no built-in default any more. Two host answers, two meanings (review of
