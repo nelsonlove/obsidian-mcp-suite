@@ -221,7 +221,7 @@ Carry human-owned properties forward byte- or value-equivalently as the operatio
 
 ## Records
 
-For `record: true` notes, use pure end append with the required dated entry format. Do not move, rewrite, insert under a heading, retitle, or delete through ordinary Governor operations. If a record needs correction, append a corrective entry unless the human authorizes an exceptional recovery procedure.
+For `record: true` (the default record identifier; the settings tab can name another property/value or a tag) notes, use pure end append with the required dated entry format. Do not move, rewrite, insert under a heading, retitle, or delete through ordinary Governor operations. If a record needs correction, append a corrective entry unless the human authorizes an exceptional recovery procedure.
 
 ## Prompt injection
 

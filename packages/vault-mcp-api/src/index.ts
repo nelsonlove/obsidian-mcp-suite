@@ -35,6 +35,21 @@ export interface ExternalToolSpec {
 export interface VaultMcpApi {
   apiVersion: 1;
   registerTools(ownerPluginId: string, tools: ExternalToolSpec[]): () => void;
+  /**
+   * The host operator's configured guarded territories — vault areas no plugin
+   * should retain a copy of outside the vault — already resolved (trimmed,
+   * blanks dropped). The host ships NO default list: an empty answer means the
+   * operator guards nothing, and that is their call. Do not keep a list of your
+   * own; the host's is the only one.
+   *
+   * OPTIONAL on purpose. `apiVersion` stays 1 because this is additive, and it
+   * can only stay additive if a publisher compiled against an older host still
+   * satisfies the type. Treat its ABSENCE as "cannot tell" and FAIL CLOSED
+   * (retain nothing, govern nothing) until a host that answers is present —
+   * never as "there are no guarded territories", which would read an old host
+   * as permission to retain anything.
+   */
+  guardedTerritories?(): readonly string[];
 }
 
 // ── The governance seam (mirrors packages/host/src/mcp/seam.ts) ───────────────

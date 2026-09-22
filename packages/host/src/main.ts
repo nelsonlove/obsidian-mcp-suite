@@ -10,7 +10,7 @@ import { ConnectionSetupModal, VaultMcpSettingTab } from "./connection-ui.js";
 import { findClaudeBinary, claudeIsRegistered, claudeRegister, claudeRemove, claudeEnsureConnectPlugin } from "./claude-cli.js";
 import { ExternalToolRegistry, type VaultMcpApi } from "./mcp/external-tools.js";
 import { createGovernanceSeam, type GovernanceSeam } from "./mcp/seam.js";
-import { DEFAULT_VOCABULARIES, splitSettings, type VocabInstanceSettings } from "@vault-mcp/core";
+import { DEFAULT_VOCABULARIES, splitSettings, resolveTerritories, type VocabInstanceSettings } from "@vault-mcp/core";
 import { Kernel, WriteQueue, WriteJournal, IdempotencyStore, LockStore, UidIndex, loadInstallId, migrateLegacyModuleIds, type ModuleSettings } from "./kernel/index.js";
 import { createSessionLog } from "./kernel/sessions/session-log.js";
 import { obsidianProbe, obsidianServerIdentity, obsidianUidSource } from "./kernel/obsidian-probe.js";
@@ -21,6 +21,17 @@ import { DEFAULT_PROTECTED_PROPERTIES, setDeclaredProtectedProperties } from "@v
 import { mountAction } from "./mount-state.js";
 import { wireSchemePanes, registerSchemeCommands } from "./scheme/wiring.js";
 import { runHostAdoption, LEGACY_PLUGIN_ID, PLUGIN_ID } from "./id-migration.js";
+import { territoriesOnLoad } from "./territory-policy.js";
+import {
+  DEFAULT_RECORD_IDENTIFICATION,
+  normalizeRecordIdentification,
+  type RecordIdentification,
+} from "./kernel/record-guard.js";
+
+/** How a note declares itself a record — the operator's convention, see
+ * `kernel/record-guard.ts` where the decision lives. Re-exported so the type
+ * keeps its old address. */
+export type { RecordIdentification };
 
 interface VaultMcpSettings {
   setupAcknowledged: boolean;
@@ -122,7 +133,8 @@ interface VaultMcpSettings {
   cliPolicy: { deny: string[]; allowOpaque: string[] };
   /**
    * Enforce record immutability (#264): refuse non-append mutation of a note
-   * whose frontmatter carries `record: true`. Default ON — the guard exists
+   * the record identifier marks (`record: true` by default; see
+   * `recordIdentification`). Default ON — the guard exists
    * because a mis-quoted write destroyed a byte-verified record archive. The
    * off switch is here because the check is deliberately over-inclusive (it
    * refuses on ANY named path, including one an operation only reads), so a
@@ -144,6 +156,29 @@ interface VaultMcpSettings {
    * Ceiling on total captured bytes, per vault. A stopgap, and named as one: real retention does not exist yet, so without a cap the store grows forever. Capture stops and says why rather than filling the disk.
    */
   captureMaxBytes: number;
+  /**
+   * The vault areas no host feature may RETAIN a copy of. EMPTY BY DEFAULT and
+   * empty means "guard nothing" — honestly, and visibly: capture refuses to turn
+   * on while this is empty. The plugin used to ship a default here that was one
+   * operator's four folder names; that was a vault convention baked into a
+   * public plugin, and #397 retired it. An install that predates this setting
+   * has those four written into its OWN data.json once, on upgrade, so nothing
+   * changes for it (`loadSettings`).
+   *
+   * Owned by the HOST, not Governor: observation capture writes note bodies to
+   * `~/.claude/vault-mcp/observations/`, outside the vault and outside Sync, and
+   * it runs whether or not Governor is installed. Governor reads this through
+   * `guardedTerritories()` on the api and keeps no copy.
+   */
+  guardedTerritories: string[];
+  /**
+   * How a note declares itself a RECORD — historical, byte-verified, extended
+   * only by end-of-file append (see `enforceRecordImmutability`). The same
+   * three knobs TaskNotes exposes for its task identifier: a frontmatter
+   * PROPERTY (name + value) or a TAG. `record: true` was hardcoded until #397;
+   * it is now this setting's default, so an existing install is unchanged.
+   */
+  recordIdentification: RecordIdentification;
   /**
    * The in-Obsidian dev tool-runner ("Vault MCP: Run tool…" — src/tool-runner.ts).
    * Default ON: it grants nothing the MCP surface doesn't already grant — it
@@ -205,6 +240,8 @@ const DEFAULT_SETTINGS: VaultMcpSettings = {
   devToolRunner: true,
   captureObservations: false,
   captureMaxBytes: 50 * 1024 * 1024,
+  guardedTerritories: [],
+  recordIdentification: { ...DEFAULT_RECORD_IDENTIFICATION },
 };
 
 class DiagnosticsModal extends Modal {
@@ -247,6 +284,10 @@ export default class VaultMcpPlugin extends Plugin {
     registerTools: (owner, tools) => externalRegistryOf(this).registerTools(owner, tools),
     registerWriteObserver: (id, observe) => seamOf(this).seam.registerWriteObserver(id, observe),
     registerSessionRefusal: (id, refuse) => seamOf(this).seam.registerSessionRefusal(id, refuse),
+    // Resolved on every call, never captured: an operator edit reaches the
+    // provider without either plugin reloading. A copy is returned so a caller
+    // cannot mutate the host's own array through the reference.
+    guardedTerritories: () => [...resolveTerritories(this.settings.guardedTerritories)],
   };
 
   async loadSettings() {
@@ -256,6 +297,22 @@ export default class VaultMcpPlugin extends Plugin {
     // has ever saved settings never re-reads the provider's copy.
     const seed = own ? null : this.adoptedSettings;
     this.settings = Object.assign({}, DEFAULT_SETTINGS, seed ?? {}, own ?? {});
+    // #397 — guarded territories. There is no shipped default any more, so an
+    // install that predates the setting must be seeded ONCE with what the old
+    // default guarded for it, or upgrading would silently unguard its legal
+    // material. The discriminator is "does this plugin already have a
+    // data.json": a fresh install has none and starts EMPTY (guard nothing;
+    // capture refuses to enable); an existing install has one without the key
+    // and gets the four seeded. The key is then always persisted — even as []
+    // — so this branch runs at most once per install, and a new user who saves
+    // any other setting before configuring territories can never inherit the
+    // legacy operator's folder names on a later load.
+    const territories = territoriesOnLoad(own, seed);
+    this.settings.guardedTerritories = territories.territories;
+    // The record identifier: coerce a partial or malformed value to the default
+    // rather than crashing the probe or the settings tab. The rule is the
+    // kernel's (`normalizeRecordIdentification`), tested there.
+    this.settings.recordIdentification = normalizeRecordIdentification(this.settings.recordIdentification);
     // A hand-edited/corrupt data.json must not silently DISABLE a guard: any
     // value that isn't an explicit `false` reads as enforced (same
     // fail-toward-the-safe-default discipline as the cliPolicy/protected-
@@ -305,6 +362,9 @@ export default class VaultMcpPlugin extends Plugin {
     // data.json can extend the perimeter but never shrink or restate the
     // hardcoded accepted-family floor).
     setDeclaredProtectedProperties(this.settings.protectedProperties);
+    // Persist NOW if the territories key was absent (seeded or fresh), so the
+    // seeding branch above can never run a second time for this install.
+    if (territories.persist) await this.saveSettings();
   }
   async saveSettings() {
     await this.saveData(this.settings);
@@ -545,7 +605,7 @@ export default class VaultMcpPlugin extends Plugin {
     const kernel = new Kernel(
       writeQueue,
       journal,
-      obsidianProbe(this.app, () => this.settings.enforceRecordImmutability),
+      obsidianProbe(this.app, () => this.settings.enforceRecordImmutability, () => this.settings.recordIdentification),
       new IdempotencyStore(),
       new LockStore(),
       uidIndex,
@@ -605,6 +665,10 @@ export default class VaultMcpPlugin extends Plugin {
         cliPolicy: this.settings.cliPolicy,
         captureObservations: this.settings.captureObservations,
         captureMaxBytes: this.settings.captureMaxBytes,
+        // Forwarded RAW, resolved at the call site. Projecting the resolved list
+        // here would freeze it per connection, so an operator's edit would not
+        // reach capture until the next reconnect — the inert-toggle shape again.
+        guardedTerritories: this.settings.guardedTerritories,
       }),
       serverIdentity,
       sessions: {
@@ -792,6 +856,7 @@ export default class VaultMcpPlugin extends Plugin {
     if (action === "mount") {
       try {
         this.schemePanesComponent = wireSchemePanes(this, {
+          getTerritories: () => resolveTerritories(this.settings.guardedTerritories),
           getSchemes: () => this.settings.schemes ?? DEFAULT_SCHEMES,
         });
       } catch (e) {

@@ -102,9 +102,9 @@ not a pass. On a multi-target operation, `if_rev` applies to the **first** targe
 [kernel arguments](#kernel-arguments)), so it works on the full surface, in Code Mode, and on
 mutating tools published by other plugins; no handler ever sees it.
 
-## Record immutability — `record: true` notes are append-only
+## Record immutability — record notes are append-only
 
-A note whose frontmatter carries **`record: true`** is a record: historical, extended only by a
+A note the operator's **record identifier** marks (by default frontmatter **`record: true`**; see below) is a record: historical, extended only by a
 dated end-of-file append, never edited in place (issue #264 — the durable, every-client layer
 behind the client-side record-write hooks). The kernel refuses any mutating operation that
 names one with **`Error [record_immutable]`**, naming the path and pointing at the dated-append
@@ -125,8 +125,7 @@ convention. Nothing runs; the refusal is journaled (`outcome: "error"`).
   nothing. The check is protective, not load-bearing — a broken cache must not become a
   vault-wide write outage. (`if_rev` fails closed because the caller explicitly asked for a
   precondition; nobody asked this check to block a note it cannot read.)
-- The flag is `record: true` (boolean; the quoted string `"true"` is honored too —
-  `isRecordFlag`). `false`, absence, or anything else is not a record.
+- **How a note declares itself a record is the operator's convention, not the plugin's** (#397, ruled 2026-09-22): the `recordIdentification` setting (*Record identifier* in the settings tab) picks either a frontmatter **property** holding a **value** or a **tag**, mirroring TaskNotes' `taskIdentificationMethod` / `taskTag`. The default is the old rule, property `record` with value `true` (boolean; the quoted string `"true"` is honored too — `isRecordFlag`). Under the tag method, frontmatter and inline tags both count, with or without `#`. The decision is `identifiesRecord` in `record-guard.ts`, pure and unit-tested; `obsidian-probe.ts` only gathers the note's frontmatter and tags. `false`, absence, or anything else is not a record.
 
 Enforcement is on by default; the `enforceRecordImmutability` setting turns it off at the probe (the flag reads as unknown, which is the same fail-open path a cold cache takes).
 

@@ -39,6 +39,13 @@ export interface RunOpts {
   vocabularies: VocabInstanceSettings[];
   schemes: SchemeInstanceConfig[];
   excludedRoots?: string[];
+  /** The operator's guarded territories (#397). There is NO built-in default
+   * (ruled 2026-09-22): omitted or empty means the walk refuses nothing on
+   * territory grounds — honestly, rather than falling back to one vault's folder
+   * names. Threaded to `buildSnapshot` rather than read from a constant: the
+   * rail must refuse to walk a territory an operator added, and #397 was filed
+   * because it did not. The process entry fills this from `territoriesFrom`. */
+  territories?: readonly string[];
   /**
    * Register the four ported legacy checks (structure/port/ste/drift — the
    * whole Python rail, now in TS). **Default ON** (issue #116).
@@ -88,9 +95,10 @@ export interface RunResult {
 export async function runConformance(opts: RunOpts): Promise<RunResult> {
   // boundary: opts.root — cli.ts already resolves `root` explicitly (--root=,
   // GOVERNOR_CONTENT_ROOT, or the .obsidian-ancestor walk), so it IS this run's
-  // declared boundary; buildSnapshot's own guard (#157) still refuses
-  // unconditionally into ~/obsidian-old / 80-89 / a hold regardless of this.
-  const snapshot = await buildSnapshot({ root: opts.root, excludedRoots: opts.excludedRoots, boundary: opts.root });
+  // declared boundary; buildSnapshot's own guard (#157) still refuses, before
+  // the boundary is consulted, any listed territory in `opts.territories`
+  // (there is no built-in list since #397 — none listed, none refused).
+  const snapshot = await buildSnapshot({ root: opts.root, excludedRoots: opts.excludedRoots, boundary: opts.root, territories: opts.territories });
 
   const packs: RulePack[] = [];
   // vocab providers: built from settings over the snapshot listing (the registry
@@ -173,6 +181,27 @@ export function excludedRootsFrom(argv: string[], env: Record<string, string | u
     .filter(Boolean);
   if (flags.length) return flags;
   return (envAliased(env, "EXCLUDED_ROOTS") ?? "")
+    .split(",")
+    .map((r) => r.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Guarded territories for this invocation (#397): `--territory=<prefix>` flags,
+ * else `GOVERNOR_TERRITORIES` (comma-separated), else NONE. The same shape as
+ * `excludedRootsFrom`, for the same reason: the list is the operator's, so it
+ * arrives from the invocation and is never a source constant. Inside Obsidian
+ * the host passes its `guardedTerritories` setting instead; this is the
+ * standalone CLI's only way to receive one, and with neither the walk refuses
+ * nothing on territory grounds — which is the ruling, not a gap.
+ */
+export function territoriesFrom(argv: string[], env: Record<string, string | undefined>): string[] {
+  const flags = argv
+    .filter((a) => a.startsWith("--territory="))
+    .map((a) => a.slice("--territory=".length).trim())
+    .filter(Boolean);
+  if (flags.length) return flags;
+  return (envAliased(env, "TERRITORIES") ?? "")
     .split(",")
     .map((r) => r.trim())
     .filter(Boolean);
@@ -599,8 +628,9 @@ function truthyEnv(v: string | undefined): boolean {
  *
  * A discovered root (opt-in path) is not a bypass of #168's guard: `runCli`
  * still threads it into `buildSnapshot` as `boundary: opts.root`, exactly
- * like an explicit `--root=`, so the deny-list (`~/obsidian-old`, `80-89`, a
- * hold) and the boundary check apply to it identically — this function only
+ * like an explicit `--root=`, so the configured territories (`--territory=` /
+ * `GOVERNOR_TERRITORIES`; none built in since #397) and the boundary check
+ * apply to it identically — this function only
  * gates whether the walk may run at all, never what it is allowed to find.
  */
 export function rootDiscoveryRefusal(argv: string[], env: Record<string, string | undefined>): string | null {
@@ -730,6 +760,9 @@ export async function runCli(argv: string[]): Promise<void> {
     legacyPacks: !argv.includes("--no-legacy-packs"),
     // The rail governs live content, not the frozen archive (#112 ruling).
     excludedRoots,
+    // Guarded territories the walk must refuse (#397) — from the invocation,
+    // never a constant; none given means none refused.
+    territories: territoriesFrom(argv, process.env),
     // Debt-budget tooth (#211): warn-only unless --strict-budget.
     debtBudget,
     strictBudget,

@@ -26,7 +26,7 @@ import {
   effectiveScope,
   DEFAULT_HISTORY_EXCLUDES,
 } from "../src/kernel/history-store/history-scope.ts";
-import { EXCLUDED_PREFIXES } from "../../core/src/territories.ts";
+import { LEGACY_TERRITORY_SEED } from "../../core/src/territories.ts";
 import { standingRef, proposalRef, cohortRef, isGovernorRef } from "../src/kernel/history-store/refs.ts";
 import {
   RefCasError,
@@ -104,7 +104,7 @@ describe("effective scope — the composition that makes the settings copy true"
   // empty excludes), would track .obsidian and record guarded content.
   test("the SHIPPED default scope, composed, excludes machinery and territories", () => {
     const shippedDefault = { mode: "whole-vault", include: [], exclude: [] };
-    const eff = effectiveScope(shippedDefault, EXCLUDED_PREFIXES);
+    const eff = effectiveScope(shippedDefault, LEGACY_TERRITORY_SEED);
     assert.ok(!isTracked(eff, ".obsidian/workspace.json"));
     assert.ok(!isTracked(eff, ".trash/x.md"));
     assert.ok(!isTracked(eff, "80-89 Divorce/evidence.md"));
@@ -113,7 +113,7 @@ describe("effective scope — the composition that makes the settings copy true"
   });
 
   test("user exclusions survive composition and add to the floor", () => {
-    const eff = effectiveScope({ mode: "whole-vault", include: [], exclude: ["Private/"] }, EXCLUDED_PREFIXES);
+    const eff = effectiveScope({ mode: "whole-vault", include: [], exclude: ["Private/"] }, LEGACY_TERRITORY_SEED);
     assert.ok(!isTracked(eff, "Private/x.md"));
     assert.ok(!isTracked(eff, ".obsidian/x"));
   });

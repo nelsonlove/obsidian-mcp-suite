@@ -28,7 +28,7 @@ import { createObservationStore } from "../src/kernel/observations/store.ts";
 import { createCapture } from "../src/kernel/observations/capture.ts";
 import { NOTE_READ_V1 } from "../src/kernel/operations/actions/note-read.ts";
 import { compatibilityAction } from "../src/kernel/operations/compatibility.ts";
-import { isExcludedTerritory } from "../../core/src/territories.ts";
+import { isExcludedTerritory, LEGACY_TERRITORY_SEED } from "../../core/src/territories.ts";
 
 // ── fixtures ─────────────────────────────────────────────────────────────────
 
@@ -345,13 +345,13 @@ describe("capture — a guarded territory is never retained outside itself", () 
     // isExcludedTerritory, so breaking its prefix semantics (startsWith → ===,
     // dropped normalization) fails here instead of leaving 3641 green tests
     // over a gate that no longer matches anything.
-    assert.ok(isExcludedTerritory("80-89 Divorce/evidence.md"), "prefix match, no trailing slash on the prefix");
-    assert.ok(isExcludedTerritory("obsidian-old/anything/deep.md"));
-    assert.ok(isExcludedTerritory("./80-89 Divorce/evidence.md"), "leading ./ is normalized away");
-    assert.ok(isExcludedTerritory("Notes/../80-89 Divorce/evidence.md"), "traversal into the territory is caught");
-    assert.ok(isExcludedTerritory("../outside-the-vault.md"), "an upward escape fails CLOSED");
-    assert.ok(!isExcludedTerritory("Notes/plain.md"));
-    assert.ok(!isExcludedTerritory("80s music/list.md"), "no false positive on a shared-prefix folder... "
+    assert.ok(isExcludedTerritory("80-89 Divorce/evidence.md", LEGACY_TERRITORY_SEED), "prefix match, no trailing slash on the prefix");
+    assert.ok(isExcludedTerritory("obsidian-old/anything/deep.md", LEGACY_TERRITORY_SEED));
+    assert.ok(isExcludedTerritory("./80-89 Divorce/evidence.md", LEGACY_TERRITORY_SEED), "leading ./ is normalized away");
+    assert.ok(isExcludedTerritory("Notes/../80-89 Divorce/evidence.md", LEGACY_TERRITORY_SEED), "traversal into the territory is caught");
+    assert.ok(isExcludedTerritory("../outside-the-vault.md", LEGACY_TERRITORY_SEED), "an upward escape fails CLOSED");
+    assert.ok(!isExcludedTerritory("Notes/plain.md", LEGACY_TERRITORY_SEED));
+    assert.ok(!isExcludedTerritory("80s music/list.md", LEGACY_TERRITORY_SEED), "no false positive on a shared-prefix folder... "
       + "(80-89* does match by design; '80s' must not)");
   });
 
@@ -369,14 +369,29 @@ describe("capture — a guarded territory is never retained outside itself", () 
     // the pin while disabling the guard that keeps capture from retaining 80-89
     // content. Found in the 2026-08-29 review; the companion import pin below was
     // already anchored, this one was not.
-    assert.match(server, /excludedSource:\s*isExcludedTerritory\s*[,)}]/, "createCapture must receive the territory predicate");
+      // #397 made the list the operator's SETTING, so the wiring is no longer a
+      // bare reference — it is a lambda resolving the configured list per call.
+      // The pin FOLLOWS the change rather than being relaxed, and each of the
+      // three parts it requires is a real failure mode:
+      //   • `isExcludedTerritory(` — the shared predicate is still the matcher;
+      //   • `resolveTerritories(` — skip it and a fresh install passes the raw
+      //     EMPTY array, and `"".startsWith` is true for every path, so nothing
+      //     would be guarded at all;
+      //   • `ctx.getSettings()` INSIDE the lambda — read per call. Hoisting it to
+      //     build time is the inert-toggle bug in a new costume: an operator's
+      //     edit would not take effect until the next reconnect.
+      assert.match(
+        server,
+        /excludedSource:\s*\(\s*p[^)]*\)\s*=>\s*isExcludedTerritory\(\s*p\s*,\s*resolveTerritories\(\s*ctx\.getSettings\(\)\.guardedTerritories\s*\)\s*\)/,
+        "createCapture must receive the predicate applied to the OPERATOR'S resolved list, read per call"
+      );
     // Matched as the WHOLE import statement binding this specific name, not a bare
     // `from "@vault-mcp/core"` — server.ts imports several things from the contract
     // package, so a package-only match would keep passing if `isExcludedTerritory`
     // were later re-bound to a local copy. The point of this pin is the BINDING.
     assert.match(
       server,
-      /import \{ isExcludedTerritory \} from "@vault-mcp\/core"/,
+        /import \{ isExcludedTerritory, resolveTerritories \} from "@vault-mcp\/core"/,
       "and it must be the SHARED list from the published contract, not a local copy"
     );
     const territories = fs.readFileSync(new URL("../../core/src/territories.ts", import.meta.url), "utf8");

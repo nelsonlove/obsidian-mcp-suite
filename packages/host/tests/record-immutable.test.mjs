@@ -311,3 +311,91 @@ describe("record_immutable through makeGuarded", () => {
     assert.equal(res.content[0].text, "appended");
   });
 });
+
+// ── #397: the record identifier is the OPERATOR'S convention ──────────────────
+import {
+  identifiesRecord,
+  normalizeRecordIdentification,
+  DEFAULT_RECORD_IDENTIFICATION,
+} from "../src/kernel/record-guard.ts";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+describe("identifiesRecord — property or tag, the operator's choice (#397)", () => {
+  const prop = { method: "property", property: "record", value: "true", tag: "record" };
+
+  test("the shipped default is the old hard-coded rule: frontmatter record: true", () => {
+    assert.deepEqual(DEFAULT_RECORD_IDENTIFICATION, prop);
+    assert.equal(identifiesRecord(prop, { frontmatter: { record: true } }), true);
+    assert.equal(identifiesRecord(prop, { frontmatter: { record: "true" } }), true);
+    assert.equal(identifiesRecord(prop, { frontmatter: { record: false } }), false);
+  });
+
+  test("property method: a note with no frontmatter or without the key is 'cannot tell' (undefined), never a refusal", () => {
+    // The kernel treats undefined as not-a-record — fail open, per the header.
+    assert.equal(identifiesRecord(prop, {}), undefined);
+    assert.equal(identifiesRecord(prop, { frontmatter: null }), undefined);
+    assert.equal(identifiesRecord(prop, { frontmatter: { title: "x" } }), undefined);
+    assert.equal(identifiesRecord(prop, { frontmatter: { title: "x" }, tags: ["#record"] }), undefined, "a tag does NOT count under the property method");
+  });
+
+  test("property method honours a custom key and value, case-insensitively", () => {
+    const id = { ...prop, property: "kind", value: "Immutable" };
+    assert.equal(identifiesRecord(id, { frontmatter: { kind: "immutable" } }), true);
+    assert.equal(identifiesRecord(id, { frontmatter: { kind: " IMMUTABLE " } }), true);
+    assert.equal(identifiesRecord(id, { frontmatter: { kind: "draft" } }), false);
+    assert.equal(identifiesRecord(id, { frontmatter: { record: true } }), undefined, "the OLD key is no longer consulted once another is chosen");
+  });
+
+  test("tag method: matches with or without '#', case-insensitively, over frontmatter and inline tags alike", () => {
+    const id = { ...prop, method: "tag", tag: "record" };
+    assert.equal(identifiesRecord(id, { tags: ["#record"] }), true, "getAllTags returns tags WITH '#'");
+    assert.equal(identifiesRecord(id, { tags: ["record"] }), true);
+    assert.equal(identifiesRecord(id, { tags: ["#Record", "#other"] }), true);
+    assert.equal(identifiesRecord({ ...id, tag: "#record" }, { tags: ["#record"] }), true, "a '#' in the SETTING is tolerated too");
+    assert.equal(identifiesRecord(id, { tags: ["#records"] }), false, "no prefix match — 'records' is not 'record'");
+    assert.equal(identifiesRecord(id, { tags: [] }), false, "an absent tag is a plain no, not 'cannot tell'");
+    assert.equal(identifiesRecord(id, { frontmatter: { record: true }, tags: [] }), false, "the property does NOT count under the tag method");
+  });
+
+  test("tag method with a blank tag identifies nothing rather than everything", () => {
+    assert.equal(identifiesRecord({ ...prop, method: "tag", tag: "  " }, { tags: ["#record", "#x"] }), false);
+  });
+});
+
+describe("normalizeRecordIdentification — a corrupt setting never crashes the probe", () => {
+  test("nothing, garbage, and partial objects all coerce to a complete identification", () => {
+    for (const raw of [undefined, null, 42, "record", [], {}]) {
+      assert.deepEqual(normalizeRecordIdentification(raw), DEFAULT_RECORD_IDENTIFICATION, JSON.stringify(raw));
+    }
+    assert.deepEqual(normalizeRecordIdentification({ method: "tag" }), { ...DEFAULT_RECORD_IDENTIFICATION, method: "tag" });
+    assert.deepEqual(normalizeRecordIdentification({ property: " kind ", value: "" }), { ...DEFAULT_RECORD_IDENTIFICATION, property: "kind" });
+  });
+
+  test("an unknown method reads as property, and a leading '#' on the tag is stripped", () => {
+    assert.equal(normalizeRecordIdentification({ method: "frontmatter" }).method, "property");
+    assert.equal(normalizeRecordIdentification({ tag: "#immutable" }).tag, "immutable");
+  });
+
+  test("the result never aliases the frozen default", () => {
+    const r = normalizeRecordIdentification(undefined);
+    assert.notEqual(r, DEFAULT_RECORD_IDENTIFICATION);
+    assert.ok(Object.isFrozen(DEFAULT_RECORD_IDENTIFICATION));
+  });
+});
+
+describe("the probe defers the decision to identifiesRecord — pinned at the source", () => {
+  test("obsidian-probe.ts hands frontmatter + getAllTags to identifiesRecord and decides nothing itself", () => {
+    const HERE = path.dirname(fileURLToPath(import.meta.url));
+    const probe = fs.readFileSync(path.join(HERE, "..", "src", "kernel", "obsidian-probe.ts"), "utf8");
+    assert.match(
+      probe,
+      /identifiesRecord\(\s*id\s*,\s*\{\s*frontmatter:\s*cache\.frontmatter\s*,\s*tags:\s*getAllTags\(cache\)\s*\?\?\s*\[\]\s*\}\s*\)/,
+      "the adapter gathers evidence; the kernel decides",
+    );
+    assert.doesNotMatch(probe, /isRecordFlag\(/, "no second copy of the property rule in the adapter");
+    assert.match(probe, /recordIdentification\?\.\(\)\s*\?\?\s*DEFAULT_RECORD_IDENTIFICATION/, "the default is the kernel's constant, not a literal");
+    assert.doesNotMatch(probe, /from "\.\.\/main\.js"/, "the kernel does not reach back into main.ts");
+  });
+});

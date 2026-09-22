@@ -22,12 +22,7 @@
 import { opendir, readFile } from "node:fs/promises";
 import { realpathSync, lstatSync, readlinkSync } from "node:fs";
 import { join, relative, resolve, dirname, basename, sep } from "node:path";
-import {
-  parseAllFrontmatter,
-  stripLeadingFrontmatter,
-  EXCLUDED_PREFIXES,
-  type VocabNote,
-} from "@vault-mcp/core";
+import { isExcludedTerritory, matchesTerritoryPrefix, parseAllFrontmatter, resolveTerritories, stripLeadingFrontmatter, type VocabNote } from "@vault-mcp/core";
 import type { SourceFile, VaultSnapshot } from "./rule-pack.js";
 import { intendedRealPath, isInside } from "./path-identity.js";
 import { envAliased } from "../env-alias.js";
@@ -35,6 +30,18 @@ import { envAliased } from "../env-alias.js";
 export interface SnapshotOpts {
   /** Absolute content root to walk. */
   root: string;
+  /**
+   * The guarded territories this rail refuses to walk into, as vault-path
+   * prefixes. There is NO built-in list (#397, ruled 2026-09-22): omitted or
+   * blank means the walk refuses nothing on territory grounds, and every
+   * caller that wants a territory refused passes the operator's list.
+   *
+   * Threaded rather than read from a module-level constant because #397: the
+   * list is the HOST's setting now, and a rail pinned to the compiled-in
+   * default would silently ignore a territory a human added. The SEGMENT
+   * semantics below stay stricter than core's prefix match on purpose.
+   */
+  territories?: readonly string[];
   /**
    * The boundary `root` must resolve inside (or equal). NOT optional in
    * effect: if this is omitted, `buildSnapshot` falls back to reading
@@ -103,24 +110,36 @@ const DEFAULT_SKIP = new Set([".git", ".obsidian", ".trash", "node_modules"]);
  * This file used to hardcode its own three checks. That was the second
  * implementation of one rule, and it had already drifted: core's list carries
  * `_keep/`, which this file never denied. The suite split's S3b published
- * `EXCLUDED_PREFIXES` precisely so there is ONE list — the failure it names is
+ * the territory predicate precisely so there is ONE list — the failure it names is
  * a prefix present in one copy and missing from another, which is how guarded
- * content reaches somewhere it should never be. Deriving keeps this rail in
- * step with issue #321 when the list finally becomes real configuration.
+ * content reaches somewhere it should never be. Deriving keeps this rail from
+ * hardcoding its OWN second copy of the list.
+ *
+ * #321 landed as a per-operator setting and #397 moved it to the HOST, which
+ * is where it had to live: the other consumer is observation capture, which
+ * writes note bodies outside the vault and runs whether or not Governor is
+ * installed. This rail derives its segments from `opts.territories` — the
+ * operator's list, resolved — and from nothing else: a caller that supplies
+ * none gets a walk that refuses nothing, honestly, rather than one guarded by
+ * a list the operator never wrote.
  *
  * The SEGMENT semantics stay local and are deliberately stricter than core's
  * path-prefix matching: every segment of a resolved real path is checked, so a
  * symlink cannot launder a guarded directory into the middle of an allowed one.
  */
-const DENIED_SEGMENTS: ReadonlyArray<string> = EXCLUDED_PREFIXES.map((p) =>
-  p.replace(/\/+$/, "").toLowerCase()
-);
+/** A territory list as the SEGMENT forms this rail matches on — trailing
+ * separators stripped, lowercased. Derived rather than written twice: a second
+ * hand-maintained copy of the names is the exact drift the shared predicate was
+ * centralized to prevent. #397 makes the input configurable; the derivation is
+ * unchanged. */
+function deniedSegmentsOf(prefixes: readonly string[]): ReadonlyArray<string> {
+  // A trailing slash is KEPT (normalized to one): it is the operator saying
+  // "exactly this folder", and `matchesTerritoryPrefix` honours it only if it
+  // is still there. Stripping it turned `Archive/` into a bare `archive` that
+  // also refused `Archive Old` (re-review of #396).
+  return prefixes.map((p) => p.replace(/\/+$/, "/").toLowerCase());
+}
 
-/** Human names for the territories that have one; others report generically. */
-const TERRITORY_NAMES: Readonly<Record<string, string>> = {
-  "obsidian-old": "the retired ~/obsidian-old vault",
-  "80-89": "80-89 legal material",
-};
 
 /** A single path SEGMENT (one directory or file name — no separators) that is
  * refused EVEN WHEN it falls inside a declared boundary and even when the
@@ -131,30 +150,43 @@ const TERRITORY_NAMES: Readonly<Record<string, string>> = {
  * during the walk, against an already-verified-real directory's own name
  * (cheap — no need to re-resolve a real path for something that is already
  * known not to be a symlink). */
-function deniedSegment(seg: string): string | null {
+function deniedSegment(seg: string, segments: ReadonlyArray<string>): string | null {
   const s = seg.toLowerCase();
-  for (const denied of DENIED_SEGMENTS) {
-    // Equality, or the prefix followed by a non-alphanumeric — so `80-89` and
-    // `80-89 Divorce` match while `80-891` does not (the `\b` the hand-rolled
-    // regex used).
-    const boundary = s.length === denied.length || !/[a-z0-9]/.test(s.charAt(denied.length));
-    if (s.startsWith(denied) && boundary) {
-      return TERRITORY_NAMES[denied] ?? `the guarded territory '${denied}'`;
+  for (const denied of segments) {
+    // The SAME boundary rule core's `isExcludedTerritory` applies to whole
+    // paths (#321): `80-89` and `80-89 Divorce` match, `80-891` and
+    // `80-89-archive` do not. One rule, published once, so the walker and the
+    // capture gate can never disagree about what a listed entry covers.
+    // The segment is compared WITH a trailing slash so an entry that ends in
+    // `/` matches exactly that folder name and nothing longer.
+    if (matchesTerritoryPrefix(s + "/", denied)) {
+      return `the guarded territory '${denied}'`;
     }
   }
-  // Broader than the published list on purpose: catches `hold` and `holds`
-  // anywhere in a segment, not only as a top-level root.
-  if (/\bholds?\b/i.test(seg)) return "a path under a hold";
+  // The `hold`/`holds` segment heuristic that used to live here is GONE (#397):
+  // it was one vault's convention baked in, and with an empty configured list
+  // it would still have refused paths — making "empty means guard nothing"
+  // false. An operator who wants hold folders guarded lists them.
   return null;
 }
 
 /** Every segment of the RESOLVED real path, checked with `deniedSegment` — so
  * a symlink cannot launder past this either. Returns the human name of the
  * violated territory, or null when nothing matched. */
-function deniedTerritory(realPath: string): string | null {
+/** The descend-time decision over a VAULT-RELATIVE directory path, made with
+ *  the published predicate itself (one entry at a time, so the refusal can name
+ *  the entry as the operator wrote it). */
+function deniedVaultPath(vaultPath: string, list: readonly string[]): string | null {
+  for (const entry of list) {
+    if (isExcludedTerritory(vaultPath + "/", [entry])) return `the guarded territory '${entry}'`;
+  }
+  return null;
+}
+
+function deniedTerritory(realPath: string, segments: ReadonlyArray<string>): string | null {
   for (const seg of realPath.split(sep)) {
     if (!seg) continue;
-    const hit = deniedSegment(seg);
+    const hit = deniedSegment(seg, segments);
     if (hit) return hit;
   }
   return null;
@@ -188,8 +220,9 @@ function declaredBoundary(opts: SnapshotOpts): string | null {
  *
  * 1. The root's real path cannot be established at all — refuse rather than
  *    guess (an indeterminate identity is not a permitted one).
- * 2. The root's real path falls inside a denied territory
- *    (`~/obsidian-old`, `80-89*`, anything under a hold) — refused
+ * 2. The root's real path falls inside a CONFIGURED guarded territory
+ *    (`opts.territories` — the operator's list; there is no built-in one
+ *    since #397, so an empty list refuses nothing here) — refused
  *    UNCONDITIONALLY, before the boundary is even consulted, so this holds
  *    even when a boundary was declared that would otherwise have permitted
  *    it, and even when the caller names the territory explicitly.
@@ -210,7 +243,7 @@ function assertRootPermitted(opts: SnapshotOpts): string {
     );
   }
 
-  const denied = deniedTerritory(realRoot);
+  const denied = deniedTerritory(realRoot, deniedSegmentsOf(resolveTerritories(opts.territories)));
   if (denied) {
     throw new Error(
       `buildSnapshot: refusing to walk ${opts.root} — it resolves into a permanently denied territory ` +
@@ -300,6 +333,11 @@ async function rawEntries(absDir: string) {
 }
 
 export async function buildSnapshot(opts: SnapshotOpts): Promise<VaultSnapshot> {
+  // Resolved ONCE per walk, not per directory entry and per symlink. The list
+  // cannot change mid-walk, and a whole-vault walk would otherwise re-derive it
+  // thousands of times.
+  const territoryList = resolveTerritories(opts.territories);
+  const deniedSegs = deniedSegmentsOf(territoryList);
   const realBoundary = assertRootPermitted(opts);
   const excluded = opts.excludedRoots ?? [];
   const skip = new Set([...DEFAULT_SKIP, ...(opts.skipDirs ?? [])]);
@@ -346,7 +384,7 @@ export async function buildSnapshot(opts: SnapshotOpts): Promise<VaultSnapshot> 
               `ancestor or a symlink loop). An indeterminate target is refused, never assumed safe.`,
           );
         }
-        const denied = deniedTerritory(real);
+        const denied = deniedTerritory(real, deniedSegs);
         if (denied) {
           throw new Error(
             `buildSnapshot: refusing to read ${vaultPath} — it is a symlink resolving into a permanently denied ` +
@@ -405,7 +443,13 @@ export async function buildSnapshot(opts: SnapshotOpts): Promise<VaultSnapshot> 
       const vaultPath = toVaultPath(opts.root, abs);
       if (isExcluded(vaultPath, excluded)) continue;
       if (skip.has(entry.name)) continue;
-      const denied = deniedSegment(entry.name);
+      // The descend decision is core's OWN predicate over the vault-relative
+      // path — the same call the capture gate makes — so an entry that names
+      // a nested folder (`80-89 Divorce/Evidence`) refuses exactly that folder
+      // here as it does there, and the two cannot disagree over what a listed
+      // entry covers. The per-segment check stays for what the predicate
+      // cannot see: a symlink or a root resolving OUTSIDE the vault.
+      const denied = deniedVaultPath(vaultPath, territoryList) ?? deniedSegment(entry.name, deniedSegs);
       if (denied) {
         throw new Error(
           `buildSnapshot: refusing to descend into ${vaultPath} — it is a permanently denied territory ` +

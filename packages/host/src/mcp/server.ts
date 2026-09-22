@@ -42,7 +42,8 @@ import { expiryRefusal, type SessionV1 } from "@vault-mcp/core";
 // them, and now both the host and the governance provider depend on the
 // published contract rather than the host reaching into the provider subtree.
 import { canonicalize, digestUtf8 } from "@vault-mcp/core";
-import { isExcludedTerritory } from "@vault-mcp/core";
+import { isExcludedTerritory, resolveTerritories } from "@vault-mcp/core";
+import { captureAllowed } from "../territory-policy.js";
 import { createObservationStore } from "../kernel/observations/store.js";
 import { createLocalBlobStore } from "../kernel/observations/local-store.js";
 import { vaultSlug } from "../paths.js";
@@ -261,13 +262,30 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   });
   const observationCapture = createCapture({
     store: observationStore,
-    enabled: () => ctx.getSettings().captureObservations === true,
+    // ON requires BOTH the toggle and a non-empty territory list (#397). The
+    // settings tab refuses to flip the toggle on an empty list, but a
+    // hand-edited data.json can set `captureObservations: true` with none
+    // configured — and that is precisely the state in which capture would
+    // retain anything at all, including legal material. So the runtime gate
+    // is the real one and the UI refusal is courtesy.
+    enabled: () => captureAllowed(ctx.getSettings()),
     maxBytes: ctx.getSettings().captureMaxBytes ?? 50 * 1024 * 1024,
-    // The same territory list the governance pane enumerates by — one list,
-    // one meaning (@vault-mcp/core territories.ts). Reads in a guarded territory
-    // stay legal; RETAINING copies of them outside the territory is what this
-    // forbids (issue #322).
-    excludedSource: isExcludedTerritory,
+    // The OPERATOR'S configured territory list (issue #322: reads in a guarded
+    // territory stay legal; RETAINING copies of them outside the territory is
+    // what this forbids — capture writes note bodies to
+    // `~/.claude/vault-mcp/observations/`, outside the vault and outside Sync).
+    //
+    // Read LIVE per call, not captured at build time: an operator who adds a
+    // territory mid-session must have it honored by the next capture, not at
+    // the next reconnect. There is no default for `resolveTerritories` to
+    // supply (#397): a blank setting resolves to [] and `captureAllowed`
+    // refuses to run on it, which is the whole reason that gate exists.
+    //
+    // This closes #397. The list is the HOST's setting and Governor reads it
+    // from here, rather than the reverse: this consumer is the one that writes
+    // bytes outside the vault, and it exists whether or not Governor is
+    // installed at all.
+    excludedSource: (p: string) => isExcludedTerritory(p, resolveTerritories(ctx.getSettings().guardedTerritories)),
   });
 
   const executor = createOperationExecutor({
@@ -498,7 +516,10 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   // Neither has an accept verb: acceptance metadata is minted only at the
   // human-run --rebaseline, never here, and the rendered note carries only a
   // generated/generator derivation stamp (accept-guard-checked before writing).
-  const debtSource = obsidianDebtRenderSource(app);
+  // The operator's territories, read per call (#397) — the conformance rail
+  // must refuse to walk a territory a human added, which is the half of #397
+  // that a first pass threaded through `SnapshotOpts` and then never supplied.
+  const debtSource = obsidianDebtRenderSource(app, () => resolveTerritories(ctx.getSettings().guardedTerritories));
   const debtCtx = {
     config: ctx.getSettings().modules?.["conformance-debt"]?.config,
     getSettings: () => ctx.getSettings(),

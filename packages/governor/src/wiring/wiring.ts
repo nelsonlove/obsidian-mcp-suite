@@ -116,11 +116,17 @@ import {
   type AcceptEligibilityCtx,
 } from "../kernel/menu-eligibility.js";
 import { GovernanceReviewView, VIEW_TYPE_GOVERNANCE, confirmAdopt, confirmMenuAccept, renderAllowlist, wireAdoptButton, ADOPT_BASELINE_DESC, acceptThroughGate, type ReviewController, type RevisingItem, renderLegacyRetiredNotice, confirmCutover, confirmRollbackCutover, noticeGestureBlocked, confirmBindChain } from "./pane.js";
-import { isExcludedTerritory } from "@vault-mcp/core";
+import { excludedUnderHost, hostGuardedTerritories } from "../host-lookup.js";
 
 // Guarded territories moved to ./territories.ts when observation capture became
 // the second consumer — one list, so the pane and capture can never disagree
-// about what is off-limits.
+// about what is off-limits. #321 made the list configurable and #397 settled
+// WHERE it lives: on the host, read from here through its api (see
+// `isExcluded` below). One list now covers every consumer in both plugins —
+// this pane, proposals, auto-accept and local history on this side; the
+// observation-capture retention gate and the conformance rail on the host's.
+// This provider deliberately keeps no copy of its own, because two editable
+// lists is exactly the drift `EXCLUDED_PREFIXES` was centralized to prevent.
 
 const LOCAL_USER = "local-human";
 const RECENT_WRITE_WINDOW_MS = 15_000;
@@ -505,11 +511,18 @@ async function journalSignature(plugin: Plugin): Promise<string> {
 }
 
 // ── governed-note enumeration (module-scope helpers) ─────────────────────────
-function isExcluded(path: string): boolean {
-  return isExcludedTerritory(path);
+// #397: the list is the HOST's setting, read live through its api. This
+// provider deliberately keeps no copy — see `hostGuardedTerritories`. There is
+// no built-in default any more. Two host answers, two meanings (review of
+// #396): an EMPTY list guards nothing; NO answer (`null` — host absent, not yet
+// loaded, or too old to publish the list) fails CLOSED and excludes every
+// path, so a missing host can never be the state that governs legal material.
+// `excludedUnderHost` is that decision, pure and tested in host-lookup.
+function isExcluded(plugin: Plugin, path: string): boolean {
+  return excludedUnderHost(path, hostGuardedTerritories((plugin.app as any)?.plugins?.plugins));
 }
 function governedMarkdownFiles(plugin: Plugin): TFile[] {
-  return plugin.app.vault.getMarkdownFiles().filter((f) => !isExcluded(f.path));
+  return plugin.app.vault.getMarkdownFiles().filter((f) => !isExcluded(plugin, f.path));
 }
 
 // ── accept / revert / adopt — module-scope, closure-captured only by UI handlers ──
@@ -670,7 +683,7 @@ function listRevising(plugin: Plugin): RevisingItem[] {
 // The Proposed listing (#221/#164) — read-only, from the metadata cache exactly like the
 // Revising listing, with the dedupe/exclusion rules in the pure kernel builder: proposed
 // notes ALREADY in the pending queue are deduped out (their queue row carries the same
-// context-aware Accept), and the EXCLUDED_PREFIXES territories are respected. Plain data.
+// context-aware Accept), and the host's guarded territories are respected. Plain data.
 function listProposed(plugin: Plugin): ProposedItem[] {
   const candidates = plugin.app.vault.getMarkdownFiles().map((file) => ({
     path: file.path,
@@ -680,7 +693,7 @@ function listProposed(plugin: Plugin): ProposedItem[] {
     ],
     mtime: file.stat.mtime,
   }));
-  return buildProposedList(candidates, getCachedPending(plugin).map((p) => p.path), isExcluded);
+  return buildProposedList(candidates, getCachedPending(plugin).map((p) => p.path), (path) => isExcluded(plugin, path));
 }
 // The metadata-cache acceptance-status of ONE note — plain display data for the pane's
 // context-aware Accept surfacing (button tooltip + Notice). Read-only; confers nothing.
@@ -746,7 +759,7 @@ function buildController(
 // ── silent human-edit baseline advance (module-scope; driven by the vault modify event) ──
 function scheduleReconcile(plugin: Plugin, file: TFile): void {
   const path = file.path;
-  if (isExcluded(path)) return;
+  if (isExcluded(plugin, path)) return;
   const timers = timersFor(plugin);
   const existing = timers.get(path);
   if (existing) clearTimeout(existing);
@@ -816,7 +829,7 @@ async function reconcile(plugin: Plugin, file: TFile): Promise<void> {
 // Reads NO agent-supplied field — eligibility is bytes + rename index.
 async function maybeAutoAccept(plugin: Plugin, path: string): Promise<boolean> {
   try {
-    if (isExcluded(path)) return false;
+    if (isExcluded(plugin, path)) return false;
     const store = getStore(plugin);
     const baseline = store.get(path);
     if (!baseline) return false;
@@ -1443,7 +1456,7 @@ export async function wireGovernance(plugin: Plugin, deps: GovernanceWireDeps): 
     //    pane still pays only for queue-hitting deletes.
     const paneOpen = plugin.app.workspace.getLeavesOfType(VIEW_TYPE_GOVERNANCE).length > 0;
     const hitsQueue = deleteInvalidatesQueue(file.path, isFolder, getCachedPending(plugin).map((p) => p.path));
-    if (!hitsQueue && !(paneOpen && !isExcluded(file.path))) return;
+    if (!hitsQueue && !(paneOpen && !isExcluded(plugin, file.path))) return;
     const timers = timersFor(plugin);
     const key = QUEUE_DELETE_TIMER;
     const existing = timers.get(key);
@@ -1491,7 +1504,7 @@ export async function wireGovernance(plugin: Plugin, deps: GovernanceWireDeps): 
   const menuEligibilityCtx = (): AcceptEligibilityCtx => ({
     pendingPaths: new Set(getCachedPending(plugin).map((p) => p.path)),
     statusOf: (p) => acceptanceStatusFor(plugin, p),
-    isExcluded,
+    isExcluded: (path) => isExcluded(plugin, path),
     // Read at menu-OPEN time, not at registration: the cutover can happen while
     // the plugin stays loaded, and a value captured once would keep offering a
     // control the store has already retired.

@@ -17,6 +17,8 @@
 
 import { App, PluginSettingTab, Setting, type Plugin } from "obsidian";
 import { DEFAULT_ACCEPTANCE_SETTINGS } from "./kernel/settings.js";
+import { resolveTerritories } from "@vault-mcp/core";
+import { hostGuardedTerritories, findHostPlugin } from "./host-lookup.js";
 import { renderGovernanceSettings } from "./wiring/wiring.js";
 import type { GovernorSettings } from "./settings.js";
 
@@ -43,6 +45,42 @@ export class GovernorSettingTab extends PluginSettingTab {
         "Governor is the governance provider for the Vault MCP host. It reviews what agents write; it does not " +
         "serve them. With the host plugin absent or disabled, nothing here has anything to govern — install and " +
         "enable Vault MCP first.",
+    });
+
+    containerEl.createEl("h4", { text: "Guarded territories" });
+    new Setting(containerEl)
+      .setName("Guarded territories")
+      .setDesc(
+        "A guarded territory is a top-level area Governor must never review, propose against, " +
+          "record into local history, or otherwise retain a copy of — archival or legally " +
+          "sensitive folders, not live governed content. Every part of this plugin (the review " +
+          "pane, proposals, auto-accept, local history) checks the list before touching a note. " +
+          "It is EDITED IN VAULT MCP'S SETTINGS, not here: the same list also governs that " +
+          "plugin's observation capture, which writes note bodies outside the vault, and that " +
+          "runs whether or not this plugin is installed — so the list belongs to the plugin you " +
+          "cannot uninstall (#397). This plugin reads it live; an edit there takes effect here " +
+          "with no reload."
+      )
+      .addExtraButton((b) =>
+        b
+          .setIcon("settings")
+          .setTooltip("Open Vault MCP settings")
+          .onClick(() => {
+            // The host's OWN id, not a hardcoded one: HOST_PLUGIN_IDS still
+            // admits a live pre-split host under the id `governor`, and opening
+            // a tab that does not exist is a dead button.
+            const app = this.plugin.app as any;
+            const hostId = findHostPlugin(app?.plugins?.plugins)?.id;
+            if (hostId) app?.setting?.openTabById?.(hostId);
+          })
+      );
+    containerEl.createEl("p", {
+      text: (() => {
+        const t = territoriesInEffect(this.plugin);
+        if (t === null) return "In effect now: cannot tell — Vault MCP is not loaded, or is too old to publish its list. Until it is, Governor governs NOTHING: no proposals, no history, nothing auto-accepted.";
+        return t.length ? `In effect now: ${t.join(", ")}` : "In effect now: none — nothing is guarded until Vault MCP has at least one territory configured.";
+      })(),
+      cls: "setting-item-description",
     });
 
     new Setting(containerEl)
@@ -223,4 +261,13 @@ export class GovernorSettingTab extends PluginSettingTab {
         })
       );
   }
+}
+
+/** What the pane will actually guard by right now — the host's configured
+ * list, or `null` when the host cannot be asked (#397: no built-in default;
+ * `null` fails closed everywhere, see `excludedUnderHost`). Shown rather than
+ * an editable field so there is visibly ONE list, not two. */
+function territoriesInEffect(plugin: { app: unknown }): readonly string[] | null {
+  const hostList = hostGuardedTerritories((plugin.app as any)?.plugins?.plugins);
+  return hostList === null ? null : resolveTerritories(hostList);
 }

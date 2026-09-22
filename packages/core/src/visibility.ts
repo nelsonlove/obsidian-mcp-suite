@@ -12,7 +12,7 @@
 //
 // It is a pure function over (path, settings) and `GuardSettings` is the kind
 // of small published shape core already carries (SessionV1, the disposition
-// descriptors, EXCLUDED_PREFIXES). Nothing here imports obsidian, the MCP SDK,
+// descriptors, the territory predicate). Nothing here imports obsidian, the MCP SDK,
 // or anything host-side.
 //
 // The host's `guard.ts` keeps `guardCall`, `visiblePaths`, `mapPaths` and

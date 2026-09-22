@@ -216,7 +216,7 @@ The guard must recognize at least the frontmatter forms Obsidian will honor and 
 
 ## Records
 
-For a named `record: true` target, every ordinary addressed mutation is refused except pure end-of-file append. The check is protective and may fail open when metadata is unreadable; the receipt or health surface must expose that degradation when known.
+For a named `record: true` (the default record identifier; the settings tab can name another property/value or a tag) target, every ordinary addressed mutation is refused except pure end-of-file append. The check is protective and may fail open when metadata is unreadable; the receipt or health surface must expose that degradation when known.
 
 The guard does not cover direct disk writes or every discovered side effect. Record preservation ultimately relies on history and backups.
 

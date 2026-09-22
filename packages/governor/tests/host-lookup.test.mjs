@@ -10,7 +10,7 @@
 //
 // The fix is the discriminator `vault-mcp-api`'s `getApi` already uses: a plugin
 // counts as the host only if it exposes the plugin-to-plugin `api` object.
-import { test } from "node:test";
+import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { findHostPlugin, hostPluginDir, HOST_PLUGIN_IDS } from "../src/host-lookup.ts";
@@ -106,4 +106,35 @@ test("main.ts's pane mount refuses on a null host dir instead of mounting", () =
   assert.ok(refusal < wiring, "the refusal must come BEFORE wireGovernance");
   assert.ok(/new Notice\(/.test(mount.slice(refusal, wiring)), "and it must say why, with a Notice");
   assert.ok(/return;/.test(mount.slice(refusal, wiring)), "and it must return without mounting");
+});
+
+// ── excludedUnderHost — "no answer" and "empty answer" are different (#396 review) ──
+import { excludedUnderHost, hostGuardedTerritories } from "../src/host-lookup.ts";
+
+describe("excludedUnderHost — null fails closed, a list is honoured as-is", () => {
+  test("no host answer (null) excludes EVERY path — nothing is governed until the host can be asked", () => {
+    assert.equal(excludedUnderHost("80-89 Divorce/evidence.md", null), true);
+    assert.equal(excludedUnderHost("Projects/plain.md", null), true, "not just the legal area: everything");
+  });
+
+  test("an EMPTY host answer guards nothing — the #397 ruling, honoured rather than second-guessed", () => {
+    assert.equal(excludedUnderHost("80-89 Divorce/evidence.md", []), false);
+    assert.equal(excludedUnderHost("Projects/plain.md", []), false);
+  });
+
+  test("a non-empty host answer guards exactly what it names, through the shared predicate", () => {
+    assert.equal(excludedUnderHost("80-89 Divorce/evidence.md", ["80-89"]), true);
+    assert.equal(excludedUnderHost("80-89-archive/old.md", ["80-89"]), false, "segment boundary (#321)");
+    assert.equal(excludedUnderHost("Projects/plain.md", ["80-89"]), false);
+    assert.equal(excludedUnderHost("Private/x.md", [" /Private/ ", ""]), true, "resolved first: trimmed, blanks dropped, leading / stripped");
+  });
+
+  test("hostGuardedTerritories answers null — not [] — for every way the host cannot be asked", () => {
+    assert.equal(hostGuardedTerritories(undefined), null, "no plugin registry");
+    assert.equal(hostGuardedTerritories({}), null, "no host loaded");
+    assert.equal(hostGuardedTerritories({ "vault-mcp": { api: { apiVersion: 1 } } }), null, "a host that predates the member");
+    assert.equal(hostGuardedTerritories({ "vault-mcp": { api: { apiVersion: 1, guardedTerritories: () => "80-89" } } }), null, "a malformed answer");
+    assert.equal(hostGuardedTerritories({ "vault-mcp": { api: { apiVersion: 1, guardedTerritories: () => { throw new Error("x"); } } } }), null, "a throwing host");
+    assert.deepEqual(hostGuardedTerritories({ "vault-mcp": { api: { apiVersion: 1, guardedTerritories: () => [] } } }), [], "an EMPTY answer is an answer");
+  });
 });

@@ -41,6 +41,8 @@
 // keeps it. Refusing to mount the pane against an apiVersion-2 host would be a
 // worse answer than mounting it.
 
+import { isExcludedTerritory, resolveTerritories } from "@vault-mcp/core";
+
 /**
  * The host plugin's ids, CURRENT FIRST — the same pair `vault-mcp-api` reads,
  * in the same order, and for the same reason: the host id moved `vault-mcp` →
@@ -55,6 +57,45 @@ export interface HostPluginLike {
   /** The plugin-to-plugin api object. Its PRESENCE is what makes a plugin the host. */
   api?: unknown;
   manifest?: { dir?: string };
+}
+
+/**
+ * The host's configured guarded territories, or null when they cannot be read.
+ *
+ * NULL means "cannot tell" — no host, or a host too old to publish this. Since
+ * #397 there is no built-in default to fall back to, and `null` must NOT be
+ * read as an empty list: `resolveTerritories(null)` would be `[]`, which guards
+ * nothing, and "cannot ask" must never mean "nothing is guarded". Every
+ * consumer goes through `excludedUnderHost` (below), which fails CLOSED on
+ * null — nothing governed, proposed, auto-accepted or recorded — until a host
+ * that answers is present. The pane already refuses to mount without a host;
+ * this closes the paths that do not go through the pane.
+ *
+ * WHY THIS READS THE HOST RATHER THAN A SETTING OF OUR OWN (#397). The list has
+ * consumers in both plugins, and the host holds the dangerous one — observation
+ * capture writes note bodies outside the vault, and it runs whether or not this
+ * plugin is installed. So the host owns the setting and this provider reads it.
+ * Two editable lists would be the exact drift `EXCLUDED_PREFIXES` was
+ * centralized to prevent, which is why this provider no longer keeps its own.
+ *
+ * Defensive about the shape because it is another plugin's object: anything but
+ * a function returning an array of strings reads as "cannot tell", i.e. null.
+ */
+export function hostGuardedTerritories(
+  plugins: Record<string, HostPluginLike | undefined> | undefined
+): readonly string[] | null {
+  const found = findHostPlugin(plugins);
+  if (!found) return null;
+  const api = found.plugin.api as { guardedTerritories?: unknown } | undefined;
+  if (typeof api?.guardedTerritories !== "function") return null;
+  try {
+    const list = (api.guardedTerritories as () => unknown)();
+    if (!Array.isArray(list)) return null;
+    const clean = list.filter((p): p is string => typeof p === "string");
+    return clean.length === list.length ? clean : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -91,4 +132,24 @@ export function hostPluginDir(
   const found = findHostPlugin(plugins);
   if (!found) return null;
   return found.plugin.manifest?.dir ?? `${configDir}/plugins/${found.id}`;
+}
+
+/**
+ * The provider's ONE territory decision (review of #396). Two answers from the
+ * host mean two different things and must not collapse into one:
+ *
+ * - `null` — the host cannot be asked (absent, not yet loaded, predates the
+ *   setting, or answered garbage). FAIL CLOSED: every path reads as excluded,
+ *   so nothing is governed, proposed, auto-accepted or recorded into history
+ *   until the host is there to say what is guarded. The old built-in list used
+ *   to cover this case unconditionally; treating "cannot tell" as "nothing is
+ *   guarded" would have made a missing host the one state that records legal
+ *   material into the standing chain.
+ * - a list, empty or not — the host's answer, honoured as-is: an empty list
+ *   guards nothing (the #397 ruling), a non-empty one guards exactly what it
+ *   names, through the shared predicate.
+ */
+export function excludedUnderHost(path: string, hostList: readonly string[] | null): boolean {
+  if (hostList === null) return true;
+  return isExcludedTerritory(path, resolveTerritories(hostList));
 }

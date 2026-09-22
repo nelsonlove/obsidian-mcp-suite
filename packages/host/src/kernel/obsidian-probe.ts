@@ -2,9 +2,9 @@
 // so the kernel itself imports nothing from `obsidian` and stays unit-testable
 // headlessly (the same reason ObsidianBackend is separate from registerFsTools).
 
-import { TFile, type App } from "obsidian";
+import { TFile, getAllTags, type App } from "obsidian";
 import type { TargetProbe } from "./index.js";
-import { isRecordFlag } from "./record-guard.js";
+import { DEFAULT_RECORD_IDENTIFICATION, identifiesRecord, type RecordIdentification } from "./record-guard.js";
 import type { ServerIdentity } from "./install-id.js";
 import type { UidSource } from "./uid-index.js";
 
@@ -49,7 +49,14 @@ export function obsidianProbe(
    * Live read of the record-immutability enforcement setting (#264). Absent ⇒
    * enforced, which is what every test and bare embed gets. See `record()`.
    */
-  recordImmutability?: () => boolean
+  recordImmutability?: () => boolean,
+  /**
+   * Live read of how a note declares itself a record (#397): a frontmatter
+   * property with a value, or a tag — the operator's convention, not the
+   * plugin's. Absent ⇒ the shipped default `record: true`, which is what every
+   * test and bare embed gets.
+   */
+  recordIdentification?: () => RecordIdentification
 ): TargetProbe {
   const fileAt = (path: string): TFile | null => {
     const f = app.vault.getAbstractFileByPath(path);
@@ -82,9 +89,16 @@ export function obsidianProbe(
       if (recordImmutability && !recordImmutability()) return undefined;
       const f = fileAt(path);
       if (!f) return undefined;
-      const fm = app.metadataCache.getFileCache(f)?.frontmatter;
-      if (!fm || !("record" in fm)) return undefined;
-      return isRecordFlag(fm.record);
+      const cache = app.metadataCache.getFileCache(f);
+      if (!cache) return undefined;
+      // How a note declares itself a record is the OPERATOR'S convention, read
+      // live per call (#397): a frontmatter property with a value, or a tag —
+      // the same choice TaskNotes offers for its task identifier. This adapter
+      // only GATHERS the evidence; `identifiesRecord` (record-guard.ts) decides,
+      // so the decision is unit-tested without a cache. getAllTags folds
+      // frontmatter `tags` and inline `#tags` together, with the leading `#`.
+      const id = recordIdentification?.() ?? DEFAULT_RECORD_IDENTIFICATION;
+      return identifiesRecord(id, { frontmatter: cache.frontmatter, tags: getAllTags(cache) ?? [] });
     },
   };
 }

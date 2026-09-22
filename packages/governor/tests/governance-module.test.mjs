@@ -145,11 +145,19 @@ describe("provider settings tab: config keys match what the pane actually reads"
     assert.ok(written.viaHelper.length >= 2, "the tab must still write badge toggles through toggleField");
     assert.ok(written.literal.length >= 3, "the tab must still write the acceptance fields directly");
 
+    // `guardedTerritories` is deliberately NOT here any more (#397): the tab must
+    // not write a key this plugin does not own. The list moved to the HOST, whose
+    // capture writes note bodies outside the vault and runs without this plugin;
+    // the tab now renders it read-only from the host's api and writes nothing. If
+    // a territories field is ever re-added here this assertion fails, which is the
+    // intended alarm — two editable copies is the drift EXCLUDED_PREFIXES was
+    // centralized to prevent.
     const readers = [...Object.keys(DEFAULT_GOVERNANCE_SETTINGS), ...Object.keys(DEFAULT_ACCEPTANCE_SETTINGS)];
     assert.deepEqual([...written.all].sort(), [...readers].sort());
 
-    // And the defaults ARE read: every key the two DEFAULT_ objects declare is actually consulted
-    // by the coercers, so a default cannot become decorative.
+    // And the defaults ARE read: every key the two DEFAULT_ objects declare
+    // is actually consulted by the coercers, so a default cannot become
+    // decorative.
     const read = keysReadByCoercers(code("kernel/settings.ts"));
     for (const key of readers) assert.ok(read.has(key), `${key} is defaulted but never read out of the config`);
   });
@@ -983,7 +991,23 @@ describe("governance settings-tab surface: the accept path stays module-private 
     // render fn, and a type. Pinning the SET closes the class rather than the fourteen instances —
     // a new import of anything accept-capable fails here even if it is spelled differently.
     const specifiers = [...readRaw("settings-tab.ts").matchAll(/from\s+["']([^"']+)["']/g)].map((m) => m[1]);
-    assert.deepEqual(specifiers.sort(), ["./kernel/settings.js", "./settings.js", "./wiring/wiring.js", "obsidian"]);
+    // Two specifiers were added by #397 and each is admitted on the same test this
+    // pin exists to apply — is it accept-capable? Neither is.
+    //   • `./host-lookup.js` — `hostGuardedTerritories` READS another plugin's api
+    //     and returns strings or null. It writes nothing and exposes no callable.
+    //   • `@vault-mcp/core` — `resolveTerritories` is a pure list-or-default fn.
+    // The SET is still closed: anything accept-capable still fails here, and the
+    // tab still writes no territories key of its own (pinned separately above).
+    assert.deepEqual(specifiers.sort(), ["./host-lookup.js", "./kernel/settings.js", "./settings.js", "./wiring/wiring.js", "@vault-mcp/core", "obsidian"]);
+    // Admitting `@vault-mcp/core` as a MODULE would reopen the class this pin
+    // closes: that package also exports `acceptTransitionReason`,
+    // `acceptForbiddenReason`, `scanForAcceptFence` and `AcceptForbiddenError`.
+    // So the BINDINGS are pinned too — the tab may take exactly the one pure
+    // helper it needs, and a future accept-capable import from that package
+    // fails here exactly as a direct one would.
+    const coreBindings = [...readRaw("settings-tab.ts").matchAll(/import\s*\{([^}]*)\}\s*from\s*["']@vault-mcp\/core["']/g)]
+      .flatMap((m) => m[1].split(",").map((x) => x.trim()).filter(Boolean));
+    assert.deepEqual(coreBindings.sort(), ["resolveTerritories"], "settings-tab may import only the pure territory resolver from core");
   });
 
   test("the fuller auto-accept text is a SHARED constant (both surfaces render the same one, not two literals)", () => {
