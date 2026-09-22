@@ -47,6 +47,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ok, fail } from "./helpers.js";
 import type { GuardSettings } from "../guard.js";
 import type { Finding } from "../conformance/finding.js";
+import type { SkippedTerritory } from "../conformance/snapshot.js";
 import { parseBaseline } from "../conformance/ratchet.js";
 import { parseSidecar, type DebtSidecar } from "../conformance/debt-sidecar.js";
 import {
@@ -81,6 +82,10 @@ export interface DebtSource {
   baselineText(): Promise<string>;
   /** The metadata sidecar (tolerant: absent/corrupt reads as empty). */
   sidecar(): Promise<DebtSidecar>;
+  /** Guarded territories the LAST `liveFindings()` run skipped (#398). Optional
+   * so a hand-built source (tests) still satisfies the type; absent ⇒ none.
+   * Read only after `liveFindings()` has resolved. */
+  skippedTerritories?(): readonly SkippedTerritory[];
 }
 
 export interface ConformanceDebtCtx {
@@ -145,6 +150,9 @@ export function registerConformanceDebtTools(server: McpServer, source: DebtSour
           live,
           sidecar,
           now: clock(),
+          // Read AFTER liveFindings resolved (Promise.all above) — it reports
+          // that run's skips (#398).
+          skippedTerritories: source.skippedTerritories?.() ?? [],
           staleAfterDays: cfg.staleAfterDays,
           debtBudget: cfg.debtBudget,
           strictBudget: cfg.strictBudget,
@@ -159,6 +167,7 @@ export function registerConformanceDebtTools(server: McpServer, source: DebtSour
           summary: report.summary,
           staleAfterDays: report.staleAfterDays,
           budget: report.budget,
+          skipped_territories: report.skippedTerritories,
           // `filtered` counts describe the returned, narrowed item set.
           filtered: { carried: items.length, stale: stale.length },
           items,
@@ -301,6 +310,9 @@ export function registerConformanceDebtRenderTool(
           live,
           sidecar,
           now: clock(),
+          // Read AFTER liveFindings resolved (Promise.all above) — it reports
+          // that run's skips (#398).
+          skippedTerritories: source.skippedTerritories?.() ?? [],
           staleAfterDays: cfg.staleAfterDays,
           debtBudget: cfg.debtBudget,
           strictBudget: cfg.strictBudget,
@@ -314,6 +326,7 @@ export function registerConformanceDebtRenderTool(
           written: notePath,
           summary: report.summary,
           budget: report.budget,
+          skipped_territories: report.skippedTerritories,
           staleAfterDays: report.staleAfterDays,
           stale: report.stale.length,
           rows: Math.min(report.items.length, renderCfg.maxRows),
