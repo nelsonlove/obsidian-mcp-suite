@@ -28,7 +28,7 @@ import { createObservationStore } from "../src/kernel/observations/store.ts";
 import { createCapture } from "../src/kernel/observations/capture.ts";
 import { NOTE_READ_V1 } from "../src/kernel/operations/actions/note-read.ts";
 import { compatibilityAction } from "../src/kernel/operations/compatibility.ts";
-import { isExcludedTerritory } from "../../core/src/territories.ts";
+import { isExcludedTerritory, LEGACY_TERRITORY_SEED } from "../../core/src/territories.ts";
 
 // ── fixtures ─────────────────────────────────────────────────────────────────
 
@@ -345,13 +345,13 @@ describe("capture — a guarded territory is never retained outside itself", () 
     // isExcludedTerritory, so breaking its prefix semantics (startsWith → ===,
     // dropped normalization) fails here instead of leaving 3641 green tests
     // over a gate that no longer matches anything.
-    assert.ok(isExcludedTerritory("80-89 Divorce/evidence.md"), "prefix match, no trailing slash on the prefix");
-    assert.ok(isExcludedTerritory("obsidian-old/anything/deep.md"));
-    assert.ok(isExcludedTerritory("./80-89 Divorce/evidence.md"), "leading ./ is normalized away");
-    assert.ok(isExcludedTerritory("Notes/../80-89 Divorce/evidence.md"), "traversal into the territory is caught");
-    assert.ok(isExcludedTerritory("../outside-the-vault.md"), "an upward escape fails CLOSED");
-    assert.ok(!isExcludedTerritory("Notes/plain.md"));
-    assert.ok(!isExcludedTerritory("80s music/list.md"), "no false positive on a shared-prefix folder... "
+    assert.ok(isExcludedTerritory("80-89 Divorce/evidence.md", LEGACY_TERRITORY_SEED), "prefix match, no trailing slash on the prefix");
+    assert.ok(isExcludedTerritory("obsidian-old/anything/deep.md", LEGACY_TERRITORY_SEED));
+    assert.ok(isExcludedTerritory("./80-89 Divorce/evidence.md", LEGACY_TERRITORY_SEED), "leading ./ is normalized away");
+    assert.ok(isExcludedTerritory("Notes/../80-89 Divorce/evidence.md", LEGACY_TERRITORY_SEED), "traversal into the territory is caught");
+    assert.ok(isExcludedTerritory("../outside-the-vault.md", LEGACY_TERRITORY_SEED), "an upward escape fails CLOSED");
+    assert.ok(!isExcludedTerritory("Notes/plain.md", LEGACY_TERRITORY_SEED));
+    assert.ok(!isExcludedTerritory("80s music/list.md", LEGACY_TERRITORY_SEED), "no false positive on a shared-prefix folder... "
       + "(80-89* does match by design; '80s' must not)");
   });
 

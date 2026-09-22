@@ -28,9 +28,9 @@ import {
   formatProtectedPropertyLines,
   normalizeProtectedProperties,
   parseProtectedPropertyLines,
-  EXCLUDED_PREFIXES,
   resolveTerritories,
 } from "@vault-mcp/core";
+import { hasGuardedTerritory } from "./territory-policy.js";
 
 // ── tabbed settings UI: the pure, DOM-free half ─────────────────────────────
 //
@@ -639,7 +639,7 @@ export class VaultMcpSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Enforce record immutability")
       .setDesc(
-        "Refuse non-append writes to notes whose frontmatter carries `record: true` — historical, byte-verified " +
+        "Refuse non-append writes to notes identified as records by the setting below — historical, byte-verified " +
           "archives are extended by a dated end-of-file append (obsidian_append_note) and never edited, moved, or " +
           "deleted. Refusals are typed (record_immutable) and journaled. Turn OFF only to unblock a legitimate " +
           "operation the check over-blocks; it refuses on any path a call names, including one it only reads. " +
@@ -651,6 +651,55 @@ export class VaultMcpSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         })
       );
+
+    // How a note declares itself a record — the operator's convention, not the
+    // plugin's (#397). Same three knobs TaskNotes gives its task identifier.
+    new Setting(containerEl)
+      .setName("Record identifier")
+      .setDesc("How a note marks itself as a record. By a frontmatter property with a value, or by a tag. Applies immediately.")
+      .addDropdown((d) =>
+        d
+          .addOptions({ property: "Frontmatter property", tag: "Tag" })
+          .setValue(this.plugin.settings.recordIdentification.method)
+          .onChange(async (v) => {
+            this.plugin.settings.recordIdentification.method = v === "tag" ? "tag" : "property";
+            await this.plugin.saveSettings();
+            this.display();
+          })
+      );
+    if (this.plugin.settings.recordIdentification.method === "tag") {
+      new Setting(containerEl)
+        .setName("Record tag")
+        .setDesc("Without the #. Frontmatter tags and inline tags both count.")
+        .addText((t) =>
+          t.setValue(this.plugin.settings.recordIdentification.tag).onChange(async (v) => {
+            const tag = v.trim().replace(/^#/, "");
+            if (!tag) return; // a blank identifier would mark nothing; leave the last good one
+            this.plugin.settings.recordIdentification.tag = tag;
+            await this.plugin.saveSettings();
+          })
+        );
+    } else {
+      new Setting(containerEl)
+        .setName("Record property")
+        .setDesc("The frontmatter key, and the value it must hold. The default is record: true.")
+        .addText((t) =>
+          t.setPlaceholder("record").setValue(this.plugin.settings.recordIdentification.property).onChange(async (v) => {
+            const p = v.trim();
+            if (!p) return;
+            this.plugin.settings.recordIdentification.property = p;
+            await this.plugin.saveSettings();
+          })
+        )
+        .addText((t) =>
+          t.setPlaceholder("true").setValue(this.plugin.settings.recordIdentification.value).onChange(async (v) => {
+            const val = v.trim();
+            if (!val) return;
+            this.plugin.settings.recordIdentification.value = val;
+            await this.plugin.saveSettings();
+          })
+        );
+    }
 
     // ── observation capture ─────────────────────────────────────────────────
     //
@@ -666,6 +715,16 @@ export class VaultMcpSettingTab extends PluginSettingTab {
       )
       .addToggle((t) =>
         t.setValue(this.plugin.settings.captureObservations === true).onChange(async (value) => {
+          // Refuse to turn ON while no territory is configured (#397). With an
+          // empty list capture would retain ANY note it was shown, legal
+          // material included, and there is no built-in list to catch that any
+          // more. The runtime gate in server.ts (`captureAllowed`) enforces the
+          // same predicate; this is the version that explains itself.
+          if (value && !hasGuardedTerritory(this.plugin.settings)) {
+            new Notice("Recording stays off: add at least one guarded territory below first, so nothing is ever kept from the areas that must not leave the vault.", 8000);
+            t.setValue(false);
+            return;
+          }
           this.plugin.settings.captureObservations = value;
           await this.plugin.saveSettings();
         })
@@ -701,12 +760,13 @@ export class VaultMcpSettingTab extends PluginSettingTab {
       .setName("Areas never to copy out of the vault")
       .setDesc(
         "One folder per line, matched from the start of the path. Nothing here is ever recorded by the setting above, walked by the conformance check, or reviewed by Governor — for archival or legally sensitive areas, not live notes. " +
-          "Leave it blank to use the built-in list, shown as the placeholder. Reading these notes still works; this only stops copies being kept outside the vault."
+          "EMPTY MEANS NOTHING IS GUARDED, and recording cannot be switched on while it is empty. There is no built-in list: what belongs here is your vault's business, not the plugin's. " +
+          "Reading these notes still works; this only stops copies being kept outside the vault."
       )
       .addTextArea((t) => {
         t.inputEl.rows = 4;
         t
-          .setPlaceholder(EXCLUDED_PREFIXES.join("\n"))
+          .setPlaceholder("e.g.\nArchive/\n80-89 Legal/")
           // Shows the list IN FORCE, not the raw setting — so a blank setting
           // renders the four built-in territories rather than an empty box.
           // That matters because a configured list REPLACES the default rather

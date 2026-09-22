@@ -43,6 +43,7 @@ import { expiryRefusal, type SessionV1 } from "@vault-mcp/core";
 // published contract rather than the host reaching into the provider subtree.
 import { canonicalize, digestUtf8 } from "@vault-mcp/core";
 import { isExcludedTerritory, resolveTerritories } from "@vault-mcp/core";
+import { captureAllowed } from "../territory-policy.js";
 import { createObservationStore } from "../kernel/observations/store.js";
 import { createLocalBlobStore } from "../kernel/observations/local-store.js";
 import { vaultSlug } from "../paths.js";
@@ -261,7 +262,13 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   });
   const observationCapture = createCapture({
     store: observationStore,
-    enabled: () => ctx.getSettings().captureObservations === true,
+    // ON requires BOTH the toggle and a non-empty territory list (#397). The
+    // settings tab refuses to flip the toggle on an empty list, but a
+    // hand-edited data.json can set `captureObservations: true` with none
+    // configured — and that is precisely the state in which capture would
+    // retain anything at all, including legal material. So the runtime gate
+    // is the real one and the UI refusal is courtesy.
+    enabled: () => captureAllowed(ctx.getSettings()),
     maxBytes: ctx.getSettings().captureMaxBytes ?? 50 * 1024 * 1024,
     // The OPERATOR'S configured territory list (issue #322: reads in a guarded
     // territory stay legal; RETAINING copies of them outside the territory is

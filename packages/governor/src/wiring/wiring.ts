@@ -516,10 +516,9 @@ async function journalSignature(plugin: Plugin): Promise<string> {
 // edit in its settings tab takes effect on the next call with no reload here.
 // This provider holds no copy of the list — see territoriesOf below.
 // #397: the list is the HOST's setting, read live through its api. This
-// provider deliberately keeps no copy — see `hostGuardedTerritories`. When the
-// host is absent or too old to publish it, `resolveTerritories(null)` answers
-// with the built-in default, so this provider guards the legal material even
-// against a host it cannot ask.
+// provider deliberately keeps no copy — see `hostGuardedTerritories`. There is
+// no built-in default any more: an unconfigured host, or none, reads as an
+// empty list, and an empty list guards nothing.
 function territoriesOf(plugin: Plugin): readonly string[] {
   return resolveTerritories(hostGuardedTerritories((plugin.app as any)?.plugins?.plugins));
 }

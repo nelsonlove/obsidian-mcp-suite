@@ -159,7 +159,7 @@ export { uuidv7 } from "./uuidv7.js";
 // the split, and the alternative — two copies — is the failure its own header
 // names, where a prefix missing from capture's list means capture writes note
 // bodies to disk. The list became configuration at #321/#396, and #397 settled its owner: the HOST plugin holds the setting and publishes it, and the governance provider reads it — see `resolveTerritories` for the blank-means-default rule both sides share.
-export { EXCLUDED_PREFIXES, isExcludedTerritory, resolveTerritories } from "./territories.js";
+export { LEGACY_TERRITORY_SEED, isExcludedTerritory, resolveTerritories } from "./territories.js";
 
 // Path-allowlist visibility — the one-path disclosure predicate, published at
 // the skills satellite extraction (suite split, S4). A satellite that filters

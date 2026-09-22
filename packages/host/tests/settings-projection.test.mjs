@@ -47,6 +47,7 @@ const WITHHELD = {
   vocabularies: "Reaches the server by its own accessor, ctx.getVocabularies() — forwarded, just not through this literal.",
   enforceRecordImmutability: "Read live per call by the record-immutability guard, deliberately not snapshotted per connection.",
   devToolRunner: "Gates an in-Obsidian command surface. No MCP connection can reach it.",
+  recordIdentification: "Read live per call by the record probe through its own thunk (obsidianProbe's third argument), the same way enforceRecordImmutability is — deliberately not snapshotted per connection, so an operator's edit takes effect on the next write without a reconnect.",
 };
 
 /** The `field: type;` declarations inside `interface VaultMcpSettings`. */

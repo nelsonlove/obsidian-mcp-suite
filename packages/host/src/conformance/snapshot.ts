@@ -25,7 +25,6 @@ import { join, relative, resolve, dirname, basename, sep } from "node:path";
 import {
   parseAllFrontmatter,
   stripLeadingFrontmatter,
-  EXCLUDED_PREFIXES,
   resolveTerritories,
   type VocabNote,
 } from "@vault-mcp/core";
@@ -115,7 +114,7 @@ const DEFAULT_SKIP = new Set([".git", ".obsidian", ".trash", "node_modules"]);
  * This file used to hardcode its own three checks. That was the second
  * implementation of one rule, and it had already drifted: core's list carries
  * `_keep/`, which this file never denied. The suite split's S3b published
- * `EXCLUDED_PREFIXES` precisely so there is ONE list — the failure it names is
+ * the territory predicate precisely so there is ONE list — the failure it names is
  * a prefix present in one copy and missing from another, which is how guarded
  * content reaches somewhere it should never be. Deriving keeps this rail from
  * hardcoding its OWN second copy of the DEFAULT list.
@@ -131,22 +130,15 @@ const DEFAULT_SKIP = new Set([".git", ".obsidian", ".trash", "node_modules"]);
  * path-prefix matching: every segment of a resolved real path is checked, so a
  * symlink cannot launder a guarded directory into the middle of an allowed one.
  */
-const DENIED_SEGMENTS: ReadonlyArray<string> = deniedSegmentsOf(EXCLUDED_PREFIXES);
-
 /** A territory list as the SEGMENT forms this rail matches on — trailing
  * separators stripped, lowercased. Derived rather than written twice: a second
- * hand-maintained copy of the names is the exact drift `EXCLUDED_PREFIXES` was
+ * hand-maintained copy of the names is the exact drift the shared predicate was
  * centralized to prevent. #397 makes the input configurable; the derivation is
  * unchanged. */
 function deniedSegmentsOf(prefixes: readonly string[]): ReadonlyArray<string> {
   return prefixes.map((p) => p.replace(/\/+$/, "").toLowerCase());
 }
 
-/** Human names for the territories that have one; others report generically. */
-const TERRITORY_NAMES: Readonly<Record<string, string>> = {
-  "obsidian-old": "the retired ~/obsidian-old vault",
-  "80-89": "80-89 legal material",
-};
 
 /** A single path SEGMENT (one directory or file name — no separators) that is
  * refused EVEN WHEN it falls inside a declared boundary and even when the
@@ -157,7 +149,7 @@ const TERRITORY_NAMES: Readonly<Record<string, string>> = {
  * during the walk, against an already-verified-real directory's own name
  * (cheap — no need to re-resolve a real path for something that is already
  * known not to be a symlink). */
-function deniedSegment(seg: string, segments: ReadonlyArray<string> = DENIED_SEGMENTS): string | null {
+function deniedSegment(seg: string, segments: ReadonlyArray<string>): string | null {
   const s = seg.toLowerCase();
   for (const denied of segments) {
     // Equality, or the prefix followed by a non-alphanumeric — so `80-89` and
@@ -165,19 +157,20 @@ function deniedSegment(seg: string, segments: ReadonlyArray<string> = DENIED_SEG
     // regex used).
     const boundary = s.length === denied.length || !/[a-z0-9]/.test(s.charAt(denied.length));
     if (s.startsWith(denied) && boundary) {
-      return TERRITORY_NAMES[denied] ?? `the guarded territory '${denied}'`;
+      return `the guarded territory '${denied}'`;
     }
   }
-  // Broader than the published list on purpose: catches `hold` and `holds`
-  // anywhere in a segment, not only as a top-level root.
-  if (/\bholds?\b/i.test(seg)) return "a path under a hold";
+  // The `hold`/`holds` segment heuristic that used to live here is GONE (#397):
+  // it was one vault's convention baked in, and with an empty configured list
+  // it would still have refused paths — making "empty means guard nothing"
+  // false. An operator who wants hold folders guarded lists them.
   return null;
 }
 
 /** Every segment of the RESOLVED real path, checked with `deniedSegment` — so
  * a symlink cannot launder past this either. Returns the human name of the
  * violated territory, or null when nothing matched. */
-function deniedTerritory(realPath: string, segments: ReadonlyArray<string> = DENIED_SEGMENTS): string | null {
+function deniedTerritory(realPath: string, segments: ReadonlyArray<string>): string | null {
   for (const seg of realPath.split(sep)) {
     if (!seg) continue;
     const hit = deniedSegment(seg, segments);
@@ -214,8 +207,9 @@ function declaredBoundary(opts: SnapshotOpts): string | null {
  *
  * 1. The root's real path cannot be established at all — refuse rather than
  *    guess (an indeterminate identity is not a permitted one).
- * 2. The root's real path falls inside a denied territory
- *    (`~/obsidian-old`, `80-89*`, anything under a hold) — refused
+ * 2. The root's real path falls inside a CONFIGURED guarded territory
+ *    (`opts.territories` — the operator's list; there is no built-in one
+ *    since #397, so an empty list refuses nothing here) — refused
  *    UNCONDITIONALLY, before the boundary is even consulted, so this holds
  *    even when a boundary was declared that would otherwise have permitted
  *    it, and even when the caller names the territory explicitly.

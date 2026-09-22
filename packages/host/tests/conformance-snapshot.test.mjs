@@ -18,6 +18,7 @@ import { mkdtemp, mkdir, writeFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { buildSnapshot } from "../src/conformance/snapshot.ts";
+import { LEGACY_TERRITORY_SEED as SEED } from "../../core/src/territories.ts";
 
 async function fixture() {
   const root = await mkdtemp(path.join(tmpdir(), "conf-snap-"));
@@ -274,7 +275,7 @@ describe("buildSnapshot territory guard (#157) — outside the declared boundary
   });
 });
 
-describe("buildSnapshot territory guard (#157) — deny-list overrides an explicit request", () => {
+describe("buildSnapshot territory guard (#157) — the CONFIGURED list overrides an explicit request (no built-in list since #397)", () => {
   test("REGRESSION: a walk rooted at a fixture standing in for ~/obsidian-old refuses, even inside a declared boundary", async () => {
     // Fixture, never the real ~/obsidian-old — reproducing the breach while
     // testing its fix would be exactly the mistake this issue exists to close.
@@ -287,7 +288,7 @@ describe("buildSnapshot territory guard (#157) — deny-list overrides an explic
       // The boundary EXPLICITLY includes the denied tree — proving the deny
       // list overrides an explicit request rather than merely a wide-open one.
       await assert.rejects(
-        () => buildSnapshot({ root: oldVault, boundary: homeStandIn }),
+        () => buildSnapshot({ root: oldVault, boundary: homeStandIn , territories: SEED }),
         /permanently denied territory.*obsidian-old/i,
       );
     } finally {
@@ -301,7 +302,7 @@ describe("buildSnapshot territory guard (#157) — deny-list overrides an explic
       const legal = path.join(root, "80-89 Divorce");
       await mkdir(legal, { recursive: true });
       await assert.rejects(
-        () => buildSnapshot({ root: legal, boundary: root }),
+        () => buildSnapshot({ root: legal, boundary: root , territories: SEED }),
         /permanently denied territory.*80-89/i,
       );
     } finally {
@@ -309,14 +310,22 @@ describe("buildSnapshot territory guard (#157) — deny-list overrides an explic
     }
   });
 
-  test("a path segment containing 'hold' as a whole word is refused even when the boundary is set to permit it", async () => {
+  test("a 'Legal Hold' segment is NOT refused unless it is LISTED — the hold heuristic is retired (#397)", async () => {
+    // The walker used to refuse any segment containing `hold`/`holds` as a whole
+    // word, with no list consulted. That was one vault's convention shipped as
+    // a rule, and it made "an empty list guards nothing" false. Both halves are
+    // pinned here: unlisted, the folder is walked like any other; listed, it is
+    // refused through the SAME configured-list path every other territory uses.
     const root = await mkdtemp(path.join(tmpdir(), "conf-hold-"));
     try {
       const legalHold = path.join(root, "Legal Hold");
       await mkdir(legalHold, { recursive: true });
+      const snap = await buildSnapshot({ root: legalHold, boundary: root });
+      assert.deepEqual(snap.notes, [], "unlisted: walked, not refused");
       await assert.rejects(
-        () => buildSnapshot({ root: legalHold, boundary: root }),
-        /permanently denied territory.*hold/i,
+        () => buildSnapshot({ root: legalHold, boundary: root, territories: ["Legal Hold/"] }),
+        /permanently denied territory.*guarded territory 'legal hold'/i,
+        "listed: refused, naming the configured entry",
       );
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -362,7 +371,7 @@ describe("buildSnapshot territory guard (#157) — checked mid-walk, not just at
       const escapeLink = path.join(root, "Notes", "leaked.md");
       await symlink(path.join(oldVault, "80-89 Divorce", "secret.md"), escapeLink);
       await assert.rejects(
-        () => buildSnapshot({ root, boundary: root }),
+        () => buildSnapshot({ root, boundary: root , territories: SEED }),
         /permanently denied territory.*80-89/i,
       );
       await rm(oldVault, { recursive: true, force: true });
@@ -410,7 +419,7 @@ describe("buildSnapshot territory guard (#157) — checked mid-walk, not just at
       await mkdir(nested, { recursive: true });
       await writeFile(path.join(nested, "N.md"), "---\ntitle: N\n---\n\nnested\n");
       await assert.rejects(
-        () => buildSnapshot({ root, boundary: root }),
+        () => buildSnapshot({ root, boundary: root , territories: SEED }),
         /refusing to descend.*permanently denied territory.*80-89/i,
       );
     } finally {
@@ -418,14 +427,19 @@ describe("buildSnapshot territory guard (#157) — checked mid-walk, not just at
     }
   });
 
-  test("a nested 'Legal Holds' (plural) directory is refused — the plural inflection is covered", async () => {
+  test("a nested 'Legal Holds' directory is walked when unlisted and refused mid-walk when listed (#397)", async () => {
+    // The plural inflection used to be covered by the retired heuristic. Now
+    // the operator lists the exact folder; the mid-walk refusal is the same one
+    // any listed territory gets.
     const root = await mkdtemp(path.join(tmpdir(), "conf-midwalk-plural-"));
     try {
       const nested = path.join(root, "Area", "Legal Holds");
       await mkdir(nested, { recursive: true });
+      const snap = await buildSnapshot({ root, boundary: root });
+      assert.deepEqual(snap.notes, [], "unlisted: the nested folder is not refused");
       await assert.rejects(
-        () => buildSnapshot({ root, boundary: root }),
-        /refusing to descend.*permanently denied territory.*hold/i,
+        () => buildSnapshot({ root, boundary: root, territories: ["Legal Holds"] }),
+        /refusing to descend.*permanently denied territory.*guarded territory 'legal holds'/i,
       );
     } finally {
       await rm(root, { recursive: true, force: true });
