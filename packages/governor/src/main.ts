@@ -470,13 +470,15 @@ export default class GovernorPlugin extends Plugin {
         record: async (proposalId: string, path: string, baseBytes: Uint8Array | null, proposedBytes: Uint8Array) => {
           // The HOST's configured territories (#397), read live through its api —
           // the same list the pane, proposals and auto-accept use, and the same one
-          // the host's own capture gate consults. Falls back to the built-in default
-          // when no host is loaded, so the legal material stays out of history even
-          // then.
-          const scope = effectiveScope(
-            this.settings.historyScope,
-            resolveTerritories(hostGuardedTerritories((this.app as any)?.plugins?.plugins))
-          );
+          // the host's own capture gate consults. There is no built-in default to
+          // fall back to: when the host cannot be asked (`null` — absent, not yet
+          // loaded, too old), NOTHING is recorded, the same fail-closed answer
+          // `excludedUnderHost` gives the pane. Reading "no answer" as "no
+          // territories" would make a missing host the one state that writes the
+          // legal material into the standing chain (review of #396).
+          const hostList = hostGuardedTerritories((this.app as any)?.plugins?.plugins);
+          if (hostList === null) return null;
+          const scope = effectiveScope(this.settings.historyScope, resolveTerritories(hostList));
           if (!isTracked(scope, path)) return null;
           const repo = await lazyHistoryRepo();
           const ref = proposalRef(proposalId);

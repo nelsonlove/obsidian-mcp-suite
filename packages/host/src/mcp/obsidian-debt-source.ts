@@ -87,7 +87,7 @@ export function obsidianDebtRenderSource(app: App, territories?: () => readonly 
     createFolder(path: string): Promise<unknown>;
   };
   return {
-    ...obsidianDebtSource(app),
+    ...obsidianDebtSource(app, territories),
     defaultRegisterDir(): string {
       return dir === "." ? "" : dir;
     },

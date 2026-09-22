@@ -116,8 +116,7 @@ import {
   type AcceptEligibilityCtx,
 } from "../kernel/menu-eligibility.js";
 import { GovernanceReviewView, VIEW_TYPE_GOVERNANCE, confirmAdopt, confirmMenuAccept, renderAllowlist, wireAdoptButton, ADOPT_BASELINE_DESC, acceptThroughGate, type ReviewController, type RevisingItem, renderLegacyRetiredNotice, confirmCutover, confirmRollbackCutover, noticeGestureBlocked, confirmBindChain } from "./pane.js";
-import { isExcludedTerritory, resolveTerritories } from "@vault-mcp/core";
-import { hostGuardedTerritories } from "../host-lookup.js";
+import { excludedUnderHost, hostGuardedTerritories } from "../host-lookup.js";
 
 // Guarded territories moved to ./territories.ts when observation capture became
 // the second consumer — one list, so the pane and capture can never disagree
@@ -517,13 +516,13 @@ async function journalSignature(plugin: Plugin): Promise<string> {
 // This provider holds no copy of the list — see territoriesOf below.
 // #397: the list is the HOST's setting, read live through its api. This
 // provider deliberately keeps no copy — see `hostGuardedTerritories`. There is
-// no built-in default any more: an unconfigured host, or none, reads as an
-// empty list, and an empty list guards nothing.
-function territoriesOf(plugin: Plugin): readonly string[] {
-  return resolveTerritories(hostGuardedTerritories((plugin.app as any)?.plugins?.plugins));
-}
+// no built-in default any more. Two host answers, two meanings (review of
+// #396): an EMPTY list guards nothing; NO answer (`null` — host absent, not yet
+// loaded, or too old to publish the list) fails CLOSED and excludes every
+// path, so a missing host can never be the state that governs legal material.
+// `excludedUnderHost` is that decision, pure and tested in host-lookup.
 function isExcluded(plugin: Plugin, path: string): boolean {
-  return isExcludedTerritory(path, territoriesOf(plugin));
+  return excludedUnderHost(path, hostGuardedTerritories((plugin.app as any)?.plugins?.plugins));
 }
 function governedMarkdownFiles(plugin: Plugin): TFile[] {
   return plugin.app.vault.getMarkdownFiles().filter((f) => !isExcluded(plugin, f.path));
@@ -687,7 +686,7 @@ function listRevising(plugin: Plugin): RevisingItem[] {
 // The Proposed listing (#221/#164) — read-only, from the metadata cache exactly like the
 // Revising listing, with the dedupe/exclusion rules in the pure kernel builder: proposed
 // notes ALREADY in the pending queue are deduped out (their queue row carries the same
-// context-aware Accept), and the EXCLUDED_PREFIXES territories are respected. Plain data.
+// context-aware Accept), and the host's guarded territories are respected. Plain data.
 function listProposed(plugin: Plugin): ProposedItem[] {
   const candidates = plugin.app.vault.getMarkdownFiles().map((file) => ({
     path: file.path,

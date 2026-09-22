@@ -63,6 +63,23 @@ describe("territoriesOnLoad — the one-time migration", () => {
     }
   });
 
+  test("an install ADOPTED from the pre-split plugin (own absent, adopted present) is an EXISTING install and takes the seed", () => {
+    // The #396 review found this exact case classed as fresh: on the first load
+    // after the host/provider split, the host has no data.json of its own yet,
+    // and everything it knows came over from the old `governor` folder. That
+    // operator was guarded by the old built-in list; starting them empty would
+    // silently unguard the legal material on the very upgrade the seed is for.
+    const r = territoriesOnLoad(null, { readOnly: false, captureObservations: true });
+    assert.deepEqual(r.territories, [...LEGACY_TERRITORY_SEED]);
+    assert.equal(r.persist, true);
+  });
+
+  test("adopted settings that already carry the key are honoured, and own data.json wins over adopted when both exist", () => {
+    assert.deepEqual(territoriesOnLoad(null, { guardedTerritories: ["Mine/"] }).territories, ["Mine/"]);
+    assert.deepEqual(territoriesOnLoad({ guardedTerritories: ["Own/"] }, { guardedTerritories: ["Adopted/"] }).territories, ["Own/"]);
+    assert.deepEqual(territoriesOnLoad(undefined, undefined), { territories: [], persist: true }, "neither: genuinely fresh");
+  });
+
   test("the seed is never re-applied when the key is present, whatever else the file holds", () => {
     // Regression shape for "a new user saves any other setting, then a later
     // load inherits the legacy operator's folders": once the key is there, the
@@ -112,9 +129,22 @@ describe("production reads these predicates — pinned at the source", () => {
 
   test("main.ts applies territoriesOnLoad and persists when it says to", () => {
     const main = src("main.ts");
-    assert.match(main, /const territories = territoriesOnLoad\(own\)/, "the migration must run over the plugin's OWN stored data");
+    assert.match(main, /const territories = territoriesOnLoad\(own, seed\)/, "the migration must see the plugin's OWN data AND the settings adopted from the pre-split plugin");
     assert.match(main, /this\.settings\.guardedTerritories = territories\.territories/);
     assert.match(main, /if \(territories\.persist\) await this\.saveSettings\(\)/, "the key must be written when it was absent, or the seed branch runs again");
+  });
+
+  test("the two conformance sources FORWARD the territory thunk they are handed (#396 review: both dropped it)", () => {
+    // The #397 defect in miniature, twice: a parameter accepted and never
+    // passed on. `obsidianDebtRenderSource(app, territories)` spread
+    // `obsidianDebtSource(app)`; `wireSchemePanes` received `getTerritories`
+    // and built `obsidianDriftSource(app)`. Both walks ran unguarded.
+    const debt = src("mcp/obsidian-debt-source.ts");
+    assert.match(debt, /\.\.\.obsidianDebtSource\(app, territories\)/, "the render source must hand its thunk to the inner source");
+    const wiring = src("scheme/wiring.ts");
+    assert.match(wiring, /obsidianDriftSource\(app, opts\.getTerritories\)/, "the drift pane must read the option main.ts populates");
+    const server = src("mcp/server.ts");
+    assert.match(server, /obsidianDebtRenderSource\(app, \(\) => resolveTerritories\(ctx\.getSettings\(\)\.guardedTerritories\)\)/, "and server.ts must supply it, read per call");
   });
 
   test("LEGACY_TERRITORY_SEED has exactly ONE reader in the host: the migration", () => {

@@ -48,10 +48,9 @@ export interface VaultMcpApi {
   apiVersion: 1;
   registerTools(ownerPluginId: string, tools: ExternalToolSpec[]): () => void;
   /**
-   * The operator's configured guarded territories, already resolved — a blank
-   * setting answers with `@vault-mcp/core`'s default rather than an empty list,
-   * so a caller can use the return value directly and never has to know the
-   * fallback rule.
+   * The operator's configured guarded territories, already resolved (trimmed,
+   * blanks dropped). There is NO default (#397): a blank setting answers with
+   * an EMPTY list, which means the operator guards nothing — honour it as-is.
    *
    * ADDITIVE, so `apiVersion` stays 1 (same reasoning as the seam's methods):
    * an older `vault-mcp-api` build that never calls this keeps registering.
@@ -68,8 +67,9 @@ export interface VaultMcpApi {
    * builds already in the wild were compiled against a host without this, and a
    * REQUIRED method would make every one of them fail to satisfy the type — the
    * exact breakage `apiVersion: 1` promises not to cause. A caller must handle
-   * its absence; `hostGuardedTerritories` in packages/governor does, by reading
-   * a missing function as "cannot tell" and falling back to the built-in list.
+   * its absence as "cannot tell" and FAIL CLOSED — never as "nothing is
+   * guarded", and never by keeping a list of its own; `excludedUnderHost` in
+   * packages/governor is the reference answer (absent ⇒ everything excluded).
    */
   guardedTerritories?(): readonly string[];
 }

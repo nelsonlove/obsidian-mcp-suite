@@ -95,8 +95,9 @@ export interface RunResult {
 export async function runConformance(opts: RunOpts): Promise<RunResult> {
   // boundary: opts.root — cli.ts already resolves `root` explicitly (--root=,
   // GOVERNOR_CONTENT_ROOT, or the .obsidian-ancestor walk), so it IS this run's
-  // declared boundary; buildSnapshot's own guard (#157) still refuses
-  // unconditionally into ~/obsidian-old / 80-89 / a hold regardless of this.
+  // declared boundary; buildSnapshot's own guard (#157) still refuses, before
+  // the boundary is consulted, any listed territory in `opts.territories`
+  // (there is no built-in list since #397 — none listed, none refused).
   const snapshot = await buildSnapshot({ root: opts.root, excludedRoots: opts.excludedRoots, boundary: opts.root, territories: opts.territories });
 
   const packs: RulePack[] = [];
@@ -627,8 +628,9 @@ function truthyEnv(v: string | undefined): boolean {
  *
  * A discovered root (opt-in path) is not a bypass of #168's guard: `runCli`
  * still threads it into `buildSnapshot` as `boundary: opts.root`, exactly
- * like an explicit `--root=`, so the deny-list (`~/obsidian-old`, `80-89`, a
- * hold) and the boundary check apply to it identically — this function only
+ * like an explicit `--root=`, so the configured territories (`--territory=` /
+ * `GOVERNOR_TERRITORIES`; none built in since #397) and the boundary check
+ * apply to it identically — this function only
  * gates whether the walk may run at all, never what it is allowed to find.
  */
 export function rootDiscoveryRefusal(argv: string[], env: Record<string, string | undefined>): string | null {

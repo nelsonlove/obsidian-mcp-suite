@@ -1,6 +1,8 @@
 // The record-immutability guard (#264) — the durable, server-side half of the
-// record-class write protection. A note whose frontmatter carries `record: true`
-// is a RECORD: historical, byte-verified, never edited in place. The convention
+// record-class write protection. A note the operator's record identifier marks
+// (by default frontmatter `record: true`; a property/value or a tag, see
+// `RecordIdentification` below) is a RECORD: historical, byte-verified, never
+// edited in place. The convention
 // for extending one is a dated END-OF-FILE append (a new `## YYYY-MM-DD …`
 // section), so the one mutation a record admits is `obsidian_append_note`; every
 // other mutating operation that names a record note refuses with

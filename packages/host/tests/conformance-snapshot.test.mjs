@@ -332,6 +332,24 @@ describe("buildSnapshot territory guard (#157) — the CONFIGURED list overrides
     }
   });
 
+  test("a listed `80-89` does NOT refuse `80-89-archive` — the walker shares core's boundary rule (#321)", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "conf-boundary-"));
+    try {
+      const archive = path.join(root, "80-89-archive");
+      await mkdir(archive, { recursive: true });
+      const snap = await buildSnapshot({ root, boundary: root, territories: ["80-89"] });
+      assert.deepEqual(snap.notes, [], "walked, not refused");
+      await mkdir(path.join(root, "80-89 Legal"), { recursive: true });
+      await assert.rejects(
+        () => buildSnapshot({ root, boundary: root, territories: ["80-89"] }),
+        /refusing to descend.*guarded territory '80-89'/i,
+        "while the real area, one space later, is refused",
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("a directory that merely CONTAINS 'hold' as a substring (not a whole word) is NOT denied", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "conf-household-"));
     try {

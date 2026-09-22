@@ -158,7 +158,7 @@ export function wireSchemePanes(plugin: Plugin, opts: WireSchemePanesOpts): Comp
   }
 
   try {
-    const driftSource = obsidianDriftSource(app);
+    const driftSource = obsidianDriftSource(app, opts.getTerritories);
     const driftController: DriftPaneController = {
       scan: () => driftSource.scan(),
       openNote: (path) => void app.workspace.openLinkText(path, ""),

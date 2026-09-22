@@ -22,12 +22,7 @@
 import { opendir, readFile } from "node:fs/promises";
 import { realpathSync, lstatSync, readlinkSync } from "node:fs";
 import { join, relative, resolve, dirname, basename, sep } from "node:path";
-import {
-  parseAllFrontmatter,
-  stripLeadingFrontmatter,
-  resolveTerritories,
-  type VocabNote,
-} from "@vault-mcp/core";
+import { matchesTerritoryPrefix, parseAllFrontmatter, resolveTerritories, stripLeadingFrontmatter, type VocabNote } from "@vault-mcp/core";
 import type { SourceFile, VaultSnapshot } from "./rule-pack.js";
 import { intendedRealPath, isInside } from "./path-identity.js";
 import { envAliased } from "../env-alias.js";
@@ -37,8 +32,9 @@ export interface SnapshotOpts {
   root: string;
   /**
    * The guarded territories this rail refuses to walk into, as vault-path
-   * prefixes. Omitted or blank means `@vault-mcp/core`'s built-in default, so
-   * every existing caller — and every test — behaves exactly as before.
+   * prefixes. There is NO built-in list (#397, ruled 2026-09-22): omitted or
+   * blank means the walk refuses nothing on territory grounds, and every
+   * caller that wants a territory refused passes the operator's list.
    *
    * Threaded rather than read from a module-level constant because #397: the
    * list is the HOST's setting now, and a rail pinned to the compiled-in
@@ -117,14 +113,15 @@ const DEFAULT_SKIP = new Set([".git", ".obsidian", ".trash", "node_modules"]);
  * the territory predicate precisely so there is ONE list — the failure it names is
  * a prefix present in one copy and missing from another, which is how guarded
  * content reaches somewhere it should never be. Deriving keeps this rail from
- * hardcoding its OWN second copy of the DEFAULT list.
+ * hardcoding its OWN second copy of the list.
  *
  * #321 landed as a per-operator setting and #397 moved it to the HOST, which
  * is where it had to live: the other consumer is observation capture, which
  * writes note bodies outside the vault and runs whether or not Governor is
- * installed. This rail now derives its segments from `opts.territories` —
- * the operator's list, resolved — and falls back to the core default when a
- * caller supplies none, so every existing caller and test is unaffected.
+ * installed. This rail derives its segments from `opts.territories` — the
+ * operator's list, resolved — and from nothing else: a caller that supplies
+ * none gets a walk that refuses nothing, honestly, rather than one guarded by
+ * a list the operator never wrote.
  *
  * The SEGMENT semantics stay local and are deliberately stricter than core's
  * path-prefix matching: every segment of a resolved real path is checked, so a
@@ -152,11 +149,11 @@ function deniedSegmentsOf(prefixes: readonly string[]): ReadonlyArray<string> {
 function deniedSegment(seg: string, segments: ReadonlyArray<string>): string | null {
   const s = seg.toLowerCase();
   for (const denied of segments) {
-    // Equality, or the prefix followed by a non-alphanumeric — so `80-89` and
-    // `80-89 Divorce` match while `80-891` does not (the `\b` the hand-rolled
-    // regex used).
-    const boundary = s.length === denied.length || !/[a-z0-9]/.test(s.charAt(denied.length));
-    if (s.startsWith(denied) && boundary) {
+    // The SAME boundary rule core's `isExcludedTerritory` applies to whole
+    // paths (#321): `80-89` and `80-89 Divorce` match, `80-891` and
+    // `80-89-archive` do not. One rule, published once, so the walker and the
+    // capture gate can never disagree about what a listed entry covers.
+    if (matchesTerritoryPrefix(s, denied)) {
       return `the guarded territory '${denied}'`;
     }
   }

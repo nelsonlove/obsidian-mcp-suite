@@ -35,10 +35,8 @@ import { posix } from "node:path";
  * content). `80-89` is the legal/PII area with a standing rule that its
  * contents do not leave it.
  *
- * This is the DEFAULT list, used whenever a caller does not supply its own
- * (see `isExcludedTerritory`'s second argument). It remains the single
- * hardcoded fallback so a caller that has no configuration surface of its own
- * — or a configurable caller whose setting is blank — still guards these.
+ * This is what the plugin USED to ship as its default (#321 → #397). It is
+ * not a default any more and nothing falls back to it; see the seed below.
  */
 /**
  * The four folders the pre-#397 shipped default named. Read by EXACTLY ONE
@@ -65,7 +63,7 @@ export const LEGACY_TERRITORY_SEED: readonly string[] = ["obsidian-old/", "80-89
 export function isExcludedTerritory(path: string, prefixes: readonly string[]): boolean {
   const p = posix.normalize(path.replace(/\\/g, "/"));
   if (p.startsWith("..")) return true;
-  return prefixes.some((prefix) => p.startsWith(prefix));
+  return prefixes.some((prefix) => matchesTerritoryPrefix(p, prefix));
 }
 
 /**
@@ -92,4 +90,22 @@ export function resolveTerritories(configured: unknown): readonly string[] {
     .filter((p): p is string => typeof p === "string")
     .map((p) => p.trim().replace(/^\.?\/+/, ""))
     .filter((p) => p.length > 0);
+}
+
+/**
+ * Whether `candidate` (a normalized vault-relative path, or one path segment)
+ * falls under `prefix` — the ONE boundary rule both plugins use (#321 asked for
+ * it by name: "`80-89` never accidentally matches `80-89-archive/`").
+ *
+ * A match needs the prefix AND a boundary right after it: end of the candidate,
+ * a prefix that already ends in `/`, or a next character that cannot continue a
+ * name token (anything but a letter, digit, `_` or `-`). So `80-89` matches
+ * `80-89 Divorce/x.md` and `80-89/x.md` but not `80-891/…` or `80-89-archive/…`;
+ * `Archive/` matches `Archive/old.md` but not `Archives/…`. The conformance
+ * walker applies the same rule per path segment, lowercased.
+ */
+export function matchesTerritoryPrefix(candidate: string, prefix: string): boolean {
+  if (!prefix || !candidate.startsWith(prefix)) return false;
+  if (candidate.length === prefix.length || prefix.endsWith("/")) return true;
+  return !/[A-Za-z0-9_-]/.test(candidate.charAt(prefix.length));
 }

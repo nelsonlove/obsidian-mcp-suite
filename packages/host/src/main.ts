@@ -133,7 +133,8 @@ interface VaultMcpSettings {
   cliPolicy: { deny: string[]; allowOpaque: string[] };
   /**
    * Enforce record immutability (#264): refuse non-append mutation of a note
-   * whose frontmatter carries `record: true`. Default ON — the guard exists
+   * the record identifier marks (`record: true` by default; see
+   * `recordIdentification`). Default ON — the guard exists
    * because a mis-quoted write destroyed a byte-verified record archive. The
    * off switch is here because the check is deliberately over-inclusive (it
    * refuses on ANY named path, including one an operation only reads), so a
@@ -306,7 +307,7 @@ export default class VaultMcpPlugin extends Plugin {
     // — so this branch runs at most once per install, and a new user who saves
     // any other setting before configuring territories can never inherit the
     // legacy operator's folder names on a later load.
-    const territories = territoriesOnLoad(own);
+    const territories = territoriesOnLoad(own, seed);
     this.settings.guardedTerritories = territories.territories;
     // The record identifier: coerce a partial or malformed value to the default
     // rather than crashing the probe or the settings tab. The rule is the

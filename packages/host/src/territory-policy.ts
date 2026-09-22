@@ -24,7 +24,8 @@ export interface TerritoriesOnLoad {
 
 /**
  * The one-time migration. `own` is the plugin's OWN stored data.json (null or
- * undefined on a fresh install). The discriminator is "does this plugin already
+ * undefined on a fresh install); `adopted` is what `runHostAdoption` carried over
+ * from the pre-split plugin's data.json, consulted only when `own` is absent. The discriminator is "does this plugin already
  * have a data.json without the key": that install predates the setting and gets
  * the legacy seed; a fresh install starts EMPTY; an install that has the key —
  * even as [] — keeps exactly what it has. `persist` is true whenever the key was
@@ -32,8 +33,13 @@ export interface TerritoriesOnLoad {
  * cannot run twice: a new user who later saves any other setting can never
  * inherit the legacy operator's folder names.
  */
-export function territoriesOnLoad(own: unknown): TerritoriesOnLoad {
-  const stored = own && typeof own === "object" ? (own as Record<string, unknown>) : null;
+export function territoriesOnLoad(own: unknown, adopted?: unknown): TerritoriesOnLoad {
+  const asObject = (v: unknown) => (v && typeof v === "object" ? (v as Record<string, unknown>) : null);
+  // The plugin's own data.json first; failing that, the settings adopted from
+  // the pre-split `governor` plugin on this first load (see runHostAdoption).
+  // An adopted install is an EXISTING install — it was guarded by the old
+  // built-in list — so it must take the seed, not start empty (review of #396).
+  const stored = asObject(own) ?? asObject(adopted);
   if (!stored) return { territories: [], persist: true };
   if (!Object.prototype.hasOwnProperty.call(stored, "guardedTerritories")) {
     return { territories: [...LEGACY_TERRITORY_SEED], persist: true };

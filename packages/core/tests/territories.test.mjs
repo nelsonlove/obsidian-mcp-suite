@@ -16,7 +16,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { LEGACY_TERRITORY_SEED, isExcludedTerritory, resolveTerritories } from "../dist/index.js";
+import { LEGACY_TERRITORY_SEED, isExcludedTerritory, matchesTerritoryPrefix, resolveTerritories } from "../dist/index.js";
 
 describe("resolveTerritories — there is no default, and blank is honestly empty", () => {
   test("undefined, null and [] all resolve to an EMPTY list, never to a shipped default", () => {
@@ -103,5 +103,28 @@ describe("isExcludedTerritory — the configured list is the only list", () => {
     // silently unguard the legal material — the one outcome the migration
     // exists to prevent.
     assert.ok(LEGACY_TERRITORY_SEED.includes("80-89"));
+  });
+});
+
+describe("segment-boundary matching (#321) — `80-89` never matches `80-89-archive/`", () => {
+  test("matchesTerritoryPrefix: a listed entry covers its own folder and nothing that merely continues its name", () => {
+    assert.ok(matchesTerritoryPrefix("80-89 Divorce/x.md", "80-89"), "space after the entry is a boundary");
+    assert.ok(matchesTerritoryPrefix("80-89/x.md", "80-89"), "slash after the entry is a boundary");
+    assert.ok(matchesTerritoryPrefix("80-89", "80-89"), "the entry itself");
+    assert.ok(!matchesTerritoryPrefix("80-891/x.md", "80-89"), "a digit continues the name — #321's `80-891`");
+    assert.ok(!matchesTerritoryPrefix("80-89-archive/x.md", "80-89"), "a hyphen continues the name — #321's `80-89-archive/`");
+    assert.ok(!matchesTerritoryPrefix("80-89_old/x.md", "80-89"), "an underscore continues the name");
+    assert.ok(matchesTerritoryPrefix("Archive/old.md", "Archive/"), "a trailing slash on the entry is its own boundary");
+    assert.ok(!matchesTerritoryPrefix("Archives/old.md", "Archive/"));
+    assert.ok(!matchesTerritoryPrefix("Archives/old.md", "Archive"), "`Archive` without a slash still does not cover `Archives`");
+    assert.ok(matchesTerritoryPrefix("Archive/old.md", "Archive"));
+    assert.ok(!matchesTerritoryPrefix("anything", ""), "an empty entry matches nothing (never every path)");
+  });
+
+  test("isExcludedTerritory applies the boundary rule over the configured list", () => {
+    const list = resolveTerritories(["80-89"]);
+    assert.ok(isExcludedTerritory("80-89 Divorce/evidence.md", list));
+    assert.ok(!isExcludedTerritory("80-89-archive/old.md", list), "the shared predicate honours #321, not just the walker");
+    assert.ok(!isExcludedTerritory("80-891/x.md", list));
   });
 });
