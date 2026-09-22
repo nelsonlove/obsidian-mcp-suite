@@ -139,12 +139,20 @@ const DEFAULT_SKIP = new Set([".git", ".obsidian", ".trash", "node_modules"]);
  * hand-maintained copy of the names is the exact drift the shared predicate was
  * centralized to prevent. #397 makes the input configurable; the derivation is
  * unchanged. */
-function deniedSegmentsOf(prefixes: readonly string[]): ReadonlyArray<string> {
+/** A configured entry in the two forms the real-path checks need: normalized
+ *  for matching (lowercase, one trailing slash at most) and as the operator
+ *  wrote it, for the refusal message. */
+interface DeniedEntry {
+  norm: string;
+  entry: string;
+}
+
+function deniedSegmentsOf(prefixes: readonly string[]): ReadonlyArray<DeniedEntry> {
   // A trailing slash is KEPT (normalized to one): it is the operator saying
   // "exactly this folder", and `matchesTerritoryPrefix` honours it only if it
   // is still there. Stripping it turned `Archive/` into a bare `archive` that
   // also refused `Archive Old` (re-review of #396).
-  return prefixes.map((p) => p.replace(/\/+$/, "/").toLowerCase());
+  return prefixes.map((p) => ({ norm: p.replace(/\/+$/, "/").toLowerCase(), entry: p }));
 }
 
 
@@ -157,9 +165,9 @@ function deniedSegmentsOf(prefixes: readonly string[]): ReadonlyArray<string> {
  * during the walk, against an already-verified-real directory's own name
  * (cheap — no need to re-resolve a real path for something that is already
  * known not to be a symlink). */
-function deniedSegment(seg: string, segments: ReadonlyArray<string>): string | null {
+function deniedSegment(seg: string, segments: ReadonlyArray<DeniedEntry>): string | null {
   const s = seg.toLowerCase();
-  for (const denied of segments) {
+  for (const { norm: denied, entry } of segments) {
     // The SAME boundary rule core's `isExcludedTerritory` applies to whole
     // paths (#321): `80-89` and `80-89 Divorce` match, `80-891` and
     // `80-89-archive` do not. One rule, published once, so the walker and the
@@ -167,7 +175,7 @@ function deniedSegment(seg: string, segments: ReadonlyArray<string>): string | n
     // The segment is compared WITH a trailing slash so an entry that ends in
     // `/` matches exactly that folder name and nothing longer.
     if (matchesTerritoryPrefix(s + "/", denied)) {
-      return denied;
+      return entry;
     }
   }
   // The `hold`/`holds` segment heuristic that used to live here is GONE (#397):
@@ -190,7 +198,7 @@ function deniedVaultPath(vaultPath: string, list: readonly string[]): string | n
   return null;
 }
 
-function deniedTerritory(realPath: string, segments: ReadonlyArray<string>): string | null {
+function deniedTerritory(realPath: string, segments: ReadonlyArray<DeniedEntry>): string | null {
   for (const seg of realPath.split(sep)) {
     if (!seg) continue;
     const hit = deniedSegment(seg, segments);
@@ -454,11 +462,13 @@ export async function buildSnapshot(opts: SnapshotOpts): Promise<VaultSnapshot> 
       if (isExcluded(vaultPath, excluded)) continue;
       if (skip.has(entry.name)) continue;
       // The descend decision is core's OWN predicate over the vault-relative
-      // path — the same call the capture gate makes — so an entry that names
-      // a nested folder (`80-89 Divorce/Evidence`) refuses exactly that folder
-      // here as it does there, and the two cannot disagree over what a listed
-      // entry covers. The per-segment check stays for what the predicate
-      // cannot see: a symlink or a root resolving OUTSIDE the vault.
+      // path — the same call the capture gate makes, and NOTHING else — so an
+      // entry covers here exactly what it covers there: `80-89 Divorce/Evidence`
+      // covers that nested folder, a bare `Evidence` covers a top-level
+      // `Evidence` and not `Notes/Evidence` (#400 review: the per-segment
+      // fallback that used to sit beside this over-skipped by bare name). The
+      // per-segment check survives only for what the predicate cannot see — a
+      // symlink or a root resolving OUTSIDE the vault, above and below.
       //
       // A listed territory INSIDE the root is SKIPPED, not refused (#398, ruled
       // 2026-09-22). #157's refusal was written when the guarded areas lived
@@ -470,7 +480,7 @@ export async function buildSnapshot(opts: SnapshotOpts): Promise<VaultSnapshot> 
       // key under it refuses the run (`guardedTerritoryRefusal`, cli.ts). The
       // root-inside-a-territory and symlink-into-a-territory refusals are
       // unchanged: those are escapes, not folders in the tree.
-      const covered = deniedVaultPath(vaultPath, territoryList) ?? deniedSegment(entry.name, deniedSegs);
+      const covered = deniedVaultPath(vaultPath, territoryList);
       if (covered) {
         skippedTerritories.push({ path: vaultPath, territory: covered });
         continue;

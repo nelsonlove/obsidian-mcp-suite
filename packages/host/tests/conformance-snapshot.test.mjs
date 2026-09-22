@@ -324,7 +324,7 @@ describe("buildSnapshot territory guard (#157) — the CONFIGURED list overrides
       assert.deepEqual(snap.notes, [], "unlisted: walked, not refused");
       await assert.rejects(
         () => buildSnapshot({ root: legalHold, boundary: root, territories: ["Legal Hold/"] }),
-        /permanently denied territory.*guarded territory 'legal hold\/'/i,
+        /permanently denied territory.*guarded territory 'Legal Hold\/'/,
         "listed: refused, naming the configured entry",
       );
     } finally {
@@ -373,6 +373,22 @@ describe("buildSnapshot territory guard (#157) — the CONFIGURED list overrides
       assert.deepEqual(ci.skippedTerritories.map((t) => t.path), ["80-89 Divorce"], "case-insensitive, like the capture gate");
     } finally {
       await rm(root2, { recursive: true, force: true });
+    }
+  });
+
+  test("a bare `Evidence` covers a top-level `Evidence` and not `Notes/Evidence` — the walker never over-skips by name (#400 review)", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "conf-bare-"));
+    try {
+      await mkdir(path.join(root, "Notes", "Evidence"), { recursive: true });
+      await writeFile(path.join(root, "Notes", "Evidence", "E.md"), "---\ntitle: E\n---\n\nx\n");
+      const snap = await buildSnapshot({ root, boundary: root, territories: ["Evidence"] });
+      assert.deepEqual(snap.skippedTerritories, []);
+      assert.ok(snap.notes.some((n) => n.path === "Notes/Evidence/E.md"), "walked — the capture gate would not exclude it either");
+      await mkdir(path.join(root, "Evidence"), { recursive: true });
+      const top = await buildSnapshot({ root, boundary: root, territories: ["Evidence"] });
+      assert.deepEqual(top.skippedTerritories, [{ path: "Evidence", territory: "Evidence" }]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
     }
   });
 
@@ -462,9 +478,16 @@ describe("buildSnapshot territory guard (#157) — checked mid-walk, not just at
       const nested = path.join(root, "Area", "Sub", "80-89 Legal");
       await mkdir(nested, { recursive: true });
       await writeFile(path.join(nested, "N.md"), "---\ntitle: N\n---\n\nnested\n");
-      const snap = await buildSnapshot({ root, boundary: root, territories: SEED });
-      assert.deepEqual(snap.skippedTerritories, [{ path: "Area/Sub/80-89 Legal", territory: "80-89" }], "skipped mid-walk and recorded (#398), never refused");
-      assert.ok(!snap.notes.some((n) => n.path.startsWith("Area/Sub/80-89 Legal/")), "nothing under it was read");
+      // The walker matches exactly what the capture gate matches (#400 review):
+      // `80-89` is a PATH prefix, so it covers a top-level `80-89 …` folder and
+      // NOT one nested under `Area/Sub/`. Guarding a nested folder means
+      // listing it by its path — the same entry the capture gate would need.
+      const bySeed = await buildSnapshot({ root, boundary: root, territories: SEED });
+      assert.deepEqual(bySeed.skippedTerritories, [], "a bare `80-89` does not reach a nested folder — no per-segment guessing");
+      assert.ok(bySeed.notes.some((n) => n.path === "Area/Sub/80-89 Legal/N.md"), "so it is walked, exactly as capture would retain it");
+      const byPath = await buildSnapshot({ root, boundary: root, territories: ["Area/Sub/80-89 Legal"] });
+      assert.deepEqual(byPath.skippedTerritories, [{ path: "Area/Sub/80-89 Legal", territory: "Area/Sub/80-89 Legal" }], "listed by path: skipped mid-walk and recorded (#398), never refused");
+      assert.ok(!byPath.notes.some((n) => n.path.startsWith("Area/Sub/80-89 Legal/")), "nothing under it was read");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -480,8 +503,10 @@ describe("buildSnapshot territory guard (#157) — checked mid-walk, not just at
       await mkdir(nested, { recursive: true });
       const snap = await buildSnapshot({ root, boundary: root });
       assert.deepEqual(snap.notes, [], "unlisted: the nested folder is not refused");
-      const listed = await buildSnapshot({ root, boundary: root, territories: ["Legal Holds"] });
-      assert.deepEqual(listed.skippedTerritories.map((t) => t.path), ["Area/Legal Holds"], "listed: skipped and recorded");
+      const bare = await buildSnapshot({ root, boundary: root, territories: ["Legal Holds"] });
+      assert.deepEqual(bare.skippedTerritories, [], "a bare entry is a top-level prefix, not a name to hunt for anywhere");
+      const listed = await buildSnapshot({ root, boundary: root, territories: ["Area/Legal Holds"] });
+      assert.deepEqual(listed.skippedTerritories, [{ path: "Area/Legal Holds", territory: "Area/Legal Holds" }], "listed by path: skipped and recorded, spelled as the operator wrote it");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
