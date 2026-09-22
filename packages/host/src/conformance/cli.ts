@@ -19,7 +19,7 @@ import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 // `vaultmcp-vocab` satellite's four tools being the other.
 import { VocabRegistry, DEFAULT_VOCABULARIES, type VocabInstanceSettings } from "@vault-mcp/core";
 import { makeRegistry, DEFAULT_SCHEMES, type SchemeInstanceConfig } from "../kernel/scheme/registry.js";
-import { buildSnapshot } from "./snapshot.js";
+import { buildSnapshot, type SkippedTerritory } from "./snapshot.js";
 import { envAliased } from "../env-alias.js";
 import { intendedRealPath, sameFile, isInside } from "./path-identity.js";
 import { runEngine, ENGINE_ID } from "./engine.js";
@@ -77,6 +77,10 @@ export interface RunOpts {
 
 export interface RunResult {
   findings: Finding[];
+  /** Guarded territories the walk met INSIDE the root and did not descend into
+   * (#398): reported, never silently absent. Each is a vault-relative dir path
+   * and the configured entry that covered it. */
+  skippedTerritories: SkippedTerritory[];
   ratchet: RatchetResult;
   /** Human report for stdout. */
   report: string;
@@ -95,10 +99,21 @@ export interface RunResult {
 export async function runConformance(opts: RunOpts): Promise<RunResult> {
   // boundary: opts.root — cli.ts already resolves `root` explicitly (--root=,
   // GOVERNOR_CONTENT_ROOT, or the .obsidian-ancestor walk), so it IS this run's
-  // declared boundary; buildSnapshot's own guard (#157) still refuses, before
-  // the boundary is consulted, any listed territory in `opts.territories`
-  // (there is no built-in list since #397 — none listed, none refused).
+  // declared boundary; buildSnapshot's own guard (#157) still refuses a ROOT
+  // that resolves into a listed territory and a symlink that escapes into one.
+  // A listed territory met INSIDE the root is SKIPPED and reported (#398, ruled
+  // 2026-09-22: skip, not refuse — the old refusal made the rail useless on
+  // exactly the vaults that guard something). There is no built-in list since
+  // #397 — none listed, none skipped.
   const snapshot = await buildSnapshot({ root: opts.root, excludedRoots: opts.excludedRoots, boundary: opts.root, territories: opts.territories });
+  // A skip must not become a silent CLEARED: an accepted-baseline key under a
+  // skipped territory cannot be reproduced, so the run refuses — the same
+  // rule `excludedRootRefusal` applies to an --exclude (#112), for the same
+  // reason. Territories differ from exclusions only in that the operator does
+  // not choose them per run, so the message says what to do instead.
+  const baselineKeys = parseBaseline(opts.baselineText);
+  const strand = guardedTerritoryRefusal(baselineKeys, (snapshot.skippedTerritories ?? []).map((t) => t.path));
+  if (strand) throw new Error(strand);
 
   const packs: RulePack[] = [];
   // vocab providers: built from settings over the snapshot listing (the registry
@@ -123,7 +138,6 @@ export async function runConformance(opts: RunOpts): Promise<RunResult> {
   }
 
   const findings = runEngine(packs, snapshot);
-  const baselineKeys = parseBaseline(opts.baselineText);
   const result = ratchet(findings, baselineKeys);
   const packIds = packs.map((p) => p.id);
   // A pack that THREW is re-attributed by the engine to `conformance_engine /
@@ -144,9 +158,10 @@ export async function runConformance(opts: RunOpts): Promise<RunResult> {
     packIds,
     coveredPackIds,
     findings,
+    skippedTerritories: snapshot.skippedTerritories ?? [],
     ratchet: result,
     budget,
-    report: renderReport(result, packIds, baselinePackIds(baselineKeys), findings, opts.excludedRoots ?? [], budget),
+    report: renderReport(result, packIds, baselinePackIds(baselineKeys), findings, opts.excludedRoots ?? [], budget, snapshot.skippedTerritories ?? []),
     rebaseline: renderBaseline(findings),
     exitCode,
   };
@@ -289,15 +304,18 @@ export function registerDirFrom(argv: string[], env: Record<string, string | und
  * Segment-boundary matching, so `Vault archaeology notes/` is a different
  * folder; a key whose target is a message rather than a path never matches.
  */
-export function excludedRootRefusal(baselineKeys: Set<string>, excludedRoots: string[]): string | null {
-  if (!excludedRoots.length) return null;
+/** Baseline keys whose target sits under any of `roots` (segment-bounded) — the
+ *  keys a run that does not walk those roots could never reproduce. Shared by
+ *  the --exclude refusal (#112) and the skipped-territory refusal (#398). */
+export function strandedKeysUnder(baselineKeys: Set<string>, roots: readonly string[]): string[] {
+  if (!roots.length) return [];
   const stranded: string[] = [];
   for (const key of baselineKeys) {
     // Split on UNescaped separators and unescape the target — a note path can
     // legitimately hold a `|` (finding.ts escapes it), which a raw `.split("|")`
     // would mis-field. `parseKey` is the exact inverse of `findingKey`.
     const target = parseKey(key).target;
-    for (const root of excludedRoots) {
+    for (const root of roots) {
       const r = root.replace(/\/$/, "");
       if (target === r || target.startsWith(r + "/")) {
         stranded.push(key);
@@ -305,9 +323,38 @@ export function excludedRootRefusal(baselineKeys: Set<string>, excludedRoots: st
       }
     }
   }
-  if (!stranded.length) return null;
+  return stranded;
+}
+
+function shownKeys(stranded: string[]): string {
   const shown = stranded.slice(0, 5).map((k) => `  ${k}`).join("\n");
   const more = stranded.length > 5 ? `\n  (+${stranded.length - 5} more)` : "";
+  return `${shown}${more}`;
+}
+
+/**
+ * #398: a guarded territory met inside the walked root is skipped, and a skip
+ * over accepted debt would report it CLEARED — so a run whose skipped
+ * territories hold baseline keys refuses, exactly as an --exclude would. The
+ * way out is a human act, either direction: drop those keys from the baseline
+ * deliberately, or narrow the territory list so the rail may look there again.
+ */
+export function guardedTerritoryRefusal(baselineKeys: Set<string>, skippedPaths: readonly string[]): string | null {
+  const stranded = strandedKeysUnder(baselineKeys, skippedPaths);
+  if (!stranded.length) return null;
+  return (
+    `refusing to run: the accepted-debt baseline holds ${stranded.length} key(s) inside a guarded territory ` +
+    `this run skipped (${skippedPaths.join(", ")}). Those keys cannot be reproduced, so they would report ` +
+    `CLEARED and silently discard debt a human granted. Either remove the keys from the baseline deliberately ` +
+    `(a human act), or take the folder off the guarded-territories list:\n${shownKeys(stranded)}`
+  );
+}
+
+export function excludedRootRefusal(baselineKeys: Set<string>, excludedRoots: string[]): string | null {
+  const stranded = strandedKeysUnder(baselineKeys, excludedRoots);
+  if (!stranded.length) return null;
+  const shown = shownKeys(stranded);
+  const more = "";
   return (
     `refusing to run: the accepted-debt baseline holds ${stranded.length} key(s) under a root this run ` +
     `does not govern (${excludedRoots.join(", ")}). Those keys cannot be reproduced, so they would ` +
@@ -520,6 +567,7 @@ function renderReport(
   findings: Finding[] = [],
   excludedRoots: string[] = [],
   budget?: DebtBudgetStatus,
+  skippedTerritories: readonly SkippedTerritory[] = [],
 ): string {
   const lines: string[] = [];
   lines.push(`conformance: ${r.carried} carried, ${r.newKeys.length} NEW, ${r.clearedKeys.length} cleared`);
@@ -531,6 +579,12 @@ function renderReport(
   // simply found nothing there — declare it, per the ruling (#112).
   if (excludedRoots.length) {
     lines.push(`ungoverned (not scanned, no claim made): ${excludedRoots.join(", ")} — --govern-all to include`);
+  }
+  // Same rule for a guarded territory the walk stepped around (#398): a folder
+  // that is silently absent reads as clean. Name it, and the entry that covered it.
+  if (skippedTerritories.length) {
+    const shown = skippedTerritories.map((t) => `${t.path} (guarded territory '${t.territory}')`).join(", ");
+    lines.push(`guarded (not scanned, no claim made): ${shown} — listed in guarded territories`);
   }
   // A pack with NO baseline representation reports its entire output as NEW.
   // Undistinguished, that is indistinguishable from a catastrophic regression —

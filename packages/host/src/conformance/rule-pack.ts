@@ -26,6 +26,11 @@ export interface VaultSnapshot {
   /** Every in-scope note with the frontmatter/body its consumers need
    * (vocab pack). */
   notes: VocabNote[];
+  /** Guarded territories the walk met INSIDE the root and did not descend into
+   * (#398) — recorded so the run can report them and refuse over stranded
+   * baseline keys. Optional so a hand-built snapshot still satisfies the type;
+   * absent reads as none skipped. */
+  skippedTerritories?: { path: string; territory: string }[];
   /** Every in-scope note path (the scheme pack's listing). */
   paths: string[];
   /** Every in-scope `.md` note's raw text (structure/port/ste/drift packs).
