@@ -332,7 +332,7 @@ describe("buildSnapshot territory guard (#157) — the CONFIGURED list overrides
     }
   });
 
-  test("a listed `80-89` does NOT refuse `80-89-archive` — the walker shares core's boundary rule (#321)", async () => {
+  test("a listed `80-89` does NOT cover `80-89-archive` — the walker shares core's boundary rule (#321)", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "conf-boundary-"));
     try {
       const archive = path.join(root, "80-89-archive");
@@ -340,24 +340,23 @@ describe("buildSnapshot territory guard (#157) — the CONFIGURED list overrides
       const snap = await buildSnapshot({ root, boundary: root, territories: ["80-89"] });
       assert.deepEqual(snap.notes, [], "walked, not refused");
       await mkdir(path.join(root, "80-89 Legal"), { recursive: true });
-      await assert.rejects(
-        () => buildSnapshot({ root, boundary: root, territories: ["80-89"] }),
-        /refusing to descend.*guarded territory '80-89'/i,
-        "while the real area, one space later, is refused",
-      );
+      const snap2 = await buildSnapshot({ root, boundary: root, territories: ["80-89"] });
+      assert.deepEqual(snap2.skippedTerritories, [{ path: "80-89 Legal", territory: "80-89" }], "while the real area, one space later, is SKIPPED and recorded (#398)");
+      assert.ok(!snap2.dirs.includes("80-89 Legal"), "and never entered");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   });
 
-  test("the walker agrees with the capture gate: a trailing slash means exactly that folder, entries are case-insensitive, and a nested entry refuses only the nested folder", async () => {
+  test("the walker agrees with the capture gate: a trailing slash means exactly that folder, entries are case-insensitive, and a nested entry covers only the nested folder", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "conf-onerule-"));
     try {
       await mkdir(path.join(root, "Archive Old"), { recursive: true });
       const snap = await buildSnapshot({ root, boundary: root, territories: ["Archive/"] });
       assert.deepEqual(snap.notes, [], "`Archive/` does NOT cover `Archive Old` (re-review of #396: the walker used to strip the slash)");
       await mkdir(path.join(root, "Archive"), { recursive: true });
-      await assert.rejects(() => buildSnapshot({ root, boundary: root, territories: ["Archive/"] }), /guarded territory 'Archive\/'/);
+      const snapA = await buildSnapshot({ root, boundary: root, territories: ["Archive/"] });
+      assert.deepEqual(snapA.skippedTerritories.map((t) => t.path), ["Archive"], "`Archive/` covers exactly `Archive`, which is skipped");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -367,16 +366,11 @@ describe("buildSnapshot territory guard (#157) — the CONFIGURED list overrides
       const snap = await buildSnapshot({ root: root2, boundary: root2, territories: ["80-89 Divorce/Evidence"] });
       assert.deepEqual(snap.notes, [], "a nested entry does not refuse its parent");
       await mkdir(path.join(root2, "80-89 Divorce", "Evidence"), { recursive: true });
-      await assert.rejects(
-        () => buildSnapshot({ root: root2, boundary: root2, territories: ["80-89 Divorce/Evidence"] }),
-        /refusing to descend into 80-89 Divorce\/Evidence.*guarded territory '80-89 Divorce\/Evidence'/,
-        "and refuses exactly the nested folder, as the capture gate would",
-      );
-      await assert.rejects(
-        () => buildSnapshot({ root: root2, boundary: root2, territories: ["80-89 divorce"] }),
-        /refusing to descend into 80-89 Divorce/,
-        "case-insensitive, like the capture gate",
-      );
+      const nested = await buildSnapshot({ root: root2, boundary: root2, territories: ["80-89 Divorce/Evidence"] });
+      assert.deepEqual(nested.skippedTerritories, [{ path: "80-89 Divorce/Evidence", territory: "80-89 Divorce/Evidence" }], "skips exactly the nested folder, as the capture gate would exclude it");
+      assert.ok(nested.dirs.includes("80-89 Divorce"), "the parent is still walked");
+      const ci = await buildSnapshot({ root: root2, boundary: root2, territories: ["80-89 divorce"] });
+      assert.deepEqual(ci.skippedTerritories.map((t) => t.path), ["80-89 Divorce"], "case-insensitive, like the capture gate");
     } finally {
       await rm(root2, { recursive: true, force: true });
     }
@@ -462,22 +456,21 @@ describe("buildSnapshot territory guard (#157) — checked mid-walk, not just at
     }
   });
 
-  test("a plainly-named denied directory NESTED several levels below root (no symlink) is refused", async () => {
+  test("a plainly-named listed directory NESTED several levels below root (no symlink) is SKIPPED and recorded (#398)", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "conf-midwalk-nested-deny-"));
     try {
       const nested = path.join(root, "Area", "Sub", "80-89 Legal");
       await mkdir(nested, { recursive: true });
       await writeFile(path.join(nested, "N.md"), "---\ntitle: N\n---\n\nnested\n");
-      await assert.rejects(
-        () => buildSnapshot({ root, boundary: root , territories: SEED }),
-        /refusing to descend.*permanently denied territory.*80-89/i,
-      );
+      const snap = await buildSnapshot({ root, boundary: root, territories: SEED });
+      assert.deepEqual(snap.skippedTerritories, [{ path: "Area/Sub/80-89 Legal", territory: "80-89" }], "skipped mid-walk and recorded (#398), never refused");
+      assert.ok(!snap.notes.some((n) => n.path.startsWith("Area/Sub/80-89 Legal/")), "nothing under it was read");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   });
 
-  test("a nested 'Legal Holds' directory is walked when unlisted and refused mid-walk when listed (#397)", async () => {
+  test("a nested 'Legal Holds' directory is walked when unlisted and skipped mid-walk when listed (#397, #398)", async () => {
     // The plural inflection used to be covered by the retired heuristic. Now
     // the operator lists the exact folder; the mid-walk refusal is the same one
     // any listed territory gets.
@@ -487,10 +480,8 @@ describe("buildSnapshot territory guard (#157) — checked mid-walk, not just at
       await mkdir(nested, { recursive: true });
       const snap = await buildSnapshot({ root, boundary: root });
       assert.deepEqual(snap.notes, [], "unlisted: the nested folder is not refused");
-      await assert.rejects(
-        () => buildSnapshot({ root, boundary: root, territories: ["Legal Holds"] }),
-        /refusing to descend.*permanently denied territory.*guarded territory 'legal holds'/i,
-      );
+      const listed = await buildSnapshot({ root, boundary: root, territories: ["Legal Holds"] });
+      assert.deepEqual(listed.skippedTerritories.map((t) => t.path), ["Area/Legal Holds"], "listed: skipped and recorded");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
