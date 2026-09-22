@@ -112,8 +112,6 @@ export async function runConformance(opts: RunOpts): Promise<RunResult> {
   // reason. Territories differ from exclusions only in that the operator does
   // not choose them per run, so the message says what to do instead.
   const baselineKeys = parseBaseline(opts.baselineText);
-  const strand = guardedTerritoryRefusal(baselineKeys, (snapshot.skippedTerritories ?? []).map((t) => t.path));
-  if (strand) throw new Error(strand);
 
   const packs: RulePack[] = [];
   // vocab providers: built from settings over the snapshot listing (the registry
@@ -139,6 +137,17 @@ export async function runConformance(opts: RunOpts): Promise<RunResult> {
 
   const findings = runEngine(packs, snapshot);
   const result = ratchet(findings, baselineKeys);
+  // #398's one rule for a skip: it must never become a silent CLEARED. Two ways
+  // it could, both refused here, after the ratchet so the second is visible:
+  // a baseline key whose TARGET is a path under a skipped folder (unreproducible
+  // by construction), and a baseline key with no path target at all — drift's
+  // uid-keyed E/F checks — that this run reports cleared while something was
+  // skipped, because nothing can tell whether the skip is what cleared it
+  // (#400 review). --exclude gets the first check up front in runCli; the
+  // second cannot be known before the engine runs.
+  const skippedPaths = (snapshot.skippedTerritories ?? []).map((t) => t.path);
+  const strand = guardedTerritoryRefusal(baselineKeys, skippedPaths, result.clearedKeys);
+  if (strand) throw new Error(strand);
   const packIds = packs.map((p) => p.id);
   // A pack that THREW is re-attributed by the engine to `conformance_engine /
   // pack_error`, so it contributes none of its own keys — registering it is not
@@ -285,25 +294,6 @@ export function registerDirFrom(argv: string[], env: Record<string, string | und
   return e || null;
 }
 
-/**
- * The reason an excluded root would silently discard accepted debt, or null.
- *
- * Excluding a root makes every baseline key beneath it unreproducible, so the
- * ratchet reports those keys CLEARED — indistinguishable from "a human fixed
- * them". That is a silent debt-clear, which is what @assent's ruling
- * explicitly forbade ("declared exclusion, not silent debt-clear"), and it is
- * the pack-coverage refusal's failure one level down: path granularity rather
- * than pack granularity.
- *
- * Measured at the time of writing: ZERO baseline keys fall under any excluded
- * root, so this refuses nothing today. That is the argument FOR carrying it
- * rather than against — a measurement records what was true once; a guard
- * keeps it true. The same reasoning `PHASE1_PACKS_INCOMPLETE` failed to apply
- * when its stated reason silently expired.
- *
- * Segment-boundary matching, so `Vault archaeology notes/` is a different
- * folder; a key whose target is a message rather than a path never matches.
- */
 /** Baseline keys whose target sits under any of `roots` (segment-bounded) — the
  *  keys a run that does not walk those roots could never reproduce. Shared by
  *  the --exclude refusal (#112) and the skipped-territory refusal (#398). */
@@ -339,28 +329,75 @@ function shownKeys(stranded: string[]): string {
  * way out is a human act, either direction: drop those keys from the baseline
  * deliberately, or narrow the territory list so the rail may look there again.
  */
-export function guardedTerritoryRefusal(baselineKeys: Set<string>, skippedPaths: readonly string[]): string | null {
+export function guardedTerritoryRefusal(
+  baselineKeys: Set<string>,
+  skippedPaths: readonly string[],
+  clearedKeys: readonly string[] = [],
+): string | null {
+  if (!skippedPaths.length) return null;
   const stranded = strandedKeysUnder(baselineKeys, skippedPaths);
-  if (!stranded.length) return null;
+  // A cleared key with no path target cannot be placed inside or outside the
+  // skipped folder, so once anything was skipped its clearing is unverifiable.
+  const unplaceable = clearedKeys.filter((k) => {
+    const { script, check } = parseKey(k);
+    return NON_PATH_KEYED_CHECKS.has(`${script}|${check}`);
+  });
+  if (!stranded.length && !unplaceable.length) return null;
+  const parts: string[] = [];
+  if (stranded.length) {
+    parts.push(
+      `holds ${stranded.length} key(s) inside a guarded territory this run skipped — those keys cannot be ` +
+        `reproduced, so they would report CLEARED and silently discard debt a human granted:\n${shownKeys(stranded)}`,
+    );
+  }
+  if (unplaceable.length) {
+    parts.push(
+      `has ${unplaceable.length} key(s) this run would clear that are keyed by uid, not by path (drift E/F) — with a ` +
+        `territory skipped, nothing can tell whether the skip is what cleared them:\n${shownKeys(unplaceable)}`,
+    );
+  }
   return (
-    `refusing to run: the accepted-debt baseline holds ${stranded.length} key(s) inside a guarded territory ` +
-    `this run skipped (${skippedPaths.join(", ")}). Those keys cannot be reproduced, so they would report ` +
-    `CLEARED and silently discard debt a human granted. Either remove the keys from the baseline deliberately ` +
-    `(a human act), or take the folder off the guarded-territories list:\n${shownKeys(stranded)}`
+    `refusing to run: a guarded territory was skipped (${skippedPaths.join(", ")}) and the accepted-debt baseline ` +
+    parts.join("\nand ") +
+    `\nEither remove the keys from the baseline deliberately (a human act), or take the folder off the ` +
+    `guarded-territories list.`
   );
 }
 
+/** The checks whose baseline KEY carries no path — drift's E (`target: uid`)
+ *  and F (`target: "uid-coverage"`), see packs/drift.ts's frozen-contract notes.
+ *  Pinned by `conformance-cli.test.mjs` against the pack's own emitted keys. */
+export const NON_PATH_KEYED_CHECKS: ReadonlySet<string> = new Set(["drift_audit|E", "drift_audit|F"]);
+
+/**
+ * The reason an excluded root would silently discard accepted debt, or null.
+ *
+ * Excluding a root makes every baseline key beneath it unreproducible, so the
+ * ratchet reports those keys CLEARED — indistinguishable from "a human fixed
+ * them". That is a silent debt-clear, which is what @assent's ruling
+ * explicitly forbade ("declared exclusion, not silent debt-clear"), and it is
+ * the pack-coverage refusal's failure one level down: path granularity rather
+ * than pack granularity.
+ *
+ * Measured at the time of writing: ZERO baseline keys fall under any excluded
+ * root, so this refuses nothing today. That is the argument FOR carrying it
+ * rather than against — a measurement records what was true once; a guard
+ * keeps it true. The same reasoning `PHASE1_PACKS_INCOMPLETE` failed to apply
+ * when its stated reason silently expired.
+ *
+ * Segment-boundary matching, so `Vault archaeology notes/` is a different
+ * folder; a key whose target is a message rather than a path never matches.
+ */
 export function excludedRootRefusal(baselineKeys: Set<string>, excludedRoots: string[]): string | null {
   const stranded = strandedKeysUnder(baselineKeys, excludedRoots);
   if (!stranded.length) return null;
   const shown = shownKeys(stranded);
-  const more = "";
   return (
     `refusing to run: the accepted-debt baseline holds ${stranded.length} key(s) under a root this run ` +
     `does not govern (${excludedRoots.join(", ")}). Those keys cannot be reproduced, so they would ` +
     `report CLEARED and silently discard debt a human granted. Excluding territory is a scope ` +
     `decision and must be declared, never taken by quietly dropping its accepted findings — remove ` +
-    `the keys from the baseline deliberately (a human act), or stop excluding the root:\n${shown}${more}`
+    `the keys from the baseline deliberately (a human act), or stop excluding the root:\n${shown}`
   );
 }
 
