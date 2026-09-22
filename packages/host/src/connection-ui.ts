@@ -714,20 +714,26 @@ export class VaultMcpSettingTab extends PluginSettingTab {
           // silently stop guarding 80-89. Starting from the real list makes the
           // edit additive in practice. Clearing the box entirely still saves []
           // and returns to the default, so nothing is trapped.
-          .setValue(resolveTerritories(this.plugin.settings.guardedTerritories).join("\n"))
-          .onChange(async (value) => {
-            // Trim and drop blanks BEFORE saving: a trailing newline would
-            // otherwise persist an empty prefix, and `"".startsWith` is true for
-            // every path — one stray blank line would guard the entire vault and
-            // silently stop all capture. Storing [] for "nothing configured"
-            // keeps the blank-means-default rule in one place
-            // (core's resolveTerritories), not two.
-            this.plugin.settings.guardedTerritories = value
-              .split("\n")
-              .map((x) => x.trim())
-              .filter(Boolean);
-            await this.plugin.saveSettings();
-          });
+          .setValue(resolveTerritories(this.plugin.settings.guardedTerritories).join("\n"));
+        // Committed on BLUR, not per keystroke. A configured list REPLACES the
+        // default, so saving mid-edit walks through states like ["P"] — a
+        // non-blank list of one meaningless prefix, under which 80-89 is NOT
+        // guarded. A concurrent MCP read of a guarded note during those few
+        // seconds would be retained to disk. Waiting for the field to lose
+        // focus means the value saved is one a human finished typing.
+        t.inputEl.addEventListener("blur", () => {
+          // Trim and drop blanks BEFORE saving: a trailing newline would
+          // otherwise persist an empty prefix, and `"".startsWith` is true for
+          // every path — one stray blank line would guard the entire vault and
+          // silently stop all capture. Storing [] for "nothing configured"
+          // keeps the blank-means-default rule in one place (core's
+          // resolveTerritories), not two.
+          this.plugin.settings.guardedTerritories = t.inputEl.value
+            .split("\n")
+            .map((x) => x.trim())
+            .filter(Boolean);
+          void this.plugin.saveSettings();
+        });
       });
 
     // ── the LOCAL HISTORY settings block used to be here (WP4, D10) ─────────

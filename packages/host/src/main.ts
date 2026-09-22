@@ -824,6 +824,7 @@ export default class VaultMcpPlugin extends Plugin {
     if (action === "mount") {
       try {
         this.schemePanesComponent = wireSchemePanes(this, {
+          getTerritories: () => resolveTerritories(this.settings.guardedTerritories),
           getSchemes: () => this.settings.schemes ?? DEFAULT_SCHEMES,
         });
       } catch (e) {

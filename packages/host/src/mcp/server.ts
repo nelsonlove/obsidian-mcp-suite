@@ -509,7 +509,10 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   // Neither has an accept verb: acceptance metadata is minted only at the
   // human-run --rebaseline, never here, and the rendered note carries only a
   // generated/generator derivation stamp (accept-guard-checked before writing).
-  const debtSource = obsidianDebtRenderSource(app);
+  // The operator's territories, read per call (#397) — the conformance rail
+  // must refuse to walk a territory a human added, which is the half of #397
+  // that a first pass threaded through `SnapshotOpts` and then never supplied.
+  const debtSource = obsidianDebtRenderSource(app, () => resolveTerritories(ctx.getSettings().guardedTerritories));
   const debtCtx = {
     config: ctx.getSettings().modules?.["conformance-debt"]?.config,
     getSettings: () => ctx.getSettings(),

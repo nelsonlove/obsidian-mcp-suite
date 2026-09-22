@@ -999,6 +999,15 @@ describe("governance settings-tab surface: the accept path stays module-private 
     // The SET is still closed: anything accept-capable still fails here, and the
     // tab still writes no territories key of its own (pinned separately above).
     assert.deepEqual(specifiers.sort(), ["./host-lookup.js", "./kernel/settings.js", "./settings.js", "./wiring/wiring.js", "@vault-mcp/core", "obsidian"]);
+    // Admitting `@vault-mcp/core` as a MODULE would reopen the class this pin
+    // closes: that package also exports `acceptTransitionReason`,
+    // `acceptForbiddenReason`, `scanForAcceptFence` and `AcceptForbiddenError`.
+    // So the BINDINGS are pinned too — the tab may take exactly the one pure
+    // helper it needs, and a future accept-capable import from that package
+    // fails here exactly as a direct one would.
+    const coreBindings = [...readRaw("settings-tab.ts").matchAll(/import\s*\{([^}]*)\}\s*from\s*["']@vault-mcp\/core["']/g)]
+      .flatMap((m) => m[1].split(",").map((x) => x.trim()).filter(Boolean));
+    assert.deepEqual(coreBindings.sort(), ["resolveTerritories"], "settings-tab may import only the pure territory resolver from core");
   });
 
   test("the fuller auto-accept text is a SHARED constant (both surfaces render the same one, not two literals)", () => {

@@ -39,7 +39,7 @@ function vaultRoot(app: App): string {
  * on). `liveFindings` runs the full engine once; `baselineText`/`sidecar` are
  * cheap reads.
  */
-export function obsidianDebtSource(app: App): DebtSource {
+export function obsidianDebtSource(app: App, territories?: () => readonly string[]): DebtSource {
   const root = vaultRoot(app);
   const baselinePath = join(root, baselineRelFrom(process.env));
   const excludedRoots = excludedRootsFrom([], process.env);
@@ -55,6 +55,7 @@ export function obsidianDebtSource(app: App): DebtSource {
         schemes: DEFAULT_SCHEMES,
         excludedRoots,
         legacyPacks: true,
+        territories: territories?.(),
       });
       return res.findings;
     },
@@ -76,7 +77,7 @@ export function obsidianDebtSource(app: App): DebtSource {
  * the sidecar and trend log already live there, and the baseline itself is
  * never touched.
  */
-export function obsidianDebtRenderSource(app: App): DebtRegisterSource {
+export function obsidianDebtRenderSource(app: App, territories?: () => readonly string[]): DebtRegisterSource {
   const baselineRel = baselineRelFrom(process.env);
   const dir = posix.dirname(baselineRel);
   const vault = app.vault as unknown as {

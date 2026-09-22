@@ -18,7 +18,7 @@
 import { App, PluginSettingTab, Setting, type Plugin } from "obsidian";
 import { DEFAULT_ACCEPTANCE_SETTINGS } from "./kernel/settings.js";
 import { resolveTerritories } from "@vault-mcp/core";
-import { hostGuardedTerritories } from "./host-lookup.js";
+import { hostGuardedTerritories, findHostPlugin } from "./host-lookup.js";
 import { renderGovernanceSettings } from "./wiring/wiring.js";
 import type { GovernorSettings } from "./settings.js";
 
@@ -66,8 +66,12 @@ export class GovernorSettingTab extends PluginSettingTab {
           .setIcon("settings")
           .setTooltip("Open Vault MCP settings")
           .onClick(() => {
+            // The host's OWN id, not a hardcoded one: HOST_PLUGIN_IDS still
+            // admits a live pre-split host under the id `governor`, and opening
+            // a tab that does not exist is a dead button.
             const app = this.plugin.app as any;
-            app?.setting?.openTabById?.("vault-mcp");
+            const hostId = findHostPlugin(app?.plugins?.plugins)?.id;
+            if (hostId) app?.setting?.openTabById?.(hostId);
           })
       );
     containerEl.createEl("p", {
