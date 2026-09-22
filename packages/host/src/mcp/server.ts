@@ -277,9 +277,9 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
     //
     // Read LIVE per call, not captured at build time: an operator who adds a
     // territory mid-session must have it honored by the next capture, not at
-    // the next reconnect. `resolveTerritories` supplies the core default when
-    // the setting is blank, so an install that never edits it behaves exactly
-    // as it did before #321.
+    // the next reconnect. There is no default for `resolveTerritories` to
+    // supply (#397): a blank setting resolves to [] and `captureAllowed`
+    // refuses to run on it, which is the whole reason that gate exists.
     //
     // This closes #397. The list is the HOST's setting and Governor reads it
     // from here, rather than the reverse: this consumer is the one that writes

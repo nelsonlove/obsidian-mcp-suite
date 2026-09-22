@@ -41,6 +41,8 @@
 // keeps it. Refusing to mount the pane against an apiVersion-2 host would be a
 // worse answer than mounting it.
 
+import { isExcludedTerritory, resolveTerritories } from "@vault-mcp/core";
+
 /**
  * The host plugin's ids, CURRENT FIRST — the same pair `vault-mcp-api` reads,
  * in the same order, and for the same reason: the host id moved `vault-mcp` →
@@ -61,7 +63,8 @@ export interface HostPluginLike {
  * The host's configured guarded territories, or null when they cannot be read.
  *
  * NULL means "cannot tell" — no host, or a host too old to publish this. Since
- * #397 there is no built-in default to fall back to: `resolveTerritories(null)`
+ * #397 there is no built-in default to fall back to, and `null` must NOT be
+ * read as an empty list — see `excludedUnderHost`: `resolveTerritories(null)`
  * is `[]`, so a provider that cannot ask its host guards nothing. That is the
  * honest reading, and it is safe because this provider can DO nothing without
  * a host either — the pane refuses to mount, and no proposal is produced.
@@ -127,4 +130,24 @@ export function hostPluginDir(
   const found = findHostPlugin(plugins);
   if (!found) return null;
   return found.plugin.manifest?.dir ?? `${configDir}/plugins/${found.id}`;
+}
+
+/**
+ * The provider's ONE territory decision (review of #396). Two answers from the
+ * host mean two different things and must not collapse into one:
+ *
+ * - `null` — the host cannot be asked (absent, not yet loaded, predates the
+ *   setting, or answered garbage). FAIL CLOSED: every path reads as excluded,
+ *   so nothing is governed, proposed, auto-accepted or recorded into history
+ *   until the host is there to say what is guarded. The old built-in list used
+ *   to cover this case unconditionally; treating "cannot tell" as "nothing is
+ *   guarded" would have made a missing host the one state that records legal
+ *   material into the standing chain.
+ * - a list, empty or not — the host's answer, honoured as-is: an empty list
+ *   guards nothing (the #397 ruling), a non-empty one guards exactly what it
+ *   names, through the shared predicate.
+ */
+export function excludedUnderHost(path: string, hostList: readonly string[] | null): boolean {
+  if (hostList === null) return true;
+  return isExcludedTerritory(path, resolveTerritories(hostList));
 }

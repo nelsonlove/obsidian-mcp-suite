@@ -191,8 +191,9 @@ export interface TargetProbe {
   /** Revision token for a vault path — file mtime in ms. Undefined when absent. */
   rev(path: string): number | undefined;
   /**
-   * Whether the note's frontmatter marks it a record (`record: true` —
-   * record-guard.ts's `isRecordFlag` decides what counts). `undefined` when the
+   * Whether the note is a record under the operator's record identifier (by
+   * default frontmatter `record: true`; record-guard.ts's `identifiesRecord`
+   * decides what counts, over a property/value or a tag). `undefined` when the
    * flag cannot be read (no file, frontmatter not in the cache) — the record
    * check FAILS OPEN on it, so absence of an answer never refuses an
    * operation. Optional: a probe without it (older fakes, bare embeds) simply

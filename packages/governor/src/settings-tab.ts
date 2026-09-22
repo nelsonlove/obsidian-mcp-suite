@@ -77,6 +77,7 @@ export class GovernorSettingTab extends PluginSettingTab {
     containerEl.createEl("p", {
       text: (() => {
         const t = territoriesInEffect(this.plugin);
+        if (t === null) return "In effect now: cannot tell — Vault MCP is not loaded, or is too old to publish its list. Until it is, Governor governs NOTHING: no proposals, no history, nothing auto-accepted.";
         return t.length ? `In effect now: ${t.join(", ")}` : "In effect now: none — nothing is guarded until Vault MCP has at least one territory configured.";
       })(),
       cls: "setting-item-description",
@@ -263,8 +264,10 @@ export class GovernorSettingTab extends PluginSettingTab {
 }
 
 /** What the pane will actually guard by right now — the host's configured
- * list, or nothing when no host is loaded (#397: no built-in default). Shown
- * rather than an editable field so there is visibly ONE list, not two. */
-function territoriesInEffect(plugin: { app: unknown }): readonly string[] {
-  return resolveTerritories(hostGuardedTerritories((plugin.app as any)?.plugins?.plugins));
+ * list, or `null` when the host cannot be asked (#397: no built-in default;
+ * `null` fails closed everywhere, see `excludedUnderHost`). Shown rather than
+ * an editable field so there is visibly ONE list, not two. */
+function territoriesInEffect(plugin: { app: unknown }): readonly string[] | null {
+  const hostList = hostGuardedTerritories((plugin.app as any)?.plugins?.plugins);
+  return hostList === null ? null : resolveTerritories(hostList);
 }
