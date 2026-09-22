@@ -63,8 +63,7 @@ export interface VaultMcpApi {
    * the plugin that cannot be uninstalled, so the host holds the setting and
    * publishes it here. Read it live per call: an operator's edit must take
    * effect without either plugin reloading.
-   */
-  /**
+   *
    * OPTIONAL, and that is the contract rather than laziness: `vault-mcp-api`
    * builds already in the wild were compiled against a host without this, and a
    * REQUIRED method would make every one of them fail to satisfy the type — the

@@ -326,6 +326,10 @@ async function rawEntries(absDir: string) {
 }
 
 export async function buildSnapshot(opts: SnapshotOpts): Promise<VaultSnapshot> {
+  // Resolved ONCE per walk, not per directory entry and per symlink. The list
+  // cannot change mid-walk, and a whole-vault walk would otherwise re-derive it
+  // thousands of times.
+  const deniedSegs = deniedSegmentsOf(resolveTerritories(opts.territories));
   const realBoundary = assertRootPermitted(opts);
   const excluded = opts.excludedRoots ?? [];
   const skip = new Set([...DEFAULT_SKIP, ...(opts.skipDirs ?? [])]);
@@ -372,7 +376,7 @@ export async function buildSnapshot(opts: SnapshotOpts): Promise<VaultSnapshot> 
               `ancestor or a symlink loop). An indeterminate target is refused, never assumed safe.`,
           );
         }
-        const denied = deniedTerritory(real, deniedSegmentsOf(resolveTerritories(opts.territories)));
+        const denied = deniedTerritory(real, deniedSegs);
         if (denied) {
           throw new Error(
             `buildSnapshot: refusing to read ${vaultPath} — it is a symlink resolving into a permanently denied ` +
@@ -431,7 +435,7 @@ export async function buildSnapshot(opts: SnapshotOpts): Promise<VaultSnapshot> 
       const vaultPath = toVaultPath(opts.root, abs);
       if (isExcluded(vaultPath, excluded)) continue;
       if (skip.has(entry.name)) continue;
-      const denied = deniedSegment(entry.name, deniedSegmentsOf(resolveTerritories(opts.territories)));
+      const denied = deniedSegment(entry.name, deniedSegs);
       if (denied) {
         throw new Error(
           `buildSnapshot: refusing to descend into ${vaultPath} — it is a permanently denied territory ` +

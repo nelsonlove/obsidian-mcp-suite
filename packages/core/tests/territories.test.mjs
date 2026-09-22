@@ -79,3 +79,30 @@ describe("isExcludedTerritory — the configured list is the one that matches", 
     assert.ok(EXCLUDED_PREFIXES.includes("80-89"), "the guarded legal/PII area is on the built-in list");
   });
 });
+
+describe("resolveTerritories — malformed input can never mean 'guard nothing'", () => {
+  test("a non-array falls back instead of throwing", () => {
+    // A hand-edited or Sync-merged data.json. Throwing here took out the
+    // settings tab (so the operator could not open settings to fix the value
+    // that broke settings) AND every captured read.
+    for (const bad of ["80-89", {}, 42, true]) {
+      assert.deepEqual([...resolveTerritories(bad)], [...EXCLUDED_PREFIXES], `${JSON.stringify(bad)} must fall back`);
+    }
+  });
+
+  test("non-string entries are DROPPED, never stringified", () => {
+    // `String(null)` is "null" — non-empty, so it would count as a configured
+    // entry, replace the default, and match no path: the whole vault unguarded
+    // by one bad row.
+    assert.deepEqual([...resolveTerritories([null, undefined, 42, {}])], [...EXCLUDED_PREFIXES]);
+    assert.deepEqual([...resolveTerritories(["Archive/", null])], ["Archive/"], "a good entry survives a bad neighbour");
+  });
+
+  test("a leading separator is stripped, not left to match nothing", () => {
+    // `isExcludedTerritory` normalizes the PATH but not the PREFIX, so
+    // `/Private/` could never match — a non-empty list guarding nothing.
+    assert.deepEqual([...resolveTerritories(["/Private/"])], ["Private/"]);
+    assert.deepEqual([...resolveTerritories(["./Private/"])], ["Private/"]);
+    assert.ok(isExcludedTerritory("Private/x.md", resolveTerritories(["/Private/"])), "and it matches after stripping");
+  });
+});

@@ -512,11 +512,9 @@ async function journalSignature(plugin: Plugin): Promise<string> {
 }
 
 // ── governed-note enumeration (module-scope helpers) ─────────────────────────
-// Guarded territories (#321): read live off the plugin's config, exactly like
-// displaySettings/acceptanceSettings above, so a human edit in the settings tab
-// takes effect on the next call — no reload. A blank/absent config falls back
-// to @vault-mcp/core's EXCLUDED_PREFIXES, which is what keeps upgrades from a
-// pre-#321 install behaving identically.
+// Guarded territories (#321/#397): read live from the HOST's api, so a human
+// edit in its settings tab takes effect on the next call with no reload here.
+// This provider holds no copy of the list — see territoriesOf below.
 // #397: the list is the HOST's setting, read live through its api. This
 // provider deliberately keeps no copy — see `hostGuardedTerritories`. When the
 // host is absent or too old to publish it, `resolveTerritories(null)` answers

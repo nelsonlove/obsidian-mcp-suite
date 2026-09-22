@@ -39,6 +39,11 @@ export interface RunOpts {
   vocabularies: VocabInstanceSettings[];
   schemes: SchemeInstanceConfig[];
   excludedRoots?: string[];
+  /** The operator's guarded territories (#397). Omitted means the built-in
+   * default, so every existing caller is unchanged. Threaded to `buildSnapshot`
+   * rather than read from a constant: the rail must refuse to walk a territory
+   * an operator added, and #397 was filed because it did not. */
+  territories?: readonly string[];
   /**
    * Register the four ported legacy checks (structure/port/ste/drift — the
    * whole Python rail, now in TS). **Default ON** (issue #116).
@@ -90,7 +95,7 @@ export async function runConformance(opts: RunOpts): Promise<RunResult> {
   // GOVERNOR_CONTENT_ROOT, or the .obsidian-ancestor walk), so it IS this run's
   // declared boundary; buildSnapshot's own guard (#157) still refuses
   // unconditionally into ~/obsidian-old / 80-89 / a hold regardless of this.
-  const snapshot = await buildSnapshot({ root: opts.root, excludedRoots: opts.excludedRoots, boundary: opts.root });
+  const snapshot = await buildSnapshot({ root: opts.root, excludedRoots: opts.excludedRoots, boundary: opts.root, territories: opts.territories });
 
   const packs: RulePack[] = [];
   // vocab providers: built from settings over the snapshot listing (the registry
