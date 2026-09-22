@@ -190,13 +190,16 @@ describe("runCli — the opt-in upward walk, and the deny-list over what it find
 
   test("a discovered root inside a denied territory is STILL refused — the deny-list is not bypassed by discovery", async () => {
     const base = await mkdtemp(path.join(tmpdir(), "discover-root-denied-"));
-    // The literal segment name the deny-list matches — see snapshot.ts's
-    // deniedSegment. A fixture, never the real ~/obsidian-old.
+    // A segment the CONFIGURED list names — there is no built-in deny-list
+    // any more (#397), so the CLI is handed one through GOVERNOR_TERRITORIES,
+    // the same way it is handed excluded roots. A fixture, never the real
+    // ~/obsidian-old.
     const deniedRoot = path.join(base, "obsidian-old");
     const sub = path.join(deniedRoot, "Notes");
     await mkdir(path.join(deniedRoot, ".obsidian"), { recursive: true });
     await mkdir(sub, { recursive: true });
     process.env[ALLOW_ROOT_DISCOVERY_ENV] = "1";
+    process.env.GOVERNOR_TERRITORIES = "obsidian-old";
     process.chdir(sub);
     try {
       const r = await cli("--no-baseline");
@@ -204,6 +207,7 @@ describe("runCli — the opt-in upward walk, and the deny-list over what it find
       assert.match(r.message, /permanently denied territory|obsidian-old/i);
     } finally {
       delete process.env[ALLOW_ROOT_DISCOVERY_ENV];
+      delete process.env.GOVERNOR_TERRITORIES;
       process.chdir(savedCwd);
       await rm(base, { recursive: true, force: true });
     }

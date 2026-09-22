@@ -42,7 +42,7 @@
 import { Notice, Plugin, TFile, type Component } from "obsidian";
 import * as fs from "node:fs";
 import { registerGovernance, publishTools, type SeamRefusal, type WriteFacts } from "vault-mcp-api";
-import { uuidv7, EXCLUDED_PREFIXES } from "@vault-mcp/core";
+import { uuidv7, resolveTerritories } from "@vault-mcp/core";
 
 import { createSessionStore } from "./kernel/sessions/session-store.js";
 import { createProposalStore } from "./kernel/proposals/proposal-store.js";
@@ -71,7 +71,7 @@ import { buildRevisionTools } from "./tools/revision.js";
 import { GovernorSettingTab } from "./settings-tab.js";
 import { DEFAULT_GOVERNOR_SETTINGS, mergeGovernorSettings, readGovernorSettings, type GovernorSettings } from "./settings.js";
 import { vaultSlug } from "./paths.js";
-import { hostPluginDir, type HostPluginLike } from "./host-lookup.js";
+import { hostPluginDir, type HostPluginLike, hostGuardedTerritories } from "./host-lookup.js";
 
 // "Which loaded plugin is the host?" lives in `host-lookup.ts` — Obsidian-free,
 // so it is testable headlessly, which is what `tests/host-lookup.test.mjs`
@@ -468,7 +468,17 @@ export default class GovernorPlugin extends Plugin {
         // history scope: an untracked path is ungoverned by the new system, and
         // the producer skips the proposal rather than opening a dead one.
         record: async (proposalId: string, path: string, baseBytes: Uint8Array | null, proposedBytes: Uint8Array) => {
-          const scope = effectiveScope(this.settings.historyScope, EXCLUDED_PREFIXES);
+          // The HOST's configured territories (#397), read live through its api —
+          // the same list the pane, proposals and auto-accept use, and the same one
+          // the host's own capture gate consults. There is no built-in default to
+          // fall back to: when the host cannot be asked (`null` — absent, not yet
+          // loaded, too old), NOTHING is recorded, the same fail-closed answer
+          // `excludedUnderHost` gives the pane. Reading "no answer" as "no
+          // territories" would make a missing host the one state that writes the
+          // legal material into the standing chain (review of #396).
+          const hostList = hostGuardedTerritories((this.app as any)?.plugins?.plugins);
+          if (hostList === null) return null;
+          const scope = effectiveScope(this.settings.historyScope, resolveTerritories(hostList));
           if (!isTracked(scope, path)) return null;
           const repo = await lazyHistoryRepo();
           const ref = proposalRef(proposalId);

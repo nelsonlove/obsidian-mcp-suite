@@ -30,7 +30,7 @@ export interface AcceptEligibilityCtx {
   pendingPaths: ReadonlySet<string>;
   /** One note's `acceptance-status` frontmatter value from the metadata cache, or null. */
   statusOf: (path: string) => string | null;
-  /** Guarded territories / hold zones (wiring.ts EXCLUDED_PREFIXES) — never governed. */
+  /** The host's guarded territories (wiring.ts `isExcluded`) — never governed. */
   isExcluded: (path: string) => boolean;
   /**
    * True once the authority cutover has run: legacy acceptance is retired and

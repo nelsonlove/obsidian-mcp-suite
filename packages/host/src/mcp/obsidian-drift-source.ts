@@ -70,7 +70,7 @@ export interface DriftPaneSource {
   scan(): Promise<DriftGroup[]>;
 }
 
-export function obsidianDriftSource(app: App): DriftPaneSource {
+export function obsidianDriftSource(app: App, territories?: () => readonly string[]): DriftPaneSource {
   const root = vaultRoot(app);
   const baselinePath = join(root, baselineRelFrom(process.env));
   const excludedRoots = excludedRootsFrom([], process.env);
@@ -91,6 +91,7 @@ export function obsidianDriftSource(app: App): DriftPaneSource {
         schemes: DEFAULT_SCHEMES,
         excludedRoots,
         legacyPacks: true,
+        territories: territories?.(),
       });
       return newSchemeDrift(res.findings, res.ratchet);
     },

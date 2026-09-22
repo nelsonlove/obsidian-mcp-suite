@@ -73,3 +73,12 @@ function coerceKeyList(v: unknown): string[] {
   }
   return [];
 }
+
+// ── guarded territories (#321/#397) ─────────────────────────────────────────
+// NOT A SETTING OF THIS PLUGIN, deliberately. #396 first put the list here;
+// #397 moved it to the HOST, because the consumer that writes note bodies
+// outside the vault (observation capture) lives there and runs whether or not
+// this plugin is installed — a guard that only exists on the optional plugin is
+// not a guard. This plugin now READS the host's list live through its api; see
+// `hostGuardedTerritories` in ../host-lookup.ts and `territoriesOf` in
+// ../wiring/wiring.ts. Nothing here holds a copy, so the two cannot disagree.

@@ -89,6 +89,10 @@ export interface WireSchemePanesOpts {
    *  rebuild-don't-cache factory), so a settings-tab edit to `excludedRoots`
    *  takes effect on the Inbox pane's next refresh without a plugin reload. */
   getSchemes: () => SchemeInstanceConfig[];
+  /** The operator's guarded territories, read fresh per call for the same
+   * reason `getSchemes` is (#397): the drift pane runs the conformance rail,
+   * which must not walk a territory a human added since the pane mounted. */
+  getTerritories?: () => readonly string[];
 }
 
 /** Mount both panes on one shared child Component — they're gated by the
@@ -154,7 +158,7 @@ export function wireSchemePanes(plugin: Plugin, opts: WireSchemePanesOpts): Comp
   }
 
   try {
-    const driftSource = obsidianDriftSource(app);
+    const driftSource = obsidianDriftSource(app, opts.getTerritories);
     const driftController: DriftPaneController = {
       scan: () => driftSource.scan(),
       openNote: (path) => void app.workspace.openLinkText(path, ""),

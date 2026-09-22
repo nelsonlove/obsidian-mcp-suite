@@ -6,8 +6,8 @@
 // but that have NO pending write delta — the frontmatter-lifecycle half of the converged
 // Accept. Notes that ARE in the pending queue are deduped out: a pending item already shows
 // the (same, context-aware) Accept in the queue detail view, and one note must never render
-// two Accept rows. Excluded roots (guarded territories / hold zones — wiring.ts
-// EXCLUDED_PREFIXES) are respected exactly like every other pane listing.
+// two Accept rows. Excluded roots (the host's guarded territories — wiring.ts
+// `isExcluded`) are respected exactly like every other pane listing.
 //
 // Plain data in, plain data out: nothing here reads a file, advances a baseline, or carries
 // a callable. The wiring's `listProposed` feeds it the metadata cache; tests feed it fakes.

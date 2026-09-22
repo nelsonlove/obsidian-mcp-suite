@@ -47,7 +47,16 @@ const _schema: Assignable<HostJsonSchemaObject, SdkJsonSchemaObject> = true;
 // apiVersion is the literal 1 on BOTH sides — a bump on either end must land here.
 const _vHostToSdk: SdkVaultMcpApi["apiVersion"] = 1 as HostVaultMcpApi["apiVersion"];
 const _vSdkToHost: HostVaultMcpApi["apiVersion"] = 1 as SdkVaultMcpApi["apiVersion"];
-void [_api, _spec, _schema, _vHostToSdk, _vSdkToHost];
+// `MutuallyAssignable` is BLIND to an optional member: a type missing an optional
+// property is assignable both ways, so deleting `guardedTerritories?` from either
+// side passes `_api` silently. Pin its presence and signature explicitly in both
+// directions — `Required<T>` makes the optionality irrelevant, so a dropped or
+// drifted member is a type error here rather than a green suite.
+const _gtHostToSdk: Required<SdkVaultMcpApi>["guardedTerritories"] =
+  null as unknown as Required<HostVaultMcpApi>["guardedTerritories"];
+const _gtSdkToHost: Required<HostVaultMcpApi>["guardedTerritories"] =
+  null as unknown as Required<SdkVaultMcpApi>["guardedTerritories"];
+void [_api, _spec, _schema, _vHostToSdk, _vSdkToHost, _gtHostToSdk, _gtSdkToHost];
 
 // ── Runtime contract: the real SDK against the real host registry ────────────
 // Mirrors how packages/host/src/main.ts exposes the api object
