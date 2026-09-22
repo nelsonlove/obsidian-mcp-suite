@@ -64,10 +64,12 @@ export interface HostPluginLike {
  *
  * NULL means "cannot tell" — no host, or a host too old to publish this. Since
  * #397 there is no built-in default to fall back to, and `null` must NOT be
- * read as an empty list — see `excludedUnderHost`: `resolveTerritories(null)`
- * is `[]`, so a provider that cannot ask its host guards nothing. That is the
- * honest reading, and it is safe because this provider can DO nothing without
- * a host either — the pane refuses to mount, and no proposal is produced.
+ * read as an empty list: `resolveTerritories(null)` would be `[]`, which guards
+ * nothing, and "cannot ask" must never mean "nothing is guarded". Every
+ * consumer goes through `excludedUnderHost` (below), which fails CLOSED on
+ * null — nothing governed, proposed, auto-accepted or recorded — until a host
+ * that answers is present. The pane already refuses to mount without a host;
+ * this closes the paths that do not go through the pane.
  *
  * WHY THIS READS THE HOST RATHER THAN A SETTING OF OUR OWN (#397). The list has
  * consumers in both plugins, and the host holds the dangerous one — observation

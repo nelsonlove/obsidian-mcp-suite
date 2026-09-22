@@ -97,15 +97,23 @@ export function resolveTerritories(configured: unknown): readonly string[] {
  * falls under `prefix` — the ONE boundary rule both plugins use (#321 asked for
  * it by name: "`80-89` never accidentally matches `80-89-archive/`").
  *
- * A match needs the prefix AND a boundary right after it: end of the candidate,
- * a prefix that already ends in `/`, or a next character that cannot continue a
- * name token (anything but a letter, digit, `_` or `-`). So `80-89` matches
- * `80-89 Divorce/x.md` and `80-89/x.md` but not `80-891/…` or `80-89-archive/…`;
- * `Archive/` matches `Archive/old.md` but not `Archives/…`. The conformance
- * walker applies the same rule per path segment, lowercased.
+ * The rule, exactly: compared case-insensitively; the candidate must start
+ * with the entry, and the character right after the entry must not CONTINUE
+ * a name — a letter, a digit, `_` or `-` continues it; anything else (end of
+ * the candidate, `/`, a space, `.`, `(` …) is a boundary. So `80-89` covers
+ * `80-89 Divorce/`, `80-89/` and `80-89 Divorce (old)/` — every folder whose
+ * name begins `80-89` and then breaks — but not `80-891/` or `80-89-archive/`.
+ * An entry that ends in `/` covers exactly that folder: `Archive/` covers
+ * `Archive/old.md` and not `Archive Old/` or `Archives/`. Over-inclusion is the
+ * safe direction here (the entry guards a little more, never less), which is
+ * why a space is a boundary and not a continuation. The conformance walker
+ * decides its descend refusals with this same rule over the same
+ * vault-relative paths (see `isExcludedTerritory`).
  */
 export function matchesTerritoryPrefix(candidate: string, prefix: string): boolean {
-  if (!prefix || !candidate.startsWith(prefix)) return false;
-  if (candidate.length === prefix.length || prefix.endsWith("/")) return true;
-  return !/[A-Za-z0-9_-]/.test(candidate.charAt(prefix.length));
+  const c = candidate.toLowerCase();
+  const p = prefix.toLowerCase();
+  if (!p || !c.startsWith(p)) return false;
+  if (c.length === p.length || p.endsWith("/")) return true;
+  return !/[\p{L}\p{N}_-]/u.test(c.charAt(p.length));
 }

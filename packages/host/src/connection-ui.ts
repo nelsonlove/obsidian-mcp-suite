@@ -759,7 +759,7 @@ export class VaultMcpSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Areas never to copy out of the vault")
       .setDesc(
-        "One folder per line, matched from the start of the path. Nothing here is ever recorded by the setting above, walked by the conformance check, or reviewed by Governor — for archival or legally sensitive areas, not live notes. " +
+        "One folder per line. An entry covers its folder and everything under it, and every folder whose name begins with the entry and then breaks (80-89 covers 80-89 Divorce); end an entry with / to mean exactly that folder. Nothing here is ever recorded by the setting above, walked by the conformance check, or reviewed by Governor — for archival or legally sensitive areas, not live notes. " +
           "EMPTY MEANS NOTHING IS GUARDED, and recording cannot be switched on while it is empty. There is no built-in list: what belongs here is your vault's business, not the plugin's. " +
           "Reading these notes still works; this only stops copies being kept outside the vault."
       )

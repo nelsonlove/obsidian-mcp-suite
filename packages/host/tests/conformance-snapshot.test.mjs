@@ -324,7 +324,7 @@ describe("buildSnapshot territory guard (#157) — the CONFIGURED list overrides
       assert.deepEqual(snap.notes, [], "unlisted: walked, not refused");
       await assert.rejects(
         () => buildSnapshot({ root: legalHold, boundary: root, territories: ["Legal Hold/"] }),
-        /permanently denied territory.*guarded territory 'legal hold'/i,
+        /permanently denied territory.*guarded territory 'legal hold\/'/i,
         "listed: refused, naming the configured entry",
       );
     } finally {
@@ -347,6 +347,38 @@ describe("buildSnapshot territory guard (#157) — the CONFIGURED list overrides
       );
     } finally {
       await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("the walker agrees with the capture gate: a trailing slash means exactly that folder, entries are case-insensitive, and a nested entry refuses only the nested folder", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "conf-onerule-"));
+    try {
+      await mkdir(path.join(root, "Archive Old"), { recursive: true });
+      const snap = await buildSnapshot({ root, boundary: root, territories: ["Archive/"] });
+      assert.deepEqual(snap.notes, [], "`Archive/` does NOT cover `Archive Old` (re-review of #396: the walker used to strip the slash)");
+      await mkdir(path.join(root, "Archive"), { recursive: true });
+      await assert.rejects(() => buildSnapshot({ root, boundary: root, territories: ["Archive/"] }), /guarded territory 'Archive\/'/);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+    const root2 = await mkdtemp(path.join(tmpdir(), "conf-onerule2-"));
+    try {
+      await mkdir(path.join(root2, "80-89 Divorce", "Notes"), { recursive: true });
+      const snap = await buildSnapshot({ root: root2, boundary: root2, territories: ["80-89 Divorce/Evidence"] });
+      assert.deepEqual(snap.notes, [], "a nested entry does not refuse its parent");
+      await mkdir(path.join(root2, "80-89 Divorce", "Evidence"), { recursive: true });
+      await assert.rejects(
+        () => buildSnapshot({ root: root2, boundary: root2, territories: ["80-89 Divorce/Evidence"] }),
+        /refusing to descend into 80-89 Divorce\/Evidence.*guarded territory '80-89 Divorce\/Evidence'/,
+        "and refuses exactly the nested folder, as the capture gate would",
+      );
+      await assert.rejects(
+        () => buildSnapshot({ root: root2, boundary: root2, territories: ["80-89 divorce"] }),
+        /refusing to descend into 80-89 Divorce/,
+        "case-insensitive, like the capture gate",
+      );
+    } finally {
+      await rm(root2, { recursive: true, force: true });
     }
   });
 

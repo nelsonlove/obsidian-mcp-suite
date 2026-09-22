@@ -74,7 +74,11 @@ describe("territoriesOnLoad — the one-time migration", () => {
     assert.equal(r.persist, true);
   });
 
-  test("adopted settings that already carry the key are honoured, and own data.json wins over adopted when both exist", () => {
+  test("own data.json wins over adopted when both exist; an adopted key is honoured if one ever arrives", () => {
+    // Today `splitSettings` (core's HOST_SETTING_KEYS) does not carry
+    // `guardedTerritories` across adoption — the setting postdates the split —
+    // so production adoption always lands in the seed branch above. The
+    // function still honours a key if a future adoption path supplies one.
     assert.deepEqual(territoriesOnLoad(null, { guardedTerritories: ["Mine/"] }).territories, ["Mine/"]);
     assert.deepEqual(territoriesOnLoad({ guardedTerritories: ["Own/"] }, { guardedTerritories: ["Adopted/"] }).territories, ["Own/"]);
     assert.deepEqual(territoriesOnLoad(undefined, undefined), { territories: [], persist: true }, "neither: genuinely fresh");

@@ -121,6 +121,15 @@ describe("segment-boundary matching (#321) — `80-89` never matches `80-89-arch
     assert.ok(!matchesTerritoryPrefix("anything", ""), "an empty entry matches nothing (never every path)");
   });
 
+  test("the rule is case-insensitive, Unicode-aware, and a space is a boundary (over-inclusion is the safe direction)", () => {
+    assert.ok(matchesTerritoryPrefix("80-89 divorce/x.md", "80-89 Divorce"), "case does not unguard a folder");
+    assert.ok(isExcludedTerritory("80-89 DIVORCE/x.md", resolveTerritories(["80-89 divorce"])));
+    assert.ok(matchesTerritoryPrefix("80-89 Divorce (old)/x.md", "80-89 Divorce"), "a sibling that begins with the entry and then breaks IS covered — documented, deliberate");
+    assert.ok(matchesTerritoryPrefix("00-09 System.old/x.md", "00-09 System"), "a dot is a boundary too");
+    assert.ok(!matchesTerritoryPrefix("80-89\u0663/x.md", "80-89"), "a non-ASCII digit continues the name");
+    assert.ok(!matchesTerritoryPrefix("Privée/x.md", "Priv"), "a non-ASCII letter continues the name");
+  });
+
   test("isExcludedTerritory applies the boundary rule over the configured list", () => {
     const list = resolveTerritories(["80-89"]);
     assert.ok(isExcludedTerritory("80-89 Divorce/evidence.md", list));
