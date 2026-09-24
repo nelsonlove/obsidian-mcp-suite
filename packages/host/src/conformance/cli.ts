@@ -907,7 +907,15 @@ export async function runCli(argv: string[]): Promise<void> {
   const baselineIds = baselinePackIds(parseBaseline(baselineText));
   const covered = new Set(res.coveredPackIds);
   const coverage = coverageRefusal(baselineIds, covered, rebaseline ? "--rebaseline" : "run");
-  if (coverage) throw new Error(coverage);
+  if (coverage) {
+    // The refusal says "did not run (or threw)". When the cause is a dead
+    // convention (#298) the pack did not run BECAUSE its path names nothing,
+    // and the real remedy is GOVERNOR_VAULT_CONVENTIONS — which the report
+    // names and this throw would otherwise discard. Say the cause with the
+    // refusal (#401 review).
+    const dead = res.deadConventions.map((d) => `  ${d.key} = ${d.path} (${CONVENTION_PACKS[d.key].join(", ")})`);
+    throw new Error(dead.length ? `${coverage}\nThe unmeasured pack(s) read a DEAD convention path — set GOVERNOR_VAULT_CONVENTIONS to the live path:\n${dead.join("\n")}` : coverage);
+  }
 
   // Trend (#211, A3): one append-only record per run capturing the burn-down
   // numbers, beside the baseline. Best-effort — a broken trend log never fails
@@ -1009,11 +1017,13 @@ export async function runCli(argv: string[]): Promise<void> {
     await writeFile(baselinePath, next);
     await writeFile(sidecarPath, serializeSidecar(nextSidecar));
 
-    process.stdout.write(`rebaselined ${baselinePath} (${res.findings.length} findings)\n`);
+    process.stdout.write(`rebaselined ${baselinePath} (${baselineKeysWritten.size} findings)\n`);
 
-    // Refresh the register from the POST-rebaseline state (every live key is
-    // now accepted; cleared/new are zero by construction) — when asked, or when
-    // a register already exists (it just went stale). Never created unasked.
+    // Refresh the register from the POST-rebaseline state (every live PACK key
+    // is now accepted; engine findings are never accepted, so a dead
+    // convention still reads NEW here — correctly, the next run fails on it) —
+    // when asked, or when a register already exists (it just went stale).
+    // Never created unasked.
     if (renderRegister || existsSync(registerPath)) {
       await renderRegisterTo(baselineKeysWritten, nextSidecar);
     }

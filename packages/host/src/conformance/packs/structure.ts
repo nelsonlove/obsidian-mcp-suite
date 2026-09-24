@@ -133,7 +133,7 @@ export interface StructurePackOpts {
    * rather than read from the environment at module load: an exported constant
    * that varies with ambient env makes the test suite non-hermetic. */
   conventions?: VaultConventions;
-  /** Vault-relative blueprint-registry root; defaults to DEFAULT_BLUEPRINT_ROOT. */
+  /** Vault-relative blueprint-registry root; defaults to the injected conventions' `registriesRoot` (which is DEFAULT_BLUEPRINT_ROOT only when no conventions are injected). */
   blueprintRoot?: string;
 }
 

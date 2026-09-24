@@ -315,6 +315,14 @@ describe("#298 — a dead convention path is a loud finding and an unmeasured pa
     }
   });
 
+  test("when coverage refuses because a convention is dead, the refusal names the convention and GOVERNOR_VAULT_CONVENTIONS (#401 review) — pinned at the source", () => {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const cli = fs.readFileSync(path.join(here, "..", "src", "conformance", "cli.ts"), "utf8");
+    const site = cli.slice(cli.indexOf("const coverage = coverageRefusal(baselineIds, covered"), cli.indexOf("// Trend (#211, A3)"));
+    assert.match(site, /res\.deadConventions/, "the refusal consults the run's dead conventions");
+    assert.match(site, /set GOVERNOR_VAULT_CONVENTIONS to the live path/, "and names the remedy, not 'enable the packs'");
+  });
+
   test("the drift pack reads the INJECTED registries root, not the module constant (pinned at the source)", () => {
     const here = path.dirname(fileURLToPath(import.meta.url));
     const drift = fs.readFileSync(path.join(here, "..", "src", "conformance", "packs", "drift.ts"), "utf8");
