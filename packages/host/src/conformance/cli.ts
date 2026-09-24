@@ -24,7 +24,7 @@ import { envAliased } from "../env-alias.js";
 import { intendedRealPath, sameFile, isInside } from "./path-identity.js";
 import { runEngine, ENGINE_ID } from "./engine.js";
 import { vocabPack, schemePack, structurePack, portPack, stePack, driftPack } from "./packs/index.js";
-import { vaultConventionsFrom } from "./vault-conventions.js";
+import { vaultConventionsFrom, deadConventionPaths, CONVENTION_PACKS, type DeadConvention } from "./vault-conventions.js";
 import { parseBaseline, renderBaseline, ratchet, type RatchetResult } from "./ratchet.js";
 import { parseKey, findingKey, type Finding } from "./finding.js";
 import type { RulePack } from "./rule-pack.js";
@@ -89,6 +89,10 @@ export interface RunResult {
   exitCode: 0 | 1;
   /** Ids of every pack registered for this run. */
   packIds: string[];
+  /** Convention paths the walk did not see (#298) — each is also a
+   * `conformance_engine / dead_convention` finding, and its pack is left out of
+   * `coveredPackIds`, so a baseline describing that pack refuses. */
+  deadConventions: DeadConvention[];
   /** Registered packs that did NOT throw — the set the baseline was actually measured against. */
   coveredPackIds: string[];
   /** Debt-budget tooth status (issue #211): the carried count vs the configured
@@ -114,6 +118,8 @@ export async function runConformance(opts: RunOpts): Promise<RunResult> {
   const baselineKeys = parseBaseline(opts.baselineText);
 
   const packs: RulePack[] = [];
+  let deadConventions: DeadConvention[] = [];
+  const unmeasuredPackIds = new Set<string>();
   // vocab providers: built from settings over the snapshot listing (the registry
   // confines each instance to its own root).
   const vocabInstances = new VocabRegistry(opts.vocabularies).build(snapshot.notes);
@@ -129,13 +135,33 @@ export async function runConformance(opts: RunOpts): Promise<RunResult> {
     // module load — an exported constant that varies with ambient env makes
     // the suite non-hermetic (self-review finding on this PR).
     const conv = vaultConventionsFrom(process.env);
-    packs.push(structurePack({ conventions: conv }));
-    packs.push(portPack());
-    packs.push(stePack());
-    packs.push(driftPack(conv));
+    // A dead convention path is loud (#298): the pack that reads it still
+    // REGISTERS (so a baseline describing it is refused as uncovered, the
+    // same way a pack that threw is) but does not RUN, because a pack run
+    // over a path that names nothing reports clean or reports noise, never
+    // the truth. `dead_convention` findings are appended below.
+    deadConventions = deadConventionPaths(conv, snapshot, opts.excludedRoots ?? []);
+    const unmeasured = new Set(deadConventions.map((d) => CONVENTION_PACKS[d.key]));
+    const legacy: RulePack[] = [structurePack({ conventions: conv }), portPack(), stePack(), driftPack(conv)];
+    for (const pack of legacy) {
+      packs.push(unmeasured.has(pack.id) ? { id: pack.id, run: () => [] } : pack);
+      if (unmeasured.has(pack.id)) unmeasuredPackIds.add(pack.id);
+    }
   }
 
   const findings = runEngine(packs, snapshot);
+  for (const d of deadConventions) {
+    findings.push({
+      script: ENGINE_ID,
+      check: "dead_convention",
+      target: d.key,
+      kind: d.path,
+      detail:
+        `convention '${d.key}' names '${d.path}', which does not exist under the walked root — ` +
+        `the '${CONVENTION_PACKS[d.key]}' pack was not run (it would read clean or noise, not the vault). ` +
+        `Set GOVERNOR_VAULT_CONVENTIONS to the live path, or run with legacy packs off.`,
+    });
+  }
   const result = ratchet(findings, baselineKeys);
   // #398's one rule for a skip: it must never become a silent CLEARED. Two ways
   // it could, both refused here, after the ratchet so the second is visible:
@@ -156,7 +182,7 @@ export async function runConformance(opts: RunOpts): Promise<RunResult> {
   const errored = new Set(
     findings.filter((f) => f.script === ENGINE_ID && f.check === "pack_error").map((f) => f.target),
   );
-  const coveredPackIds = packIds.filter((id) => !errored.has(id));
+  const coveredPackIds = packIds.filter((id) => !errored.has(id) && !unmeasuredPackIds.has(id));
   // Debt-budget tooth (#211): warn when carried debt exceeds the configured
   // ceiling. Warn-only unless `strictBudget` — then an over-budget run also
   // fails, alongside the ordinary NEW-findings gate. A NEW-findings failure
@@ -167,10 +193,11 @@ export async function runConformance(opts: RunOpts): Promise<RunResult> {
     packIds,
     coveredPackIds,
     findings,
+    deadConventions,
     skippedTerritories: snapshot.skippedTerritories ?? [],
     ratchet: result,
     budget,
-    report: renderReport(result, packIds, baselinePackIds(baselineKeys), findings, opts.excludedRoots ?? [], budget, snapshot.skippedTerritories ?? []),
+    report: renderReport(result, packIds, baselinePackIds(baselineKeys), findings, opts.excludedRoots ?? [], budget, snapshot.skippedTerritories ?? [], deadConventions),
     rebaseline: renderBaseline(findings),
     exitCode,
   };
@@ -605,6 +632,7 @@ function renderReport(
   excludedRoots: string[] = [],
   budget?: DebtBudgetStatus,
   skippedTerritories: readonly SkippedTerritory[] = [],
+  deadConventions: readonly DeadConvention[] = [],
 ): string {
   const lines: string[] = [];
   lines.push(`conformance: ${r.carried} carried, ${r.newKeys.length} NEW, ${r.clearedKeys.length} cleared`);
@@ -622,6 +650,11 @@ function renderReport(
   if (skippedTerritories.length) {
     const shown = skippedTerritories.map((t) => `${t.path} (guarded territory '${t.territory}')`).join(", ");
     lines.push(`guarded (not scanned, no claim made): ${shown} — listed in guarded territories`);
+  }
+  // A convention that names nothing must never read as "checked and clean"
+  // (#298): name the key, the dead path, and the pack that therefore did not run.
+  for (const d of deadConventions) {
+    lines.push(`DEAD CONVENTION: ${d.key} = ${d.path} — '${CONVENTION_PACKS[d.key]}' not measured; set GOVERNOR_VAULT_CONVENTIONS`);
   }
   // A pack with NO baseline representation reports its entire output as NEW.
   // Undistinguished, that is indistinguishable from a catastrophic regression —
@@ -664,7 +697,7 @@ function renderReport(
  * assumption about somebody's folder layout.
  */
 export const DEFAULT_BASELINE_REL =
-  "00-09 System/00 System management/00.89 obsidian-governor/Build/Conformance baseline.md";
+  "00-09 System/00 System management/00.89 obsidian-mcp-suite/Build/Conformance baseline.md";
 
 /** The baseline's vault-relative path for this invocation. */
 export function baselineRelFrom(env: Record<string, string | undefined>): string {

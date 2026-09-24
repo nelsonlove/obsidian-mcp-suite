@@ -51,7 +51,9 @@ export const DEFAULT_VAULT_CONVENTIONS: VaultConventions = {
   // `Assent` to `obsidian-governor` (2026-08-19). One prefix now covers both
   // it and the `Vault archaeology` corpus, which moved inside it — the old
   // bare `"Vault archaeology"` root no longer resolves anywhere in the vault.
-  ungovernedRoots: ["00-09 System/00 System management/00.89 obsidian-governor"],
+  // Renamed again to `obsidian-mcp-suite` with the repo (2026-09-22); the
+  // path is a fact about the vault, corrected as one.
+  ungovernedRoots: ["00-09 System/00 System management/00.89 obsidian-mcp-suite"],
 };
 
 /**
@@ -75,4 +77,75 @@ export function vaultConventionsFrom(env: Record<string, string | undefined>): V
     );
     return DEFAULT_VAULT_CONVENTIONS;
   }
+}
+
+// ── dead paths are loud, never "checked and clean" (#298) ────────────────────
+//
+// A convention path that names nothing never errors: a registries root that
+// does not exist means the registry checks find no registries and report
+// clean; a uid-exempt path that has moved means the template is no longer
+// exempt. Both directions are silent, which is how six of seven shipped paths
+// drifted dead without a test noticing. So every path-valued key is checked
+// against the walk BEFORE the legacy packs run, and a dead one becomes a
+// `conformance_engine / dead_convention` finding (NEW, so the run fails loudly)
+// while the pack that depends on it is treated as NOT MEASURED — which is what
+// `coverageRefusal` then refuses over, exactly as it refuses a pack that threw.
+// Nothing here guesses a replacement path: where a convention should point is
+// a vault filing question (#298's own blocking ambiguity), answered by the
+// operator through `GOVERNOR_VAULT_CONVENTIONS`, never by a default.
+
+export type ConventionPathKey = Exclude<keyof VaultConventions, never>;
+
+export interface DeadConvention {
+  key: ConventionPathKey;
+  path: string;
+}
+
+/** Which legacy pack each convention key feeds — the pack that cannot measure
+ *  honestly while the key is dead. `port_lint` and `ste_lint` read no
+ *  convention. */
+export const CONVENTION_PACKS: Record<ConventionPathKey, string> = {
+  registriesRoot: "drift_audit",
+  systemRoot: "drift_audit",
+  artifactsRoot: "drift_audit",
+  pluginStackPath: "drift_audit",
+  uidExemptPaths: "drift_audit",
+  ungovernedRoots: "conformance_check",
+};
+
+const FILE_KEYS: ReadonlySet<ConventionPathKey> = new Set(["pluginStackPath", "uidExemptPaths"]);
+
+function underAny(path: string, roots: readonly string[]): boolean {
+  return roots.some((r) => {
+    const root = r.replace(/\/+$/, "");
+    return root !== "" && (path === root || path.startsWith(root + "/"));
+  });
+}
+
+/**
+ * Every convention path the walk did not see. `dirs`/`files` are the walk's
+ * own listings (vault-relative). A path under an excluded root is skipped, not
+ * reported: the walk pruned it, so its absence says nothing about the vault.
+ * Deterministic: keys in declaration order, list entries in their own order.
+ */
+export function deadConventionPaths(
+  conv: VaultConventions,
+  walk: { dirs?: readonly string[]; files?: readonly string[] },
+  excludedRoots: readonly string[] = [],
+): DeadConvention[] {
+  const dirs = new Set((walk.dirs ?? []).map((d) => d.replace(/\/+$/, "")));
+  const files = new Set(walk.files ?? []);
+  const dead: DeadConvention[] = [];
+  const check = (key: ConventionPathKey, raw: string) => {
+    const path = raw.replace(/\/+$/, "");
+    if (!path || underAny(path, excludedRoots)) return;
+    const live = FILE_KEYS.has(key) ? files.has(path) : dirs.has(path) || path === "";
+    if (!live) dead.push({ key, path });
+  };
+  for (const key of Object.keys(CONVENTION_PACKS) as ConventionPathKey[]) {
+    const v = conv[key];
+    if (Array.isArray(v)) for (const entry of v) check(key, entry);
+    else check(key, v);
+  }
+  return dead;
 }

@@ -46,6 +46,8 @@ import {
   excludedRootsFrom,
   baselineMissingRefusal,
   excludedRootRefusal,
+  coverageRefusal,
+  baselinePackIds,
 } from "../conformance/cli.js";
 import { parseBaseline } from "../conformance/ratchet.js";
 import { newSchemeDrift, type DriftGroup } from "../conformance/drift-view.js";
@@ -93,6 +95,11 @@ export function obsidianDriftSource(app: App, territories?: () => readonly strin
         legacyPacks: true,
         territories: territories?.(),
       });
+      // #294: the same refusal `runCli` applies — a pack the baseline describes
+      // that did not run (threw, or dead convention path, #298) must not read
+      // as CLEARED. Exported function, never reimplemented, in both adapters.
+      const coverage = coverageRefusal(baselinePackIds(parseBaseline(baselineText)), new Set(res.coveredPackIds), "run");
+      if (coverage) throw new Error(coverage);
       return newSchemeDrift(res.findings, res.ratchet);
     },
   };
