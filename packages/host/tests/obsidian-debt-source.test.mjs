@@ -27,6 +27,24 @@ async function fixture() {
 }
 const app = (root) => ({ vault: { adapter: { basePath: root } } });
 
+describe("obsidianDebtSource — #294: an unmeasured pack with accepted debt refuses, in-app too", () => {
+  test("a baseline describing drift_audit over a vault where its conventions are dead → liveFindings() rejects with the coverage refusal", async () => {
+    const root = await fixture();
+    const saved = process.env.GOVERNOR_BASELINE_REL;
+    delete process.env.GOVERNOR_BASELINE_REL;
+    try {
+      const baselinePath = path.join(root, DEFAULT_BASELINE_REL);
+      await mkdir(path.dirname(baselinePath), { recursive: true });
+      await writeFile(baselinePath, "```ratchet-baseline\ndrift_audit|B|02.12|\n```\n");
+      const src = obsidianDebtSource(app(root), () => []);
+      await assert.rejects(() => src.liveFindings(), /refusing to report: the baseline holds accepted debt for drift_audit, which did not run/);
+    } finally {
+      if (saved !== undefined) process.env.GOVERNOR_BASELINE_REL = saved;
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("obsidianDebtSource — #398 reaches the in-app tool", () => {
   test("skippedTerritories() reports the last run's skips", async () => {
     const root = await fixture();

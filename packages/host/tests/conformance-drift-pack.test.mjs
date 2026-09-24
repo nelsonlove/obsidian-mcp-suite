@@ -28,6 +28,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { driftPack, DEFAULT_REGISTRIES_ROOT } from "../src/conformance/packs/index.ts";
+import { DEFAULT_VAULT_CONVENTIONS } from "../src/conformance/vault-conventions.ts";
 import { findingKey } from "../src/conformance/finding.ts";
 
 const FBF = DEFAULT_REGISTRIES_ROOT;
@@ -360,5 +361,17 @@ describe("driftPack J (category numbering)", () => {
     ];
     const t = targets(run(snap({ dirs })), "J");
     assert.deepEqual(t, ["category number 00 is claimed by 2 folders: 00 Alpha; 00 Beta"]);
+  });
+});
+
+describe("registryFamily reads the INJECTED registries root (#298 / #401 review)", () => {
+  test("an .action note under an overridden registriesRoot is a registry note; the same note under the default root is not", () => {
+    const conv = { ...DEFAULT_VAULT_CONVENTIONS, registriesRoot: "Reg" };
+    const qa = JSON.stringify({ choices: [{ name: "Do X", command: true, type: "Macro" }] });
+    const act = { path: "Reg/Actions/dox.action.md", text: "---\nsurfaces:\n  quickadd-choice: Do X\n---\n" };
+    const ghostA = targets(driftPack(conv).run(snap({ sources: [act], config: { ".obsidian/plugins/quickadd/data.json": qa } })), "A");
+    assert.ok(!ghostA.some((t) => /Do X/.test(t)), `with the override, 'Do X' is a registered action: ${JSON.stringify(ghostA)}`);
+    const withDefault = targets(driftPack().run(snap({ sources: [act], config: { ".obsidian/plugins/quickadd/data.json": qa } })), "A");
+    assert.ok(withDefault.some((t) => /Do X/.test(t)), `under the default root the same note is invisible, so the QuickAdd choice reads as unregistered: ${JSON.stringify(withDefault)}`);
   });
 });
