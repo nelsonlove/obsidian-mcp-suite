@@ -237,7 +237,9 @@ export function driftPack(conv: VaultConventions = DEFAULT_VAULT_CONVENTIONS): R
       // whose name ends with `suffix`, sorted by path (Python `sorted(rglob())`).
       const registryFamily = (suffix: string): RegistryNote[] =>
         sources
-          .filter((s) => s.path.startsWith(DEFAULT_REGISTRIES_ROOT + "/") && s.path.endsWith(suffix))
+          // The INJECTED root, not the module constant — the constant ignored
+          // every GOVERNOR_VAULT_CONVENTIONS override of this key (#298).
+          .filter((s) => s.path.startsWith(REGISTRIES_ROOT + "/") && s.path.endsWith(suffix))
           .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
           .map((s) => ({ name: s.path.split("/").pop() ?? s.path, text: s.text }));
 

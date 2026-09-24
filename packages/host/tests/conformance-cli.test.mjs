@@ -12,6 +12,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { runConformance, guardedTerritoryRefusal, NON_PATH_KEYED_CHECKS } from "../src/conformance/cli.ts";
 import fs from "node:fs";
+import { ENGINE_ID } from "../src/conformance/engine.ts";
+import { coverageRefusal, baselinePackIds } from "../src/conformance/cli.ts";
+import { parseBaseline } from "../src/conformance/ratchet.ts";
 import { fileURLToPath } from "node:url";
 
 async function vault() {
@@ -236,5 +239,75 @@ describe("#398 / #400 review — a uid-keyed baseline key must not clear silentl
     assert.equal(guardedTerritoryRefusal(new Set(), [], ["drift_audit|E|x|dup-uid"]), null);
     assert.ok(guardedTerritoryRefusal(new Set(), ["80-89 Legal"], ["drift_audit|E|x|dup-uid"]));
     assert.equal(guardedTerritoryRefusal(new Set(), ["80-89 Legal"], ["ste_lint|editable|Notes/x.md|"]), null, "a path-keyed clear outside the folder is a real clear");
+  });
+});
+
+describe("#298 — a dead convention path is a loud finding and an unmeasured pack, never a clean report", () => {
+  const vocab = [{ id: "reg", provider: "blueprint", root: "Reg" }];
+
+  test("over a vault where the shipped conventions name nothing: one dead_convention finding per key, both dependent packs unmeasured, the report says so", async () => {
+    const root = await vault();
+    try {
+      const res = await runConformance({ root, baselineText: "", vocabularies: vocab, schemes: [] });
+      const dead = res.findings.filter((f) => f.script === ENGINE_ID && f.check === "dead_convention");
+      assert.deepEqual(dead.map((f) => f.target).sort(), ["artifactsRoot", "pluginStackPath", "registriesRoot", "systemRoot", "uidExemptPaths", "ungovernedRoots"]);
+      assert.deepEqual(res.deadConventions.length, 6);
+      assert.ok(res.packIds.includes("drift_audit") && res.packIds.includes("conformance_check"), "the packs still REGISTER");
+      assert.ok(!res.coveredPackIds.includes("drift_audit") && !res.coveredPackIds.includes("conformance_check"), "but are NOT covered");
+      assert.ok(res.coveredPackIds.includes("port_lint") && res.coveredPackIds.includes("ste_lint"), "packs that read no convention still run");
+      assert.ok(!res.findings.some((f) => f.script === "drift_audit"), "a pack with a dead convention emits nothing of its own — not clean, not noise");
+      assert.ok(!res.findings.some((f) => f.script === ENGINE_ID && f.check === "pack_error"), "and it does not RUN — it would throw over this fixture (#136), and that throw must not be how it is silenced");
+      assert.match(res.report, /DEAD CONVENTION: registriesRoot = .* — 'drift_audit' not measured/);
+      assert.ok(res.ratchet.newKeys.some((k) => k.startsWith(`${ENGINE_ID}|dead_convention|`)), "and the finding is NEW, so the run fails loudly");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("with GOVERNOR_VAULT_CONVENTIONS pointing at live paths, nothing is dead and drift_audit is measured", async () => {
+    const root = await vault();
+    const saved = process.env.GOVERNOR_VAULT_CONVENTIONS;
+    try {
+      for (const d of ["Sys/Registries", "Sys/Artifacts", "Sys/Framework", "Sys/T"]) await mkdir(path.join(root, d), { recursive: true });
+      await writeFile(path.join(root, "Sys", "Plugin stack.md"), "| Plugin | Status |\n");
+      await writeFile(path.join(root, "Sys", "T", "Daily.md"), "---\nuid:\n---\n");
+      // The drift pack refuses a missing QuickAdd config (#136) — give it one,
+      // so what this test measures is the convention paths, not that refusal.
+      await mkdir(path.join(root, ".obsidian", "plugins", "quickadd"), { recursive: true });
+      await writeFile(path.join(root, ".obsidian", "plugins", "quickadd", "data.json"), '{"choices":[]}');
+      await writeFile(path.join(root, ".obsidian", "community-plugins.json"), "[]");
+      process.env.GOVERNOR_VAULT_CONVENTIONS = JSON.stringify({
+        registriesRoot: "Sys/Registries", systemRoot: "Sys", artifactsRoot: "Sys/Artifacts",
+        pluginStackPath: "Sys/Plugin stack.md", uidExemptPaths: ["Sys/T/Daily.md"], ungovernedRoots: ["Sys/Framework"],
+      });
+      const res = await runConformance({ root, baselineText: "", vocabularies: vocab, schemes: [] });
+      assert.deepEqual(res.deadConventions, []);
+      assert.ok(!res.findings.some((f) => f.check === "dead_convention"));
+      assert.ok(res.coveredPackIds.includes("drift_audit") && res.coveredPackIds.includes("conformance_check"));
+      assert.doesNotMatch(res.report, /DEAD CONVENTION/);
+    } finally {
+      if (saved === undefined) delete process.env.GOVERNOR_VAULT_CONVENTIONS; else process.env.GOVERNOR_VAULT_CONVENTIONS = saved;
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a baseline that describes drift_audit, over a vault where its convention is dead, is REFUSED by coverageRefusal — the #294 rule, fed by the #298 mechanism", async () => {
+    const root = await vault();
+    try {
+      const baselineText = "```ratchet-baseline\ndrift_audit|B|02.12|\n```\n";
+      const res = await runConformance({ root, baselineText, vocabularies: vocab, schemes: [] });
+      const refusal = coverageRefusal(baselinePackIds(parseBaseline(baselineText)), new Set(res.coveredPackIds), "run");
+      assert.ok(refusal && /drift_audit/.test(refusal), "an unmeasured pack with accepted debt refuses rather than clearing it");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("the drift pack reads the INJECTED registries root, not the module constant (pinned at the source)", () => {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const drift = fs.readFileSync(path.join(here, "..", "src", "conformance", "packs", "drift.ts"), "utf8");
+    const family = drift.slice(drift.indexOf("const registryFamily"), drift.indexOf("const actionNotes"));
+    assert.match(family, /REGISTRIES_ROOT \+ "\/"/, "registryFamily filters on the per-run root");
+    assert.doesNotMatch(family, /DEFAULT_REGISTRIES_ROOT/, "the constant ignored every GOVERNOR_VAULT_CONVENTIONS override (#298)");
   });
 });

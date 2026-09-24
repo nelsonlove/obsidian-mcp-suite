@@ -13,7 +13,8 @@ import type { DebtSource, DebtRegisterSource } from "./tools-conformance-debt.js
 import type { Finding } from "../conformance/finding.js";
 import type { SkippedTerritory } from "../conformance/snapshot.js";
 import { parseSidecar, sidecarPathFor, type DebtSidecar } from "../conformance/debt-sidecar.js";
-import { runConformance, baselineRelFrom, excludedRootsFrom } from "../conformance/cli.js";
+import { runConformance, baselineRelFrom, excludedRootsFrom, coverageRefusal, baselinePackIds } from "../conformance/cli.js";
+import { parseBaseline } from "../conformance/ratchet.js";
 import { DEFAULT_VOCABULARIES } from "@vault-mcp/core";
 import { DEFAULT_SCHEMES } from "../kernel/scheme/registry.js";
 
@@ -51,19 +52,27 @@ export function obsidianDebtSource(app: App, territories?: () => readonly string
 
   return {
     async liveFindings(): Promise<Finding[]> {
+      const text = await baselineText();
       const res = await runConformance({
         root,
         // The REAL baseline, not "" (#400 review): `runConformance` refuses a
         // run whose skipped territories hold accepted keys, and that refusal
         // only exists if it can see them. The tools re-parse the same text for
         // their own diff, which is the one extra disk read this costs.
-        baselineText: await baselineText(),
+        baselineText: text,
         vocabularies: DEFAULT_VOCABULARIES,
         schemes: DEFAULT_SCHEMES,
         excludedRoots,
         legacyPacks: true,
         territories: territories?.(),
       });
+      // #294: a pack the baseline describes that did not run (threw, or its
+      // convention path is dead — #298) would report every one of its accepted
+      // keys CLEARED. The CLI refuses that in `runCli`; this adapter bypasses
+      // `runCli`, so it applies the same refusal here — the exported one, not
+      // a reimplementation, so the two cannot drift.
+      const coverage = coverageRefusal(baselinePackIds(parseBaseline(text)), new Set(res.coveredPackIds), "run");
+      if (coverage) throw new Error(coverage);
       lastSkipped = res.skippedTerritories;
       return res.findings;
     },
