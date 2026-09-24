@@ -37,7 +37,7 @@ describe("deadConventionPaths", () => {
   });
 
   test("a path under an excluded root is skipped, not reported — the walk pruned it, so its absence says nothing", () => {
-    const dead = deadConventionPaths(conv, { dirs: ["Sys"], files: [] }, ["Sys/Registries", "Sys/Artifacts", "Sys/Framework", "Sys/Templates"]);
+    const dead = deadConventionPaths(conv, { dirs: ["Sys"], files: [] }, { excludedRoots: ["Sys/Registries", "Sys/Artifacts", "Sys/Framework", "Sys/Templates"] });
     assert.deepEqual(dead, [{ key: "pluginStackPath", path: "Sys/Plugin stack.md" }]);
   });
 
@@ -46,8 +46,21 @@ describe("deadConventionPaths", () => {
     assert.deepEqual(deadConventionPaths(c, { ...liveWalk, dirs: [...liveWalk.dirs.filter((d) => d !== "Sys/Artifacts"), "Sys/Artifacts/"] }), []);
   });
 
-  test("CONVENTION_PACKS names a pack for every key of VaultConventions, so a new key cannot be silently unmapped", () => {
+  test("a path under a SKIPPED TERRITORY or a skip-dir segment is unobserved, not dead (#401 review)", () => {
+    const dead = deadConventionPaths({ ...conv, registriesRoot: "80-89 Legal/Registries", artifactsRoot: ".obsidian/plugins/x" }, { dirs: ["Sys", "Sys/Framework", "Sys/Templates"], files: ["Sys/Plugin stack.md", "Sys/Templates/Daily.md"] }, { skippedTerritories: [{ path: "80-89 Legal" }], skipDirs: new Set([".obsidian"]) });
+    assert.deepEqual(dead, [], "the walk chose not to look there; absence says nothing");
+  });
+
+  test("an ABSENT listing throws — never reads as everything-dead", () => {
+    assert.throws(() => deadConventionPaths(conv, { files: [] }), /needs the walk's 'dirs' and 'files'/);
+    assert.throws(() => deadConventionPaths(conv, { dirs: [] }), /needs the walk's 'dirs' and 'files'/);
+  });
+
+  test("CONVENTION_PACKS names every key of VaultConventions and every PACK that reads it — pinned against the packs' own sources", () => {
     assert.deepEqual(Object.keys(CONVENTION_PACKS).sort(), Object.keys(DEFAULT_VAULT_CONVENTIONS).sort());
-    for (const v of Object.values(CONVENTION_PACKS)) assert.ok(["drift_audit", "conformance_check", "port_lint", "ste_lint"].includes(v), v);
+    for (const v of Object.values(CONVENTION_PACKS)) for (const id of v) assert.ok(["drift_audit", "conformance_check", "port_lint", "ste_lint"].includes(id), id);
+    // structure.ts reads conv.registriesRoot (blueprint registry) and conv.ungovernedRoots; drift.ts reads the other five plus registriesRoot.
+    assert.deepEqual([...CONVENTION_PACKS.registriesRoot].sort(), ["conformance_check", "drift_audit"], "registriesRoot has TWO readers (#401 review)");
+    assert.deepEqual([...CONVENTION_PACKS.ungovernedRoots], ["conformance_check"]);
   });
 });

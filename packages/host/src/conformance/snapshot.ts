@@ -68,7 +68,7 @@ export interface SnapshotOpts {
   skipDirs?: string[];
 }
 
-const DEFAULT_SKIP = new Set([".git", ".obsidian", ".trash", "node_modules"]);
+export const DEFAULT_SKIP = new Set([".git", ".obsidian", ".trash", "node_modules"]);
 
 // ── territory guard (#157) ──────────────────────────────────────────────
 //
