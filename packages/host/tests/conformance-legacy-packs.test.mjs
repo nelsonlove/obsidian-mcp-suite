@@ -49,6 +49,17 @@ describe("structurePack (conformance_check)", () => {
     assert.equal(f.kind, "Tag.blueprint"); // basename, as the ratchet keyed it
   });
 
+  test("the blueprint registry root is the INJECTED conventions' registriesRoot, not the module constant (#401 review)", () => {
+    const conv = { ...DEFAULT_VAULT_CONVENTIONS, registriesRoot: "Reg" };
+    const bp = { path: "Reg/Tag/Tag.blueprint", text: "---\nx: 1\n---\n## Purpose\n" };
+    const snap = snapshot({ blueprints: [bp], sources: [{ path: "Notes/foo.tag.md", text: '---\nblueprint: "[[Tag.blueprint]]"\n---\n## Purpose\n## Rogue\n' }] });
+    const withConv = structurePack({ conventions: conv }).run(snap);
+    assert.ok(withConv.some((f) => f.check === "DROPPED"), "found under the injected root, so the note's rogue H2 is DROPPED");
+    assert.ok(!withConv.some((f) => f.check === "NO-BLUEPRINT"));
+    const withDefault = structurePack().run(snap);
+    assert.ok(withDefault.some((f) => f.check === "NO-BLUEPRINT"), "under the default root the blueprint is not in the registry index at all");
+  });
+
   test("NO-BLUEPRINT: a note naming a nonexistent blueprint (kind = full wikilink inner)", () => {
     const snap = snapshot({
       blueprints: [tagBp],

@@ -94,23 +94,26 @@ export function vaultConventionsFrom(env: Record<string, string | undefined>): V
 // a vault filing question (#298's own blocking ambiguity), answered by the
 // operator through `GOVERNOR_VAULT_CONVENTIONS`, never by a default.
 
-export type ConventionPathKey = Exclude<keyof VaultConventions, never>;
+export type ConventionPathKey = keyof VaultConventions;
 
 export interface DeadConvention {
   key: ConventionPathKey;
   path: string;
 }
 
-/** Which legacy pack each convention key feeds — the pack that cannot measure
- *  honestly while the key is dead. `port_lint` and `ste_lint` read no
- *  convention. */
-export const CONVENTION_PACKS: Record<ConventionPathKey, string> = {
-  registriesRoot: "drift_audit",
-  systemRoot: "drift_audit",
-  artifactsRoot: "drift_audit",
-  pluginStackPath: "drift_audit",
-  uidExemptPaths: "drift_audit",
-  ungovernedRoots: "conformance_check",
+/** Which legacy packs each convention key feeds — the packs that cannot
+ *  measure honestly while the key is dead. A key can feed more than one:
+ *  `registriesRoot` is both drift's registry-family root and structure's
+ *  blueprint-registry root (#401 review — the first cut listed one reader and
+ *  left `conformance_check` measuring over an empty registry). `port_lint`
+ *  and `ste_lint` read no convention. Pinned against the packs' own sources. */
+export const CONVENTION_PACKS: Record<ConventionPathKey, readonly string[]> = {
+  registriesRoot: ["drift_audit", "conformance_check"],
+  systemRoot: ["drift_audit"],
+  artifactsRoot: ["drift_audit"],
+  pluginStackPath: ["drift_audit"],
+  uidExemptPaths: ["drift_audit"],
+  ungovernedRoots: ["conformance_check"],
 };
 
 const FILE_KEYS: ReadonlySet<ConventionPathKey> = new Set(["pluginStackPath", "uidExemptPaths"]);
@@ -122,24 +125,47 @@ function underAny(path: string, roots: readonly string[]): boolean {
   });
 }
 
+/** What the walk chose NOT to look at — a convention path in here is not
+ *  dead, it is unobserved, and is skipped rather than reported. */
+export interface WalkPruning {
+  /** `--exclude` roots (vault-relative prefixes). */
+  excludedRoots?: readonly string[];
+  /** Guarded territories the walk stepped around (#398). */
+  skippedTerritories?: readonly { path: string }[];
+  /** Directory NAMES the walk never enters anywhere (`.git`, `.obsidian`, …). */
+  skipDirs?: ReadonlySet<string>;
+}
+
 /**
  * Every convention path the walk did not see. `dirs`/`files` are the walk's
- * own listings (vault-relative). A path under an excluded root is skipped, not
- * reported: the walk pruned it, so its absence says nothing about the vault.
+ * own listings (vault-relative) and are REQUIRED: an absent listing throws,
+ * never reads as "everything is dead" — the absence-read-as-emptiness idiom
+ * this rail refuses by name (`requireListing_`). A path under anything the
+ * walk pruned — an excluded root, a skipped territory, a skip-dir segment — is
+ * skipped, not reported: its absence says nothing about the vault.
  * Deterministic: keys in declaration order, list entries in their own order.
  */
 export function deadConventionPaths(
   conv: VaultConventions,
   walk: { dirs?: readonly string[]; files?: readonly string[] },
-  excludedRoots: readonly string[] = [],
+  pruning: WalkPruning = {},
 ): DeadConvention[] {
-  const dirs = new Set((walk.dirs ?? []).map((d) => d.replace(/\/+$/, "")));
-  const files = new Set(walk.files ?? []);
+  if (walk.dirs === undefined || walk.files === undefined) {
+    throw new Error(
+      "deadConventionPaths needs the walk's 'dirs' and 'files' listings. Refusing to treat a missing listing as " +
+        "an empty one: every convention would then read dead and every legacy pack unmeasured.",
+    );
+  }
+  const dirs = new Set(walk.dirs.map((d) => d.replace(/\/+$/, "")));
+  const files = new Set(walk.files);
+  const prunedRoots = [...(pruning.excludedRoots ?? []), ...(pruning.skippedTerritories ?? []).map((t) => t.path)];
+  const skipDirs = pruning.skipDirs ?? new Set<string>();
+  const pruned = (path: string) => underAny(path, prunedRoots) || path.split("/").some((seg) => skipDirs.has(seg));
   const dead: DeadConvention[] = [];
   const check = (key: ConventionPathKey, raw: string) => {
     const path = raw.replace(/\/+$/, "");
-    if (!path || underAny(path, excludedRoots)) return;
-    const live = FILE_KEYS.has(key) ? files.has(path) : dirs.has(path) || path === "";
+    if (!path || pruned(path)) return;
+    const live = FILE_KEYS.has(key) ? files.has(path) : dirs.has(path);
     if (!live) dead.push({ key, path });
   };
   for (const key of Object.keys(CONVENTION_PACKS) as ConventionPathKey[]) {

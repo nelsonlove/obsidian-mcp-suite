@@ -138,8 +138,12 @@ export interface StructurePackOpts {
 }
 
 export function structurePack(opts: StructurePackOpts = {}): RulePack {
-  const registryRoot = (opts.blueprintRoot ?? DEFAULT_BLUEPRINT_ROOT).replace(/\/$/, "");
   const conv = opts.conventions ?? DEFAULT_VAULT_CONVENTIONS;
+  // The INJECTED registries root, not the module constant — the constant
+  // ignored every GOVERNOR_VAULT_CONVENTIONS override of this key, so the
+  // note→blueprint index was built from a root that did not exist and every
+  // note read NO-BLUEPRINT (#401 review; the same defect drift.ts had).
+  const registryRoot = (opts.blueprintRoot ?? conv.registriesRoot).replace(/\/$/, "");
   return {
     id: STRUCTURE_PACK_ID,
     run(snapshot: VaultSnapshot): Finding[] {

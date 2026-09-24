@@ -48,10 +48,15 @@ describe("runConformance", () => {
   test("baseline containing the finding → carried, run passes", async () => {
     const root = await vault();
     try {
-      // first run to learn the exact keys, then baseline them
-      const first = await runConformance({ root, baselineText: "", vocabularies: [{ id: "reg", provider: "blueprint", root: "Reg" }], schemes: [] });
+      // first run to learn the exact keys, then baseline them. Legacy packs
+      // OFF: this pins the vocab ratchet round-trip, and over a fixture whose
+      // conventions are dead the engine's `dead_convention` finding is NEW on
+      // every run BY DESIGN (#298 — it describes configuration, not debt, and
+      // is never rebaseline text), which would fail the "everything carried"
+      // claim for a reason that is not this test's subject.
+      const first = await runConformance({ root, baselineText: "", vocabularies: [{ id: "reg", provider: "blueprint", root: "Reg" }], schemes: [], legacyPacks: false });
       const baselineText = "```ratchet-baseline\n" + first.rebaseline + "\n```\n";
-      const second = await runConformance({ root, baselineText, vocabularies: [{ id: "reg", provider: "blueprint", root: "Reg" }], schemes: [] });
+      const second = await runConformance({ root, baselineText, vocabularies: [{ id: "reg", provider: "blueprint", root: "Reg" }], schemes: [], legacyPacks: false });
       assert.equal(second.ratchet.newKeys.length, 0, "everything now carried");
       assert.equal(second.ratchet.failed, false);
       assert.equal(second.exitCode, 0);
@@ -257,7 +262,14 @@ describe("#298 — a dead convention path is a loud finding and an unmeasured pa
       assert.ok(res.coveredPackIds.includes("port_lint") && res.coveredPackIds.includes("ste_lint"), "packs that read no convention still run");
       assert.ok(!res.findings.some((f) => f.script === "drift_audit"), "a pack with a dead convention emits nothing of its own — not clean, not noise");
       assert.ok(!res.findings.some((f) => f.script === ENGINE_ID && f.check === "pack_error"), "and it does not RUN — it would throw over this fixture (#136), and that throw must not be how it is silenced");
-      assert.match(res.report, /DEAD CONVENTION: registriesRoot = .* — 'drift_audit' not measured/);
+      assert.match(res.report, /DEAD CONVENTION: registriesRoot = .* — 'drift_audit', 'conformance_check' not measured/);
+      assert.ok(!res.rebaseline.includes("conformance_engine|"), "an engine finding is never rebaseline text — it describes the run, and a baseline naming it would refuse every later run as uncovered (#401 review)");
+      // The consequence, stated: over a vault whose conventions are dead the run
+      // is NEW on every run until the operator re-points or retires the packs.
+      // That is the issue's own preference ("silently clean is the one option
+      // that should not stay"), and it cannot be silenced through --rebaseline.
+      const again = await runConformance({ root, baselineText: "```ratchet-baseline\n" + res.rebaseline + "\n```\n", vocabularies: vocab, schemes: [] });
+      assert.ok(again.ratchet.newKeys.some((k) => k.startsWith(`${ENGINE_ID}|dead_convention|`)), "still NEW after a rebaseline");
       assert.ok(res.ratchet.newKeys.some((k) => k.startsWith(`${ENGINE_ID}|dead_convention|`)), "and the finding is NEW, so the run fails loudly");
     } finally {
       await rm(root, { recursive: true, force: true });

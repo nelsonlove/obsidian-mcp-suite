@@ -19,7 +19,7 @@ import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 // `vaultmcp-vocab` satellite's four tools being the other.
 import { VocabRegistry, DEFAULT_VOCABULARIES, type VocabInstanceSettings } from "@vault-mcp/core";
 import { makeRegistry, DEFAULT_SCHEMES, type SchemeInstanceConfig } from "../kernel/scheme/registry.js";
-import { buildSnapshot, type SkippedTerritory } from "./snapshot.js";
+import { buildSnapshot, DEFAULT_SKIP, type SkippedTerritory } from "./snapshot.js";
 import { envAliased } from "../env-alias.js";
 import { intendedRealPath, sameFile, isInside } from "./path-identity.js";
 import { runEngine, ENGINE_ID } from "./engine.js";
@@ -140,8 +140,12 @@ export async function runConformance(opts: RunOpts): Promise<RunResult> {
     // same way a pack that threw is) but does not RUN, because a pack run
     // over a path that names nothing reports clean or reports noise, never
     // the truth. `dead_convention` findings are appended below.
-    deadConventions = deadConventionPaths(conv, snapshot, opts.excludedRoots ?? []);
-    const unmeasured = new Set(deadConventions.map((d) => CONVENTION_PACKS[d.key]));
+    deadConventions = deadConventionPaths(conv, snapshot, {
+      excludedRoots: opts.excludedRoots ?? [],
+      skippedTerritories: snapshot.skippedTerritories ?? [],
+      skipDirs: DEFAULT_SKIP,
+    });
+    const unmeasured = new Set(deadConventions.flatMap((d) => CONVENTION_PACKS[d.key]));
     const legacy: RulePack[] = [structurePack({ conventions: conv }), portPack(), stePack(), driftPack(conv)];
     for (const pack of legacy) {
       packs.push(unmeasured.has(pack.id) ? { id: pack.id, run: () => [] } : pack);
@@ -157,8 +161,8 @@ export async function runConformance(opts: RunOpts): Promise<RunResult> {
       target: d.key,
       kind: d.path,
       detail:
-        `convention '${d.key}' names '${d.path}', which does not exist under the walked root — ` +
-        `the '${CONVENTION_PACKS[d.key]}' pack was not run (it would read clean or noise, not the vault). ` +
+        `convention '${d.key}' names '${d.path}', which this walk did not see under its root — ` +
+        `${CONVENTION_PACKS[d.key].map((id) => `'${id}'`).join(" and ")} not run (they would read clean or noise, not the vault). ` +
         `Set GOVERNOR_VAULT_CONVENTIONS to the live path, or run with legacy packs off.`,
     });
   }
@@ -198,7 +202,11 @@ export async function runConformance(opts: RunOpts): Promise<RunResult> {
     ratchet: result,
     budget,
     report: renderReport(result, packIds, baselinePackIds(baselineKeys), findings, opts.excludedRoots ?? [], budget, snapshot.skippedTerritories ?? [], deadConventions),
-    rebaseline: renderBaseline(findings),
+    // An ENGINE finding — `dead_convention`, `pack_error` — is never accepted
+    // debt: it describes the RUN, not the vault, and `conformance_engine` is
+    // not a pack id, so a baseline naming it would make every later run refuse
+    // as uncovered (#401 review). The rebaseline text carries pack findings only.
+    rebaseline: renderBaseline(findings.filter((f) => f.script !== ENGINE_ID)),
     exitCode,
   };
 }
@@ -654,7 +662,7 @@ function renderReport(
   // A convention that names nothing must never read as "checked and clean"
   // (#298): name the key, the dead path, and the pack that therefore did not run.
   for (const d of deadConventions) {
-    lines.push(`DEAD CONVENTION: ${d.key} = ${d.path} — '${CONVENTION_PACKS[d.key]}' not measured; set GOVERNOR_VAULT_CONVENTIONS`);
+    lines.push(`DEAD CONVENTION: ${d.key} = ${d.path} — ${CONVENTION_PACKS[d.key].map((id) => `'${id}'`).join(", ")} not measured; set GOVERNOR_VAULT_CONVENTIONS`);
   }
   // A pack with NO baseline representation reports its entire output as NEW.
   // Undistinguished, that is indistinguishable from a catastrophic regression —
@@ -990,7 +998,8 @@ export async function runCli(argv: string[]): Promise<void> {
     const sidecarPath = sidecarPathFor(baselinePath);
     const prevSidecarText = existsSync(sidecarPath) ? await readFile(sidecarPath, "utf8") : "";
     const prevSidecar = parseSidecarStrict(prevSidecarText); // throws on a present-but-corrupt sidecar
-    const baselineKeysWritten = new Set(res.findings.map((f) => findingKey(f)));
+    // Same rule as `rebaseline` above: engine findings are not debt.
+    const baselineKeysWritten = new Set(res.findings.filter((f) => f.script !== ENGINE_ID).map((f) => findingKey(f)));
     const nextSidecar = reconcileSidecar(prevSidecar, baselineKeysWritten, {
       acceptedOn: isoDate(now),
       acceptedBy: acceptedByFrom(argv, process.env),
