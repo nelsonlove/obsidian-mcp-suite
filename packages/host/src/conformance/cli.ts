@@ -19,12 +19,12 @@ import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 // `vaultmcp-vocab` satellite's four tools being the other.
 import { VocabRegistry, DEFAULT_VOCABULARIES, type VocabInstanceSettings } from "@vault-mcp/core";
 import { makeRegistry, DEFAULT_SCHEMES, type SchemeInstanceConfig } from "../kernel/scheme/registry.js";
-import { buildSnapshot, type SkippedTerritory } from "./snapshot.js";
+import { buildSnapshot, DEFAULT_SKIP, type SkippedTerritory } from "./snapshot.js";
 import { envAliased } from "../env-alias.js";
 import { intendedRealPath, sameFile, isInside } from "./path-identity.js";
 import { runEngine, ENGINE_ID } from "./engine.js";
 import { vocabPack, schemePack, structurePack, portPack, stePack, driftPack } from "./packs/index.js";
-import { vaultConventionsFrom } from "./vault-conventions.js";
+import { vaultConventionsFrom, deadConventionPaths, CONVENTION_PACKS, type DeadConvention } from "./vault-conventions.js";
 import { parseBaseline, renderBaseline, ratchet, type RatchetResult } from "./ratchet.js";
 import { parseKey, findingKey, type Finding } from "./finding.js";
 import type { RulePack } from "./rule-pack.js";
@@ -89,6 +89,10 @@ export interface RunResult {
   exitCode: 0 | 1;
   /** Ids of every pack registered for this run. */
   packIds: string[];
+  /** Convention paths the walk did not see (#298) — each is also a
+   * `conformance_engine / dead_convention` finding, and its pack is left out of
+   * `coveredPackIds`, so a baseline describing that pack refuses. */
+  deadConventions: DeadConvention[];
   /** Registered packs that did NOT throw — the set the baseline was actually measured against. */
   coveredPackIds: string[];
   /** Debt-budget tooth status (issue #211): the carried count vs the configured
@@ -114,6 +118,8 @@ export async function runConformance(opts: RunOpts): Promise<RunResult> {
   const baselineKeys = parseBaseline(opts.baselineText);
 
   const packs: RulePack[] = [];
+  let deadConventions: DeadConvention[] = [];
+  const unmeasuredPackIds = new Set<string>();
   // vocab providers: built from settings over the snapshot listing (the registry
   // confines each instance to its own root).
   const vocabInstances = new VocabRegistry(opts.vocabularies).build(snapshot.notes);
@@ -129,13 +135,37 @@ export async function runConformance(opts: RunOpts): Promise<RunResult> {
     // module load — an exported constant that varies with ambient env makes
     // the suite non-hermetic (self-review finding on this PR).
     const conv = vaultConventionsFrom(process.env);
-    packs.push(structurePack({ conventions: conv }));
-    packs.push(portPack());
-    packs.push(stePack());
-    packs.push(driftPack(conv));
+    // A dead convention path is loud (#298): the pack that reads it still
+    // REGISTERS (so a baseline describing it is refused as uncovered, the
+    // same way a pack that threw is) but does not RUN, because a pack run
+    // over a path that names nothing reports clean or reports noise, never
+    // the truth. `dead_convention` findings are appended below.
+    deadConventions = deadConventionPaths(conv, snapshot, {
+      excludedRoots: opts.excludedRoots ?? [],
+      skippedTerritories: snapshot.skippedTerritories ?? [],
+      skipDirs: DEFAULT_SKIP,
+    });
+    const unmeasured = new Set(deadConventions.flatMap((d) => CONVENTION_PACKS[d.key]));
+    const legacy: RulePack[] = [structurePack({ conventions: conv }), portPack(), stePack(), driftPack(conv)];
+    for (const pack of legacy) {
+      packs.push(unmeasured.has(pack.id) ? { id: pack.id, run: () => [] } : pack);
+      if (unmeasured.has(pack.id)) unmeasuredPackIds.add(pack.id);
+    }
   }
 
   const findings = runEngine(packs, snapshot);
+  for (const d of deadConventions) {
+    findings.push({
+      script: ENGINE_ID,
+      check: "dead_convention",
+      target: d.key,
+      kind: d.path,
+      detail:
+        `convention '${d.key}' names '${d.path}', which this walk did not see under its root — ` +
+        `${CONVENTION_PACKS[d.key].map((id) => `'${id}'`).join(" and ")} not run (they would read clean or noise, not the vault). ` +
+        `Set GOVERNOR_VAULT_CONVENTIONS to the live path, or run with legacy packs off.`,
+    });
+  }
   const result = ratchet(findings, baselineKeys);
   // #398's one rule for a skip: it must never become a silent CLEARED. Two ways
   // it could, both refused here, after the ratchet so the second is visible:
@@ -156,7 +186,7 @@ export async function runConformance(opts: RunOpts): Promise<RunResult> {
   const errored = new Set(
     findings.filter((f) => f.script === ENGINE_ID && f.check === "pack_error").map((f) => f.target),
   );
-  const coveredPackIds = packIds.filter((id) => !errored.has(id));
+  const coveredPackIds = packIds.filter((id) => !errored.has(id) && !unmeasuredPackIds.has(id));
   // Debt-budget tooth (#211): warn when carried debt exceeds the configured
   // ceiling. Warn-only unless `strictBudget` — then an over-budget run also
   // fails, alongside the ordinary NEW-findings gate. A NEW-findings failure
@@ -167,11 +197,16 @@ export async function runConformance(opts: RunOpts): Promise<RunResult> {
     packIds,
     coveredPackIds,
     findings,
+    deadConventions,
     skippedTerritories: snapshot.skippedTerritories ?? [],
     ratchet: result,
     budget,
-    report: renderReport(result, packIds, baselinePackIds(baselineKeys), findings, opts.excludedRoots ?? [], budget, snapshot.skippedTerritories ?? []),
-    rebaseline: renderBaseline(findings),
+    report: renderReport(result, packIds, baselinePackIds(baselineKeys), findings, opts.excludedRoots ?? [], budget, snapshot.skippedTerritories ?? [], deadConventions),
+    // An ENGINE finding — `dead_convention`, `pack_error` — is never accepted
+    // debt: it describes the RUN, not the vault, and `conformance_engine` is
+    // not a pack id, so a baseline naming it would make every later run refuse
+    // as uncovered (#401 review). The rebaseline text carries pack findings only.
+    rebaseline: renderBaseline(findings.filter((f) => f.script !== ENGINE_ID)),
     exitCode,
   };
 }
@@ -605,6 +640,7 @@ function renderReport(
   excludedRoots: string[] = [],
   budget?: DebtBudgetStatus,
   skippedTerritories: readonly SkippedTerritory[] = [],
+  deadConventions: readonly DeadConvention[] = [],
 ): string {
   const lines: string[] = [];
   lines.push(`conformance: ${r.carried} carried, ${r.newKeys.length} NEW, ${r.clearedKeys.length} cleared`);
@@ -622,6 +658,11 @@ function renderReport(
   if (skippedTerritories.length) {
     const shown = skippedTerritories.map((t) => `${t.path} (guarded territory '${t.territory}')`).join(", ");
     lines.push(`guarded (not scanned, no claim made): ${shown} — listed in guarded territories`);
+  }
+  // A convention that names nothing must never read as "checked and clean"
+  // (#298): name the key, the dead path, and the pack that therefore did not run.
+  for (const d of deadConventions) {
+    lines.push(`DEAD CONVENTION: ${d.key} = ${d.path} — ${CONVENTION_PACKS[d.key].map((id) => `'${id}'`).join(", ")} not measured; set GOVERNOR_VAULT_CONVENTIONS`);
   }
   // A pack with NO baseline representation reports its entire output as NEW.
   // Undistinguished, that is indistinguishable from a catastrophic regression —
@@ -664,7 +705,7 @@ function renderReport(
  * assumption about somebody's folder layout.
  */
 export const DEFAULT_BASELINE_REL =
-  "00-09 System/00 System management/00.89 obsidian-governor/Build/Conformance baseline.md";
+  "00-09 System/00 System management/00.89 obsidian-mcp-suite/Build/Conformance baseline.md";
 
 /** The baseline's vault-relative path for this invocation. */
 export function baselineRelFrom(env: Record<string, string | undefined>): string {
@@ -866,7 +907,15 @@ export async function runCli(argv: string[]): Promise<void> {
   const baselineIds = baselinePackIds(parseBaseline(baselineText));
   const covered = new Set(res.coveredPackIds);
   const coverage = coverageRefusal(baselineIds, covered, rebaseline ? "--rebaseline" : "run");
-  if (coverage) throw new Error(coverage);
+  if (coverage) {
+    // The refusal says "did not run (or threw)". When the cause is a dead
+    // convention (#298) the pack did not run BECAUSE its path names nothing,
+    // and the real remedy is GOVERNOR_VAULT_CONVENTIONS — which the report
+    // names and this throw would otherwise discard. Say the cause with the
+    // refusal (#401 review).
+    const dead = res.deadConventions.map((d) => `  ${d.key} = ${d.path} (${CONVENTION_PACKS[d.key].join(", ")})`);
+    throw new Error(dead.length ? `${coverage}\nThe unmeasured pack(s) read a DEAD convention path — set GOVERNOR_VAULT_CONVENTIONS to the live path:\n${dead.join("\n")}` : coverage);
+  }
 
   // Trend (#211, A3): one append-only record per run capturing the burn-down
   // numbers, beside the baseline. Best-effort — a broken trend log never fails
@@ -957,7 +1006,8 @@ export async function runCli(argv: string[]): Promise<void> {
     const sidecarPath = sidecarPathFor(baselinePath);
     const prevSidecarText = existsSync(sidecarPath) ? await readFile(sidecarPath, "utf8") : "";
     const prevSidecar = parseSidecarStrict(prevSidecarText); // throws on a present-but-corrupt sidecar
-    const baselineKeysWritten = new Set(res.findings.map((f) => findingKey(f)));
+    // Same rule as `rebaseline` above: engine findings are not debt.
+    const baselineKeysWritten = new Set(res.findings.filter((f) => f.script !== ENGINE_ID).map((f) => findingKey(f)));
     const nextSidecar = reconcileSidecar(prevSidecar, baselineKeysWritten, {
       acceptedOn: isoDate(now),
       acceptedBy: acceptedByFrom(argv, process.env),
@@ -967,11 +1017,13 @@ export async function runCli(argv: string[]): Promise<void> {
     await writeFile(baselinePath, next);
     await writeFile(sidecarPath, serializeSidecar(nextSidecar));
 
-    process.stdout.write(`rebaselined ${baselinePath} (${res.findings.length} findings)\n`);
+    process.stdout.write(`rebaselined ${baselinePath} (${baselineKeysWritten.size} findings)\n`);
 
-    // Refresh the register from the POST-rebaseline state (every live key is
-    // now accepted; cleared/new are zero by construction) — when asked, or when
-    // a register already exists (it just went stale). Never created unasked.
+    // Refresh the register from the POST-rebaseline state (every live PACK key
+    // is now accepted; engine findings are never accepted, so a dead
+    // convention still reads NEW here — correctly, the next run fails on it) —
+    // when asked, or when a register already exists (it just went stale).
+    // Never created unasked.
     if (renderRegister || existsSync(registerPath)) {
       await renderRegisterTo(baselineKeysWritten, nextSidecar);
     }

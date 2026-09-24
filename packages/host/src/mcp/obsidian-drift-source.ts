@@ -12,10 +12,11 @@
 // conformance/drift-view.ts's newSchemeDrift, matching the original
 // jd-dashboard drift panel's "show me what's newly wrong" framing.
 //
-// That difference is exactly why this file, unlike obsidian-debt-source.ts,
-// MUST run the two pre-flight refusals `cli.ts`'s `main()` runs before
-// calling `runConformance` — `runConformance` itself has no such guard, it
-// trusts whatever `baselineText`/`excludedRoots` it's handed:
+// That difference is exactly why this file MUST run the pre-flight refusals
+// `cli.ts`'s `runCli` runs before calling `runConformance` — `runConformance`
+// itself has no such guard, it trusts whatever `baselineText`/`excludedRoots`
+// it's handed (obsidian-debt-source.ts runs only the post-run coverage
+// refusal, #294, because it discards the ratchet — see below):
 //
 //   - `baselineMissingRefusal`: a MISSING baseline must never silently read
 //     as empty. An empty baseline makes EVERY live finding read NEW — a
@@ -46,6 +47,8 @@ import {
   excludedRootsFrom,
   baselineMissingRefusal,
   excludedRootRefusal,
+  coverageRefusal,
+  baselinePackIds,
 } from "../conformance/cli.js";
 import { parseBaseline } from "../conformance/ratchet.js";
 import { newSchemeDrift, type DriftGroup } from "../conformance/drift-view.js";
@@ -65,8 +68,9 @@ export interface DriftPaneSource {
   /** Run the conformance engine and return the scheme pack's NEW findings
    *  (not already-accepted debt), grouped by check. Throws (surfaced by the
    *  pane as an error state, never silently swallowed into a wrong result)
-   *  when the baseline is missing or an excluded root would strand accepted
-   *  debt — see this file's header. */
+   *  when the baseline is missing, an excluded root would strand accepted
+   *  debt, or a pack the baseline describes did not run (#294) — see this
+   *  file's header. */
   scan(): Promise<DriftGroup[]>;
 }
 
@@ -93,6 +97,11 @@ export function obsidianDriftSource(app: App, territories?: () => readonly strin
         legacyPacks: true,
         territories: territories?.(),
       });
+      // #294: the same refusal `runCli` applies — a pack the baseline describes
+      // that did not run (threw, or dead convention path, #298) must not read
+      // as CLEARED. Exported function, never reimplemented, in both adapters.
+      const coverage = coverageRefusal(baselinePackIds(parseBaseline(baselineText)), new Set(res.coveredPackIds), "run");
+      if (coverage) throw new Error(coverage);
       return newSchemeDrift(res.findings, res.ratchet);
     },
   };
