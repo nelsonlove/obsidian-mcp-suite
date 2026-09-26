@@ -90,6 +90,12 @@ function acceptReasonForBlock(block: string, parseYaml?: (yaml: string) => unkno
     if (/acceptance[-_]status/i.test(block) && /\baccepted\b|accepted[-_]/i.test(block)) {
       return "carries an accepted acceptance-status fence";
     }
+    // The live verification key (#406): a block real YAML rejects that carries a
+    // `verified…:` line is suspect, not let through — the same treatment as the
+    // declared properties below, for the one key the vault actually confirms with.
+    if (/^\s*verified([-_ ][^:\n]*)?\s*:/im.test(block)) {
+      return "carries a fence mentioning the verification field 'verified'";
+    }
     // Same suspect-not-through treatment for the declared protected properties
     // (#224): a block real YAML rejects cannot be judged structurally, so one
     // that mentions a declared key textually (either separator form) refuses

@@ -232,6 +232,7 @@ string check misses:
 
 - **A key** is acceptance-provenance if it matches `/^accepted([-_ ].*)?$/` (case-insensitive,
   trimmed): `accepted`, `accepted-by`, `accepted-on`, `accepted_by`, `accepted on`, …
+- **The live verification key** (#406, ruled 2026-09-26) is guarded beside that retired family: a key matching `/^verified([-_ ].*)?$/` (`verified`, `verified-by`, `verified_on`, …) may not be introduced or changed by an agent write, a byte-identical carry-forward of a human's record is allowed, and a **present-but-empty** value (`[]`, `{}`, `""`, null) is refused outright, carry-forward included, because a key that is present and empty reads as a field somebody may fill in (01.41 The accept perimeter, rule 2a). Since the vault retired `accepted*`, `verified` is the key that actually confirms a note, so this is the half of the floor that matters day to day; the retired family stays guarded, so a stray old-format note is not re-accepted by accident.
 - **A value** *asserts* acceptance if — across **every value-type it can take** — it resolves
   to `accepted` / `accepted-*`:
   - a **scalar string** (`accepted`, `accepted-by-nelson`);

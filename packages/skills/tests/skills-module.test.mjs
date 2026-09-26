@@ -157,6 +157,20 @@ describe("guardSkillsMark: a skills-mark can never introduce an acceptance asser
     );
   });
 
+  test("INTRODUCING the live `verified` field is REFUSED the same way (#406) — via a field prefix that would write `verified-*` keys", () => {
+    assert.throws(
+      () => guardSkillsMark({}, { type: "skill" }, { ...PREFIX, prefix: "verified-" }),
+      AcceptForbiddenError,
+    );
+  });
+
+  test("PRESERVING a human's `verified` record forward is ALLOWED; a blank one is refused even as carry-forward (#406)", () => {
+    const human = [{ by: "Nelson", on: "2026-09-17T06:26", said: "yes" }];
+    const result = guardSkillsMark({ verified: human }, { type: "agent" }, PREFIX);
+    assert.equal(result.set.type, "agent");
+    assert.throws(() => guardSkillsMark({ verified: [] }, { type: "agent" }, PREFIX), AcceptForbiddenError);
+  });
+
   test("PRESERVING an existing (human-granted) accepted value forward is ALLOWED", () => {
     // The note already carries a human-set acceptance-status: accepted; a normal
     // mark adds `type` and leaves the accepted value untouched → not a transition.
