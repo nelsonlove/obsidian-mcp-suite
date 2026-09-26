@@ -14,6 +14,7 @@
 
 import { PluginSettingTab, Setting, type App } from "obsidian";
 import { SKILLS_FIELDS } from "./settings.js";
+import { parseTypeMapLines, typeMapLines, typeMapOf } from "./kernel/index.js";
 import { DEFAULT_SKILLS_CONFIG, validateSkillsConfig } from "./kernel/index.js";
 
 /** What the tab needs from the plugin — kept structural so the tab never
@@ -46,6 +47,26 @@ export class SkillsSettingTab extends PluginSettingTab {
         setting.addDropdown((d) => {
           for (const option of field.options ?? []) d.addOption(option, option);
           d.setValue(String(valueOf(field.key) ?? "")).onChange(commit);
+        });
+      } else if (field.type === "lines" || field.type === "typemap") {
+        // A textarea, committed on BLUR — saving per keystroke walks a list
+        // through states like ["0"] that read as real entries (the host's
+        // territories field learned the same lesson).
+        setting.addTextArea((t) => {
+          const current = valueOf(field.key);
+          t.setValue(field.type === "typemap"
+            ? typeMapLines(typeMapOf(current))
+            : Array.isArray(current) ? (current as unknown[]).map(String).join("\n") : "");
+          t.inputEl.rows = 5;
+          t.inputEl.addEventListener("blur", () => {
+            if (field.type === "typemap") {
+              const { map } = parseTypeMapLines(t.inputEl.value);
+              commit(map);
+            } else {
+              commit(t.inputEl.value.split("\n").map((l) => l.trim()).filter(Boolean));
+            }
+            this.display(); // re-render so validation problems reflect what was just saved
+          });
         });
       } else if (field.type === "number") {
         setting.addText((t) =>

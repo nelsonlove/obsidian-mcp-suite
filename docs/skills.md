@@ -3,9 +3,7 @@
 > **Deep reference for the shipped implementation.** Canonical concepts and the target design live in the [documentation corpus](README.md); what is shipped versus target is owned by [status-and-compatibility.md](status-and-compatibility.md). Since the S4 satellite extraction (`docs/suite-split-design.md` §6), this reference documents the standalone `vaultmcp-skills` plugin, not a module of the host plugin (`vault-mcp`).
 
 
-The `vaultmcp-skills` plugin (default off, mutating) compiles the vault's `type: skill` / `agent` /
-`policy` / `command` notes into a Claude Code plugin on disk: `skills/<name>/SKILL.md`,
-`agents/<name>.md`, `commands/<name>.md`. Three read tools (`vaultmcp_skills_validate`,
+The `vaultmcp-skills` plugin (default off, mutating) compiles the vault's skill / agent / policy / command notes into a Claude Code plugin on disk: `skills/<name>/SKILL.md`, `agents/<name>.md`, `commands/<name>.md`. Which vault `type` value means which kind (`Person/Agent = agent`, `Note/AgentPolicy = policy`, …) and which folders are read are both settings that ship EMPTY (#404): the plugin assumes nothing about a vault's class names or layout, so nothing compiles until the type map and the folders are set, and the plugin says so. Three read tools (`vaultmcp_skills_validate`,
 `vaultmcp_skills_tree`, `vaultmcp_skills_preview`), three mutating (`vaultmcp_skills_export`,
 `vaultmcp_skills_release`, `vaultmcp_skills_mark`).
 
@@ -123,8 +121,12 @@ emitted plugin, not a claim about anything else the agent can reach.
 ## Config
 
 The `vaultmcp-skills` plugin's own settings tab (formerly rendered as `modules.skills.config` in the host's config tab — see "Now a satellite plugin" above for the one-shot adoption path): `outputDir`, `pluginName`, `typeSource`
-(`frontmatter` | `tags`), `tagPrefix`, `fieldMode` (`prefix` | `nested`), `fieldPrefix`,
+(`frontmatter` | `tags`), `typeMap`, `includeRoots`, `excludeRoots`, `tagPrefix`, `fieldMode` (`prefix` | `nested`), `fieldPrefix`,
 `fieldKey`, `assetsRoot`, `releaseDir`, `exportOnSave` (GUI only), `preloadCap` (default 5).
+
+**`typeMap`** (frontmatter mode only) is one line per vault type, `<vault type> = <kind>`, kind one of `skill` / `agent` / `policy` / `command`; case-sensitive. It ships EMPTY, so in frontmatter mode nothing is exportable until the operator maps their classes; validation and the preview warn "type map is EMPTY", and the compile warns once per `type` value that looks like a kind but is unmapped (for example a vault spelling `Note/AgentPolicy` with no map line). `mark` writes the MAPPED spelling into the note and refuses a kind the map does not name. Tags mode does not use the map.
+
+**`includeRoots`** / **`excludeRoots`** are one vault folder per line. Only notes under an include root and under no exclude root are read; an entry covers its folder and everything below it under the same boundary rule the host's guarded territories use (`03 Agents/03.18` covers that folder, not `03 Agents/03.180 …`). Include roots ship EMPTY, which reads nothing, and the compile warns "include roots are EMPTY". The roots narrow the vault the compile sees; they do not partially compile it: a `parent:` that resolves to a note outside the roots is reported as an error on the child (`unresolved parent`), never silently re-hung. Leave out any folder Claude Code already loads natively (one symlinked as `~/.claude/agents`, say), or its agents load twice. Export-on-save and the `mark` agent picker honour the same roots.
 
 `preload` and `no-skills` are ordinary vaultmcp-skills fields: they are namespaced by the same
 `fieldMode` as `type` / `parent` / `description` (`vs-preload` in prefix mode with prefix `vs-`,
