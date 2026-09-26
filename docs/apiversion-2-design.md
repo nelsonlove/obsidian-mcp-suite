@@ -1,6 +1,6 @@
 # apiVersion 2 — design (#399)
 
-Status: **draft for Nelson's ruling**, 2026-09-24. Nothing here is built. Three members, one bump, and a sequencing rule that keeps every shipped satellite working through it. Written by the `[C2] vault-mcp-suite` session; rulings go in the Decisions section at the end, in Nelson's words.
+Status: **ruled 2026-09-26** (see Decisions). Nothing here is built yet; v2 = members 2 and 3, member 1 deferred to v3. Three members, one bump, and a sequencing rule that keeps every shipped satellite working through it. Written by the `[C2] vault-mcp-suite` session; rulings go in the Decisions section at the end, in Nelson's words.
 
 ## 1. Why one bump, and why now
 
@@ -129,4 +129,8 @@ The contract test (`packages/vault-mcp-api/tests/contract.test.ts`) pins each ne
 
 ## Decisions
 
-(Nelson's rulings, in his words, dated.)
+**2026-09-26, Nelson, in-session: "a -- your picks."** All three §7 questions take the recommended answer:
+
+1. **Resolver trust — inactive until listed.** A registered resolver does nothing until its owner's raw plugin id is in `trustedAddressResolvers` (default empty, disclosed in the settings tab). An inactive resolver's refs read `address_unresolved`, with the setting named.
+2. **Version is a floor.** The SDK accepts `apiVersion >= 1`; members are detected by presence. No capability-flag array.
+3. **The resolver hook waits.** apiVersion 2 ships members 2 and 3 (partial-result envelope, caller scope). Member 1 ships as apiVersion 3 when a second real scheme exists to consume it — the S8 rule against inventing a hook only the host uses stands. §6's step B therefore carries only `partial` detection and `CallContext`; the resolver registry, step 1c and `trustedAddressResolvers` move to a v3 issue filed when that scheme appears. Step C (moving scheme out) waits with it.
