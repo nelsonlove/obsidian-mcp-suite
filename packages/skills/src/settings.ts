@@ -30,6 +30,7 @@
 // adoption still gets its one chance.
 
 import { DEFAULT_SKILLS_CONFIG } from "./kernel/index.js";
+import { parseTypeMapLines } from "./kernel/skills-config.js";
 
 /** The satellite's persisted settings (its own data.json). */
 export interface SkillsPluginSettings {
@@ -103,6 +104,19 @@ export function adoptHostConfig(
 // help text is the user-facing documentation of each key, so it moves with the
 // keys rather than being rewritten.
 
+/** What a textarea field's raw text means, pure so the tab's commit rule is
+ *  headless-testable: a `typemap` parses `<vault type> = <kind>` lines and
+ *  reports every bad line as a problem; `lines` is one entry per non-blank
+ *  line. The tab commits `value` only when `problems` is empty — a mistyped
+ *  line must stay in front of the user, never be dropped in silence. */
+export function textAreaValue(field: SkillsField, raw: string): { value: unknown; problems: string[] } {
+  if (field.type === "typemap") {
+    const { map, problems } = parseTypeMapLines(raw);
+    return { value: map, problems };
+  }
+  return { value: raw.split("\n").map((l) => l.trim()).filter(Boolean), problems: [] };
+}
+
 export type SkillsFieldType = "text" | "select" | "toggle" | "number" | "lines" | "typemap";
 
 export interface SkillsField {
@@ -118,7 +132,7 @@ export const SKILLS_FIELDS: SkillsField[] = [
   { key: "pluginName", label: "Plugin name", type: "text", help: "Claude Code plugin name — also the command/subagent namespace." },
   { key: "typeSource", label: "Type source", type: "select", options: ["frontmatter", "tags"], help: "How a note declares its kind: the `type` frontmatter field, or a kind tag." },
   { key: "typeMap", label: "Type map", type: "typemap", help: "Frontmatter mode only. One line per vault type, `<vault type> = <kind>`, kind one of skill / agent / policy / command — e.g. `Note/AgentPolicy = policy`, `Person/Agent = agent`. Ships EMPTY: this plugin does not assume your class names, so nothing compiles until you map them. Case-sensitive." },
-  { key: "includeRoots", label: "Folders to compile", type: "lines", help: "One vault folder per line. Only notes under these are read. Ships EMPTY, which means nothing is read. An entry covers its folder and everything under it; end it with / to mean exactly that folder. Leave OUT any folder Claude Code already loads natively (for example one symlinked as ~/.claude/agents), or its agents load twice." },
+  { key: "includeRoots", label: "Folders to compile", type: "lines", help: "One vault folder per line. Only notes under these are read. Ships EMPTY, which means nothing is read. An entry covers its folder and everything below it, but not a name that merely continues it (`03.18` does not cover `03.180 …`); end it with / to pin the folder name exactly (`Archive/` does not cover `Archive Old/`, and still covers everything below Archive). Matching ignores case. Leave OUT any folder Claude Code already loads natively (for example one symlinked as ~/.claude/agents), or its agents load twice." },
   { key: "excludeRoots", label: "Folders to skip", type: "lines", help: "Folders under a compiled folder the compiler must not read — a template folder, a natively-loaded folder. Same matching rule as above." },
   { key: "tagPrefix", label: "Tag prefix", type: "text", help: "Tags mode: kind tags are #{prefix}skill / #{prefix}agent / … (e.g. agent/ → #agent/skill)." },
   { key: "fieldMode", label: "Frontmatter field mode", type: "select", options: ["prefix", "nested"], help: "How vault-skills fields are namespaced: prefix (bare/prefixed top-level fields) or nested (all under one key)." },

@@ -89,6 +89,15 @@ export function inRoots(path: string, include: readonly string[] | undefined, ex
   if (include === undefined) return true;
   return include.some((r) => matchesTerritoryPrefix(path, r));
 }
+/** The vault paths of the AGENT notes a mark could attach to: inside the roots and
+ *  mapped to `agent`, exactly as the compile would see them. Pure, so the GUI
+ *  picker's filter (commands.ts) is pinned headlessly rather than read as a claim. */
+export function agentCandidates(notes: ReadonlyArray<{ path: string; frontmatter?: Record<string, unknown> | null }>, fields: DetectConfig): string[] {
+  return notes
+    .filter((n) => n.frontmatter && inRoots(n.path, fields.includeRoots, fields.excludeRoots))
+    .filter((n) => detectKind(fieldView(n.frontmatter!, fields).view, n.frontmatter!, fields) === "agent")
+    .map((n) => n.path);
+}
 export function isExportableType(type: unknown): type is ExportableKind {
   return (EXPORTABLE_TYPES as readonly unknown[]).includes(type);
 }
@@ -248,11 +257,29 @@ export async function collectNotes(src: SkillsSource, fields: DetectConfig = DEF
   if (fields.includeRoots !== undefined && fields.includeRoots.length === 0) {
     warnings?.push("include roots are EMPTY — nothing was read; name the folders to compile in the plugin settings");
   }
+  // An EMPTY map (the plugin's shipped default) makes no note exportable in
+  // frontmatter mode, and a vault whose class names do not look like a kind
+  // would otherwise compile nothing in silence — the unmapped-spelling warning
+  // above only fires for spellings that contain a kind word. Say it once.
+  if ((fields.typeSource ?? "frontmatter") === "frontmatter" && fields.typeMap !== undefined && Object.keys(fields.typeMap).length === 0) {
+    warnings?.push("type map is EMPTY — in frontmatter mode no note is exportable; map your vault types (e.g. `Person/Agent = agent`) in the plugin settings");
+  }
   return notes;
 }
 
 export async function runExport(src: SkillsSource, opts: ExportOptions): Promise<ExportSummary> {
-  const { generated, warnings, errors, vaultPath } = await collectAndTransform(src, opts.fields ?? DEFAULT_FIELDS, opts.pluginName, opts.preloadCap);
+  const { notes, generated, warnings, errors, vaultPath } = await collectAndTransform(src, opts.fields ?? DEFAULT_FIELDS, opts.pluginName, opts.preloadCap);
+
+  // A compile that read NO note is a misconfiguration, never an intent: with
+  // the shipped empty roots or an empty type map the first export after an
+  // upgrade would otherwise remove every file of the previous export (the
+  // stale-cleanup below deletes whatever the last manifest listed and this run
+  // did not produce). Refuse, and say why, before anything on disk is touched.
+  if (notes.length === 0) {
+    const previous = readManifestFiles(opts.outputDir).length;
+    const why = warnings.length ? ` (${warnings.join("; ")})` : "";
+    throw new Error(`nothing to export: the compile read no skill/agent/policy/command note${why} — refusing rather than remove the ${previous} file(s) of the previous export in ${opts.outputDir}; name the folders and the type map in the plugin settings`);
+  }
 
   ensurePluginManifest(opts.outputDir, opts.pluginName, opts.pluginDescription, opts.version);
 

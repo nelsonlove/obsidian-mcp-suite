@@ -20,7 +20,12 @@ import {
 import {
   DEFAULT_SKILLS_CONFIG, skillsConfigOf, fieldsOf, typeMapOf, parseTypeMapLines, typeMapLines, validateSkillsConfig,
 } from "../src/kernel/skills-config.ts";
-import { handleNoteChanged } from "../src/export-trigger.ts";
+import { handleNoteChanged, handleNoteRenamed } from "../src/export-trigger.ts";
+import { runExport, agentCandidates } from "../src/kernel/exporter.ts";
+import { textAreaValue, SKILLS_FIELDS } from "../src/settings.ts";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 /** A fake SkillsSource over a note list. */
 function sourceOf(notes) {
@@ -235,5 +240,91 @@ describe("export-on-save honours the roots", () => {
   test("a typed note INSIDE the roots requests an export; the same note OUTSIDE does not", () => {
     assert.equal(deps("In/P.md", ["In"]), 1);
     assert.equal(deps("Out/P.md", ["In"]), 0);
+  });
+});
+
+describe("the #405 review's findings, pinned", () => {
+  test("an export that compiled ZERO notes refuses before touching disk — the previous export survives a first run under the empty defaults", async () => {
+    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "vaultmcp-skills-404-"));
+    try {
+      const full = sourceOf([{ path: "In/A.md", frontmatter: fm("Person/Agent", { name: "a", description: "a" }), body: "" }]);
+      const first = await runExport(full, { outputDir, pluginName: "t", fields: F({ typeMap: VAULT_MAP, includeRoots: ["In"] }) });
+      assert.ok(first.errors.length === 0, first.errors.join("\n"));
+      const before = fs.readdirSync(path.join(outputDir, "agents"));
+      assert.ok(before.includes("a.md"), "the first export wrote the agent");
+      // The upgrade case: shipped defaults, empty map and empty roots.
+      await assert.rejects(
+        () => runExport(full, { outputDir, pluginName: "t", fields: F({ typeMap: {}, includeRoots: [] }) }),
+        (e) => /nothing to export/.test(e.message) && /include roots are EMPTY/.test(e.message) && /type map is EMPTY/.test(e.message) && /refusing rather than remove/.test(e.message),
+      );
+      assert.deepEqual(fs.readdirSync(path.join(outputDir, "agents")), before, "nothing was removed");
+    } finally {
+      fs.rmSync(outputDir, { recursive: true, force: true }); // an mkdtemp scratch dir of this test's own
+    }
+  });
+
+  test("an EMPTY type map warns in frontmatter mode even when no spelling looks like a kind — silence is not an option", async () => {
+    const src = sourceOf([{ path: "In/x.md", frontmatter: fm("Note/Doctrine"), body: "" }]);
+    const warnings = [];
+    await collectNotes(src, F({ typeMap: {}, includeRoots: ["In"] }), warnings);
+    assert.ok(warnings.some((w) => /type map is EMPTY/.test(w)), warnings.join("\n"));
+    const none = [];
+    await collectNotes(src, F({ typeMap: {}, includeRoots: ["In"], typeSource: "tags" }), none);
+    assert.ok(!none.some((w) => /type map is EMPTY/.test(w)), "tags mode does not use the map");
+    const kernel = [];
+    await collectNotes(src, F({ includeRoots: ["In"] }), kernel);
+    assert.ok(!kernel.some((w) => /type map is EMPTY/.test(w)), "no map at all is the kernel's identity map, not an empty one");
+  });
+
+  test("a typed note renamed OUT of the roots (or into them) requests the export; a rename that stays outside does not", () => {
+    const calls = [];
+    const deps = {
+      isEnabled: () => true,
+      fields: () => F({ typeMap: VAULT_MAP, includeRoots: ["In"] }),
+      getFrontmatter: () => fm("Person/Agent", { name: "a" }),
+      requestExport: () => calls.push(1),
+    };
+    handleNoteRenamed({ path: "Out/a.md" }, "In/a.md", deps);
+    assert.equal(calls.length, 1, "moved out: the compiled file must go");
+    handleNoteRenamed({ path: "In/a.md" }, "Out/a.md", deps);
+    assert.equal(calls.length, 2, "moved in: the note must be compiled");
+    handleNoteRenamed({ path: "Elsewhere/a.md" }, "Out/a.md", deps);
+    assert.equal(calls.length, 2, "outside to outside: nothing to do");
+    handleNoteRenamed({ path: "Out/a.md" }, "In/a.md", { ...deps, getFrontmatter: () => undefined });
+    assert.equal(calls.length, 3, "cache not ready yet but it LEFT the roots: export anyway, the safe direction");
+    handleNoteRenamed({ path: "Out/a.md" }, "In/a.md", { ...deps, isEnabled: () => false });
+    assert.equal(calls.length, 3, "export-on-save off: nothing");
+  });
+
+  test("spellingFor: when two vault spellings map to one kind, the FIRST in map order is what mark writes", () => {
+    const map = { "Person/Agent": "agent", "Person/Agent/Legacy": "agent", "Note/Skill": "skill" };
+    assert.equal(spellingFor("agent", map), "Person/Agent");
+    assert.equal(spellingFor("skill", map), "Note/Skill");
+    assert.equal(spellingFor("policy", map), null);
+  });
+
+  test("the GUI mark picker's agent list is the compile's view: inside the roots, mapped to agent, nothing else", () => {
+    const notes = [
+      { path: "In/a.md", frontmatter: fm("Person/Agent", { name: "a" }) },
+      { path: "In/Skip/b.md", frontmatter: fm("Person/Agent", { name: "b" }) },
+      { path: "Out/c.md", frontmatter: fm("Person/Agent", { name: "c" }) },
+      { path: "In/d.md", frontmatter: fm("Note/Skill", { name: "d" }) },
+      { path: "In/e.md", frontmatter: fm("agent", { name: "e" }) },
+      { path: "In/f.md", frontmatter: null },
+    ];
+    assert.deepEqual(agentCandidates(notes, F({ typeMap: VAULT_MAP, includeRoots: ["In"], excludeRoots: ["In/Skip"] })), ["In/a.md"]);
+    assert.deepEqual(agentCandidates(notes, F({ typeMap: VAULT_MAP, includeRoots: [] })), [], "empty roots: no candidate");
+    assert.deepEqual(agentCandidates(notes, F({})), ["In/e.md"], "the kernel's identity map: the bare spelling only");
+  });
+
+  test("a mistyped type-map line is a problem the tab must show, not a line it drops", () => {
+    const field = SKILLS_FIELDS.find((f) => f.key === "typeMap");
+    const bad = textAreaValue(field, "Person/Agent = agent\nNote/AgentPolicy = polciy");
+    assert.equal(bad.problems.length, 1, bad.problems.join("\n"));
+    assert.ok(/polciy/.test(bad.problems[0]));
+    const good = textAreaValue(field, "Person/Agent = agent\n\n  Note/AgentPolicy = policy  ");
+    assert.deepEqual(good, { value: { "Person/Agent": "agent", "Note/AgentPolicy": "policy" }, problems: [] });
+    const roots = textAreaValue(SKILLS_FIELDS.find((f) => f.key === "includeRoots"), " A \n\nB/C\n");
+    assert.deepEqual(roots, { value: ["A", "B/C"], problems: [] });
   });
 });

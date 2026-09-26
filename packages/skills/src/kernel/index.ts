@@ -19,6 +19,7 @@ export {
   readPluginVersion,
   markFrontmatter,
   applyMark,
+  agentCandidates,
   detectKind,
   fieldView,
   DEFAULT_FIELDS,
