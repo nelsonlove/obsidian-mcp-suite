@@ -70,6 +70,10 @@ describe("deadConventionPaths", () => {
     const drift = read("drift.ts"), structure = read("structure.ts");
     assert.match(drift, /conv\.systemRoot/); assert.doesNotMatch(drift, /conv\.registriesRoot|conv\.ungovernedRoots/);
     assert.match(structure, /registriesRoot/); assert.match(structure, /ungovernedRoots/); assert.doesNotMatch(structure, /systemRoot/);
+    // ste_lint reads registriesRoot only to NARROW its editable bucket (#411) and is deliberately not listed; port_lint reads nothing.
+    const ste = read("ste.ts"), port = read("port.ts");
+    assert.match(ste, /conv\.registriesRoot/); assert.doesNotMatch(ste, /conv\.(systemRoot|ungovernedRoots)/); assert.ok(!("ste_lint" in Object.fromEntries(Object.values(CONVENTION_PACKS).flat().map((id) => [id, 1]))), "ste_lint is not a listed reader");
+    assert.doesNotMatch(port, /conv\./);
   });
 
   test("#412: the three keys the retired drift checks read are GONE from the record, not blank — a key nobody reads is a setting that lies", () => {
