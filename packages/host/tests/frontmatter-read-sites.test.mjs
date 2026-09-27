@@ -34,6 +34,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
 import { driftPack } from "../src/conformance/packs/index.ts";
+import { findingKey } from "../src/conformance/finding.ts";
 import { LEGACY_CONVENTIONS_SEED as SEED } from "../src/conformance/vault-conventions.ts";
 import { noteInfo, emittedH2s } from "../src/conformance/packs/structure.ts";
 import { scanFrontmatter } from "@vault-mcp/core";
@@ -42,52 +43,48 @@ import { scanFrontmatter } from "@vault-mcp/core";
 // own convention — stripLeadingBom compares 0xfeff the same way).
 const BOM = String.fromCharCode(0xfeff);
 
-// ── site 1: drift.ts `fmBlock` (exercised through check G on a .tag.md) ───────
+// ── site 1: drift.ts `fmBlock` (exercised through check E on a uid pair) ─────
 //
-// G reads a registry note's `title:` via fmBlock. Pre-fix, a BOM/CRLF note's
-// frontmatter was invisible, so a CONFORMING tag note drew a spurious
-// "title is 'None'" finding. Post-fix its title parses and G stays quiet.
+// E reads a note's `uid:` via fmBlock. Pre-fix, a BOM/CRLF note's frontmatter
+// was invisible, so a duplicate claimant authored that way drew NO finding — a
+// false clean. Post-fix its uid parses and the pair is the same E finding, same
+// key, as an LF-authored pair. (Until #412 this site was exercised through the
+// retired check G's `title:` read; the recognizer binding is the same.)
 
 describe("drift.ts fmBlock binds to the shared recognizer (#189)", () => {
-  const FBF = SEED.registriesRoot; // the legacy seed's root is the fixture (#403)
+  const UID = "0192f1a0-1234-7abc-8def-0123456789ab";
   const snap = (sources) => ({
     notes: [],
     paths: [],
     blueprints: [],
     sources,
-    files: [],
     dirs: [],
-    walkOrder: [],
-    obsidianConfig: [{ path: ".obsidian/plugins/quickadd/data.json", text: '{"choices":[]}' }],
+    walkOrder: sources.map((s) => s.path),
   });
-  const tagNote = (text) => [{ path: `${FBF}/Tags/foo.tag.md`, text }];
-  const gFindings = (text) => driftPack(SEED).run(snap(tagNote(text))).filter((f) => f.check === "G");
+  const pair = (text) => [{ path: "Notes/lf.md", text: `---\nuid: ${UID}\n---\nbody\n` }, { path: "Notes/other.md", text }];
+  const eFindings = (text) => driftPack(SEED).run(snap(pair(text))).filter((f) => f.check === "E");
+  const EXPECT_KEY = `drift_audit|E|${UID}|dup-uid`;
 
-  const LF_OK = "---\ntitle: foo.tag\n---\n# body\n";
-
-  test("LF note: conforming title draws no G finding (regression — unchanged behavior)", () => {
-    assert.deepEqual(gFindings(LF_OK), []);
-  });
-
-  test("LF note: mismatched title draws the byte-identical G finding (key stability)", () => {
-    const [f] = gFindings("---\ntitle: wrong\n---\n");
-    assert.ok(f, "expected a G finding");
-    assert.equal(f.target, "foo.tag.md title is 'wrong', the filename says 'foo.tag'");
-    assert.equal(f.kind, "");
+  test("LF note: a duplicate claimant draws the E finding (regression — unchanged behavior)", () => {
+    const [f] = eFindings(`---\nuid: ${UID}\n---\nbody\n`);
+    assert.ok(f, "expected an E finding");
+    assert.equal(findingKey(f), EXPECT_KEY);
   });
 
-  test("BOM note: the frontmatter is SEEN — no spurious title-is-None finding", () => {
-    assert.deepEqual(gFindings(BOM + LF_OK), []);
+  test("LF note: a different uid is not a claimant (the pair is the instrument, not the answer)", () => {
+    assert.deepEqual(eFindings("---\nuid: ffff0000-1234-7abc-8def-0123456789ab\n---\n"), []);
   });
 
-  test("BOM note: a real mismatch reads the actual title, not 'None' (narrow behavior is dead)", () => {
-    const [f] = gFindings(BOM + "---\ntitle: wrong\n---\n");
-    assert.ok(f, "expected a G finding");
-    assert.equal(f.target, "foo.tag.md title is 'wrong', the filename says 'foo.tag'");
+  test("BOM note: the frontmatter is SEEN — the duplicate is found, same key", () => {
+    const [f] = eFindings(BOM + `---\nuid: ${UID}\n---\nbody\n`);
+    assert.ok(f, "expected an E finding; a BOM must not hide a claimant");
+    assert.equal(findingKey(f), EXPECT_KEY);
   });
 
-  test("CRLF note: the frontmatter is SEEN — no spurious finding", () => {
-    assert.deepEqual(gFindings("---\r\ntitle: foo.tag\r\n---\r\n# body\r\n"), []);
+  test("CRLF note: the frontmatter is SEEN — the duplicate is found, same key", () => {
+    const [f] = eFindings(`---\r\nuid: ${UID}\r\n---\r\nbody\r\n`);
+    assert.ok(f, "expected an E finding; CRLF must not hide a claimant");
+    assert.equal(findingKey(f), EXPECT_KEY);
   });
 });
 

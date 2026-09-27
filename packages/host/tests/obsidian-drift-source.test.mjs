@@ -29,9 +29,10 @@ describe("obsidianDriftSource — #294 coverage refusal", () => {
   test("a baseline describing drift_audit while its convention paths are dead → scan() rejects, never a silent CLEARED", async () => {
     const saved = process.env.GOVERNOR_BASELINE_REL;
     delete process.env.GOVERNOR_BASELINE_REL;
-    const root = await withBaseline("```ratchet-baseline\ndrift_audit|B|02.12|\n```\n");
+    const root = await withBaseline("```ratchet-baseline\ndrift_audit|J|category number 00 is claimed by 2 folders: 00 A; 00 B|\n```\n");
     try {
-      await assert.rejects(() => obsidianDriftSource(app(root), () => [], () => SEED).scan(), /refusing to report: the baseline holds accepted debt for drift_audit/);
+      // The seed's systemRoot (`00-09 System`) is LIVE in this fixture, since the baseline path lives under it; a dead spine is what this test is about (#412: systemRoot is the one convention drift reads).
+      await assert.rejects(() => obsidianDriftSource(app(root), () => [], () => ({ ...SEED, systemRoot: "Nowhere/Spine" })).scan(), /refusing to report: the baseline holds accepted debt for drift_audit/);
     } finally {
       if (saved !== undefined) process.env.GOVERNOR_BASELINE_REL = saved;
       await rm(root, { recursive: true, force: true });
