@@ -5,6 +5,7 @@
   "description": "The Governor governance provider: proposals, admission, mandates, the standing chain and the human-only review pane, plugged into the Vault MCP host through the governance seam.",
   "type": "module",
   "scripts": {
+    "prebuild": "npm --prefix ../vault-mcp-api run build",
     "build": "node esbuild.config.mjs production",
     "dev": "node esbuild.config.mjs",
     "test": "tsc --noEmit && node --import tsx --test 'tests/*.test.mjs'",

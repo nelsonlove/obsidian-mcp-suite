@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { z } from "zod";
-import { publishTools, partial, isPartial, PARTIAL_BRAND, API_VERSION_MIN, type CallContext } from "../src/index.js";
+import { publishTools, partial, isPartial, PARTIAL_BRAND, API_VERSION_MIN, hostApiRefusal, type CallContext } from "../src/index.js";
 
 // Minimal fake of the Obsidian surface publishTools touches: workspace event
 // bus (on/offref/trigger) + plugins map + plugin.manifest.id.
@@ -219,6 +219,9 @@ test("isPartial: TOP-LEVEL only — a partial nested inside data is data; a look
   assert.equal(isPartial({ [PARTIAL_BRAND]: "partial", data: { x: 1 } }), false, "no message");
   assert.equal(isPartial({ [PARTIAL_BRAND]: "partial", message: "m" }), false, "no data");
   assert.equal(isPartial({ [PARTIAL_BRAND]: "full", data: {}, message: "m" }), false, "wrong brand value");
+  // As strict as the constructor: a hand-built envelope partial() would refuse is not partial.
+  assert.equal(isPartial({ [PARTIAL_BRAND]: "partial", data: ["a", "b"], message: "m" }), false, "array data is refused by partial(), so the recognizer refuses it too");
+  assert.equal(isPartial({ [PARTIAL_BRAND]: "partial", data: {}, message: "   " }), false, "a blank message is refused by partial(), so the recognizer refuses it too");
   assert.equal(isPartial("partial"), false);
   assert.equal(isPartial(null), false);
 });
@@ -234,4 +237,22 @@ test("a handler receives the caller context as its SECOND argument when the host
   await sent.handler({ a: 2 });
   assert.equal(seen[0], ctx, "a v2 host's context reaches the publisher's handler untouched");
   assert.equal(seen[1], undefined, "a v1 host passes nothing: absence means cannot-tell, never everything-visible");
+});
+
+test("the refusal names the rule that failed: not-a-number is not reported as 'below the floor'", () => {
+  assert.equal(hostApiRefusal({ apiVersion: 1 }), null);
+  assert.equal(hostApiRefusal({ apiVersion: 7 }), null);
+  assert.match(hostApiRefusal({ apiVersion: 0 }) ?? "", /below the supported floor 1/);
+  assert.match(hostApiRefusal({ apiVersion: Infinity }) ?? "", /not a finite number/);
+  assert.match(hostApiRefusal({ apiVersion: NaN }) ?? "", /not a finite number/);
+  assert.match(hostApiRefusal({ apiVersion: "1" }) ?? "", /not a finite number/);
+  assert.match(hostApiRefusal({}) ?? "", /not a finite number/);
+  assert.match(hostApiRefusal(null) ?? "", /not a finite number/);
+  const warned: string[] = [];
+  const orig = console.warn; console.warn = (m: string) => { warned.push(m); };
+  try {
+    publishTools(plugin(fakeWorld(fakeApi("1" as unknown as number)).app), [{ name: "t", description: "d", handler: () => ({}) }]);
+  } finally { console.warn = orig; }
+  assert.match(warned.join("\n"), /not a finite number/, "the console line a darkened satellite emits says the true cause");
+  assert.doesNotMatch(warned.join("\n"), /below the supported floor/);
 });

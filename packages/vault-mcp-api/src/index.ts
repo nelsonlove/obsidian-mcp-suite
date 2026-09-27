@@ -97,11 +97,23 @@ export function partial<T extends object>(data: T, message: string): PartialResu
 
 /** Whether a handler's TOP-LEVEL return value is a partial result. The brand
  *  is checked only there (design §4 rule 2): a `partial` nested inside `data`
- *  is data. Exported for the host's step B and for publishers' own tests. */
+ *  is data. The recognizer is exactly as strict as the constructor — a plain
+ *  object `data` (never an array: the host puts `data` in `structuredContent`
+ *  verbatim, and an array there is what its own normalisation avoids) and a
+ *  non-blank `message` — so a hand-built envelope the constructor would refuse
+ *  is not partial either.
+ *
+ *  Exported for publishers' own tests and for the contract test. The HOST may
+ *  not import this package (its layering rule: it IS the host, it does not
+ *  depend on the publishing SDK), so at step B the host re-spells the brand
+ *  and this predicate on its own side, pinned against these by the contract
+ *  test so the two cannot drift. */
 export function isPartial(value: unknown): value is PartialResult<object> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const v = value as Record<string, unknown>;
-  return v[PARTIAL_BRAND] === "partial" && typeof v.message === "string" && !!v.data && typeof v.data === "object";
+  return v[PARTIAL_BRAND] === "partial"
+    && typeof v.message === "string" && v.message.trim() !== ""
+    && !!v.data && typeof v.data === "object" && !Array.isArray(v.data);
 }
 
 /**
@@ -251,10 +263,24 @@ export interface SdkToolSpec {
 const HOST_PLUGIN_IDS = ["vault-mcp", "governor"] as const;
 /** Ready events, same order and same reason as HOST_PLUGIN_IDS. */
 const HOST_READY_EVENTS = ["vault-mcp:ready", "governor:ready"] as const;
-/** True when a host's `apiVersion` meets the floor. One predicate for both
- *  registration paths, so they cannot drift on what "supported" means. */
+/** Why a host's `apiVersion` does not meet the floor, or null when it does.
+ *  One predicate for both registration paths, so they cannot drift on what
+ *  "supported" means — and the reason names the rule that failed, because the
+ *  console line is the only diagnostic a darkened satellite emits and "below
+ *  the floor" would send a reader the wrong way for a host that declares no
+ *  number at all. */
+export function hostApiRefusal(api: { apiVersion?: unknown } | null | undefined): string | null {
+  const v = api?.apiVersion;
+  if (typeof v !== "number" || !Number.isFinite(v)) {
+    return `apiVersion ${String(v)} is not a finite number (a host declares a numeric level, at least ${API_VERSION_MIN})`;
+  }
+  if (v < API_VERSION_MIN) return `apiVersion ${v} is below the supported floor ${API_VERSION_MIN}`;
+  return null;
+}
+
+/** True when a host's `apiVersion` meets the floor (see `hostApiRefusal`). */
 export function hostApiSupported(api: { apiVersion?: unknown } | null | undefined): boolean {
-  return !!api && typeof api.apiVersion === "number" && Number.isFinite(api.apiVersion) && api.apiVersion >= API_VERSION_MIN;
+  return hostApiRefusal(api) === null;
 }
 
 function isJsonSchema(s: NonNullable<SdkToolSpec["inputSchema"]>): s is JsonSchemaObject {
@@ -309,8 +335,9 @@ export function publishTools(plugin: Plugin, tools: SdkToolSpec[]): () => void {
     for (const id of HOST_PLUGIN_IDS) {
       const api = loaded?.[id]?.api;
       if (!api) continue;
-      if (!hostApiSupported(api)) {
-        console.warn(`[vault-mcp-api] '${id}' apiVersion ${String(api.apiVersion)} is below the supported floor ${API_VERSION_MIN}; not registering '${plugin.manifest.id}' tools`);
+      const refusal = hostApiRefusal(api);
+      if (refusal) {
+        console.warn(`[vault-mcp-api] '${id}': ${refusal}; not registering '${plugin.manifest.id}' tools`);
         return null;
       }
       return api;
@@ -369,8 +396,9 @@ export function registerGovernance(plugin: Plugin, hooks: GovernanceHooks): () =
     for (const id of HOST_PLUGIN_IDS) {
       const api = loaded?.[id]?.api;
       if (!api) continue;
-      if (!hostApiSupported(api)) {
-        console.warn(`[vault-mcp-api] '${id}' apiVersion ${String(api.apiVersion)} is below the supported floor ${API_VERSION_MIN}; not registering '${plugin.manifest.id}' governance hooks`);
+      const refusal = hostApiRefusal(api);
+      if (refusal) {
+        console.warn(`[vault-mcp-api] '${id}': ${refusal}; not registering '${plugin.manifest.id}' governance hooks`);
         return null;
       }
       // A host predating the seam exposes `registerTools` and nothing else.

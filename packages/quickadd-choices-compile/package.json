@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prebuild": "npm --prefix ../vault-mcp-api run build",
     "build": "node esbuild.config.mjs production",
     "dev": "node esbuild.config.mjs",
     "test": "tsc --noEmit && node --import tsx --test 'tests/*.test.mjs'"
