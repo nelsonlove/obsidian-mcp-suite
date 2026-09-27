@@ -395,7 +395,7 @@ export function guardedTerritoryRefusal(
   }
   if (unplaceable.length) {
     parts.push(
-      `has ${unplaceable.length} key(s) this run would clear that are keyed by uid, not by path (drift E/F) — with a ` +
+      `has ${unplaceable.length} key(s) this run would clear that are keyed by uid, not by path (drift E) — with a ` +
         `territory skipped, nothing can tell whether the skip is what cleared them:\n${shownKeys(unplaceable)}`,
     );
   }
@@ -407,10 +407,11 @@ export function guardedTerritoryRefusal(
   );
 }
 
-/** The checks whose baseline KEY carries no path — drift's E (`target: uid`)
- *  and F (`target: "uid-coverage"`), see packs/drift.ts's frozen-contract notes.
- *  Pinned by `conformance-cli.test.mjs` against the pack's own emitted keys. */
-export const NON_PATH_KEYED_CHECKS: ReadonlySet<string> = new Set(["drift_audit|E", "drift_audit|F"]);
+/** The checks whose baseline KEY carries no path — drift's E (`target: uid`);
+ *  F (`target: "uid-coverage"`) was the other until #412 retired it. See
+ *  packs/drift.ts's frozen-contract notes. Pinned by `conformance-cli.test.mjs`
+ *  against the pack's own emitted keys. */
+export const NON_PATH_KEYED_CHECKS: ReadonlySet<string> = new Set(["drift_audit|E"]);
 
 /**
  * The reason an excluded root would silently discard accepted debt, or null.

@@ -3,22 +3,26 @@
  * and clean" (#298). Six of the seven shipped paths had silently died across
  * two vault renumberings; nothing noticed because a path that names nothing
  * never errors. `deadConventionPaths` is the detector; this pins its rules.
+ * Since #412 the record has THREE keys: `registriesRoot` (structure's
+ * blueprint registry), `systemRoot` (drift's J) and `ungovernedRoots`
+ * (structure); the three keys whose only readers were the retired drift
+ * checks are gone, not blank.
  */
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { deadConventionPaths, CONVENTION_PACKS, LEGACY_CONVENTIONS_SEED, EMPTY_VAULT_CONVENTIONS, resolveConventions, conventionsFromEnv, SCALAR_CONVENTION_KEYS, LIST_CONVENTION_KEYS } from "../src/conformance/vault-conventions.ts";
 
 const conv = {
   registriesRoot: "Sys/Registries",
   systemRoot: "Sys",
-  artifactsRoot: "Sys/Artifacts",
-  pluginStackPath: "Sys/Plugin stack.md",
-  uidExemptPaths: ["Sys/Templates/Daily.md"],
   ungovernedRoots: ["Sys/Framework"],
 };
 const liveWalk = {
-  dirs: ["Sys", "Sys/Registries", "Sys/Artifacts", "Sys/Framework", "Sys/Templates"],
-  files: ["Sys/Plugin stack.md", "Sys/Templates/Daily.md"],
+  dirs: ["Sys", "Sys/Registries", "Sys/Framework"],
+  files: ["Sys/Plugin stack.md"],
 };
 
 describe("deadConventionPaths", () => {
@@ -26,28 +30,28 @@ describe("deadConventionPaths", () => {
     assert.deepEqual(deadConventionPaths(conv, liveWalk), []);
   });
 
-  test("a directory key is checked against dirs, a file key against files — a file where a dir is expected is dead, and vice versa", () => {
-    const dead = deadConventionPaths(conv, { dirs: ["Sys", "Sys/Registries", "Sys/Artifacts", "Sys/Framework", "Sys/Plugin stack.md"], files: ["Sys/Templates/Daily.md", "Sys/Registries"] });
-    assert.deepEqual(dead, [{ key: "pluginStackPath", path: "Sys/Plugin stack.md" }]);
+  test("every key is a directory key, checked against dirs — a FILE at the path is not the folder, so it is dead", () => {
+    const dead = deadConventionPaths(conv, { dirs: ["Sys", "Sys/Framework"], files: ["Sys/Registries"] });
+    assert.deepEqual(dead, [{ key: "registriesRoot", path: "Sys/Registries" }]);
   });
 
   test("the shipped defaults over an empty walk: every key is dead — the #298 finding, as a test that would have caught it", () => {
     const dead = deadConventionPaths(LEGACY_CONVENTIONS_SEED, { dirs: [], files: [] });
-    assert.deepEqual(dead.map((d) => d.key).sort(), ["artifactsRoot", "pluginStackPath", "registriesRoot", "systemRoot", "uidExemptPaths", "ungovernedRoots"]);
+    assert.deepEqual(dead.map((d) => d.key).sort(), ["registriesRoot", "systemRoot", "ungovernedRoots"]);
   });
 
   test("a path under an excluded root is skipped, not reported — the walk pruned it, so its absence says nothing", () => {
-    const dead = deadConventionPaths(conv, { dirs: ["Sys"], files: [] }, { excludedRoots: ["Sys/Registries", "Sys/Artifacts", "Sys/Framework", "Sys/Templates"] });
-    assert.deepEqual(dead, [{ key: "pluginStackPath", path: "Sys/Plugin stack.md" }]);
+    const dead = deadConventionPaths(conv, { dirs: ["Sys"], files: [] }, { excludedRoots: ["Sys/Registries"] });
+    assert.deepEqual(dead, [{ key: "ungovernedRoots", path: "Sys/Framework" }]);
   });
 
   test("a trailing slash on either side is not a difference; an empty entry is ignored", () => {
-    const c = { ...conv, artifactsRoot: "Sys/Artifacts/", ungovernedRoots: ["", "Sys/Framework/"] };
-    assert.deepEqual(deadConventionPaths(c, { ...liveWalk, dirs: [...liveWalk.dirs.filter((d) => d !== "Sys/Artifacts"), "Sys/Artifacts/"] }), []);
+    const c = { ...conv, registriesRoot: "Sys/Registries/", ungovernedRoots: ["", "Sys/Framework/"] };
+    assert.deepEqual(deadConventionPaths(c, { ...liveWalk, dirs: [...liveWalk.dirs.filter((d) => d !== "Sys/Registries"), "Sys/Registries/"] }), []);
   });
 
   test("a path under a SKIPPED TERRITORY or a skip-dir segment is unobserved, not dead (#401 review)", () => {
-    const dead = deadConventionPaths({ ...conv, registriesRoot: "80-89 Legal/Registries", artifactsRoot: ".obsidian/plugins/x" }, { dirs: ["Sys", "Sys/Framework", "Sys/Templates"], files: ["Sys/Plugin stack.md", "Sys/Templates/Daily.md"] }, { skippedTerritories: [{ path: "80-89 Legal" }], skipDirs: new Set([".obsidian"]) });
+    const dead = deadConventionPaths({ ...conv, registriesRoot: "80-89 Legal/Registries", ungovernedRoots: [".obsidian/plugins/x"] }, { dirs: ["Sys"], files: [] }, { skippedTerritories: [{ path: "80-89 Legal" }], skipDirs: new Set([".obsidian"]) });
     assert.deepEqual(dead, [], "the walk chose not to look there; absence says nothing");
   });
 
@@ -59,31 +63,48 @@ describe("deadConventionPaths", () => {
   test("CONVENTION_PACKS names every key of VaultConventions and every PACK that reads it — pinned against the packs' own sources", () => {
     assert.deepEqual(Object.keys(CONVENTION_PACKS).sort(), Object.keys(LEGACY_CONVENTIONS_SEED).sort());
     for (const v of Object.values(CONVENTION_PACKS)) for (const id of v) assert.ok(["drift_audit", "conformance_check", "port_lint", "ste_lint"].includes(id), id);
-    // structure.ts reads conv.registriesRoot (blueprint registry) and conv.ungovernedRoots; drift.ts reads the other five plus registriesRoot.
-    assert.deepEqual([...CONVENTION_PACKS.registriesRoot].sort(), ["conformance_check", "drift_audit"], "registriesRoot has TWO readers (#401 review)");
-    assert.deepEqual([...CONVENTION_PACKS.ungovernedRoots], ["conformance_check"]);
+    // structure.ts reads conv.registriesRoot (blueprint registry) and conv.ungovernedRoots; drift.ts reads conv.systemRoot and nothing else (#412).
+    assert.deepEqual(CONVENTION_PACKS, { registriesRoot: ["conformance_check"], systemRoot: ["drift_audit"], ungovernedRoots: ["conformance_check"] });
+    const HERE = path.dirname(fileURLToPath(import.meta.url));
+    const read = (rel) => fs.readFileSync(path.join(HERE, "..", "src", "conformance", "packs", rel), "utf8");
+    const drift = read("drift.ts"), structure = read("structure.ts");
+    assert.match(drift, /conv\.systemRoot/); assert.doesNotMatch(drift, /conv\.registriesRoot|conv\.ungovernedRoots/);
+    assert.match(structure, /registriesRoot/); assert.match(structure, /ungovernedRoots/); assert.doesNotMatch(structure, /systemRoot/);
+  });
+
+  test("#412: the three keys the retired drift checks read are GONE from the record, not blank — a key nobody reads is a setting that lies", () => {
+    for (const key of ["artifactsRoot", "pluginStackPath", "uidExemptPaths"]) {
+      assert.ok(!(key in EMPTY_VAULT_CONVENTIONS), key);
+      assert.ok(!(key in LEGACY_CONVENTIONS_SEED), key);
+      assert.ok(!(key in CONVENTION_PACKS), key);
+    }
+    // A data.json that still carries them (written by a build before #412) coerces to the three-key record: the stale keys are dropped, not kept.
+    const stale = { ...conv, artifactsRoot: "Sys/Artifacts", pluginStackPath: "Sys/Plugin stack.md", uidExemptPaths: ["Sys/T/Daily.md"] };
+    assert.deepEqual(resolveConventions(stale), conv);
   });
 });
 
 describe("#403 — EMPTY is what ships; blank scalar = dead, empty list = none; coercion; the CLI env knob", () => {
-  test("EMPTY conventions: the four scalar keys are dead with path '', the two list keys are not", () => {
+  test("EMPTY conventions: the two scalar keys are dead with path '', the list key is not", () => {
     const dead = deadConventionPaths(EMPTY_VAULT_CONVENTIONS, { dirs: [], files: [] });
     assert.deepEqual(dead.map((d) => d.key).sort(), [...SCALAR_CONVENTION_KEYS].sort());
+    assert.deepEqual([...SCALAR_CONVENTION_KEYS].sort(), ["registriesRoot", "systemRoot"]);
     assert.ok(dead.every((d) => d.path === ""));
     assert.deepEqual([...SCALAR_CONVENTION_KEYS, ...LIST_CONVENTION_KEYS].sort(), Object.keys(EMPTY_VAULT_CONVENTIONS).sort(), "the two key lists cover the record exactly");
   });
 
   test("a blank ENTRY inside a list key is skipped, not dead; a named entry that is absent is dead", () => {
-    const conv = { ...EMPTY_VAULT_CONVENTIONS, registriesRoot: "R", systemRoot: "S", artifactsRoot: "A", pluginStackPath: "P.md", uidExemptPaths: ["", "  ", "T/x.md"], ungovernedRoots: [] };
-    const dead = deadConventionPaths(conv, { dirs: ["R", "S", "A"], files: ["P.md"] });
-    assert.deepEqual(dead, [{ key: "uidExemptPaths", path: "T/x.md" }]);
+    const conv = { ...EMPTY_VAULT_CONVENTIONS, registriesRoot: "R", systemRoot: "S", ungovernedRoots: ["", "  ", "U/x"] };
+    const dead = deadConventionPaths(conv, { dirs: ["R", "S"], files: [] });
+    assert.deepEqual(dead, [{ key: "ungovernedRoots", path: "U/x" }]);
   });
 
   test("resolveConventions coerces anything to a full record: trims, drops blanks, never throws, never guesses", () => {
     assert.deepEqual(resolveConventions(undefined), EMPTY_VAULT_CONVENTIONS);
     assert.deepEqual(resolveConventions("nonsense"), EMPTY_VAULT_CONVENTIONS);
-    assert.deepEqual(resolveConventions({ registriesRoot: "  R ", uidExemptPaths: "a\n\n b ", ungovernedRoots: [1, " U "], extra: 1 }),
-      { ...EMPTY_VAULT_CONVENTIONS, registriesRoot: "R", uidExemptPaths: ["a", "b"], ungovernedRoots: ["U"] });
+    assert.deepEqual(resolveConventions({ registriesRoot: "  R ", ungovernedRoots: "a\n\n b ", systemRoot: [1], extra: 1 }),
+      { ...EMPTY_VAULT_CONVENTIONS, registriesRoot: "R", ungovernedRoots: ["a", "b"] });
+    assert.deepEqual(resolveConventions({ ungovernedRoots: [1, " U "] }).ungovernedRoots, ["U"]);
     assert.deepEqual(resolveConventions(LEGACY_CONVENTIONS_SEED), LEGACY_CONVENTIONS_SEED, "the seed is already canonical");
   });
 
@@ -102,6 +123,6 @@ describe("#403 — EMPTY is what ships; blank scalar = dead, empty list = none; 
     const n = warned.length;
     assert.deepEqual(conventionsFromEnv({ VAULT_MCP_CONVENTIONS: "{not json" }, w), EMPTY_VAULT_CONVENTIONS, "malformed: EMPTY, loudly");
     assert.match(warned[n], /not valid JSON — every convention reads as EMPTY/);
-    assert.deepEqual(conventionsFromEnv({ VAULT_MCP_CONVENTIONS: v }, w).uidExemptPaths, [], "keys the JSON omits are EMPTY, not seeded");
+    assert.deepEqual(conventionsFromEnv({ VAULT_MCP_CONVENTIONS: v }, w).ungovernedRoots, [], "keys the JSON omits are EMPTY, not seeded");
   });
 });

@@ -305,13 +305,13 @@ The acceptance family is a non-configurable floor. Configuration may extend it, 
 | Field | Value |
 |---|---|
 | Default | **Empty — the plugin ships no vault layout** (ruled 2026-09-26, #403). An install upgrading from a build that had built-in paths is seeded once with those paths, then the key is persisted so the seeding never repeats |
-| Effect | The six paths the conformance rail's legacy checks read: the registries root, the system root, the artifacts root, the plugin-stack note (four single paths) and the uid-exempt notes and ungoverned roots (one path per line). Committed when a field loses focus. A blank single path means that convention is **dead**: the checks that read it register, are not measured, and the report says `DEAD CONVENTION: <key> = (empty)`; an empty list means none (nothing exempt, nothing ungoverned). A path that names nothing under the walked root is dead the same way, with the path shown |
+| Effect | The three paths the conformance rail's legacy checks read: the registries root (the structure check's blueprint registry) and the system root (the drift check's category-number scan), two single paths, and the ungoverned roots (one path per line). Committed when a field loses focus. A blank single path means that convention is **dead**: the checks that read it register, are not measured, and the report says `DEAD CONVENTION: <key> = (empty)`; an empty list means none (nothing ungoverned). Until #412 there were six; the artifacts root, the plugin-stack note and the uid-exempt notes fed only drift checks that measured a vault shape the rebuilt vault no longer has, and retired with them. A path that names nothing under the walked root is dead the same way, with the path shown |
 | Takes effect | Live, per call (the in-app debt tools and the drift pane read the setting on every run) |
 | Dependency | None; the standalone CLI does not read it (see below) |
 | Risk | Blank or stale paths make the legacy checks report nothing for the vault, and say so on every run rather than reading clean; a folder renamed in the vault leaves its convention dead until re-pointed |
 | Recovery | Point each field at the live folder or note; the report names the dead key and the checks it feeds |
 
-The standalone conformance CLI has no settings; it reads `VAULT_MCP_CONVENTIONS` (a JSON object over the same six keys), and with it unset every single-path convention is dead. `GOVERNOR_VAULT_CONVENTIONS` and `ASSENT_VAULT_CONVENTIONS` are read as legacy aliases for one release, each with a warning naming the new spelling.
+The standalone conformance CLI has no settings; it reads `VAULT_MCP_CONVENTIONS` (a JSON object over the same three keys), and with it unset every single-path convention is dead. `GOVERNOR_VAULT_CONVENTIONS` and `ASSENT_VAULT_CONVENTIONS` are read as legacy aliases for one release, each with a warning naming the new spelling.
 
 ## Modules
 

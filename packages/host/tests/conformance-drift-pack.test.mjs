@@ -1,55 +1,40 @@
 /**
- * conformance-drift-pack.test.mjs — the ported drift rule pack (drift ←
- * drift_audit.py), the last legacy Python conformance script moved to TS.
+ * conformance-drift-pack.test.mjs — the drift rule pack (drift ← drift_audit.py)
+ * as it stands after #412 retired the checks that measured a vault shape the
+ * rebuilt vault no longer has: A, B, D, F and G are gone; E (duplicate uid)
+ * and J (category-number collisions on the System spine) remain.
  *
  * The drift pack maps each Python finding string `"{LETTER}: {rest}"` onto the
  * canonical 4-tuple Finding keyed BYTE-IDENTICAL to the ratchet's `parse_drift`:
  *   { script: "drift_audit", check: <LETTER>, target: <rest>, kind: "" }
- * for every check EXCEPT E and F, whose Python message embeds volatile data
- * (an order-dependent homes list for E, a count + traversal-ordered path
- * sample for F). `parse_drift`'s docstring keys those two specially — E on
- * the uid alone (target <uid>, kind "dup-uid"), F count/sample-independently
- * (target "uid-coverage", kind "uid-less") — so the accepted-debt baseline's
- * keys carry across the port AND stay stable under unrelated edits (issue
- * #136: keying E/F on the raw message text produces a permanent false-NEW
- * treadmill, since the message changes on every unrelated uid-less note or
- * duplicate-uid claimant).
+ * for J; E's Python message embeds volatile data (an order-dependent homes
+ * list), so `parse_drift`'s docstring keys it on the uid alone (target <uid>,
+ * kind "dup-uid") — the accepted-debt baseline's keys carry across the port
+ * AND stay stable under unrelated edits (issue #136: keying E on the raw
+ * message text produces a permanent false-NEW treadmill, since the message
+ * changes on every additional claimant).
  *
- * Every finding-producing check (A/B/D/E/F/G/J) is exercised here, plus a
- * clean fixture, the empty `kind`, the E/F traversal-order + scope edges, and
- * — the load-bearing regression coverage for #136 — two KEY STABILITY tests
- * that add an unrelated uid-less note (F) / duplicate-uid claimant (E) and
- * assert the key is unchanged while the message differs. A message-level
- * parity test cannot catch this class of bug by construction; only a
- * key-level test can. The print-only checks (C/H/I) emit no findings and so
- * appear nowhere.
+ * Both surviving checks are exercised here, plus a clean fixture, the empty
+ * `kind`, the E traversal-order + scope edges, the KEY STABILITY test for E,
+ * and the #412 retirement pins: the retired letters are never emitted, the
+ * pack reads only `systemRoot`, and the listings the retired checks needed
+ * (`files`, `obsidianConfig`) are no longer required.
  */
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { driftPack } from "../src/conformance/packs/index.ts";
 import { LEGACY_CONVENTIONS_SEED as SEED } from "../src/conformance/vault-conventions.ts";
 import { findingKey } from "../src/conformance/finding.ts";
+import { runEngine } from "../src/conformance/engine.ts";
 
-const FBF = SEED.registriesRoot; // the legacy seed's root is the fixture (#403: the plugin ships none)
-const BASE02 = "00-09 System/02 Obsidian/02.03 Artifacts for 02 Obsidian";
-const PLUGSTACK = "00-09 System/02 Obsidian/02.12 Plugin stack.md";
-
-/** Build the drift-shaped snapshot. `config` maps a vault-relative `.obsidian`
- * path to its raw text (community-plugins.json / quickadd data.json / a
- * plugin's manifest.json).
- *
- * Check A now REQUIRES the QuickAdd config — absence/corruption is refused
- * loudly, not treated as an empty choice set (#136 item 2). So every snapshot
- * defaults to a valid empty QuickAdd config (`{"choices":[]}`), letting tests
- * that target OTHER checks ignore it. A `config` entry for the QuickAdd path
- * overrides that default (the A dir-1/dir-2 tests supply their own); pass
- * `noQuickadd: true` to omit it entirely and exercise check A's refusal. */
-function snap({ sources = [], files = [], dirs = [], walkOrder = [], config = {}, noQuickadd = false } = {}) {
-  const base = noQuickadd ? {} : { ".obsidian/plugins/quickadd/data.json": '{"choices":[]}' };
-  const merged = { ...base, ...config };
-  const obsidianConfig = Object.entries(merged).map(([path, text]) => ({ path, text }));
-  return { notes: [], paths: [], blueprints: [], sources, files, dirs, walkOrder, obsidianConfig };
+/** Build the drift-shaped snapshot: `sources`, `dirs` (J's universe) and
+ * `walkOrder` (E's). Nothing else is required of it since #412. */
+function snap({ sources = [], dirs = [], walkOrder = [] } = {}) {
+  return { notes: [], paths: [], blueprints: [], sources, dirs, walkOrder };
 }
 const run = (s) => driftPack(SEED).run(s);
 const targets = (findings, letter) => findings.filter((f) => f.check === letter).map((f) => f.target);
@@ -72,149 +57,21 @@ describe("driftPack key shape", () => {
   });
 });
 
-// ── A. QuickAdd choices <-> .action quickadd-choice surfaces ───────────────────
-
-describe("driftPack A (choices <-> actions)", () => {
-  const qa = JSON.stringify({
-    choices: [
-      { type: "Multi", name: "grp", choices: [{ name: "Do X", command: true }, { name: "NoCmd", command: false }] },
-      { name: "Reveal slot in Finder", command: true }, // UI choice → excluded from dir-1
-      { name: "Orphan", command: true }, // command-enabled, no action, not UI → dir-1 finding
-    ],
-  });
-  const actDoX = { path: `${FBF}/Actions/dox.action.md`, text: "---\nsurfaces:\n  quickadd-choice: Do X\n---\n" };
-  const actGhost = { path: `${FBF}/Actions/ghost.action.md`, text: "---\nsurfaces:\n  quickadd-choice: Ghost\n---\n" };
-
-  test("dir-1: a command-enabled choice with no .action entry (UI choices exempt)", () => {
-    const t = targets(run(snap({ sources: [actDoX, actGhost], config: { ".obsidian/plugins/quickadd/data.json": qa } })), "A");
-    assert.ok(t.includes("choice 'Orphan' is command-enabled but no .action entry names it"));
-    assert.ok(!t.some((x) => x.includes("Reveal slot in Finder")), "UI choice is exempt");
-    assert.ok(!t.some((x) => x.includes("'Do X'")), "a choice an action names is fine");
-    assert.ok(!t.some((x) => x.includes("NoCmd")), "a non-command choice is not enumerated");
-  });
-
-  test("dir-2: an .action naming a choice absent from QuickAdd config", () => {
-    const t = targets(run(snap({ sources: [actDoX, actGhost], config: { ".obsidian/plugins/quickadd/data.json": qa } })), "A");
-    assert.ok(t.includes("ghost.action.md names choice 'Ghost' which does not exist in QuickAdd config"));
-  });
-
-  // #136 item 2: a missing/corrupt/reshaped QuickAdd config must REFUSE loudly
-  // (a typed throw the engine turns into a pack_error) rather than silently
-  // skip check A and let the run report CONFORMING with ~30 findings gone.
-  test("absent quickadd config → check A REFUSES loudly (not a silent skip)", () => {
-    assert.throws(() => run(snap({ sources: [actGhost], noQuickadd: true })), /needs '.*quickadd\/data\.json', which is absent/);
-  });
-
-  test("unparseable quickadd config → check A REFUSES loudly", () => {
-    const bad = { ".obsidian/plugins/quickadd/data.json": "{ not valid json" };
-    assert.throws(() => run(snap({ sources: [actGhost], config: bad })), /cannot parse .*quickadd\/data\.json.* as JSON/);
-  });
-
-  test("reshaped quickadd config (choices not an array) → check A REFUSES loudly", () => {
-    const reshaped = { ".obsidian/plugins/quickadd/data.json": JSON.stringify({ choices: "nope" }) };
-    assert.throws(() => run(snap({ sources: [actGhost], config: reshaped })), /'choices' is not an array/);
-  });
-
-  test("the refusal surfaces as a conformance_engine pack_error through the engine", async () => {
-    const { runEngine } = await import("../src/conformance/engine.ts");
-    const pack = driftPack(SEED);
-    const findings = runEngine([pack], snap({ sources: [actGhost], noQuickadd: true }));
-    const err = findings.find((f) => f.script === "conformance_engine" && f.check === "pack_error");
-    assert.ok(err, "expected a pack_error finding attributing the drift pack's refusal");
-    assert.equal(err.target, "drift_audit");
-  });
-
-  test("a valid empty quickadd config → check A runs and finds nothing (absence-vs-emptiness: [] IS a real answer)", () => {
-    assert.deepEqual(targets(run(snap({ sources: [actGhost] })), "A"), [
-      "ghost.action.md names choice 'Ghost' which does not exist in QuickAdd config",
-    ]);
-  });
-});
-
-// ── B. plugin enablement <-> the 02.12 plugin-stack note ───────────────────────
-
-describe("driftPack B (plugin stack)", () => {
-  const plug = {
-    path: PLUGSTACK,
-    text: [
-      "| Plugin | Status | Version |",
-      "| --- | --- | --- |",
-      "| Alpha | enabled | 1.0 |",
-      "| Beta | disabled | 1.0 |",
-      "| Gone | uninstalled | - |",
-      "",
-    ].join("\n"),
-  };
-  const config = {
-    ".obsidian/community-plugins.json": JSON.stringify(["beta"]), // only beta is enabled
-    ".obsidian/plugins/alpha/manifest.json": JSON.stringify({ id: "alpha", name: "Alpha" }),
-    ".obsidian/plugins/beta/manifest.json": JSON.stringify({ id: "beta", name: "Beta" }),
-    ".obsidian/plugins/extra/manifest.json": JSON.stringify({ id: "extra", name: "Extra" }),
-  };
-
-  test("flags enablement mismatches, uninstalled-but-installed, and installed-but-unlisted", () => {
-    const t = targets(run(snap({ sources: [plug], config })), "B");
-    assert.ok(t.includes("'Alpha' is disabled but 02.12 says enabled"));
-    assert.ok(t.includes("'Beta' is enabled but 02.12 says disabled"));
-    assert.ok(t.includes("installed plugin 'Extra' (disabled) missing from 02.12"));
-    // 'Gone' is uninstalled in the doc and not installed → no finding
-    assert.ok(!t.some((x) => x.includes("Gone")), "doc-uninstalled + not-installed is consistent");
-  });
-
-  test("no plugin-stack note → check B is skipped (Python's PLUGSTACK.exists() guard)", () => {
-    assert.deepEqual(targets(run(snap({ config })), "B"), []);
-  });
-});
-
-// ── D. action surfaces (user-script / module / template) <-> filesystem ────────
-
-describe("driftPack D (surface existence)", () => {
-  const act = {
-    path: `${FBF}/Actions/d.action.md`,
-    text: [
-      "---",
-      "surfaces:",
-      "  user-script: QuickAdd/exists.md",
-      "  module: modules/missing.js",
-      "  template: Templates/missing.md",
-      "---",
-      "",
-    ].join("\n"),
-  };
-  const existsMd = { path: `${BASE02}/QuickAdd/exists.md`, text: "---\n---\nno js block here\n" };
-
-  test("missing module/template flagged; an existing .md user-script without a js block flagged", () => {
-    const s = snap({ sources: [act, existsMd], files: [existsMd.path] });
-    const t = targets(run(s), "D");
-    assert.ok(t.includes("d.action.md names module 'modules/missing.js' which does not exist"));
-    assert.ok(t.includes("d.action.md names template 'Templates/missing.md' which does not exist"));
-    assert.ok(t.includes("d.action.md user-script 'QuickAdd/exists.md' has no fenced js block"));
-  });
-
-  test("an existing .md user-script WITH a fenced js block is clean", () => {
-    const withJs = { path: `${BASE02}/QuickAdd/exists.md`, text: "---\n---\n```js\nreturn 1;\n```\n" };
-    const onlyScript = { path: `${FBF}/Actions/e.action.md`, text: "---\nsurfaces:\n  user-script: QuickAdd/exists.md\n---\n" };
-    const t = targets(run(snap({ sources: [onlyScript, withJs], files: [withJs.path] })), "D");
-    assert.deepEqual(t, []);
-  });
-});
-
-// ── E / F. uid identity in raw traversal order ─────────────────────────────────
+// ── E. uid identity in raw traversal order ─────────────────────────────────────
 //
-// E and F are keyed specially (issue #136): their MESSAGE (`detail`) still
-// carries the traversal-ordered homes list / count+sample, and is asserted
-// below exactly as before. But the ratchet KEY — `target`/`kind`, what
-// `findingKey()` serializes — must NOT move when that volatile data changes.
-// The two "key stability" tests are the load-bearing regression coverage: a
-// message-level parity check cannot catch this class of bug by construction,
-// only a key-level one can.
+// E is keyed specially (issue #136): its MESSAGE (`detail`) still carries the
+// traversal-ordered homes list, and is asserted below exactly as before. But
+// the ratchet KEY — `target`/`kind`, what `findingKey()` serializes — must NOT
+// move when that volatile data changes. The "key stability" test is the
+// load-bearing regression coverage: a message-level parity check cannot catch
+// this class of bug by construction, only a key-level one can.
 
-describe("driftPack E/F (uid)", () => {
+describe("driftPack E (duplicate uid)", () => {
   const UID = "0192f1a0-1234-7abc-8def-0123456789ab";
   const withUid = (p, uid = UID) => ({ path: p, text: `---\nuid: ${uid}\n---\nbody\n` });
   const noUid = (p) => ({ path: p, text: "---\ntitle: x\n---\nbody\n" });
 
-  test("E: two notes sharing a uid → one finding, homes joined in traversal order in `detail`", () => {
+  test("two notes sharing a uid → one finding, homes joined in traversal order in `detail`", () => {
     const s = snap({
       walkOrder: ["Notes/a.md", "Notes/b.md"],
       sources: [withUid("Notes/a.md"), withUid("Notes/b.md")],
@@ -224,7 +81,7 @@ describe("driftPack E/F (uid)", () => {
     assert.equal(findings[0].detail, `E: uid ${UID} is claimed by 2 notes: Notes/a.md; Notes/b.md`);
   });
 
-  test("E key: keyed on the uid, not the homes list (issue #136) — target is the uid, kind is 'dup-uid'", () => {
+  test("key: keyed on the uid, not the homes list (issue #136) — target is the uid, kind is 'dup-uid'", () => {
     const s = snap({
       walkOrder: ["Notes/a.md", "Notes/b.md"],
       sources: [withUid("Notes/a.md"), withUid("Notes/b.md")],
@@ -235,7 +92,7 @@ describe("driftPack E/F (uid)", () => {
     assert.equal(findingKey(f), `drift_audit|E|${UID}|dup-uid`);
   });
 
-  test("E key stability: a THIRD claimant joins (changing the homes list and its order) — the key is unchanged", () => {
+  test("key stability: a THIRD claimant joins (changing the homes list and its order) — the key is unchanged", () => {
     const two = snap({
       walkOrder: ["Notes/a.md", "Notes/b.md"],
       sources: [withUid("Notes/a.md"), withUid("Notes/b.md")],
@@ -258,97 +115,44 @@ describe("driftPack E/F (uid)", () => {
     assert.equal(fAfter.detail, `E: uid ${UID} is claimed by 3 notes: Notes/zzz.md; Notes/a.md; Notes/b.md`);
   });
 
-  test("F: uid-less notes → one aggregated finding, sample in WALK order (not sorted), +N more, in `detail`", () => {
-    // walkOrder is deliberately NOT alphabetical — the sample must follow it.
-    const order = ["Notes/z.md", "Notes/a.md", "Notes/m.md", "Notes/b.md", "Notes/y.md", "Notes/c.md", "Notes/n.md"];
-    const s = snap({ walkOrder: order, sources: order.map(noUid) });
-    const f = run(s).find((x) => x.check === "F");
-    assert.equal(
-      f.detail,
-      "F: 7 note(s) lack a usable uid — run 'Stamp missing UIDs': Notes/z.md; Notes/a.md; Notes/m.md; Notes/b.md; Notes/y.md (+2 more)",
-    );
+  test("findings are sorted by uid; a uid held by one note is not a finding", () => {
+    const LOW = "0000f1a0-1234-7abc-8def-0123456789ab";
+    const s = snap({
+      walkOrder: ["Notes/a.md", "Notes/b.md", "Notes/c.md", "Notes/d.md", "Notes/only.md"],
+      sources: [withUid("Notes/a.md"), withUid("Notes/b.md"), withUid("Notes/c.md", LOW), withUid("Notes/d.md", LOW), withUid("Notes/only.md", "ffff0000-1234-7abc-8def-0123456789ab")],
+    });
+    assert.deepEqual(targets(run(s), "E"), [LOW, UID]);
   });
 
-  test("F: five or fewer uid-less notes → no '(+N more)' suffix in `detail`", () => {
-    const order = ["Notes/z.md", "Notes/a.md"];
-    const f = run(snap({ walkOrder: order, sources: order.map(noUid) })).find((x) => x.check === "F");
-    assert.equal(f.detail, "F: 2 note(s) lack a usable uid — run 'Stamp missing UIDs': Notes/z.md; Notes/a.md");
+  test("a non-UUID uid value is no identity: two notes sharing one are not duplicate claimants", () => {
+    const bad = (p) => ({ path: p, text: "---\nuid: not-a-uuid\n---\n" });
+    const s = snap({ walkOrder: ["Notes/x.md", "Notes/y.md"], sources: [bad("Notes/x.md"), bad("Notes/y.md")] });
+    assert.deepEqual(run(s), []);
   });
 
-  test("F key: keyed count/sample-independently (issue #136) — target 'uid-coverage', kind 'uid-less'", () => {
-    const order = ["Notes/z.md", "Notes/a.md"];
-    const f = run(snap({ walkOrder: order, sources: order.map(noUid) })).find((x) => x.check === "F");
-    assert.equal(f.target, "uid-coverage");
-    assert.equal(f.kind, "uid-less");
-    assert.equal(findingKey(f), "drift_audit|F|uid-coverage|uid-less");
+  test("a blank or absent uid is no identity — nothing to exempt, so nothing is (#412 retired the carve-out)", () => {
+    const blank = (p) => ({ path: p, text: "---\nuid:\n---\n" });
+    const s = snap({ walkOrder: ["T/a.md", "T/b.md", "Notes/c.md"], sources: [blank("T/a.md"), blank("T/b.md"), noUid("Notes/c.md")] });
+    assert.deepEqual(run(s), []);
   });
 
-  test("F key stability: an UNRELATED additional uid-less note is added — the key is unchanged though count/sample changes", () => {
-    const order = ["Notes/z.md", "Notes/a.md", "Notes/m.md", "Notes/b.md", "Notes/y.md"];
-    const before = snap({ walkOrder: order, sources: order.map(noUid) });
-    const keyBefore = findingKey(run(before).find((f) => f.check === "F"));
-
-    const orderPlusOne = [...order, "Notes/unrelated-new-note.md"];
-    const after = snap({ walkOrder: orderPlusOne, sources: orderPlusOne.map(noUid) });
-    const fAfter = run(after).find((f) => f.check === "F");
-    const keyAfter = findingKey(fAfter);
-
-    assert.equal(keyAfter, keyBefore, "the F key must be stable when an unrelated uid-less note is added");
-    // The message DID change (count 5 → 6, "+1 more" appears) — proving a
-    // message-level check would have reported a false NEW finding here.
-    assert.ok(fAfter.detail.startsWith("F: 6 note(s) lack a usable uid"));
+  test("iter_notes scope: dot/.trash segments, _ roots, and Assent are excluded — a duplicate claimant there is invisible", () => {
+    const outside = ["_hold/s.md", "Assent/t.md", ".obsidian/u.md", "x/.hidden/v.md"];
+    for (const p of outside) {
+      const s = snap({ walkOrder: [p, "Notes/real.md"], sources: [withUid(p), withUid("Notes/real.md")] });
+      assert.deepEqual(run(s), [], `${p} is outside the governed scope`);
+    }
+    const inside = snap({ walkOrder: ["Notes/other.md", "Notes/real.md"], sources: [withUid("Notes/other.md"), withUid("Notes/real.md")] });
+    assert.equal(run(inside).length, 1, "the same pair inside the scope IS a finding");
   });
 
-  test("a non-UUID uid value counts as no-identity (F), not a valid identity", () => {
-    const bad = { path: "Notes/x.md", text: "---\nuid: not-a-uuid\n---\n" };
-    const f = run(snap({ walkOrder: ["Notes/x.md"], sources: [bad] })).find((x) => x.check === "F");
-    assert.ok(f.detail.startsWith("F: 1 note(s) lack a usable uid"));
-  });
-
-  test("iter_notes scope: dot/.trash segments, _ roots, and Assent are excluded from E/F", () => {
-    const order = ["_hold/s.md", "Assent/t.md", ".obsidian/u.md", "x/.hidden/v.md", "Notes/real.md"];
-    const s = snap({ walkOrder: order, sources: order.map(noUid) });
-    const f = run(s).find((x) => x.check === "F");
-    // only the one governed note counts
-    assert.equal(f.detail, "F: 1 note(s) lack a usable uid — run 'Stamp missing UIDs': Notes/real.md");
-  });
-
-  test("the daily-note template is uid-exempt (empty uid is copy payload, not drift)", () => {
-    const tpl = `${FBF}/Daily notes/Daily note.template.md`;
-    const s = snap({ walkOrder: [tpl], sources: [noUid(tpl)] });
-    assert.equal(run(s).filter((f) => f.check === "F").length, 0);
+  test("a walked path with no source text is skipped, not a crash (Python's `except: continue`)", () => {
+    const s = snap({ walkOrder: ["Notes/gone.md", "Notes/a.md", "Notes/b.md"], sources: [withUid("Notes/a.md"), withUid("Notes/b.md")] });
+    assert.equal(run(s).length, 1);
   });
 });
 
-// ── G. registry naming self-consistency ────────────────────────────────────────
-
-describe("driftPack G (naming)", () => {
-  test("property with no title → 'None' vs the backticked key", () => {
-    const prop = { path: `${FBF}/feat/x.property.md`, text: "---\ndesc: y\n---\n" };
-    const t = targets(run(snap({ sources: [prop] })), "G");
-    assert.ok(t.includes("x.property.md title is 'None', the filename says '`x`'"));
-  });
-
-  test("action title matches the stem but a wrong H1 is flagged (kind of the whole message)", () => {
-    const act = { path: `${FBF}/Actions/y.action.md`, text: "---\ntitle: y.action\n---\n# `wrong`\n" };
-    const t = targets(run(snap({ sources: [act] })), "G");
-    assert.ok(!t.some((x) => x.includes("title is")), "title matches the stem → no title finding");
-    assert.ok(t.includes("y.action.md H1 is '`wrong`', the filename says '`y`'"));
-  });
-
-  test("tag title must equal the filename stem", () => {
-    const tag = { path: `${FBF}/feat/z.tag.md`, text: "---\ntitle: \"#z\"\n---\n" };
-    const t = targets(run(snap({ sources: [tag] })), "G");
-    assert.ok(t.includes("z.tag.md title is '#z', the filename says 'z.tag'"));
-  });
-
-  test("a type whose title equals its stem is clean", () => {
-    const type = { path: `${FBF}/feat/w.type.md`, text: "---\ntitle: w.type\n---\n" };
-    assert.deepEqual(targets(run(snap({ sources: [type] })), "G"), []);
-  });
-});
-
-// ── J. category-number collisions on the 00-09 System spine ────────────────────
+// ── J. category-number collisions on the System spine ─────────────────────────
 
 describe("driftPack J (category numbering)", () => {
   test("a two-digit code claimed by more than one direct child of the System spine", () => {
@@ -362,16 +166,66 @@ describe("driftPack J (category numbering)", () => {
     const t = targets(run(snap({ dirs })), "J");
     assert.deepEqual(t, ["category number 00 is claimed by 2 folders: 00 Alpha; 00 Beta"]);
   });
+
+  test("J reads the INJECTED systemRoot: the same folders under another spine are a collision only when the conventions name that spine", () => {
+    const dirs = ["Sys/00 Alpha", "Sys/00 Beta"];
+    assert.deepEqual(targets(run(snap({ dirs })), "J"), [], "under the seed's spine these folders are invisible");
+    assert.deepEqual(targets(driftPack({ ...SEED, systemRoot: "Sys" }).run(snap({ dirs })), "J"), ["category number 00 is claimed by 2 folders: 00 Alpha; 00 Beta"]);
+  });
+
+  test("a folder whose name does not start with a two-digit code and a space is not a claimant", () => {
+    const dirs = ["00-09 System/00 Alpha", "00-09 System/00Beta", "00-09 System/000 Gamma", "00-09 System/Delta"];
+    assert.deepEqual(run(snap({ dirs })), []);
+  });
 });
 
-describe("registryFamily reads the INJECTED registries root (#298 / #401 review)", () => {
-  test("an .action note under an overridden registriesRoot is a registry note; the same note under the seed's root is not", () => {
-    const conv = { ...SEED, registriesRoot: "Reg" };
-    const qa = JSON.stringify({ choices: [{ name: "Do X", command: true, type: "Macro" }] });
-    const act = { path: "Reg/Actions/dox.action.md", text: "---\nsurfaces:\n  quickadd-choice: Do X\n---\n" };
-    const ghostA = targets(driftPack(conv).run(snap({ sources: [act], config: { ".obsidian/plugins/quickadd/data.json": qa } })), "A");
-    assert.ok(!ghostA.some((t) => /Do X/.test(t)), `with the override, 'Do X' is a registered action: ${JSON.stringify(ghostA)}`);
-    const withDefault = targets(driftPack(SEED).run(snap({ sources: [act], config: { ".obsidian/plugins/quickadd/data.json": qa } })), "A");
-    assert.ok(withDefault.some((t) => /Do X/.test(t)), `under the seed's root the same note is invisible, so the QuickAdd choice reads as unregistered: ${JSON.stringify(withDefault)}`);
+// ── #412: the retirement is real, and pinned ───────────────────────────────────
+
+describe("#412 — A, B, D, F and G are retired; the pack reads only systemRoot", () => {
+  const HERE = path.dirname(fileURLToPath(import.meta.url));
+  const src = fs.readFileSync(path.join(HERE, "..", "src", "conformance", "packs", "drift.ts"), "utf8");
+
+  test("the retired letters are never emitted: a snapshot carrying every retired check's former subject yields only E and J letters", () => {
+    const FBF = SEED.registriesRoot;
+    const sources = [
+      // G / A / D subjects: a registry family with a wrong title, a ghost choice, a missing module
+      { path: `${FBF}/Actions/ghost.action.md`, text: "---\ntitle: wrong\nsurfaces:\n  quickadd-choice: Ghost\n  module: modules/missing.js\n---\n# `nope`\n" },
+      { path: `${FBF}/feat/x.property.md`, text: "---\ndesc: y\n---\n" },
+      { path: `${FBF}/feat/z.tag.md`, text: "---\ntitle: \"#z\"\n---\n" },
+      // B subject: a plugin-stack table
+      { path: "00-09 System/02 Obsidian/02.12 Plugin stack.md", text: "| Plugin | Status |\n| --- | --- |\n| Alpha | enabled |\n" },
+      // F subject: uid-less notes
+      { path: "Notes/n1.md", text: "---\ntitle: a\n---\n" },
+      { path: "Notes/n2.md", text: "---\ntitle: b\n---\n" },
+    ];
+    const walkOrder = sources.map((s) => s.path);
+    const findings = run(snap({ sources, walkOrder, dirs: [] }));
+    assert.deepEqual(findings, [], `nothing the retired checks measured is a finding now: ${JSON.stringify(findings)}`);
+    const letters = new Set(run(snap({ sources, walkOrder, dirs: ["00-09 System/00 A", "00-09 System/00 B"] })).map((f) => f.check));
+    assert.deepEqual([...letters].sort(), ["J"]);
+  });
+
+  test("source pin: no push of a retired letter, and the pack reads no retired convention key", () => {
+    for (const letter of ["A", "B", "D", "F", "G"]) assert.doesNotMatch(src, new RegExp(`push\\(\\s*"${letter}"`), `check ${letter} is retired`);
+    for (const key of ["registriesRoot", "artifactsRoot", "pluginStackPath", "uidExemptPaths", "UID_EXEMPT", "PLUGSTACK", "BASE02", "quickadd", "registryFamily"]) {
+      assert.doesNotMatch(src.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*\*[\s\S]*?\*\//g, ""), new RegExp(key), `${key} is gone from the code (comments aside)`);
+    }
+    assert.match(src, /const SYS_ROOT = conv\.systemRoot;/, "the one convention read");
+    assert.match(src, /push\("E",[\s\S]{0,200}target: uid,/, "E is still keyed by uid");
+  });
+
+  test("the listings the retired checks required are no longer required: no `files`, no `obsidianConfig` — a snapshot without them runs clean through the engine", () => {
+    const findings = runEngine([driftPack(SEED)], { notes: [], paths: [], sources: [], dirs: [], walkOrder: [] });
+    assert.deepEqual(findings.filter((f) => f.check === "pack_error"), []);
+  });
+
+  test("and the listings E and J DO need are still refused when absent (absence is not emptiness, #142)", () => {
+    for (const missing of ["dirs", "walkOrder"]) {
+      const s = { notes: [], paths: [], sources: [], dirs: [], walkOrder: [] };
+      delete s[missing];
+      const errs = runEngine([driftPack(SEED)], s).filter((f) => f.check === "pack_error");
+      assert.equal(errs.length, 1, `absent ${missing} refuses`);
+      assert.match(errs[0].detail, new RegExp(missing));
+    }
   });
 });
