@@ -13,7 +13,7 @@ import {
   AcceptForbiddenError,
   acceptTransitionReason,
   acceptTransitionNeedsBefore,
-  unverifiableProtectedPropertyIn,
+  unverifiableProtectedPropertyIn, unverifiableBeforeReason,
   parseGuardFrontmatter,
   stripLeadingBom,
   LEADING_FRONTMATTER_RE,
@@ -440,10 +440,7 @@ class VaultImpl {
       } catch {
         const k = unverifiableProtectedPropertyIn(before);
         if (k) {
-          throw new AcceptForbiddenError(
-            `the note's current frontmatter mentions the protected property '${k}' but cannot be confidently ` +
-              `parsed, so this write cannot be verified to carry the property forward unchanged`
-          );
+          throw new AcceptForbiddenError(unverifiableBeforeReason(k));
         }
         beforeFm = null;
       }
