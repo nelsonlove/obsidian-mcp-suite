@@ -237,7 +237,8 @@ describe("stePack (ste_lint)", () => {
     assert.ok(stePack({ ...SEED, registriesRoot: "Reg" }).run(snapshot({ sources: [{ path: underSeed, text: bad }] })).length > 0, "under another root the same note is editable prose");
     assert.deepEqual(stePack({ ...SEED, registriesRoot: "Reg" }).run(snapshot({ sources: [{ path: "Reg/System architecture/z.md", text: bad }] })), [], "and the other root's folder is band01");
     assert.ok(stePack({ ...SEED, registriesRoot: "" }).run(snapshot({ sources: [{ path: underSeed, text: bad }] })).length > 0, "a BLANK root names no registries folder: the note is editable and still measured");
-    assert.ok(stePack({ ...SEED, registriesRoot: "Reg/" }).run(snapshot({ sources: [{ path: "Reg/System architecture-ish/z.md", text: bad }] })).length > 0, "segment boundary: a sibling folder with the prefix is not the band; a trailing slash on the root is not a difference");
+    assert.ok(stePack({ ...SEED, registriesRoot: "Reg/" }).run(snapshot({ sources: [{ path: "Reg/System architecture-ish/z.md", text: bad }] })).length > 0, "segment boundary: a sibling folder with the prefix is not the band");
+    assert.deepEqual(stePack({ ...SEED, registriesRoot: "Reg/" }).run(snapshot({ sources: [{ path: "Reg/System architecture/z.md", text: bad }] })), [], "a trailing slash on the root is not a difference: the folder is still the band");
     const src = fs.readFileSync(new URL("../src/conformance/packs/ste.ts", import.meta.url), "utf8");
     assert.doesNotMatch(src, /Registries for the system/, "no vault path baked into the pack");
     assert.match(src, /conv\.registriesRoot/, "the pack reads the injected root");
