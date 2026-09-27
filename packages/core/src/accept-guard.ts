@@ -82,7 +82,7 @@ function isAcceptedKey(key: string): boolean {
  *  `verified: [...]` passed while `accepted-by` was refused. The retired family
  *  stays guarded beside it: a stray old-format note must not be re-accepted by
  *  accident, and a floor never shrinks. */
-function isVerifiedKey(key: string): boolean {
+export function isVerifiedKey(key: string): boolean {
   return /^verified([-_ ].*)?$/.test(key.trim().toLowerCase());
 }
 
@@ -90,11 +90,13 @@ function isVerifiedKey(key: string): boolean {
  *  `verified: {}`. Rule 2a refuses that shape on purpose — "a key that is
  *  present and empty reads as a field somebody may fill in" — so it is refused
  *  OUTRIGHT, carry-forward included: an empty value is never a human's record. */
-function isEmptyValue(v: unknown): boolean {
+export function isBlankVerification(v: unknown): boolean {
   if (v === null || v === undefined) return true;
   if (typeof v === "string") return v.trim() === "";
   if (Array.isArray(v)) return v.length === 0;
-  if (typeof v === "object") return Object.keys(v as object).length === 0;
+  // Only a PLAIN empty object is blank: a Date (what a YAML timestamp parses
+  // to under Obsidian's parser) has no own enumerable keys and is a value.
+  if (typeof v === "object") return Object.getPrototypeOf(v) === Object.prototype && Object.keys(v as object).length === 0;
   return false;
 }
 
@@ -467,10 +469,13 @@ export function frontmatterValuesEqual(a: unknown, b: unknown): boolean {
  * trips it; no fence ⇒ no prior frontmatter ⇒ genuinely nothing to remove.
  */
 export function unverifiableProtectedPropertyIn(rawBefore: string): string | null {
-  if (declared.length === 0) return null;
   const block = leadingFrontmatterBlock(rawBefore);
   if (block === null) return null;
   const l = block.toLowerCase();
+  // The floor's own removal rule (#406): an unreadable before that mentions
+  // `verified` may hold a filled record this write would strip.
+  if (/\bverified\b/.test(l)) return "verified";
+  if (declared.length === 0) return null;
   for (const p of declared) {
     if (l.includes(p.key) || l.includes(p.key.replace(/-/g, "_"))) return p.key;
   }
@@ -488,7 +493,12 @@ export function unverifiableProtectedPropertyIn(rawBefore: string): string | nul
  */
 export function acceptTransitionNeedsBefore(after: Record<string, unknown> | null | undefined): boolean {
   if (declared.length > 0) return true;
-  return !!after && acceptTransitionReason(null, after) !== null;
+  // Since #406 the FLOOR itself has a removal rule (a filled `verified` may not
+  // be stripped), so a result that asserts nothing can still be a removal and
+  // the before read is always needed. The parameter stays for the callers'
+  // shape; the shortcut is retired, not narrowed.
+  void after;
+  return true;
 }
 
 /**
@@ -524,8 +534,8 @@ export function acceptTransitionReason(
         // The live key (#406): empty is refused outright (rule 2a); otherwise
         // exactly the accepted family's rule — introduce or change refused,
         // byte-identical carry-forward of a human's record allowed.
-        if (isEmptyValue(after[key])) {
-          return `write would leave the verification field '${key}' present but empty — a verification is a human's record or absent, never a blank to fill in`;
+        if (isBlankVerification(after[key])) {
+          return `write would leave the verification field '${key}' present but empty — a verification is a human's record or absent, never a blank to fill in; remove the key instead (an agent may remove a BLANK '${key}', never a filled one)`;
         }
         const prev = lookupCI(before, key);
         if (!(prev.present && fmEqual(prev.value, after[key]))) {
@@ -538,6 +548,19 @@ export function acceptTransitionReason(
             return `write would set ${key} to an accepted value`;
           }
         }
+      }
+    }
+  }
+  // Removal of a FILLED `verified` record (#406, the #407 review): an agent
+  // stripping a human's verification is a change of standing, refused exactly
+  // as a declared property's removal is. Removal of a BLANK one is the repair
+  // rule 2a asks for and is allowed — a blank is never a record, so nothing is
+  // lost, and it is the only way an agent can make such a note writable again.
+  if (before) {
+    for (const key of Object.keys(before)) {
+      if (!isVerifiedKey(key) || isBlankVerification(before[key])) continue;
+      if (findPropertiesCanonical(after, key).length === 0) {
+        return `write would remove the verification field '${key}' — a human's record leaves only by a human's hand`;
       }
     }
   }

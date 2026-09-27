@@ -90,10 +90,15 @@ function acceptReasonForBlock(block: string, parseYaml?: (yaml: string) => unkno
     if (/acceptance[-_]status/i.test(block) && /\baccepted\b|accepted[-_]/i.test(block)) {
       return "carries an accepted acceptance-status fence";
     }
-    // The live verification key (#406): a block real YAML rejects that carries a
-    // `verified…:` line is suspect, not let through — the same treatment as the
-    // declared properties below, for the one key the vault actually confirms with.
-    if (/^\s*verified([-_ ][^:\n]*)?\s*:/im.test(block)) {
+    // The live verification key (#406): a block real YAML rejects that mentions
+    // `verified` anywhere is suspect, not let through — the same UNANCHORED
+    // substring treatment as the declared properties below, so a quoted key
+    // (`"verified": [`) or a flow form cannot slip it (the #143 quoted-key
+    // requirement). Broader than the structural path is the contract here.
+    // Not `\b`: an underscore is a word character, so `\bverified\b` would miss
+    // `verified_by`. Bounded by "no letter or digit on either side" instead, which
+    // keeps `verified_by`, `verified-on` and `"verified"` in, `unverified` and `verifier` out.
+    if (/(^|[^a-z0-9])verified(?![a-z0-9])/i.test(block)) {
       return "carries a fence mentioning the verification field 'verified'";
     }
     // Same suspect-not-through treatment for the declared protected properties
