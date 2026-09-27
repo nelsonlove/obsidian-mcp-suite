@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { z } from "zod";
-import { publishTools } from "../src/index.js";
+import { publishTools, API_VERSION_MIN, hostApiSupported, partial, isPartial, PARTIAL_BRAND } from "../src/index.js";
 import type {
   VaultMcpApi as SdkVaultMcpApi,
   ExternalToolSpec as SdkExternalToolSpec,
@@ -41,12 +41,17 @@ type MutuallyAssignable<A, B> = [A] extends [B] ? ([B] extends [A] ? true : fals
 // NOTE: method syntax makes registerTools parameter-BIVARIANT,
 // so _api alone would miss parameter drift — the direct _spec/_schema pins
 // below are what carry that load.
-const _api: MutuallyAssignable<SdkVaultMcpApi, HostVaultMcpApi> = true;
+// Since #402 step A the SDK's apiVersion is a FLOOR (`number`, >= API_VERSION_MIN)
+// while the host's stays its literal, so the api surface is pinned in two
+// halves: everything BUT apiVersion mutually assignable, and the host's
+// literal satisfying the SDK's floor (Host → SDK only; the reverse is the
+// point of a floor). A host bump to 2 lands in `_floorRuntime` below as a
+// number the SDK must still accept, not as a type error here.
+const _api: MutuallyAssignable<Omit<SdkVaultMcpApi, "apiVersion">, Omit<HostVaultMcpApi, "apiVersion">> = true;
+const _apiHostSatisfiesSdk: Assignable<HostVaultMcpApi, SdkVaultMcpApi> = true;
 const _spec: Assignable<HostExternalToolSpec, SdkExternalToolSpec> = true;
 const _schema: Assignable<HostJsonSchemaObject, SdkJsonSchemaObject> = true;
-// apiVersion is the literal 1 on BOTH sides — a bump on either end must land here.
 const _vHostToSdk: SdkVaultMcpApi["apiVersion"] = 1 as HostVaultMcpApi["apiVersion"];
-const _vSdkToHost: HostVaultMcpApi["apiVersion"] = 1 as SdkVaultMcpApi["apiVersion"];
 // `MutuallyAssignable` is BLIND to an optional member: a type missing an optional
 // property is assignable both ways, so deleting `guardedTerritories?` from either
 // side passes `_api` silently. Pin its presence and signature explicitly in both
@@ -56,7 +61,7 @@ const _gtHostToSdk: Required<SdkVaultMcpApi>["guardedTerritories"] =
   null as unknown as Required<HostVaultMcpApi>["guardedTerritories"];
 const _gtSdkToHost: Required<HostVaultMcpApi>["guardedTerritories"] =
   null as unknown as Required<SdkVaultMcpApi>["guardedTerritories"];
-void [_api, _spec, _schema, _vHostToSdk, _vSdkToHost, _gtHostToSdk, _gtSdkToHost];
+void [_api, _apiHostSatisfiesSdk, _spec, _schema, _vHostToSdk, _gtHostToSdk, _gtSdkToHost];
 
 // ── Runtime contract: the real SDK against the real host registry ────────────
 // Mirrors how packages/host/src/main.ts exposes the api object
@@ -131,4 +136,31 @@ test("readOnly omitted ⇒ host sees a mutating tool (readOnlyHint false)", () =
   publishTools(plugin, [{ name: "mutator", description: "d", handler: () => ({}) }]);
   const [entry] = registry.entries();
   assert.equal(entry.spec.annotations?.readOnlyHint, false);
+});
+
+// ── #402 step A: the floor and the envelope against the real host shape ──────
+
+test("the host's declared apiVersion meets the SDK's floor, and the floor is 1 (a host bump is a floor change on purpose)", () => {
+  const { registry } = hostWorld();
+  void registry;
+  const api: HostVaultMcpApi = { apiVersion: 1, registerTools: () => () => {} };
+  assert.equal(API_VERSION_MIN, 1);
+  assert.equal(hostApiSupported(api), true);
+  assert.equal(hostApiSupported({ apiVersion: 2 }), true, "a newer host registers");
+  assert.equal(hostApiSupported({ apiVersion: 0 }), false);
+  assert.equal(hostApiSupported({ apiVersion: "1" }), false, "a string is not a version");
+  assert.equal(hostApiSupported({}), false);
+  assert.equal(hostApiSupported(null), false);
+});
+
+test("a partial result crosses the real host registry as the branded object (a v1 host wraps it as data, brand visible)", async () => {
+  const { registry, plugin } = hostWorld();
+  publishTools(plugin, [{ name: "half", description: "d", handler: () => partial({ done: ["a"] }, "b was unreadable") }]);
+  const entry = registry.entries().find((t) => t.toolName.endsWith("_half"));
+  assert.ok(entry, "registered");
+  const r = (await entry!.spec.handler({})) as Record<string, unknown>;
+  assert.equal(isPartial(r), true);
+  assert.equal(r[PARTIAL_BRAND], "partial");
+  assert.deepEqual(r.data, { done: ["a"] });
+  assert.equal(r.message, "b was unreadable");
 });

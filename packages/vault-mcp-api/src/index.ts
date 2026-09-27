@@ -16,7 +16,92 @@ export interface ExternalToolSpec {
   description: string;
   inputSchema?: JsonSchemaObject;
   annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean; idempotentHint?: boolean };
-  handler: (args: Record<string, unknown>) => Promise<unknown> | unknown;
+  /** The host calls this with the tool's arguments and, from apiVersion 2, a
+   *  per-call `CallContext` as the SECOND argument; a v1 host passes nothing
+   *  there. A handler written against this SDK may ignore it. */
+  handler: (args: Record<string, unknown>, ctx?: CallContext) => Promise<unknown> | unknown;
+}
+
+// ── apiVersion 2 members, in the SDK ahead of the host (#402 step A) ─────────
+//
+// THE VERSION NUMBER IS A FLOOR. This SDK used to refuse any host whose
+// `apiVersion` was not exactly 1, so the day the host said 2 every satellite
+// built against the SDK would have gone dark at once, silently but for a
+// console line. Ruled 2026-09-26 (#402 design, Decisions): the SDK accepts
+// `apiVersion >= API_VERSION_MIN`, and a member is detected by PRESENCE, never
+// by the number — the number says "this host has at least these members".
+// Step A ships the members below in the SDK while the host still says 1; the
+// satellites rebuild (no code change); then the host bumps (step B).
+
+/** The lowest host apiVersion this SDK registers against. */
+export const API_VERSION_MIN = 1;
+
+/**
+ * Per-call context a v2 host hands every published handler as its second
+ * argument (design §5). FUNCTIONS, NEVER THE LIST: the host's allowlist is not
+ * handed over — a tool asks "may I show this" and gets yes or no.
+ *
+ * Absent (a v1 host, or a call made before step B lands) means "cannot tell":
+ * a handler that filters must keep whatever it does today, never read absence
+ * as "everything is visible".
+ *
+ * What it does NOT lift: a pathless external tool under an active allowlist is
+ * still refused wholesale by the host (the host cannot verify a satellite
+ * applied `visible`); the context re-lights the ROW filters of tools whose
+ * calls get through, not that gate.
+ */
+export interface CallContext {
+  /** The subset of `paths` this caller may see. Returns the SAME array when no
+   *  allowlist is active (the host's own identity convention). */
+  visible(paths: readonly string[]): readonly string[];
+  /** One path. */
+  isVisible(path: string): boolean;
+  /** The session cannot write. A mutating tool called here was already refused
+   *  by the host; this is for tools that branch. */
+  readOnly: boolean;
+}
+
+/** The brand a partial result carries on the wire — a string-keyed property,
+ *  not a class or a Symbol, because publisher and host are different bundles
+ *  and `instanceof` does not cross them. */
+export const PARTIAL_BRAND = "vault-mcp-api/envelope" as const;
+
+/** What `partial()` returns and a v2 host detects (design §4): the data the
+ *  tool could produce plus the message saying what it could not. A v2 host
+ *  puts `data` in `structuredContent`, the JSON and the message in `content`,
+ *  and sets `isError: true`; a thrown error stays text-only, as today. */
+export interface PartialResult<T extends object> {
+  [PARTIAL_BRAND]: "partial";
+  data: T;
+  message: string;
+}
+
+/**
+ * Return a partial result from a handler: `data` reached the caller AND the
+ * error bit is set, so an agent sees both what was done and what was not.
+ *
+ * On a v1 host the branded object is wrapped as an ordinary `ok(data)` with
+ * the brand key visible — degraded, not broken. A publisher that needs the
+ * error bit checks `api.apiVersion >= 2` before relying on it (or simply
+ * accepts the degraded shape on old hosts).
+ */
+export function partial<T extends object>(data: T, message: string): PartialResult<T> {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new TypeError("partial(): data must be a plain object (the structured half of the result)");
+  }
+  if (typeof message !== "string" || message.trim() === "") {
+    throw new TypeError("partial(): message must say what the tool could not do");
+  }
+  return { [PARTIAL_BRAND]: "partial", data, message };
+}
+
+/** Whether a handler's TOP-LEVEL return value is a partial result. The brand
+ *  is checked only there (design §4 rule 2): a `partial` nested inside `data`
+ *  is data. Exported for the host's step B and for publishers' own tests. */
+export function isPartial(value: unknown): value is PartialResult<object> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  return v[PARTIAL_BRAND] === "partial" && typeof v.message === "string" && !!v.data && typeof v.data === "object";
 }
 
 /**
@@ -33,7 +118,10 @@ export interface ExternalToolSpec {
  * governance seam beside it, and neither changes what a publisher sends.
  */
 export interface VaultMcpApi {
-  apiVersion: 1;
+  /** A FLOOR, not an exact match (#402 step A): the host declares the version
+   *  whose members it carries, and this SDK registers against any host at or
+   *  above `API_VERSION_MIN`. Members are detected by presence. */
+  apiVersion: number;
   registerTools(ownerPluginId: string, tools: ExternalToolSpec[]): () => void;
   /**
    * The host operator's configured guarded territories — vault areas no plugin
@@ -137,7 +225,10 @@ export interface SdkToolSpec {
   destructive?: boolean;
   /** Set true if repeated identical calls have no additional effect. */
   idempotent?: boolean;
-  handler: (args: Record<string, unknown>) => Promise<unknown> | unknown;
+  /** Called with the tool's arguments and, from a v2 host, a per-call
+   *  `CallContext` (see its doc for what absence means). May return a
+   *  `partial(...)` to set the error bit while still returning data. */
+  handler: (args: Record<string, unknown>, ctx?: CallContext) => Promise<unknown> | unknown;
 }
 
 /**
@@ -160,7 +251,11 @@ export interface SdkToolSpec {
 const HOST_PLUGIN_IDS = ["vault-mcp", "governor"] as const;
 /** Ready events, same order and same reason as HOST_PLUGIN_IDS. */
 const HOST_READY_EVENTS = ["vault-mcp:ready", "governor:ready"] as const;
-const API_VERSION = 1;
+/** True when a host's `apiVersion` meets the floor. One predicate for both
+ *  registration paths, so they cannot drift on what "supported" means. */
+export function hostApiSupported(api: { apiVersion?: unknown } | null | undefined): boolean {
+  return !!api && typeof api.apiVersion === "number" && Number.isFinite(api.apiVersion) && api.apiVersion >= API_VERSION_MIN;
+}
 
 function isJsonSchema(s: NonNullable<SdkToolSpec["inputSchema"]>): s is JsonSchemaObject {
   // A zod raw shape's values are zod schemas, never the string "object",
@@ -214,8 +309,8 @@ export function publishTools(plugin: Plugin, tools: SdkToolSpec[]): () => void {
     for (const id of HOST_PLUGIN_IDS) {
       const api = loaded?.[id]?.api;
       if (!api) continue;
-      if (api.apiVersion !== API_VERSION) {
-        console.warn(`[vault-mcp-api] '${id}' apiVersion ${api.apiVersion} ≠ supported ${API_VERSION}; not registering '${plugin.manifest.id}' tools`);
+      if (!hostApiSupported(api)) {
+        console.warn(`[vault-mcp-api] '${id}' apiVersion ${String(api.apiVersion)} is below the supported floor ${API_VERSION_MIN}; not registering '${plugin.manifest.id}' tools`);
         return null;
       }
       return api;
@@ -274,8 +369,8 @@ export function registerGovernance(plugin: Plugin, hooks: GovernanceHooks): () =
     for (const id of HOST_PLUGIN_IDS) {
       const api = loaded?.[id]?.api;
       if (!api) continue;
-      if (api.apiVersion !== API_VERSION) {
-        console.warn(`[vault-mcp-api] '${id}' apiVersion ${api.apiVersion} ≠ supported ${API_VERSION}; not registering '${plugin.manifest.id}' governance hooks`);
+      if (!hostApiSupported(api)) {
+        console.warn(`[vault-mcp-api] '${id}' apiVersion ${String(api.apiVersion)} is below the supported floor ${API_VERSION_MIN}; not registering '${plugin.manifest.id}' governance hooks`);
         return null;
       }
       // A host predating the seam exposes `registerTools` and nothing else.

@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { z } from "zod";
-import { publishTools } from "../src/index.js";
+import { publishTools, partial, isPartial, PARTIAL_BRAND, API_VERSION_MIN, type CallContext } from "../src/index.js";
 
 // Minimal fake of the Obsidian surface publishTools touches: workspace event
 // bus (on/offref/trigger) + plugins map + plugin.manifest.id.
@@ -83,11 +83,20 @@ test("waits for vault-mcp:ready when not loaded; re-registers on reload", () => 
   assert.equal(api.unregisteredCount(), 0); // stale unregister dropped, never called
 });
 
-test("apiVersion mismatch: warns, never registers", () => {
-  const api = fakeApi(2);
-  const { app } = fakeWorld(api);
-  publishTools(plugin(app), [{ name: "t", description: "d", handler: () => ({}) }]);
-  assert.equal(api.calls.length, 0);
+test("apiVersion is a FLOOR (#402 step A): a host at 2 registers; a host below 1, or with no number, warns and never registers", () => {
+  const newer = fakeApi(2);
+  publishTools(plugin(fakeWorld(newer).app), [{ name: "t", description: "d", handler: () => ({}) }]);
+  assert.equal(newer.calls.length, 1, "a newer host is at least a v1 host");
+  const old = fakeApi(0);
+  publishTools(plugin(fakeWorld(old).app), [{ name: "t", description: "d", handler: () => ({}) }]);
+  assert.equal(old.calls.length, 0);
+  const none = fakeApi();
+  delete (none as { apiVersion?: number }).apiVersion; // the fake's default parameter would make undefined a v1 host
+  publishTools(plugin(fakeWorld(none).app), [{ name: "t", description: "d", handler: () => ({}) }]);
+  assert.equal(none.calls.length, 0, "no version is not a version");
+  const str = fakeApi("1" as unknown as number);
+  publishTools(plugin(fakeWorld(str).app), [{ name: "t", description: "d", handler: () => ({}) }]);
+  assert.equal(str.calls.length, 0, "a string is not a version");
 });
 
 test("disposer unregisters and unsubscribes", () => {
@@ -178,12 +187,51 @@ test("both host events firing on one load is harmless (host replaces by tool nam
   assert.equal(api.unregisteredCount(), 0); // the superseded disposer is never called
 });
 
-test("apiVersion mismatch on the current id does not fall through to a legacy entry", () => {
-  const bad = fakeApi(2);
+test("a host BELOW the floor on the current id does not fall through to a legacy entry", () => {
+  const bad = fakeApi(0);
   const good = fakeApi();
   const { app } = fakeWorld(bad, "vault-mcp");
   (app.plugins.plugins as Record<string, unknown>)["governor"] = { api: good };
   publishTools(plugin(app), [{ name: "t", description: "d", handler: () => ({}) }]);
   assert.equal(bad.calls.length, 0);
   assert.equal(good.calls.length, 0);
+});
+
+// ── #402 step A: the envelope and the caller context ─────────────────────────
+
+test("partial(): a branded plain object with data and message; the brand is a string key so it crosses bundles", () => {
+  const r = partial({ done: 2 }, "one note was unreadable");
+  assert.deepEqual(r, { [PARTIAL_BRAND]: "partial", data: { done: 2 }, message: "one note was unreadable" });
+  assert.equal(PARTIAL_BRAND, "vault-mcp-api/envelope");
+  assert.equal(API_VERSION_MIN, 1);
+});
+
+test("partial() refuses a non-object data or a blank message — the shape is the contract", () => {
+  assert.throws(() => partial(["a"] as unknown as object, "m"), TypeError);
+  assert.throws(() => partial(null as unknown as object, "m"), TypeError);
+  assert.throws(() => partial({ a: 1 }, "  "), TypeError);
+});
+
+test("isPartial: TOP-LEVEL only — a partial nested inside data is data; a look-alike missing a half is not partial", () => {
+  const inner = partial({ x: 1 }, "inner");
+  assert.equal(isPartial(inner), true);
+  assert.equal(isPartial({ data: { nested: inner }, ok: true }), false, "nested is data");
+  assert.equal(isPartial({ [PARTIAL_BRAND]: "partial", data: { x: 1 } }), false, "no message");
+  assert.equal(isPartial({ [PARTIAL_BRAND]: "partial", message: "m" }), false, "no data");
+  assert.equal(isPartial({ [PARTIAL_BRAND]: "full", data: {}, message: "m" }), false, "wrong brand value");
+  assert.equal(isPartial("partial"), false);
+  assert.equal(isPartial(null), false);
+});
+
+test("a handler receives the caller context as its SECOND argument when the host passes one, and nothing when it does not", async () => {
+  const api = fakeApi();
+  const { app } = fakeWorld(api);
+  const seen: unknown[] = [];
+  publishTools(plugin(app), [{ name: "t", description: "d", handler: (args, ctx) => { seen.push(ctx); return { args }; } }]);
+  const sent = api.calls[0].tools[0] as { handler: (a: Record<string, unknown>, c?: CallContext) => unknown };
+  const ctx: CallContext = { visible: (p) => p, isVisible: () => true, readOnly: false };
+  await sent.handler({ a: 1 }, ctx);
+  await sent.handler({ a: 2 });
+  assert.equal(seen[0], ctx, "a v2 host's context reaches the publisher's handler untouched");
+  assert.equal(seen[1], undefined, "a v1 host passes nothing: absence means cannot-tell, never everything-visible");
 });
