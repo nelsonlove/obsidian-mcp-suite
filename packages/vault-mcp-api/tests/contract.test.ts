@@ -12,12 +12,16 @@ import type {
   VaultMcpApi as SdkVaultMcpApi,
   ExternalToolSpec as SdkExternalToolSpec,
   JsonSchemaObject as SdkJsonSchemaObject,
+  CallContext as SdkCallContext,
 } from "../src/index.js";
 import {
   ExternalToolRegistry,
   sanitizeOwnerId,
+  PARTIAL_BRAND as HOST_PARTIAL_BRAND,
+  isPartialEnvelope as hostIsPartialEnvelope,
   type VaultMcpApi as HostVaultMcpApi,
   type ExternalToolSpec as HostExternalToolSpec,
+  type CallContext as HostCallContext,
 } from "../../host/src/mcp/external-tools.js";
 import type { JsonSchemaObject as HostJsonSchemaObject } from "../../host/src/mcp/json-schema-to-zod.js";
 
@@ -57,12 +61,14 @@ const _apiHostSatisfiesSdk: Assignable<HostVaultMcpApi, SdkVaultMcpApi> = true;
 const _hostDeclaresALevel: number extends HostVaultMcpApi["apiVersion"] ? false : true = true;
 const _spec: Assignable<HostExternalToolSpec, SdkExternalToolSpec> = true;
 const _schema: Assignable<HostJsonSchemaObject, SdkJsonSchemaObject> = true;
-// OWED AT STEP B (#402 design §6): when the host gains `CallContext` and the
-// envelope, pin each with `Required<>` in both directions the way
-// `guardedTerritories` is below — `MutuallyAssignable` is blind to an optional
-// member (#396). Until then the members are SDK-only and have no host
-// counterpart to pin against; this comment is the marker so the debt is not
-// silent.
+// The apiVersion-2 members, pinned in BOTH directions (design §6, the way
+// `guardedTerritories` is below; #396 showed `MutuallyAssignable` is blind to an
+// optional member, and the handler's `ctx` IS optional): the context type,
+// and the handler's second parameter, which is where the context crosses.
+const _ctx: MutuallyAssignable<SdkCallContext, HostCallContext> = true;
+type SdkHandlerCtx = Parameters<Required<SdkExternalToolSpec>["handler"]>[1];
+type HostHandlerCtx = Parameters<Required<HostExternalToolSpec>["handler"]>[1];
+const _handlerCtx: MutuallyAssignable<SdkHandlerCtx, HostHandlerCtx> = true;
 // `MutuallyAssignable` is BLIND to an optional member: a type missing an optional
 // property is assignable both ways, so deleting `guardedTerritories?` from either
 // side passes `_api` silently. Pin its presence and signature explicitly in both
@@ -72,7 +78,7 @@ const _gtHostToSdk: Required<SdkVaultMcpApi>["guardedTerritories"] =
   null as unknown as Required<HostVaultMcpApi>["guardedTerritories"];
 const _gtSdkToHost: Required<HostVaultMcpApi>["guardedTerritories"] =
   null as unknown as Required<SdkVaultMcpApi>["guardedTerritories"];
-void [_api, _apiHostSatisfiesSdk, _hostDeclaresALevel, _spec, _schema, _gtHostToSdk, _gtSdkToHost];
+void [_api, _apiHostSatisfiesSdk, _hostDeclaresALevel, _spec, _schema, _gtHostToSdk, _gtSdkToHost, _ctx, _handlerCtx];
 
 // ── Runtime contract: the real SDK against the real host registry ────────────
 // Mirrors how packages/host/src/main.ts exposes the api object
@@ -81,7 +87,7 @@ void [_api, _apiHostSatisfiesSdk, _hostDeclaresALevel, _spec, _schema, _gtHostTo
 function hostWorld() {
   const registry = new ExternalToolRegistry();
   const api: HostVaultMcpApi = {
-    apiVersion: 1,
+    apiVersion: 2,
     registerTools: (owner, tools) => registry.registerTools(owner, tools),
   };
   const app = {
@@ -151,12 +157,12 @@ test("readOnly omitted ⇒ host sees a mutating tool (readOnlyHint false)", () =
 
 // ── #402 step A: the floor and the envelope against the real host shape ──────
 
-test("the host's declared apiVersion meets the SDK's floor, and the floor is 1 (a host bump is a floor change on purpose)", () => {
+test("the host's declared apiVersion (2) meets the SDK's floor (1): a host bump lands here as a fixture edit, on purpose", () => {
   const { registry } = hostWorld();
   void registry;
-  const api: HostVaultMcpApi = { apiVersion: 1, registerTools: () => () => {} };
-  assert.equal(API_VERSION_MIN, 1);
-  assert.equal(hostApiSupported(api), true);
+  const api: HostVaultMcpApi = { apiVersion: 2, registerTools: () => () => {} };
+  assert.equal(API_VERSION_MIN, 1, "the floor stays 1: a host at 1 is still a host");
+  assert.equal(hostApiSupported(api), true, "the host at 2 meets the floor");
   assert.equal(hostApiSupported({ apiVersion: 2 }), true, "a newer host registers");
   assert.equal(hostApiSupported({ apiVersion: 0 }), false);
   assert.equal(hostApiSupported({ apiVersion: "1" }), false, "a string is not a version");
@@ -164,7 +170,7 @@ test("the host's declared apiVersion meets the SDK's floor, and the floor is 1 (
   assert.equal(hostApiSupported(null), false);
 });
 
-test("a partial result crosses the real host registry as the branded object, unaltered by registration (what a v1 host then does with it is pinned in the host's own external-tools test)", async () => {
+test("a partial result crosses the real host registry as the branded object, unaltered by registration (the host's own external-tools test pins what a v2 host then makes of it; the v1 wrapping is no longer observable here)", async () => {
   const { registry, plugin } = hostWorld();
   publishTools(plugin, [{ name: "half", description: "d", handler: () => partial({ done: ["a"] }, "b was unreadable") }]);
   const entry = registry.entries().find((t) => t.toolName.endsWith("_half"));
@@ -174,4 +180,19 @@ test("a partial result crosses the real host registry as the branded object, una
   assert.equal(r[PARTIAL_BRAND], "partial");
   assert.deepEqual(r.data, { done: ["a"] });
   assert.equal(r.message, "b was unreadable");
+});
+
+test("the brand is spelled the same on both sides, and the two predicates agree on every shape — the host re-spells them under its layering rule", () => {
+  assert.equal(HOST_PARTIAL_BRAND, PARTIAL_BRAND);
+  const shapes: unknown[] = [
+    partial({ a: 1 }, "m"),
+    { [PARTIAL_BRAND]: "partial", data: { a: 1 }, message: "m" },
+    { [PARTIAL_BRAND]: "partial", data: ["a"], message: "m" },
+    { [PARTIAL_BRAND]: "partial", data: {}, message: "  " },
+    { [PARTIAL_BRAND]: "partial", data: {} },
+    { [PARTIAL_BRAND]: "full", data: {}, message: "m" },
+    { data: { nested: partial({ x: 1 }, "inner") } },
+    "partial", null, undefined, 3, [partial({ a: 1 }, "m")],
+  ];
+  for (const s of shapes) assert.equal(hostIsPartialEnvelope(s), isPartial(s), JSON.stringify(s));
 });

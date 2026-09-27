@@ -317,6 +317,15 @@ describe("operation executor — outcomes", () => {
     void executor;
   });
 
+  test("a PARTIAL result (apiVersion 2: a published tool's coded `Error [partial]:` envelope) is recorded as partial — work happened, not refused, not completed", async () => {
+    const executor = fixtureExecutor();
+    const { operation } = await executor.run(
+      { action: "note.read", actionVersion: 1, surface: MCP, inputs: {} },
+      async () => ({ isError: true, content: [{ type: "text", text: "Error [partial]: b was unreadable" }, { type: "text", text: "{}" }], structuredContent: { done: ["a"] } })
+    );
+    assert.equal(operation.outcome, "partial");
+  });
+
   test("a returned error envelope is recorded as refused, not completed", async () => {
     // Tool handlers report failure by RETURNING `{isError: true}` rather than
     // throwing, so an executor that only watched for exceptions would record
