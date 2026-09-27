@@ -17,6 +17,7 @@ import { runConformance, baselineRelFrom, excludedRootsFrom, coverageRefusal, ba
 import { parseBaseline } from "../conformance/ratchet.js";
 import { DEFAULT_VOCABULARIES } from "@vault-mcp/core";
 import { DEFAULT_SCHEMES } from "../kernel/scheme/registry.js";
+import { EMPTY_VAULT_CONVENTIONS, type VaultConventions } from "../conformance/vault-conventions.js";
 
 /** Read a UTF-8 file, or null when it is absent/unreadable (never throws). */
 async function readOrNull(path: string): Promise<string | null> {
@@ -41,7 +42,7 @@ function vaultRoot(app: App): string {
  * on). `liveFindings` runs the full engine once; `baselineText`/`sidecar` are
  * cheap reads.
  */
-export function obsidianDebtSource(app: App, territories?: () => readonly string[]): DebtSource {
+export function obsidianDebtSource(app: App, territories?: () => readonly string[], conventions?: () => VaultConventions): DebtSource {
   const root = vaultRoot(app);
   const baselinePath = join(root, baselineRelFrom(process.env));
   const excludedRoots = excludedRootsFrom([], process.env);
@@ -65,6 +66,10 @@ export function obsidianDebtSource(app: App, territories?: () => readonly string
         excludedRoots,
         legacyPacks: true,
         territories: territories?.(),
+        // The operator's conventions, read per call (#403) exactly as the
+        // territories are; a source built without the thunk measures nothing
+        // (EMPTY), loudly, rather than one vault's former paths.
+        conventions: conventions?.() ?? EMPTY_VAULT_CONVENTIONS,
       });
       // #294: a pack the baseline describes that did not run (threw, or its
       // convention path is dead — #298) would report every one of its accepted
@@ -95,7 +100,7 @@ export function obsidianDebtSource(app: App, territories?: () => readonly string
  * the sidecar and trend log already live there, and the baseline itself is
  * never touched.
  */
-export function obsidianDebtRenderSource(app: App, territories?: () => readonly string[]): DebtRegisterSource {
+export function obsidianDebtRenderSource(app: App, territories?: () => readonly string[], conventions?: () => VaultConventions): DebtRegisterSource {
   const baselineRel = baselineRelFrom(process.env);
   const dir = posix.dirname(baselineRel);
   const vault = app.vault as unknown as {
@@ -105,7 +110,7 @@ export function obsidianDebtRenderSource(app: App, territories?: () => readonly 
     createFolder(path: string): Promise<unknown>;
   };
   return {
-    ...obsidianDebtSource(app, territories),
+    ...obsidianDebtSource(app, territories, conventions),
     defaultRegisterDir(): string {
       return dir === "." ? "" : dir;
     },

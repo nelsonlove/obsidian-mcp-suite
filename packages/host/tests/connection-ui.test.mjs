@@ -164,11 +164,12 @@ describe("addAllowOpaqueEntry — the 'Add a command' picker's append+dedupe", (
 // ── tabbed settings UI: the pure, DOM-free half ─────────────────────────────
 
 describe("buildSettingsTabs — data-driven tab derivation from the module set", () => {
-  test("the two fixed tabs lead, in order, before any module", () => {
+  test("the three fixed tabs lead, in order, before any module (Conformance since #403)", () => {
     const tabs = buildSettingsTabs([]);
     assert.deepEqual(tabs, [
       { id: "connection", name: "Connection" },
       { id: "security", name: "Security" },
+      { id: "conformance", name: "Conformance" },
     ]);
   });
 
@@ -176,11 +177,11 @@ describe("buildSettingsTabs — data-driven tab derivation from the module set",
     const tabs = buildSettingsTabs([{ id: "scheme" }, { id: "vocab" }, { id: "health" }]);
     assert.deepEqual(
       tabs.map((t) => t.id),
-      ["connection", "security", "module:scheme", "module:vocab", "module:health"],
+      ["connection", "security", "conformance", "module:scheme", "module:vocab", "module:health"],
     );
     // tab NAME is the module id (matching the section header the renderer uses)
     assert.deepEqual(
-      tabs.slice(2).map((t) => t.name),
+      tabs.slice(3).map((t) => t.name),
       ["scheme", "vocab", "health"],
     );
   });
@@ -199,16 +200,18 @@ describe("buildSettingsTabs — data-driven tab derivation from the module set",
     assert.deepEqual(tabs.map((t) => t.id), [
       "connection",
       "security",
+      "conformance",
       "module:connection",
       "module:security",
     ]);
     assert.equal(moduleTabId("connection"), `${MODULE_TAB_PREFIX}connection`);
   });
 
-  test("STATIC_SETTINGS_TABS is the leading two, unchanged", () => {
+  test("STATIC_SETTINGS_TABS is the leading three: Connection, Security, and (since #403) Conformance", () => {
     assert.deepEqual([...STATIC_SETTINGS_TABS], [
       { id: "connection", name: "Connection" },
       { id: "security", name: "Security" },
+      { id: "conformance", name: "Conformance" },
     ]);
   });
 });

@@ -19,6 +19,7 @@ import { registerUidTools } from "./tools-uid.js";
 import { registerLinkTools, obsidianLinkSource } from "./tools-links.js";
 import { registerConformanceDebtTools, registerConformanceDebtRenderTool } from "./tools-conformance-debt.js";
 import { obsidianDebtRenderSource } from "./obsidian-debt-source.js";
+import { resolveConventions } from "../conformance/vault-conventions.js";
 import { mountModules } from "./modules-mount.js";
 import { registerCodeModeTools, makeCaptureRegister, type CapturedRegistry } from "./tools-code-mode.js";
 import { makeGuarded, resolveGuardedPath, withKernelArgs } from "./guarded.js";
@@ -519,7 +520,12 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   // The operator's territories, read per call (#397) — the conformance rail
   // must refuse to walk a territory a human added, which is the half of #397
   // that a first pass threaded through `SnapshotOpts` and then never supplied.
-  const debtSource = obsidianDebtRenderSource(app, () => resolveTerritories(ctx.getSettings().guardedTerritories));
+  const debtSource = obsidianDebtRenderSource(
+    app,
+    () => resolveTerritories(ctx.getSettings().guardedTerritories),
+    // The conventions too, read per call (#403).
+    () => resolveConventions(ctx.getSettings().vaultConventions),
+  );
   const debtCtx = {
     config: ctx.getSettings().modules?.["conformance-debt"]?.config,
     getSettings: () => ctx.getSettings(),

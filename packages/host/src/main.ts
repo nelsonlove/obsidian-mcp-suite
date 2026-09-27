@@ -22,6 +22,8 @@ import { mountAction } from "./mount-state.js";
 import { wireSchemePanes, registerSchemeCommands } from "./scheme/wiring.js";
 import { runHostAdoption, LEGACY_PLUGIN_ID, PLUGIN_ID } from "./id-migration.js";
 import { territoriesOnLoad } from "./territory-policy.js";
+import { conventionsOnLoad } from "./conventions-policy.js";
+import { EMPTY_VAULT_CONVENTIONS, resolveConventions, type VaultConventions } from "./conformance/vault-conventions.js";
 import {
   DEFAULT_RECORD_IDENTIFICATION,
   normalizeRecordIdentification,
@@ -172,6 +174,18 @@ interface VaultMcpSettings {
    */
   guardedTerritories: string[];
   /**
+   * The vault conventions the conformance rail's legacy packs read (#403):
+   * where the registries live, the system spine, the artifacts root, the
+   * plugin-stack note, the uid-exempt notes, the ungoverned roots. EMPTY BY
+   * DEFAULT — the plugin ships no vault layout (the 2026-09-22 ruling) — and an
+   * empty key reads as that convention DEAD: its packs register, are not
+   * measured, and the report says so. An install that predates this setting
+   * is seeded ONCE with the former shipped paths (`conventionsOnLoad`), so an
+   * upgrade changes nothing for it. Read live per call by the debt and drift
+   * sources; the standalone CLI reads `VAULT_MCP_CONVENTIONS` instead.
+   */
+  vaultConventions: VaultConventions;
+  /**
    * How a note declares itself a RECORD — historical, byte-verified, extended
    * only by end-of-file append (see `enforceRecordImmutability`). The same
    * three knobs TaskNotes exposes for its task identifier: a frontmatter
@@ -241,6 +255,7 @@ const DEFAULT_SETTINGS: VaultMcpSettings = {
   captureObservations: false,
   captureMaxBytes: 50 * 1024 * 1024,
   guardedTerritories: [],
+  vaultConventions: resolveConventions(EMPTY_VAULT_CONVENTIONS),
   recordIdentification: { ...DEFAULT_RECORD_IDENTIFICATION },
 };
 
@@ -309,6 +324,11 @@ export default class VaultMcpPlugin extends Plugin {
     // legacy operator's folder names on a later load.
     const territories = territoriesOnLoad(own, seed);
     this.settings.guardedTerritories = territories.territories;
+    // #403 — vault conventions, the same shape: no shipped default, seeded
+    // once for an install that predates the key, coerced through
+    // `resolveConventions` so a hand-edited value cannot crash a run.
+    const conventions = conventionsOnLoad(own, seed);
+    this.settings.vaultConventions = conventions.conventions;
     // The record identifier: coerce a partial or malformed value to the default
     // rather than crashing the probe or the settings tab. The rule is the
     // kernel's (`normalizeRecordIdentification`), tested there.
@@ -364,7 +384,7 @@ export default class VaultMcpPlugin extends Plugin {
     setDeclaredProtectedProperties(this.settings.protectedProperties);
     // Persist NOW if the territories key was absent (seeded or fresh), so the
     // seeding branch above can never run a second time for this install.
-    if (territories.persist) await this.saveSettings();
+    if (territories.persist || conventions.persist) await this.saveSettings();
   }
   async saveSettings() {
     await this.saveData(this.settings);
@@ -669,6 +689,7 @@ export default class VaultMcpPlugin extends Plugin {
         // here would freeze it per connection, so an operator's edit would not
         // reach capture until the next reconnect — the inert-toggle shape again.
         guardedTerritories: this.settings.guardedTerritories,
+        vaultConventions: this.settings.vaultConventions,
       }),
       serverIdentity,
       sessions: {
@@ -857,6 +878,7 @@ export default class VaultMcpPlugin extends Plugin {
       try {
         this.schemePanesComponent = wireSchemePanes(this, {
           getTerritories: () => resolveTerritories(this.settings.guardedTerritories),
+          getConventions: () => resolveConventions(this.settings.vaultConventions),
           getSchemes: () => this.settings.schemes ?? DEFAULT_SCHEMES,
         });
       } catch (e) {

@@ -46,6 +46,7 @@ import { makeRegistry, excludeRoots, type SchemeInstanceConfig } from "../kernel
 import { INBOX_VIEW_TYPE, InboxPaneView, type InboxPaneController } from "./inbox-pane.js";
 import { DRIFT_VIEW_TYPE, DriftPaneView, type DriftPaneController } from "./drift-pane.js";
 import { obsidianDriftSource } from "../mcp/obsidian-drift-source.js";
+import { type VaultConventions } from "../conformance/vault-conventions.js";
 
 function revealFolder(app: App, path: string): void {
   const folder = app.vault.getAbstractFileByPath(path);
@@ -93,6 +94,9 @@ export interface WireSchemePanesOpts {
    * reason `getSchemes` is (#397): the drift pane runs the conformance rail,
    * which must not walk a territory a human added since the pane mounted. */
   getTerritories?: () => readonly string[];
+  /** The operator's vault conventions, read fresh per call (#403), for the
+   * same reason: the drift pane must measure what the settings say now. */
+  getConventions?: () => VaultConventions;
 }
 
 /** Mount both panes on one shared child Component — they're gated by the
@@ -158,7 +162,7 @@ export function wireSchemePanes(plugin: Plugin, opts: WireSchemePanesOpts): Comp
   }
 
   try {
-    const driftSource = obsidianDriftSource(app, opts.getTerritories);
+    const driftSource = obsidianDriftSource(app, opts.getTerritories, opts.getConventions);
     const driftController: DriftPaneController = {
       scan: () => driftSource.scan(),
       openNote: (path) => void app.workspace.openLinkText(path, ""),

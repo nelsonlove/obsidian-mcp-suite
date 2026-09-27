@@ -31,6 +31,8 @@ import {
   resolveTerritories,
 } from "@vault-mcp/core";
 import { hasGuardedTerritory } from "./territory-policy.js";
+import { CONVENTION_FIELDS, conventionFieldValue } from "./conventions-policy.js";
+import { resolveConventions } from "./conformance/vault-conventions.js";
 
 // ── tabbed settings UI: the pure, DOM-free half ─────────────────────────────
 //
@@ -53,6 +55,8 @@ export interface SettingsTab {
 export const STATIC_SETTINGS_TABS: readonly SettingsTab[] = [
   { id: "connection", name: "Connection" },
   { id: "security", name: "Security" },
+  // #403: the conformance rail's vault conventions, six fields, no shipped values.
+  { id: "conformance", name: "Conformance" },
 ];
 
 /** Prefix distinguishing a per-module tab id from a static one, so a module
@@ -290,6 +294,7 @@ export class VaultMcpSettingTab extends PluginSettingTab {
     // one per module instead of a single stacked list.
     this.renderConnectionTab(panes.get("connection")!);
     this.renderSecurityTab(panes.get("security")!);
+    this.renderConformanceTab(panes.get("conformance")!);
 
     const hosted = collect(modules, this.plugin.settings.modules, this.plugin.settings);
     for (const tab of tabs) {
@@ -430,6 +435,43 @@ export class VaultMcpSettingTab extends PluginSettingTab {
    * policy (re-enabled opaque / denied), trusted read-only plugins, and the
    * path allowlist. Verbatim the former Security section, retargeted to this
    * tab's pane. */
+  /** The vault conventions the conformance rail's legacy packs read (#403).
+   *  One field per key, from `CONVENTION_FIELDS`; committed on BLUR like the
+   *  guarded territories, so a half-typed path is never what the next debt or
+   *  drift run measures against. Blank is honest: that convention is dead and
+   *  the report says so; there is no built-in layout behind an empty box. */
+  private renderConformanceTab(containerEl: HTMLElement): void {
+    containerEl.createEl("h3", { text: "Conformance" });
+    containerEl.createEl("p", {
+      cls: "setting-item-description",
+      text:
+        "Where the conformance rail's legacy checks look. There is no built-in layout: a blank path means that convention is DEAD — the checks that read it register, are not measured, and the report says so — until you point it at your vault. The in-app debt and drift views read these live; the standalone CLI reads VAULT_MCP_CONVENTIONS instead.",
+    });
+    for (const field of CONVENTION_FIELDS) {
+      const current = resolveConventions(this.plugin.settings.vaultConventions)[field.key];
+      const shown = Array.isArray(current) ? current.join("\n") : current;
+      const commit = (raw: string) => {
+        const next = resolveConventions(this.plugin.settings.vaultConventions);
+        (next as unknown as Record<string, unknown>)[field.key] = conventionFieldValue(field, raw);
+        this.plugin.settings.vaultConventions = resolveConventions(next);
+        void this.plugin.saveSettings();
+      };
+      const setting = new Setting(containerEl).setName(field.label).setDesc(field.help);
+      if (field.kind === "paths") {
+        setting.addTextArea((t) => {
+          t.inputEl.rows = 3;
+          t.setValue(shown);
+          t.inputEl.addEventListener("blur", () => commit(t.inputEl.value));
+        });
+      } else {
+        setting.addText((t) => {
+          t.setValue(shown).setPlaceholder("blank = not measured");
+          t.inputEl.addEventListener("blur", () => commit(t.inputEl.value));
+        });
+      }
+    }
+  }
+
   private renderSecurityTab(containerEl: HTMLElement): void {
     containerEl.createEl("h3", { text: "Security" });
 

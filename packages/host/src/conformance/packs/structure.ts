@@ -31,7 +31,7 @@
 // id IS the `script` field: "conformance_check".
 
 import { leadingFrontmatterBlock, stripLeadingFrontmatter } from "@vault-mcp/core";
-import { DEFAULT_VAULT_CONVENTIONS, type VaultConventions } from "../vault-conventions.js";
+import type { VaultConventions } from "../vault-conventions.js";
 import type { Finding } from "../finding.js";
 import type { RulePack, SourceFile, VaultSnapshot } from "../rule-pack.js";
 import { requireSources, requireBlueprints } from "../rule-pack.js";
@@ -43,8 +43,9 @@ export const STRUCTURE_PACK_ID = "conformance_check";
  * Vault-relative; the note→blueprint basename index is built from `.blueprint`
  * files under here. `{% include %}` still resolves against the full blueprint
  * listing, matching the Python (which reads include targets off disk by path). */
-export const DEFAULT_BLUEPRINT_ROOT =
-  DEFAULT_VAULT_CONVENTIONS.registriesRoot;
+// (#403) There is no default blueprint root: `structurePack` takes the
+// operator's conventions as a REQUIRED option; the former constant was a
+// second reader of the shipped layout.
 
 const COMMENT = /{#[\s\S]*?#}/g;
 const INCLUDE = /{%-?\s*include\s+"([^"]+)"\s*-?%}/g;
@@ -132,13 +133,13 @@ export interface StructurePackOpts {
   /** Vault-shaped conventions (ungoverned roots, registries root). Injected
    * rather than read from the environment at module load: an exported constant
    * that varies with ambient env makes the test suite non-hermetic. */
-  conventions?: VaultConventions;
-  /** Vault-relative blueprint-registry root; defaults to the injected conventions' `registriesRoot` (which is DEFAULT_BLUEPRINT_ROOT only when no conventions are injected). */
+  conventions: VaultConventions;
+  /** Vault-relative blueprint-registry root; defaults to the injected conventions' `registriesRoot`. */
   blueprintRoot?: string;
 }
 
-export function structurePack(opts: StructurePackOpts = {}): RulePack {
-  const conv = opts.conventions ?? DEFAULT_VAULT_CONVENTIONS;
+export function structurePack(opts: StructurePackOpts): RulePack {
+  const conv = opts.conventions;
   // The INJECTED registries root, not the module constant — the constant
   // ignored every GOVERNOR_VAULT_CONVENTIONS override of this key, so the
   // note→blueprint index was built from a root that did not exist and every
