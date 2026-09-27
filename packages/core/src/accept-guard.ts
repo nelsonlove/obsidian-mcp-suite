@@ -42,16 +42,42 @@
 export class AcceptForbiddenError extends Error {
   readonly code = "accept_forbidden";
   constructor(reason: string) {
-    super(
-      /protected propert/.test(reason)
-        ? `${reason}. Declared protected frontmatter properties are human-only: no agent transport may ` +
-            `introduce, change, or remove one (byte-identical carry-forward is allowed). Leave the property ` +
-            `exactly as it is on disk and retry; a human sets it by editing the note directly in Obsidian.`
-        : `${reason}. The transport never persists acceptance — the accept verb is in no API. ` +
-            `Remove the accepted/accepted-by/accepted-on field and retry; acceptance is a human gesture only.`
-    );
+    super(`${reason}. ${acceptForbiddenTrailer(reason)}`);
     this.name = "AcceptForbiddenError";
   }
+}
+
+/**
+ * The guidance trailer for one refusal family, keyed on the REASON the shared
+ * predicate produced (#408): the accepted-family text is byte-identical to
+ * what it always was; a declared-property refusal gets property guidance; and
+ * a `verified` refusal (the live key, #406) names the field the reason refused
+ * and the remedy that fits its case, instead of telling the agent to remove
+ * the retired `accepted`/`accepted-by`/`accepted-on` keys — which for the
+ * blank case contradicted the remedy the reason itself had just given.
+ */
+export function acceptForbiddenTrailer(reason: string): string {
+  if (/protected propert/.test(reason)) {
+    return (
+      `Declared protected frontmatter properties are human-only: no agent transport may ` +
+      `introduce, change, or remove one (byte-identical carry-forward is allowed). Leave the property ` +
+      `exactly as it is on disk and retry; a human sets it by editing the note directly in Obsidian.`
+    );
+  }
+  const v = /verification field '([^']+)'/.exec(reason);
+  if (v) {
+    const key = v[1];
+    const remedy = /present but empty/.test(reason)
+      ? `Remove the blank '${key}' and retry`
+      : /frontmatter carries the verification field/.test(reason)
+        ? `Leave '${key}' out of the payload and retry`
+        : `Leave '${key}' exactly as it is on disk and retry`;
+    return `The transport never persists acceptance — the accept verb is in no API. ${remedy}; a verification is a human's record, written only by a human.`;
+  }
+  return (
+    `The transport never persists acceptance — the accept verb is in no API. ` +
+    `Remove the accepted/accepted-by/accepted-on field and retry; acceptance is a human gesture only.`
+  );
 }
 
 /**

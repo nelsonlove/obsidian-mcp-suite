@@ -249,6 +249,24 @@ describe("AcceptForbiddenError — message trailer per refusal family, one code"
     assert.doesNotMatch(e.message, /Remove the accepted\/accepted-by\/accepted-on field/);
   });
 
+  test("verified-family refusals (#408) name the field the reason refused and the remedy that fits — never the retired accepted keys", () => {
+    const blank = new AcceptForbiddenError("write would leave the verification field 'verified' present but empty — a verification is a human's record or absent, never a blank to fill in; remove the key instead (an agent may remove a BLANK 'verified', never a filled one)");
+    assert.equal(blank.code, "accept_forbidden");
+    assert.match(blank.message, /Remove the blank 'verified' and retry; a verification is a human's record, written only by a human\.$/);
+    assert.doesNotMatch(blank.message, /accepted\/accepted-by\/accepted-on/, "the retired keys are not the remedy for the live key");
+    const introduce = new AcceptForbiddenError("write would introduce the verification field 'Verified'");
+    assert.match(introduce.message, /Leave 'Verified' exactly as it is on disk and retry; a verification is a human's record/);
+    const change = new AcceptForbiddenError("write would change the verification field 'verified'");
+    assert.match(change.message, /Leave 'verified' exactly as it is on disk and retry/);
+    const remove = new AcceptForbiddenError("write would remove the verification field 'verified' — a human's record leaves only by a human's hand");
+    assert.match(remove.message, /Leave 'verified' exactly as it is on disk and retry/);
+    const payload = new AcceptForbiddenError("frontmatter carries the verification field 'verified'");
+    assert.match(payload.message, /Leave 'verified' out of the payload and retry/);
+    const wrapped = new AcceptForbiddenError("register render refused: frontmatter carries the verification field 'verified'");
+    assert.match(wrapped.message, /^register render refused: frontmatter carries the verification field 'verified'\. The transport never persists acceptance — the accept verb is in no API\. Leave 'verified' out of the payload/);
+    for (const e of [blank, introduce, change, remove, payload, wrapped]) assert.match(e.message, /the accept verb is in no API/, "the invariant sentence is in every family");
+  });
+
   test("accepted-family refusals keep the exact historical message", () => {
     const e = new AcceptForbiddenError("frontmatter carries the acceptance field 'accepted-by'");
     assert.equal(
