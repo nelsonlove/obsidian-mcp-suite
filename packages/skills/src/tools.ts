@@ -136,7 +136,10 @@ export function obsidianSkillsBackend(app: {
   const embed: EmbedLookup = async (linkpath, fromPath) => {
     const dest = app.metadataCache.getFirstLinkpathDest(linkpath, fromPath);
     if (!dest || dest.extension !== "md") return null;
-    return { path: dest.path, content: await app.vault.cachedRead(dest) };
+    // The cache's frontmatter rides along (null when the cache holds none), so
+    // the acceptance gate judges an embed target by the same reader `notes()`
+    // uses for a compile unit — one note, one answer, whichever way it enters.
+    return { path: dest.path, content: await app.vault.cachedRead(dest), frontmatter: app.metadataCache.getFileCache(dest)?.frontmatter ?? null };
   };
   return {
     async notes(): Promise<SourceNote[]> {
@@ -318,7 +321,11 @@ export function buildSkillsTools(source: SkillsBackend, ctx: SkillsToolsCtx): Sd
         //   1. the entry's own source note (`from`);
         //   2. every note it TRANSCLUDES — `![[Other]]` inlines that note's
         //      stripped body verbatim, and those paths are collected in
-        //      `sources`;
+        //      `sources`. A target the acceptance gate REFUSED is in `sources`
+        //      too, though none of its bytes are (it stays a source so that
+        //      accepting it later re-runs the export); this filter then hides
+        //      the entry for a note that contributed nothing, which is the
+        //      fail-closed direction and is left so on purpose;
         //   3. every `type: policy` note injected into an AGENT's definition —
         //      the policy's full body is appended, and the policy's path is
         //      NOT in `sources`. `p.policies` records which genNames each

@@ -225,9 +225,10 @@ export interface Excluded {
   total: number;
   byKind: Record<ExportableKind, number>;
   paths: string[];
-  /** Notes whose text an accepted note tried to EMBED (`![[X]]`) and which are
-   *  not accepted themselves: not inlined, a marker in their place. Rule 8 is
-   *  over the prompt's text, so an embed is gated like a note. */
+  /** The DISTINCT notes whose text an accepted note tried to EMBED (`![[X]]`)
+   *  and which are not accepted themselves: not inlined, a marker in place of
+   *  each embed. One note embedded five times is one entry. Rule 8 is over
+   *  the prompt's text, so an embed is gated like a note. */
   transclusions: string[];
 }
 
@@ -237,11 +238,17 @@ export function excludedSummary(list: readonly ExcludedNote[], refusedEmbeds: It
   return { total: list.length, byKind, paths: list.map((e) => e.path), transclusions: [...refusedEmbeds] };
 }
 
-/** Whether a note's RAW text (an embed target, read whole) is accepted: its
- *  frontmatter carries a human verification. Unparseable frontmatter fails
- *  closed — a note the perimeter cannot read is not one it can vouch for. */
-export function acceptedNoteText(raw: string): boolean {
-  try { return hasHumanVerification(parseGuardFrontmatter(raw)); } catch { return false; }
+/** Whether an embed target is accepted: its frontmatter carries a human
+ *  verification. The frontmatter is the one the lookup supplies from the
+ *  vault's own cache when it can (`EmbedSource.frontmatter`; the shipped
+ *  backend always does), so the embed gate and the note gate read the SAME
+ *  parse of the same note — a note the cache holds no frontmatter for is not
+ *  accepted either way. A lookup with no cache (tests, other backends) falls
+ *  back to core's guard parser over the raw text, failing closed on what it
+ *  cannot read: a note the perimeter cannot read is not one it can vouch for. */
+export function acceptedEmbed(src: { content: string; frontmatter?: Record<string, unknown> | null }): boolean {
+  if (src.frontmatter !== undefined) return hasHumanVerification(src.frontmatter);
+  try { return hasHumanVerification(parseGuardFrontmatter(src.content)); } catch { return false; }
 }
 
 /** The one warning line the gate emits when it excluded anything. */
@@ -250,7 +257,7 @@ export function excludedWarning(list: readonly ExcludedNote[], refusedEmbeds: It
   const kinds = (Object.keys(sum.byKind) as ExportableKind[]).filter((k) => sum.byKind[k] > 0).map((k) => `${sum.byKind[k]} ${k}`).join(", ");
   const first = (paths: string[]) => paths.slice(0, 8).join(", ") + (paths.length > 8 ? `, … ${paths.length - 8} more` : "");
   const notes = sum.total ? `${sum.total} typed note(s) excluded from the compile — not accepted (no \`verified\` entry naming a \`human:\` actor; 01.41 rule 8: nothing unaccepted reaches a compiled agent prompt): ${kinds}: ${first(sum.paths)}` : "";
-  const embeds = sum.transclusions.length ? `${sum.transclusions.length} embed(s) refused — the embedded note is not accepted, a marker stands in its place: ${first(sum.transclusions)}` : "";
+  const embeds = sum.transclusions.length ? `${sum.transclusions.length} embedded note(s) refused — not accepted, so a marker stands in place of each embed of it: ${first(sum.transclusions)}` : "";
   return [notes, embeds].filter(Boolean).join("; ");
 }
 
@@ -260,7 +267,7 @@ export async function collectNotes(src: SkillsSource, fields: DetectConfig = DEF
   const refusedHere: Set<string> = refusedEmbeds ?? new Set<string>();
   // Embeds are gated like notes (01.41 rule 8 is over the prompt's TEXT): an
   // embed target without a human verification is not inlined, at any depth.
-  const gate = { accept: (e: { path: string; content: string }) => acceptedNoteText(e.content), refused: refusedHere };
+  const gate = { accept: acceptedEmbed, refused: refusedHere };
   const resolve = warnings
     ? (body: string, from: string, sources: Set<string>) => resolveTransclusions(body, from, src.embed, warnings, sources, gate)
     : null;

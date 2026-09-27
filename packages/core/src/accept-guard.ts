@@ -117,9 +117,11 @@ export function isHumanVerification(entry: unknown): boolean {
  *  family), a list of entries or one entry, any of them naming a `human:`
  *  actor. This is the ACCEPTED state of 01.41 ("a note carrying a `verified`
  *  entry whose actor has the `human:` prefix"), the test the skills compiler
- *  gates on (rule 8: nothing unaccepted reaches a compiled agent prompt), so
- *  the perimeter and the compiler share one definition. Blank, absent, or
- *  machine-only ⇒ false. */
+ *  gates on (rule 8: nothing unaccepted reaches a compiled agent prompt). It
+ *  is kept HERE, beside the accept guard, so the compiler's definition of the
+ *  accepted state cannot drift from the perimeter's vocabulary; the guard
+ *  itself refuses agent writes to `verified` and does not call this. Blank,
+ *  absent, or machine-only ⇒ false. */
 export function hasHumanVerification(fm: Record<string, unknown> | null | undefined): boolean {
   if (!fm) return false;
   const key = Object.keys(fm).find((k) => k.trim().toLowerCase() === "verified");

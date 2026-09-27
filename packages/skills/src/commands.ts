@@ -186,7 +186,7 @@ export async function cmdRelease(ctx: SkillsGuiCtx): Promise<void> {
     const issues = summary.errors.length ? ` · ${summary.errors.length} error(s): ${summary.errors[0]}` : "";
     new Notice(
       `Vault Skills: packaged ${version} → ${releaseDir}\n` +
-        `${summary.skills} skill(s) + ${summary.agents} agent(s) + ${summary.commands} command(s) + ${summary.assets} supporting file(s)${summary.excluded.total ? ` · ${summary.excluded.total} not accepted (excluded)` : ""}${issues}\n` +
+        `${summary.skills} skill(s) + ${summary.agents} agent(s) + ${summary.commands} command(s) + ${summary.assets} supporting file(s)${summary.excluded.total ? ` · ${summary.excluded.total} not accepted (excluded)` : ""}${summary.excluded.transclusions.length ? ` · ${summary.excluded.transclusions.length} embedded note(s) refused` : ""}${issues}\n` +
         `Commit & tag in the repo to publish.`,
       summary.errors.length ? 12000 : 8000,
     );

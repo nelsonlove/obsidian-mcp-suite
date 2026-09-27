@@ -802,7 +802,7 @@ describe("scanForAcceptFence: a block YAML cannot parse that carries a `verified
   });
 });
 
-describe("hasHumanVerification — the ACCEPTED state of 01.41, one definition for the perimeter and the compiler", () => {
+describe("hasHumanVerification — the ACCEPTED state of 01.41, kept in core beside the guard as the one predicate the compiler reads", () => {
   const human = { by: "human:nelson", at: "2026-09-25T05:08:39-04:00" };
   test("a `verified` list with one entry naming a `human:` actor is accepted; machine entries beside it change nothing", () => {
     assert.equal(hasHumanVerification({ verified: [human] }), true);

@@ -197,7 +197,7 @@ export class SkillsPreviewView extends ItemView {
     if (r) {
       const d = r.diff;
       header.createEl("span", {
-        text: `${d.added} added · ${d.modified} modified · ${d.unchanged} unchanged · ${d.removed} removed · ${r.excluded.total} not accepted (excluded)${r.excluded.transclusions.length ? ` · ${r.excluded.transclusions.length} embed(s) refused` : ""}`,
+        text: `${d.added} added · ${d.modified} modified · ${d.unchanged} unchanged · ${d.removed} removed · ${r.excluded.total} not accepted (excluded)${r.excluded.transclusions.length ? ` · ${r.excluded.transclusions.length} embedded note(s) refused` : ""}`,
       }).style.color = "var(--text-muted)";
       header.createEl("span", { text: `→ ${r.outputDir}` }).style.cssText = "color: var(--text-faint); font-size: var(--font-ui-smaller);";
     }
@@ -356,7 +356,11 @@ export class SkillsPreviewView extends ItemView {
     if (e.sources?.length) {
       const asm = detail.createDiv();
       asm.style.cssText = "color: var(--text-muted); font-size: var(--font-ui-smaller); margin-bottom: 6px;";
-      asm.createEl("span", { text: "transcludes: " });
+      // `sources` is every note the entry's compile READ for its body: the ones
+      // it inlined, and any the acceptance gate refused to inline (kept as a
+      // source so accepting it later re-runs the export). "transcludes" would
+      // claim the refused one's text is in the artifact; it is not.
+      asm.createEl("span", { text: "sources (inlined, or refused as not accepted): " });
       e.sources.forEach((s, i) => {
         if (i) asm.createEl("span", { text: " · " });
         this.sourceLink(asm, s);

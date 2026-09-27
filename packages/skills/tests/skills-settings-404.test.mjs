@@ -21,7 +21,8 @@ import {
   DEFAULT_SKILLS_CONFIG, skillsConfigOf, fieldsOf, typeMapOf, parseTypeMapLines, typeMapLines, validateSkillsConfig,
 } from "../src/kernel/skills-config.ts";
 import { handleNoteChanged, handleNoteRenamed } from "../src/export-trigger.ts";
-import { runExport, agentCandidates, acceptedNoteText } from "../src/kernel/exporter.ts";
+import { runExport, agentCandidates, acceptedEmbed } from "../src/kernel/exporter.ts";
+import { transclusionRefused } from "../src/kernel/transclude.ts";
 import { textAreaValue, SKILLS_FIELDS } from "../src/settings.ts";
 import fs from "node:fs";
 import os from "node:os";
@@ -427,12 +428,25 @@ describe("THE ACCEPTANCE GATE ON EMBEDS — an accepted note cannot carry an una
   };
   const F3 = F({ typeMap: { "Note/Skill": "skill", "Person/Agent": "agent", "Note/AgentPolicy": "policy" }, includeRoots: ["In"] });
 
-  test("acceptedNoteText: raw text with a human entry is accepted; blank, absent or unparseable frontmatter is not", () => {
-    assert.equal(acceptedNoteText(files["In/fine.md"]), true);
-    assert.equal(acceptedNoteText(files["In/secret.md"]), false);
-    assert.equal(acceptedNoteText(files["In/deeper.md"]), false);
-    assert.equal(acceptedNoteText("---\nverified: &a\n---\nbody"), false, "unparseable fails closed");
-    assert.equal(acceptedNoteText("no frontmatter at all"), false);
+  test("acceptedEmbed over raw text (no cache): a human entry is accepted; blank, absent, machine-only or unparseable frontmatter is not", () => {
+    const raw = (content) => ({ content });
+    assert.equal(acceptedEmbed(raw(files["In/fine.md"])), true);
+    assert.equal(acceptedEmbed(raw(files["In/secret.md"])), false);
+    assert.equal(acceptedEmbed(raw(files["In/deeper.md"])), false);
+    assert.equal(acceptedEmbed(raw("---\nverified:\n  - by: vault-mcp/0.19.0\n    at: 2026-09-25T05:08:39-04:00\n---\nbody")), false, "a machine actor is not a human one");
+    assert.equal(acceptedEmbed(raw("---\nverified: &a\n---\nbody")), false, "unparseable fails closed");
+    assert.equal(acceptedEmbed(raw("no frontmatter at all")), false);
+  });
+
+  test("acceptedEmbed prefers the CACHE's frontmatter when the lookup supplies it — the same reader as the note gate, so one note gets one answer", () => {
+    assert.equal(acceptedEmbed({ content: "no frontmatter in the bytes", frontmatter: { verified: [HUMAN] } }), true, "the cache says accepted");
+    assert.equal(acceptedEmbed({ content: files["In/fine.md"], frontmatter: null }), false, "the cache holds no frontmatter (as for a note the note gate never compiles), whatever the bytes say");
+    assert.equal(acceptedEmbed({ content: files["In/fine.md"], frontmatter: { verified: [{ by: "vault-mcp/0.19.0" }] } }), false, "machine-only in the cache");
+  });
+
+  test("the shipped embed lookup carries the cache's frontmatter (source pin on tools.ts)", () => {
+    const tools = fs.readFileSync(new URL("../src/tools.ts", import.meta.url), "utf8");
+    assert.match(tools, /return \{ path: dest\.path, content: await app\.vault\.cachedRead\(dest\), frontmatter: app\.metadataCache\.getFileCache\(dest\)\?\.frontmatter \?\? null \};/);
   });
 
   test("an unaccepted embed is NOT inlined at any depth: a marker stands in its place, the path is recorded and named, the accepted embed still inlines", async () => {
@@ -442,7 +456,8 @@ describe("THE ACCEPTANCE GATE ON EMBEDS — an accepted note cannot carry an una
       const skill = fs.readFileSync(path.join(outputDir, "skills", "host", "SKILL.md"), "utf8");
       assert.ok(skill.includes("HOST-START") && skill.includes("HOST-END"), "the accepted host compiles");
       assert.ok(!skill.includes("UNRATIFIED-SECRET-TEXT"), "the unaccepted embed's text reaches no prompt");
-      assert.ok(skill.includes("<!-- transclusion refused: In/secret.md is not accepted -->"), "a marker names what was refused");
+      assert.ok(skill.includes(transclusionRefused("In/secret.md")), "a marker names what was refused");
+      assert.equal(transclusionRefused("In/secret.md"), "<!-- transclusion refused: In/secret.md is not accepted -->");
       assert.ok(skill.includes("ACCEPTED-EMBED-TEXT"), "an accepted embed still inlines");
       assert.ok(!skill.includes("DEEPER-UNACCEPTED-TEXT"), "gated at every depth");
       const agent = fs.readFileSync(path.join(outputDir, "agents", "boss.md"), "utf8");
@@ -450,12 +465,51 @@ describe("THE ACCEPTANCE GATE ON EMBEDS — an accepted note cannot carry an una
       assert.deepEqual(r.excluded.transclusions.sort(), ["In/deeper.md", "In/pol.md", "In/secret.md"]);
       assert.deepEqual(r.excluded.paths, ["In/pol.md"], "the policy is excluded as a note too");
       assert.ok(r.sources.includes("In/secret.md"), "a refused embed is still an export source: accepting it later re-runs the export");
-      const line = r.warnings.find((w) => /embed\(s\) refused/.test(w));
-      assert.match(line ?? "", /3 embed\(s\) refused/);
+      const line = r.warnings.find((w) => /embedded note\(s\) refused/.test(w));
+      assert.match(line ?? "", /3 embedded note\(s\) refused/);
       assert.ok(r.warnings.some((w) => /transclusion !\[\[secret\]\] refused — In\/secret\.md is not accepted/.test(w)));
     } finally {
       fs.rmSync(outputDir, { recursive: true, force: true });
     }
+  });
+
+  test("refused embeds alone (no typed note excluded) still warn, count and mark — the realistic case: an accepted agent embedding plain unverified notes", async () => {
+    const only = {
+      "In/host.md": raw(`type: Note/Skill\nname: host\n${HUMAN_YAML}`, "A ![[plain]] B ![[plain]] C ![[machine]] D"),
+      "In/plain.md": raw("type: Note", "PLAIN-UNVERIFIED-TEXT"),
+      "In/machine.md": raw("type: Note\nverified:\n  - by: vault-mcp/0.19.0\n    at: 2026-09-25T05:08:39-04:00", "MACHINE-ONLY-TEXT"),
+    };
+    const s2 = { ...src, notes: async () => Object.entries(only).map(([path, text]) => ({ path, frontmatter: fmOf(text), body: text })), resolveLink: (lp) => Object.keys(only).find((p) => p.endsWith(`/${lp}.md`)) ?? null, embed: async (lp) => { const p = Object.keys(only).find((q) => q.endsWith(`/${lp}.md`)); return p ? { path: p, content: only[p] } : null; } };
+    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "vaultmcp-skills-embed-only-"));
+    let a, body;
+    try {
+      a = await runExport(s2, { outputDir, pluginName: "t", fields: F({ typeMap: { "Note/Skill": "skill" }, includeRoots: ["In"] }) });
+      body = fs.readFileSync(path.join(outputDir, "skills", "host", "SKILL.md"), "utf8");
+    } finally { fs.rmSync(outputDir, { recursive: true, force: true }); }
+    assert.equal(a.excluded.total, 0, "no typed note was excluded");
+    assert.deepEqual(a.excluded.transclusions.sort(), ["In/machine.md", "In/plain.md"], "distinct notes: plain, embedded twice, counts once; a machine-only verification is not acceptance");
+    const line = a.warnings.find((w) => /embedded note\(s\) refused/.test(w));
+    assert.match(line ?? "", /^2 embedded note\(s\) refused/, "the warning is emitted with no excluded notes at all");
+    assert.doesNotMatch(line ?? "", /excluded from the compile/);
+    assert.ok(!/PLAIN-UNVERIFIED-TEXT|MACHINE-ONLY-TEXT/.test(body));
+    assert.equal((body.match(/transclusion refused: In\/plain\.md/g) ?? []).length, 2, "one marker per embed occurrence");
+  });
+
+  test("the refused marker escapes a path containing '-->' like the file's other markers do, so it stays one inert comment", async () => {
+    const tricky = {
+      "In/host.md": raw(`type: Note/Skill\nname: host\n${HUMAN_YAML}`, "X ![[a --> b]] Y"),
+      "In/a --> b.md": raw("type: Note", "TRICKY-TEXT"),
+    };
+    const s3 = { ...src, notes: async () => Object.entries(tricky).map(([path, text]) => ({ path, frontmatter: fmOf(text), body: text })), resolveLink: (lp) => Object.keys(tricky).find((p) => p.endsWith(`/${lp}.md`)) ?? null, embed: async (lp) => { const p = Object.keys(tricky).find((q) => q.endsWith(`/${lp}.md`)); return p ? { path: p, content: tricky[p] } : null; } };
+    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "vaultmcp-skills-embed-tricky-"));
+    let body;
+    try {
+      await runExport(s3, { outputDir, pluginName: "t", fields: F({ typeMap: { "Note/Skill": "skill" }, includeRoots: ["In"] }) });
+      body = fs.readFileSync(path.join(outputDir, "skills", "host", "SKILL.md"), "utf8");
+    } finally { fs.rmSync(outputDir, { recursive: true, force: true }); }
+    assert.ok(body.includes("<!-- transclusion refused: In/a --› b.md is not accepted -->"), body);
+    assert.ok(!body.includes("In/a --> b.md"), "the raw sequence never reaches the artifact");
+    assert.ok(!body.includes("TRICKY-TEXT"));
   });
 
   test("the analysis and the preview carry the same refused-embed record", async () => {
@@ -489,8 +543,12 @@ describe("THE ACCEPTANCE GATE ON EMBEDS — an accepted note cannot carry an una
   test("the operator-facing lines carry the count (source pins: the pane's report line, the export and release notices)", () => {
     const read = (rel) => fs.readFileSync(new URL(rel, import.meta.url), "utf8");
     assert.match(read("../src/pane.ts"), /\$\{r\.excluded\.total\} not accepted \(excluded\)/, "the preview pane's header");
+    assert.match(read("../src/pane.ts"), /\$\{r\.excluded\.transclusions\.length\} embedded note\(s\) refused/, "… and its embed count");
     assert.match(read("../src/wiring.ts"), /\$\{summary\.excluded\.total\} not accepted \(excluded\)/, "the export notice");
+    assert.match(read("../src/wiring.ts"), /\$\{summary\.excluded\.transclusions\.length\} embedded note\(s\) refused/, "… and its embed count");
     assert.match(read("../src/commands.ts"), /\$\{summary\.excluded\.total\} not accepted \(excluded\)/, "the release notice");
+    assert.match(read("../src/commands.ts"), /\$\{summary\.excluded\.transclusions\.length\} embedded note\(s\) refused/, "… and its embed count");
+    assert.match(read("../src/pane.ts"), /sources \(inlined, or refused as not accepted\): /, "the detail panel does not call a refused source 'transcluded'");
     assert.match(read("../src/commands.ts"), /\$\{a\.excluded\.total\} not accepted \(excluded\)/, "the validate report");
   });
 });

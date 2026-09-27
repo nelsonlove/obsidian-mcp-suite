@@ -21,7 +21,7 @@ export {
   applyMark,
   excludedSummary,
   excludedWarning,
-  acceptedNoteText,
+  acceptedEmbed,
   agentCandidates,
   detectKind,
   fieldView,
