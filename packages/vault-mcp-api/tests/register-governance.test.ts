@@ -197,12 +197,15 @@ test("a pre-seam host (registerTools only) registers nothing and does not throw"
   dispose(); // must not throw with nothing held
 });
 
-test("apiVersion mismatch registers nothing", () => {
-  const seam = fakeSeam(2);
-  const { app } = fakeWorld(seam);
-  registerGovernance(plugin(app), hooks());
-  assert.equal(seam.observers.length, 0);
-  assert.equal(seam.refusals.length, 0);
+test("apiVersion is a FLOOR here too (#402 step A): a seam on a host at 2 registers; below 1 registers nothing", () => {
+  const newer = fakeSeam(2);
+  registerGovernance(plugin(fakeWorld(newer).app), hooks());
+  assert.equal(newer.observers.length, 1);
+  assert.equal(newer.refusals.length, 1);
+  const old = fakeSeam(0);
+  registerGovernance(plugin(fakeWorld(old).app), hooks());
+  assert.equal(old.observers.length, 0);
+  assert.equal(old.refusals.length, 0);
 });
 
 // The post-split vault: `governor` IS this provider and exposes no api, so the

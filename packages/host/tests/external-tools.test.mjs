@@ -187,6 +187,18 @@ test("handler result is wrapped in ok(); throw becomes fail()", async () => {
   assert.match(bad.content[0].text, /boom/);
 });
 
+test("a v1 host wraps an SDK partial() envelope as ok(data) with the brand visible — degraded, not broken (#402 step A; step B turns it into okError)", async () => {
+  const { partial, PARTIAL_BRAND } = await import("../../vault-mcp-api/src/index.ts");
+  const entries = [
+    { ownerId: "p", toolName: "p_half", spec: spec("half", { handler: async () => partial({ done: ["a"] }, "b was unreadable") }) },
+  ];
+  const server = fakeServer();
+  registerExternalTools(server, fakeApp(["p"]), fakeCtx({ readOnly: false, allowlist: [] }, entries));
+  const res = await server.calls[0].handler({});
+  assert.equal(res.isError, undefined, "a v1 host does not set the error bit");
+  assert.deepEqual(res.structuredContent, { [PARTIAL_BRAND]: "partial", data: { done: ["a"] }, message: "b was unreadable" }, "the brand and message are visible in the data, so nothing is lost");
+});
+
 test("stale owner (publisher unloaded) fails cleanly without invoking the handler", async () => {
   const server = fakeServer();
   let invoked = false;
