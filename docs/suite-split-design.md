@@ -67,7 +67,7 @@ What the seam must NEVER offer is the third hook class: anything that can **muta
 
 ## 5. The seam — the host's governance hook API
 
-An `apiVersion: 2` extension of the existing external-tool API. Exact shape (names bikesheddable; classes are not):
+An extension of the existing external-tool API, drafted here as `apiVersion: 2` (it shipped additively under 1; the number reached 2 at #402 step B for the partial-result envelope and the per-call context). Exact shape (names bikesheddable; classes are not):
 
 ```ts
 interface WriteFacts {

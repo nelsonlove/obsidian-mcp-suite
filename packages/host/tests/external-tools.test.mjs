@@ -141,7 +141,7 @@ test("F8: inputSchema without type:'object' (e.g. a zod schema shape) throws", (
 
 // ── registerExternalTools integration tests ────────────────────────────────
 
-import { registerExternalTools } from "../src/mcp/external-tools.ts";
+import { registerExternalTools, makeCallContext, isPartialEnvelope, PARTIAL_BRAND } from "../src/mcp/external-tools.ts";
 
 // Minimal stubs: a fake McpServer capturing registerTool calls, a fake App
 // whose plugins map controls the stale-owner check, and a fake ServerCtx.
@@ -187,16 +187,70 @@ test("handler result is wrapped in ok(); throw becomes fail()", async () => {
   assert.match(bad.content[0].text, /boom/);
 });
 
-test("a v1 host wraps an SDK partial() envelope as ok(data) with the brand visible — degraded, not broken (#402 step A; step B turns it into okError)", async () => {
-  const { partial, PARTIAL_BRAND } = await import("../../vault-mcp-api/src/index.ts");
+test("apiVersion 2: an SDK partial() envelope becomes okError — structuredContent is the data, content is the JSON plus the message, isError is set (#402 step B)", async () => {
+  const { partial } = await import("../../vault-mcp-api/src/index.ts");
   const entries = [
     { ownerId: "p", toolName: "p_half", spec: spec("half", { handler: async () => partial({ done: ["a"] }, "b was unreadable") }) },
   ];
   const server = fakeServer();
   registerExternalTools(server, fakeApp(["p"]), fakeCtx({ readOnly: false, allowlist: [] }, entries));
   const res = await server.calls[0].handler({});
-  assert.equal(res.isError, undefined, "a v1 host does not set the error bit");
-  assert.deepEqual(res.structuredContent, { [PARTIAL_BRAND]: "partial", data: { done: ["a"] }, message: "b was unreadable" }, "the brand and message are visible in the data, so nothing is lost");
+  assert.equal(res.isError, true, "the error bit is set");
+  assert.deepEqual(res.structuredContent, { done: ["a"] }, "the data, not the envelope");
+  assert.equal(res.content.length, 2);
+  assert.equal(res.content[0].text, JSON.stringify({ done: ["a"] }, null, 2));
+  assert.equal(res.content[1].text, "b was unreadable");
+});
+
+test("the envelope is checked on the TOP level only: a partial nested inside data is data, and a hand-built envelope partial() would refuse is wrapped as ordinary data", async () => {
+  const { partial } = await import("../../vault-mcp-api/src/index.ts");
+  const inner = partial({ x: 1 }, "inner");
+  const lookalike = { [PARTIAL_BRAND]: "partial", data: ["a"], message: "m" };
+  const entries = [
+    { ownerId: "p", toolName: "p_nested", spec: spec("nested", { handler: async () => ({ report: inner }) }) },
+    { ownerId: "p", toolName: "p_look", spec: spec("look", { handler: async () => lookalike }) },
+  ];
+  const server = fakeServer();
+  registerExternalTools(server, fakeApp(["p"]), fakeCtx({ readOnly: false, allowlist: [] }, entries));
+  const nested = await server.calls[0].handler({});
+  assert.equal(nested.isError, undefined);
+  assert.deepEqual(nested.structuredContent, { report: inner });
+  const look = await server.calls[1].handler({});
+  assert.equal(look.isError, undefined, "array data is not a partial result; F5 wraps it as an ordinary object");
+  assert.deepEqual(look.structuredContent, lookalike);
+  assert.equal(isPartialEnvelope(lookalike), false);
+});
+
+test("apiVersion 2: every handler gets a CallContext built from the LIVE settings per call — identity with no allowlist, filtered under one, readOnly as set", async () => {
+  const settings = { readOnly: false, allowlist: [] };
+  const seen = [];
+  const entries = [{ ownerId: "p", toolName: "p_t", spec: spec("t", { handler: async (args, ctx) => { seen.push(ctx); return { ok: 1 }; } }) }];
+  const server = fakeServer();
+  registerExternalTools(server, fakeApp(["p"]), fakeCtx(settings, entries));
+  await server.calls[0].handler({ path: "Notes/a.md" });
+  const paths = ["Notes/a.md", "Private/b.md"];
+  assert.equal(seen[0].visible(paths), paths, "no allowlist: the SAME array (identity)");
+  assert.equal(seen[0].isVisible("Private/b.md"), true);
+  assert.equal(seen[0].readOnly, false);
+  // The operator edits the settings between calls: the next call's context sees it, no reconnect.
+  settings.allowlist.push("Notes");
+  settings.readOnly = true;
+  await server.calls[0].handler({ path: "Notes/a.md" });
+  assert.deepEqual(seen[1].visible(paths), ["Notes/a.md"], "under an allowlist: filtered to what this caller may see");
+  assert.equal(seen[1].isVisible("Private/b.md"), false);
+  assert.equal(seen[1].readOnly, true);
+  assert.notEqual(seen[0], seen[1], "a fresh context per call");
+});
+
+test("makeCallContext: the identity convention and the filter are the host's own visibility rule, not a second copy", () => {
+  const none = makeCallContext({ readOnly: false, allowlist: [] });
+  const arr = ["a/x.md"];
+  assert.equal(none.visible(arr), arr);
+  const some = makeCallContext({ readOnly: true, allowlist: ["a/"] });
+  assert.deepEqual(some.visible(["a/x.md", "b/y.md", "../z.md"]), ["a/x.md"]);
+  assert.equal(some.isVisible("a/x.md"), true);
+  assert.equal(some.isVisible("b/y.md"), false);
+  assert.equal(some.readOnly, true);
 });
 
 test("stale owner (publisher unloaded) fails cleanly without invoking the handler", async () => {
