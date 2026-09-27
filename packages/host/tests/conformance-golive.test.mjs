@@ -25,6 +25,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { baselinePackIds, rebaselineRefusal } from "../src/conformance/cli.ts";
+import { LEGACY_CONVENTIONS_SEED as SEED } from "../src/conformance/vault-conventions.ts";
 
 const KEYS = (...k) => new Set(k);
 
@@ -136,7 +137,7 @@ describe("coveredPackIds — a pack that THREW is not 'covered' (Important)", ()
     const { runConformance, coverageRefusal } = await import("../src/conformance/cli.ts");
     const root = await mkdtemp(pth.join(tmpdir(), "conf-throw-"));
     try {
-      const res = await runConformance({ root, baselineText: "", vocabularies: [], schemes: [], legacyPacks: true });
+      const res = await runConformance({ root, conventions: SEED, baselineText: "", vocabularies: [], schemes: [], legacyPacks: true });
       // every registered pack that did not throw is covered; the sets agree when nothing threw
       assert.ok(res.packIds.length > 0, "packs registered");
       assert.ok(res.coveredPackIds.every((id) => res.packIds.includes(id)), "covered is a subset of registered");

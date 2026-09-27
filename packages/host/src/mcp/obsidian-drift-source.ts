@@ -54,6 +54,7 @@ import { parseBaseline } from "../conformance/ratchet.js";
 import { newSchemeDrift, type DriftGroup } from "../conformance/drift-view.js";
 import { DEFAULT_VOCABULARIES } from "@vault-mcp/core";
 import { DEFAULT_SCHEMES } from "../kernel/scheme/registry.js";
+import { EMPTY_VAULT_CONVENTIONS, type VaultConventions } from "../conformance/vault-conventions.js";
 
 /** The on-disk root of this vault (FileSystemAdapter). Desktop-only, which
  *  the plugin already is (`isDesktopOnly: true`) — same helper as
@@ -74,7 +75,7 @@ export interface DriftPaneSource {
   scan(): Promise<DriftGroup[]>;
 }
 
-export function obsidianDriftSource(app: App, territories?: () => readonly string[]): DriftPaneSource {
+export function obsidianDriftSource(app: App, territories?: () => readonly string[], conventions?: () => VaultConventions): DriftPaneSource {
   const root = vaultRoot(app);
   const baselinePath = join(root, baselineRelFrom(process.env));
   const excludedRoots = excludedRootsFrom([], process.env);
@@ -96,6 +97,8 @@ export function obsidianDriftSource(app: App, territories?: () => readonly strin
         excludedRoots,
         legacyPacks: true,
         territories: territories?.(),
+        // Read per call (#403), as the territories are.
+        conventions: conventions?.() ?? EMPTY_VAULT_CONVENTIONS,
       });
       // #294: the same refusal `runCli` applies — a pack the baseline describes
       // that did not run (threw, or dead convention path, #298) must not read

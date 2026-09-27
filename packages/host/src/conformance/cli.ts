@@ -24,7 +24,7 @@ import { envAliased } from "../env-alias.js";
 import { intendedRealPath, sameFile, isInside } from "./path-identity.js";
 import { runEngine, ENGINE_ID } from "./engine.js";
 import { vocabPack, schemePack, structurePack, portPack, stePack, driftPack } from "./packs/index.js";
-import { vaultConventionsFrom, deadConventionPaths, CONVENTION_PACKS, type DeadConvention } from "./vault-conventions.js";
+import { conventionsFromEnv, deadConventionPaths, CONVENTION_PACKS, CONVENTIONS_ENV, type DeadConvention, type VaultConventions } from "./vault-conventions.js";
 import { parseBaseline, renderBaseline, ratchet, type RatchetResult } from "./ratchet.js";
 import { parseKey, findingKey, type Finding } from "./finding.js";
 import type { RulePack } from "./rule-pack.js";
@@ -46,6 +46,12 @@ export interface RunOpts {
    * rail must refuse to walk a territory an operator added, and #397 was filed
    * because it did not. The process entry fills this from `territoriesFrom`. */
   territories?: readonly string[];
+  /** The vault conventions the legacy packs read (#403). REQUIRED, with no
+   * default: the process entry fills this from `VAULT_MCP_CONVENTIONS`, the
+   * in-app sources from the host setting, read per call; a test says what it
+   * means. `runConformance` never reads `process.env` itself, so the suite is
+   * hermetic by construction. An EMPTY scalar key is a dead convention. */
+  conventions: VaultConventions;
   /**
    * Register the four ported legacy checks (structure/port/ste/drift — the
    * whole Python rail, now in TS). **Default ON** (issue #116).
@@ -131,10 +137,10 @@ export async function runConformance(opts: RunOpts): Promise<RunResult> {
   // port_lint / ste_lint / drift_audit — the full legacy rail, all in TS).
   // Opt-in until the scope ruling + staged rebaseline.
   if (opts.legacyPacks ?? true) {
-    // Conventions are resolved ONCE per run and threaded in, never read at
-    // module load — an exported constant that varies with ambient env makes
-    // the suite non-hermetic (self-review finding on this PR).
-    const conv = vaultConventionsFrom(process.env);
+    // Conventions come in as an option (#403), never from ambient env here:
+    // the CLI entry reads `VAULT_MCP_CONVENTIONS`, the in-app sources read the
+    // host setting live, and a test says what it means.
+    const conv = opts.conventions;
     // A dead convention path is loud (#298): the pack that reads it still
     // REGISTERS (so a baseline describing it is refused as uncovered, the
     // same way a pack that threw is) but does not RUN, because a pack run
@@ -161,9 +167,11 @@ export async function runConformance(opts: RunOpts): Promise<RunResult> {
       target: d.key,
       kind: d.path,
       detail:
-        `convention '${d.key}' names '${d.path}', which this walk did not see under its root — ` +
+        (d.path
+          ? `convention '${d.key}' names '${d.path}', which this walk did not see under its root — `
+          : `convention '${d.key}' is EMPTY (the plugin ships no vault layout) — `) +
         `${CONVENTION_PACKS[d.key].map((id) => `'${id}'`).join(" and ")} not run (they would read clean or noise, not the vault). ` +
-        `Set GOVERNOR_VAULT_CONVENTIONS to the live path, or run with legacy packs off.`,
+        `Set it in the plugin settings (Conformance), or ${CONVENTIONS_ENV} for the CLI, or run with legacy packs off.`,
     });
   }
   const result = ratchet(findings, baselineKeys);
@@ -662,7 +670,7 @@ function renderReport(
   // A convention that names nothing must never read as "checked and clean"
   // (#298): name the key, the dead path, and the pack that therefore did not run.
   for (const d of deadConventions) {
-    lines.push(`DEAD CONVENTION: ${d.key} = ${d.path} — ${CONVENTION_PACKS[d.key].map((id) => `'${id}'`).join(", ")} not measured; set GOVERNOR_VAULT_CONVENTIONS`);
+    lines.push(`DEAD CONVENTION: ${d.key} = ${d.path || "(empty)"} — ${CONVENTION_PACKS[d.key].map((id) => `'${id}'`).join(", ")} not measured; set it in the plugin settings (Conformance) or ${CONVENTIONS_ENV}`);
   }
   // A pack with NO baseline representation reports its entire output as NEW.
   // Undistinguished, that is indistinguishable from a catastrophic regression —
@@ -895,6 +903,10 @@ export async function runCli(argv: string[]): Promise<void> {
     // Guarded territories the walk must refuse (#397) — from the invocation,
     // never a constant; none given means none refused.
     territories: territoriesFrom(argv, process.env),
+    // The vault conventions (#403): from the invocation's environment
+    // (`VAULT_MCP_CONVENTIONS`; the two old spellings read once more, warned),
+    // never a constant; unset means every convention dead, said loudly.
+    conventions: conventionsFromEnv(process.env),
     // Debt-budget tooth (#211): warn-only unless --strict-budget.
     debtBudget,
     strictBudget,
@@ -910,11 +922,11 @@ export async function runCli(argv: string[]): Promise<void> {
   if (coverage) {
     // The refusal says "did not run (or threw)". When the cause is a dead
     // convention (#298) the pack did not run BECAUSE its path names nothing,
-    // and the real remedy is GOVERNOR_VAULT_CONVENTIONS — which the report
-    // names and this throw would otherwise discard. Say the cause with the
-    // refusal (#401 review).
-    const dead = res.deadConventions.map((d) => `  ${d.key} = ${d.path} (${CONVENTION_PACKS[d.key].join(", ")})`);
-    throw new Error(dead.length ? `${coverage}\nThe unmeasured pack(s) read a DEAD convention path — set GOVERNOR_VAULT_CONVENTIONS to the live path:\n${dead.join("\n")}` : coverage);
+    // and the real remedy is the conventions setting (or VAULT_MCP_CONVENTIONS
+    // for the CLI) — which the report names and this throw would otherwise
+    // discard. Say the cause with the refusal (#401 review).
+    const dead = res.deadConventions.map((d) => `  ${d.key} = ${d.path || "(empty)"} (${CONVENTION_PACKS[d.key].join(", ")})`);
+    throw new Error(dead.length ? `${coverage}\nThe unmeasured pack(s) read a DEAD convention path — set it in the plugin settings (Conformance) or ${CONVENTIONS_ENV}:\n${dead.join("\n")}` : coverage);
   }
 
   // Trend (#211, A3): one append-only record per run capturing the burn-down

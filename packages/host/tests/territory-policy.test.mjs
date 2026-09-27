@@ -135,7 +135,7 @@ describe("production reads these predicates — pinned at the source", () => {
     const main = src("main.ts");
     assert.match(main, /const territories = territoriesOnLoad\(own, seed\)/, "the migration must see the plugin's OWN data AND the settings adopted from the pre-split plugin");
     assert.match(main, /this\.settings\.guardedTerritories = territories\.territories/);
-    assert.match(main, /if \(territories\.persist\) await this\.saveSettings\(\)/, "the key must be written when it was absent, or the seed branch runs again");
+    assert.match(main, /if \(territories\.persist \|\| conventions\.persist\) await this\.saveSettings\(\)/, "the key must be written when it was absent, or the seed branch runs again (the conventions key rides the same persist since #403)");
   });
 
   test("the two conformance sources FORWARD the territory thunk they are handed (#396 review: both dropped it)", () => {
@@ -144,11 +144,11 @@ describe("production reads these predicates — pinned at the source", () => {
     // `obsidianDebtSource(app)`; `wireSchemePanes` received `getTerritories`
     // and built `obsidianDriftSource(app)`. Both walks ran unguarded.
     const debt = src("mcp/obsidian-debt-source.ts");
-    assert.match(debt, /\.\.\.obsidianDebtSource\(app, territories\)/, "the render source must hand its thunk to the inner source");
+    assert.match(debt, /\.\.\.obsidianDebtSource\(app, territories, conventions\)/, "the render source must hand BOTH thunks to the inner source (#403 adds the conventions one)");
     const wiring = src("scheme/wiring.ts");
-    assert.match(wiring, /obsidianDriftSource\(app, opts\.getTerritories\)/, "the drift pane must read the option main.ts populates");
+    assert.match(wiring, /obsidianDriftSource\(app, opts\.getTerritories, opts\.getConventions\)/, "the drift pane must read the options main.ts populates");
     const server = src("mcp/server.ts");
-    assert.match(server, /obsidianDebtRenderSource\(app, \(\) => resolveTerritories\(ctx\.getSettings\(\)\.guardedTerritories\)\)/, "and server.ts must supply it, read per call");
+    assert.match(server, /obsidianDebtRenderSource\(\s*app,\s*\(\) => resolveTerritories\(ctx\.getSettings\(\)\.guardedTerritories\),/, "and server.ts must supply it, read per call");
   });
 
   test("LEGACY_TERRITORY_SEED has exactly ONE reader in the host: the migration", () => {

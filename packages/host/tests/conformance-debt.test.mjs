@@ -48,6 +48,7 @@ import {
 import { trendPathFor } from "../src/conformance/debt-trend.ts";
 import { registerConformanceDebtTools, conformanceDebtConfigOf, DEFAULT_STALE_AFTER_DAYS } from "../src/mcp/tools-conformance-debt.ts";
 import { runConformance, runCli } from "../src/conformance/cli.ts";
+import { LEGACY_CONVENTIONS_SEED as SEED } from "../src/conformance/vault-conventions.ts";
 
 // A finding factory; `detail` is not part of the key.
 const F = (script, check, target, kind = "") => ({ script, check, target, kind, detail: `${check} on ${target}` });
@@ -353,16 +354,16 @@ describe("runConformance: budget tooth in the report + exit code", () => {
     const root = await vault();
     try {
       const vocab = [{ id: "reg", provider: "blueprint", root: "Reg" }]; // empty registry ⇒ 'rogue' unregistered
-      const first = await runConformance({ root, baselineText: "", vocabularies: vocab, schemes: [], legacyPacks: false });
+      const first = await runConformance({ root, conventions: SEED, baselineText: "", vocabularies: vocab, schemes: [], legacyPacks: false });
       const baselineText = "```ratchet-baseline\n" + first.rebaseline + "\n```\n";
       const carried = first.findings.length;
       assert.ok(carried > 0);
       // budget below carried → over
-      const warn = await runConformance({ root, baselineText, vocabularies: vocab, schemes: [], legacyPacks: false, debtBudget: carried - 1 });
+      const warn = await runConformance({ root, conventions: SEED, baselineText, vocabularies: vocab, schemes: [], legacyPacks: false, debtBudget: carried - 1 });
       assert.equal(warn.budget.over, true);
       assert.match(warn.report, /WARNING: debt budget exceeded/);
       assert.equal(warn.exitCode, 0); // warn-only: no NEW, not strict
-      const strict = await runConformance({ root, baselineText, vocabularies: vocab, schemes: [], legacyPacks: false, debtBudget: carried - 1, strictBudget: true });
+      const strict = await runConformance({ root, conventions: SEED, baselineText, vocabularies: vocab, schemes: [], legacyPacks: false, debtBudget: carried - 1, strictBudget: true });
       assert.equal(strict.exitCode, 1);
     } finally {
       await rm(root, { recursive: true, force: true });

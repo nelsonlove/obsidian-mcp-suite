@@ -10,12 +10,13 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { runConformance, guardedTerritoryRefusal, NON_PATH_KEYED_CHECKS } from "../src/conformance/cli.ts";
+import { runConformance, runCli, guardedTerritoryRefusal, NON_PATH_KEYED_CHECKS } from "../src/conformance/cli.ts";
 import fs from "node:fs";
 import { ENGINE_ID } from "../src/conformance/engine.ts";
 import { coverageRefusal, baselinePackIds } from "../src/conformance/cli.ts";
 import { parseBaseline } from "../src/conformance/ratchet.ts";
 import { fileURLToPath } from "node:url";
+import { LEGACY_CONVENTIONS_SEED as SEED } from "../src/conformance/vault-conventions.ts";
 
 async function vault() {
   const root = await mkdtemp(path.join(tmpdir(), "conf-cli-"));
@@ -32,6 +33,7 @@ describe("runConformance", () => {
     try {
       const res = await runConformance({
         root,
+        conventions: SEED,
         baselineText: "",
         vocabularies: [{ id: "reg", provider: "blueprint", root: "Reg" }], // Reg is empty → 'rogue' unregistered
         schemes: [],
@@ -54,9 +56,9 @@ describe("runConformance", () => {
       // every run BY DESIGN (#298 — it describes configuration, not debt, and
       // is never rebaseline text), which would fail the "everything carried"
       // claim for a reason that is not this test's subject.
-      const first = await runConformance({ root, baselineText: "", vocabularies: [{ id: "reg", provider: "blueprint", root: "Reg" }], schemes: [], legacyPacks: false });
+      const first = await runConformance({ root, conventions: SEED, baselineText: "", vocabularies: [{ id: "reg", provider: "blueprint", root: "Reg" }], schemes: [], legacyPacks: false });
       const baselineText = "```ratchet-baseline\n" + first.rebaseline + "\n```\n";
-      const second = await runConformance({ root, baselineText, vocabularies: [{ id: "reg", provider: "blueprint", root: "Reg" }], schemes: [], legacyPacks: false });
+      const second = await runConformance({ root, conventions: SEED, baselineText, vocabularies: [{ id: "reg", provider: "blueprint", root: "Reg" }], schemes: [], legacyPacks: false });
       assert.equal(second.ratchet.newKeys.length, 0, "everything now carried");
       assert.equal(second.ratchet.failed, false);
       assert.equal(second.exitCode, 0);
@@ -68,7 +70,7 @@ describe("runConformance", () => {
   test("rebaseline output is the sorted key body for the live findings", async () => {
     const root = await vault();
     try {
-      const res = await runConformance({ root, baselineText: "", vocabularies: [{ id: "reg", provider: "blueprint", root: "Reg" }], schemes: [] });
+      const res = await runConformance({ root, conventions: SEED, baselineText: "", vocabularies: [{ id: "reg", provider: "blueprint", root: "Reg" }], schemes: [] });
       // every rebaseline line is a 4-field key
       for (const line of res.rebaseline.split("\n").filter(Boolean)) {
         assert.equal(line.split("|").length >= 4, true, `key has >=4 fields: ${line}`);
@@ -118,11 +120,11 @@ describe("legacyPacks gate — default ON since #116, opt-out with legacyPacks:f
     try {
       await mkdir(pth.join(root, "N"), { recursive: true });
       await writeFile(pth.join(root, "N", "A.md"), "prose with a semicolon; here\n");
-      const byDefault = await runConformance({ root, baselineText: "", vocabularies: [], schemes: [] });
+      const byDefault = await runConformance({ root, conventions: SEED, baselineText: "", vocabularies: [], schemes: [] });
       assert.equal(byDefault.findings.some((f) => f.script === "ste_lint"), true, "legacy packs ON by default (#116)");
-      const off = await runConformance({ root, baselineText: "", vocabularies: [], schemes: [], legacyPacks: false });
+      const off = await runConformance({ root, conventions: SEED, baselineText: "", vocabularies: [], schemes: [], legacyPacks: false });
       assert.equal(off.findings.some((f) => f.script === "ste_lint" || f.script === "port_lint" || f.script === "conformance_check"), false, "legacy packs off with explicit opt-out");
-      const on = await runConformance({ root, baselineText: "", vocabularies: [], schemes: [], legacyPacks: true });
+      const on = await runConformance({ root, conventions: SEED, baselineText: "", vocabularies: [], schemes: [], legacyPacks: true });
       assert.equal(on.findings.some((f) => f.script === "ste_lint"), true, "legacy packs on when asked explicitly");
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -167,7 +169,7 @@ describe("#398 — a guarded territory inside the root is skipped, reported, and
     try {
       await mkdir(path.join(root, "80-89 Sensitive"), { recursive: true });
       await writeFile(path.join(root, "80-89 Sensitive", "L.md"), "---\ntitle: L\ntags:\n  - rogue\n---\nprivate\n");
-      const res = await runConformance({ root, baselineText: "", vocabularies: vocab, schemes: [], territories: ["80-89"] });
+      const res = await runConformance({ root, conventions: SEED, baselineText: "", vocabularies: vocab, schemes: [], territories: ["80-89"] });
       assert.deepEqual(res.skippedTerritories, [{ path: "80-89 Sensitive", territory: "80-89" }]);
       assert.match(res.report, /guarded \(not scanned, no claim made\): 80-89 Sensitive \(guarded territory '80-89'\)/, "the report names the folder and the entry");
       assert.ok(!res.findings.some((f) => f.target.startsWith("80-89 Sensitive/")), "no finding came out of the territory — it was never read");
@@ -183,11 +185,11 @@ describe("#398 — a guarded territory inside the root is skipped, reported, and
       await mkdir(path.join(root, "80-89 Sensitive"), { recursive: true });
       await writeFile(path.join(root, "80-89 Sensitive", "L.md"), "---\ntitle: L\ntags:\n  - rogue\n---\nprivate\n");
       // Baseline taken while the territory was NOT listed: its key is accepted debt.
-      const first = await runConformance({ root, baselineText: "", vocabularies: vocab, schemes: [] });
+      const first = await runConformance({ root, conventions: SEED, baselineText: "", vocabularies: vocab, schemes: [] });
       assert.ok(first.rebaseline.includes("80-89 Sensitive/L.md"), "fixture: the baseline holds a key inside the folder");
       const baselineText = "```ratchet-baseline\n" + first.rebaseline + "\n```\n";
       await assert.rejects(
-        () => runConformance({ root, baselineText, vocabularies: vocab, schemes: [], territories: ["80-89"] }),
+        () => runConformance({ root, conventions: SEED, baselineText, vocabularies: vocab, schemes: [], territories: ["80-89"] }),
         /refusing to run: a guarded territory was skipped \(80-89 Sensitive\)[\s\S]*inside a guarded territory this run skipped[\s\S]*CLEARED/,
       );
     } finally {
@@ -220,10 +222,10 @@ describe("#398 / #400 review — a uid-keyed baseline key must not clear silentl
       await writeFile(path.join(root, "80-89 Sensitive", "L.md"), "---\ntitle: L\n---\nprivate\n");
       const eKey = "drift_audit|E|01234567-89ab-7cde-8f01-23456789abcd|dup-uid";
       const baselineText = "```ratchet-baseline\n" + eKey + "\n```\n";
-      const plain = await runConformance({ root, baselineText, vocabularies: vocab, schemes: [] });
+      const plain = await runConformance({ root, conventions: SEED, baselineText, vocabularies: vocab, schemes: [] });
       assert.ok(plain.ratchet.clearedKeys.includes(eKey), "nothing skipped: the unreproduced key is an ordinary CLEARED");
       await assert.rejects(
-        () => runConformance({ root, baselineText, vocabularies: vocab, schemes: [], territories: ["80-89"] }),
+        () => runConformance({ root, conventions: SEED, baselineText, vocabularies: vocab, schemes: [], territories: ["80-89"] }),
         /keyed by uid, not by path[\s\S]*\|E\|/,
         "a skip plus a cleared uid key refuses: nothing can tell whether the skip is what cleared it",
       );
@@ -250,10 +252,10 @@ describe("#398 / #400 review — a uid-keyed baseline key must not clear silentl
 describe("#298 — a dead convention path is a loud finding and an unmeasured pack, never a clean report", () => {
   const vocab = [{ id: "reg", provider: "blueprint", root: "Reg" }];
 
-  test("over a vault where the shipped conventions name nothing: one dead_convention finding per key, both dependent packs unmeasured, the report says so", async () => {
+  test("over a vault where the seed's conventions name nothing: one dead_convention finding per key, both dependent packs unmeasured, the report says so", async () => {
     const root = await vault();
     try {
-      const res = await runConformance({ root, baselineText: "", vocabularies: vocab, schemes: [] });
+      const res = await runConformance({ root, conventions: SEED, baselineText: "", vocabularies: vocab, schemes: [] });
       const dead = res.findings.filter((f) => f.script === ENGINE_ID && f.check === "dead_convention");
       assert.deepEqual(dead.map((f) => f.target).sort(), ["artifactsRoot", "pluginStackPath", "registriesRoot", "systemRoot", "uidExemptPaths", "ungovernedRoots"]);
       assert.deepEqual(res.deadConventions.length, 6);
@@ -268,7 +270,7 @@ describe("#298 — a dead convention path is a loud finding and an unmeasured pa
       // is NEW on every run until the operator re-points or retires the packs.
       // That is the issue's own preference ("silently clean is the one option
       // that should not stay"), and it cannot be silenced through --rebaseline.
-      const again = await runConformance({ root, baselineText: "```ratchet-baseline\n" + res.rebaseline + "\n```\n", vocabularies: vocab, schemes: [] });
+      const again = await runConformance({ root, conventions: SEED, baselineText: "```ratchet-baseline\n" + res.rebaseline + "\n```\n", vocabularies: vocab, schemes: [] });
       assert.ok(again.ratchet.newKeys.some((k) => k.startsWith(`${ENGINE_ID}|dead_convention|`)), "still NEW after a rebaseline");
       assert.ok(res.ratchet.newKeys.some((k) => k.startsWith(`${ENGINE_ID}|dead_convention|`)), "and the finding is NEW, so the run fails loudly");
     } finally {
@@ -276,9 +278,8 @@ describe("#298 — a dead convention path is a loud finding and an unmeasured pa
     }
   });
 
-  test("with GOVERNOR_VAULT_CONVENTIONS pointing at live paths, nothing is dead and drift_audit is measured", async () => {
+  test("with the conventions OPTION pointing at live paths, nothing is dead and drift_audit is measured", async () => {
     const root = await vault();
-    const saved = process.env.GOVERNOR_VAULT_CONVENTIONS;
     try {
       for (const d of ["Sys/Registries", "Sys/Artifacts", "Sys/Framework", "Sys/T"]) await mkdir(path.join(root, d), { recursive: true });
       await writeFile(path.join(root, "Sys", "Plugin stack.md"), "| Plugin | Status |\n");
@@ -288,17 +289,16 @@ describe("#298 — a dead convention path is a loud finding and an unmeasured pa
       await mkdir(path.join(root, ".obsidian", "plugins", "quickadd"), { recursive: true });
       await writeFile(path.join(root, ".obsidian", "plugins", "quickadd", "data.json"), '{"choices":[]}');
       await writeFile(path.join(root, ".obsidian", "community-plugins.json"), "[]");
-      process.env.GOVERNOR_VAULT_CONVENTIONS = JSON.stringify({
+      const live = {
         registriesRoot: "Sys/Registries", systemRoot: "Sys", artifactsRoot: "Sys/Artifacts",
         pluginStackPath: "Sys/Plugin stack.md", uidExemptPaths: ["Sys/T/Daily.md"], ungovernedRoots: ["Sys/Framework"],
-      });
-      const res = await runConformance({ root, baselineText: "", vocabularies: vocab, schemes: [] });
+      };
+      const res = await runConformance({ root, conventions: live, baselineText: "", vocabularies: vocab, schemes: [] });
       assert.deepEqual(res.deadConventions, []);
       assert.ok(!res.findings.some((f) => f.check === "dead_convention"));
       assert.ok(res.coveredPackIds.includes("drift_audit") && res.coveredPackIds.includes("conformance_check"));
       assert.doesNotMatch(res.report, /DEAD CONVENTION/);
     } finally {
-      if (saved === undefined) delete process.env.GOVERNOR_VAULT_CONVENTIONS; else process.env.GOVERNOR_VAULT_CONVENTIONS = saved;
       await rm(root, { recursive: true, force: true });
     }
   });
@@ -307,7 +307,7 @@ describe("#298 — a dead convention path is a loud finding and an unmeasured pa
     const root = await vault();
     try {
       const baselineText = "```ratchet-baseline\ndrift_audit|B|02.12|\n```\n";
-      const res = await runConformance({ root, baselineText, vocabularies: vocab, schemes: [] });
+      const res = await runConformance({ root, conventions: SEED, baselineText, vocabularies: vocab, schemes: [] });
       const refusal = coverageRefusal(baselinePackIds(parseBaseline(baselineText)), new Set(res.coveredPackIds), "run");
       assert.ok(refusal && /drift_audit/.test(refusal), "an unmeasured pack with accepted debt refuses rather than clearing it");
     } finally {
@@ -315,12 +315,12 @@ describe("#298 — a dead convention path is a loud finding and an unmeasured pa
     }
   });
 
-  test("when coverage refuses because a convention is dead, the refusal names the convention and GOVERNOR_VAULT_CONVENTIONS (#401 review) — pinned at the source", () => {
+  test("when coverage refuses because a convention is dead, the refusal names the convention and the settings remedy (#401 review; #403 moved the remedy from an env knob to the Conformance settings) — pinned at the source", () => {
     const here = path.dirname(fileURLToPath(import.meta.url));
     const cli = fs.readFileSync(path.join(here, "..", "src", "conformance", "cli.ts"), "utf8");
     const site = cli.slice(cli.indexOf("const coverage = coverageRefusal(baselineIds, covered"), cli.indexOf("// Trend (#211, A3)"));
     assert.match(site, /res\.deadConventions/, "the refusal consults the run's dead conventions");
-    assert.match(site, /set GOVERNOR_VAULT_CONVENTIONS to the live path/, "and names the remedy, not 'enable the packs'");
+    assert.match(site, /set it in the plugin settings \(Conformance\) or \$\{CONVENTIONS_ENV\}/, "and names the remedy, not 'enable the packs'");
   });
 
   test("the drift pack reads the INJECTED registries root, not the module constant (pinned at the source)", () => {
@@ -328,6 +328,81 @@ describe("#298 — a dead convention path is a loud finding and an unmeasured pa
     const drift = fs.readFileSync(path.join(here, "..", "src", "conformance", "packs", "drift.ts"), "utf8");
     const family = drift.slice(drift.indexOf("const registryFamily"), drift.indexOf("const actionNotes"));
     assert.match(family, /REGISTRIES_ROOT \+ "\/"/, "registryFamily filters on the per-run root");
-    assert.doesNotMatch(family, /DEFAULT_REGISTRIES_ROOT/, "the constant ignored every GOVERNOR_VAULT_CONVENTIONS override (#298)");
+    assert.doesNotMatch(family, /DEFAULT_REGISTRIES_ROOT/, "the constant ignored every conventions override (#298), and since #403 does not exist");
+  });
+});
+
+describe("#403 — the plugin ships EMPTY conventions: every scalar key dead, loudly; the list keys empty are 'none'", () => {
+  test("EMPTY conventions: the four scalar keys are dead_convention findings reported as (empty); the two list keys are not", async () => {
+    const root = await vault();
+    try {
+      const { EMPTY_VAULT_CONVENTIONS } = await import("../src/conformance/vault-conventions.ts");
+      const res = await runConformance({ root, conventions: EMPTY_VAULT_CONVENTIONS, baselineText: "", vocabularies: [{ id: "reg", provider: "blueprint", root: "Reg" }], schemes: [] });
+      const dead = res.findings.filter((f) => f.script === ENGINE_ID && f.check === "dead_convention");
+      assert.deepEqual(dead.map((f) => f.target).sort(), ["artifactsRoot", "pluginStackPath", "registriesRoot", "systemRoot"]);
+      assert.ok(dead.every((f) => f.kind === "" && /is EMPTY/.test(f.detail)), dead.map((f) => f.detail).join("\n"));
+      assert.match(res.report, /DEAD CONVENTION: registriesRoot = \(empty\) — 'drift_audit', 'conformance_check' not measured; set it in the plugin settings \(Conformance\) or VAULT_MCP_CONVENTIONS/);
+      assert.ok(!res.coveredPackIds.includes("drift_audit") && !res.coveredPackIds.includes("conformance_check"));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("#403 — the CLI entry reads VAULT_MCP_CONVENTIONS, and a legacy spelling still reaches the run", () => {
+  const ENV_KEYS = ["VAULT_MCP_CONVENTIONS", "GOVERNOR_VAULT_CONVENTIONS", "ASSENT_VAULT_CONVENTIONS"];
+  const withEnv = async (set, fn) => {
+    const saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
+    for (const k of ENV_KEYS) delete process.env[k];
+    Object.assign(process.env, set);
+    try { return await fn(); } finally {
+      for (const k of ENV_KEYS) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
+    }
+  };
+  const liveFixture = async () => {
+    const root = await vault();
+    for (const d of ["Sys/Registries", "Sys/Artifacts", "Sys/Framework", "Sys/T"]) await mkdir(path.join(root, d), { recursive: true });
+    await writeFile(path.join(root, "Sys", "Plugin stack.md"), "| Plugin | Status |\n");
+    await writeFile(path.join(root, "Sys", "T", "Daily.md"), "---\nuid:\n---\n");
+    await mkdir(path.join(root, ".obsidian", "plugins", "quickadd"), { recursive: true });
+    await writeFile(path.join(root, ".obsidian", "plugins", "quickadd", "data.json"), '{"choices":[]}');
+    await writeFile(path.join(root, ".obsidian", "community-plugins.json"), "[]");
+    // A baseline that NAMES drift_audit: with the conventions dead the coverage refusal fires (#294 by way of #298).
+    const baseline = path.join(root, "baseline.md");
+    await writeFile(baseline, "```ratchet-baseline\ndrift_audit|A|x|y\n```\n");
+    return { root, baseline };
+  };
+  const LIVE = JSON.stringify({ registriesRoot: "Sys/Registries", systemRoot: "Sys", artifactsRoot: "Sys/Artifacts", pluginStackPath: "Sys/Plugin stack.md", uidExemptPaths: ["Sys/T/Daily.md"], ungovernedRoots: ["Sys/Framework"] });
+  // runCli sets process.exitCode on a failed ratchet, which the test runner would read as this FILE failing; the run's outcome here is its message, so the code is reset after each call.
+  const cli = async (...argv) => {
+    const savedCode = process.exitCode;
+    try { await runCli(argv); return ""; } catch (e) { return e instanceof Error ? e.message : String(e); } finally { process.exitCode = savedCode ?? 0; }
+  };
+
+  test("unset: every convention is dead, and the coverage refusal names the settings remedy and VAULT_MCP_CONVENTIONS", async () => {
+    const { root, baseline } = await liveFixture();
+    try {
+      const msg = await withEnv({}, () => cli(`--root=${root}`, `--baseline=${baseline}`));
+      assert.match(msg, /DEAD convention path — set it in the plugin settings \(Conformance\) or VAULT_MCP_CONVENTIONS/);
+      assert.match(msg, /registriesRoot = \(empty\)/);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("VAULT_MCP_CONVENTIONS pointing at live paths: no dead convention, no coverage refusal", async () => {
+    const { root, baseline } = await liveFixture();
+    try {
+      const msg = await withEnv({ VAULT_MCP_CONVENTIONS: LIVE }, () => cli(`--root=${root}`, `--baseline=${baseline}`));
+      assert.doesNotMatch(msg, /DEAD convention/);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("the legacy spelling GOVERNOR_VAULT_CONVENTIONS still reaches the run (warned), and VAULT_MCP_CONVENTIONS wins when both are set", async () => {
+    const { root, baseline } = await liveFixture();
+    try {
+      const legacy = await withEnv({ GOVERNOR_VAULT_CONVENTIONS: LIVE }, () => cli(`--root=${root}`, `--baseline=${baseline}`));
+      assert.doesNotMatch(legacy, /DEAD convention/);
+      const both = await withEnv({ VAULT_MCP_CONVENTIONS: "{}", GOVERNOR_VAULT_CONVENTIONS: LIVE }, () => cli(`--root=${root}`, `--baseline=${baseline}`));
+      assert.match(both, /DEAD convention path/, "the new spelling (EMPTY here) wins over the legacy one");
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
 });

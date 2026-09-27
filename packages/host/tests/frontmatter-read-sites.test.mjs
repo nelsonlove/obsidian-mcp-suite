@@ -33,7 +33,8 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { driftPack, DEFAULT_REGISTRIES_ROOT } from "../src/conformance/packs/index.ts";
+import { driftPack } from "../src/conformance/packs/index.ts";
+import { LEGACY_CONVENTIONS_SEED as SEED } from "../src/conformance/vault-conventions.ts";
 import { noteInfo, emittedH2s } from "../src/conformance/packs/structure.ts";
 import { scanFrontmatter } from "@vault-mcp/core";
 
@@ -48,7 +49,7 @@ const BOM = String.fromCharCode(0xfeff);
 // "title is 'None'" finding. Post-fix its title parses and G stays quiet.
 
 describe("drift.ts fmBlock binds to the shared recognizer (#189)", () => {
-  const FBF = DEFAULT_REGISTRIES_ROOT;
+  const FBF = SEED.registriesRoot; // the legacy seed's root is the fixture (#403)
   const snap = (sources) => ({
     notes: [],
     paths: [],
@@ -60,7 +61,7 @@ describe("drift.ts fmBlock binds to the shared recognizer (#189)", () => {
     obsidianConfig: [{ path: ".obsidian/plugins/quickadd/data.json", text: '{"choices":[]}' }],
   });
   const tagNote = (text) => [{ path: `${FBF}/Tags/foo.tag.md`, text }];
-  const gFindings = (text) => driftPack().run(snap(tagNote(text))).filter((f) => f.check === "G");
+  const gFindings = (text) => driftPack(SEED).run(snap(tagNote(text))).filter((f) => f.check === "G");
 
   const LF_OK = "---\ntitle: foo.tag\n---\n# body\n";
 

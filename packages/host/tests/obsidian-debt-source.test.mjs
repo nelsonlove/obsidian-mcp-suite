@@ -16,6 +16,7 @@ import { obsidianDebtSource } from "../src/mcp/obsidian-debt-source.ts";
 import { runConformance, DEFAULT_BASELINE_REL } from "../src/conformance/cli.ts";
 import { DEFAULT_VOCABULARIES } from "@vault-mcp/core";
 import { DEFAULT_SCHEMES } from "../src/kernel/scheme/registry.ts";
+import { LEGACY_CONVENTIONS_SEED as SEED } from "../src/conformance/vault-conventions.ts";
 
 async function fixture() {
   const root = await mkdtemp(path.join(tmpdir(), "debt-source-"));
@@ -36,7 +37,7 @@ describe("obsidianDebtSource — #294: an unmeasured pack with accepted debt ref
       const baselinePath = path.join(root, DEFAULT_BASELINE_REL);
       await mkdir(path.dirname(baselinePath), { recursive: true });
       await writeFile(baselinePath, "```ratchet-baseline\ndrift_audit|B|02.12|\n```\n");
-      const src = obsidianDebtSource(app(root), () => []);
+      const src = obsidianDebtSource(app(root), () => [], () => SEED);
       await assert.rejects(() => src.liveFindings(), /refusing to report: the baseline holds accepted debt for drift_audit, which did not run/);
     } finally {
       if (saved !== undefined) process.env.GOVERNOR_BASELINE_REL = saved;
@@ -51,7 +52,7 @@ describe("obsidianDebtSource — #398 reaches the in-app tool", () => {
     const saved = process.env.GOVERNOR_BASELINE_REL;
     delete process.env.GOVERNOR_BASELINE_REL;
     try {
-      const src = obsidianDebtSource(app(root), () => ["80-89"]);
+      const src = obsidianDebtSource(app(root), () => ["80-89"], () => SEED);
       const findings = await src.liveFindings();
       assert.deepEqual(src.skippedTerritories(), [{ path: "80-89 Sensitive", territory: "80-89" }]);
       assert.ok(!findings.some((f) => f.target.startsWith("80-89 Sensitive/")), "nothing under it was read");
@@ -67,12 +68,12 @@ describe("obsidianDebtSource — #398 reaches the in-app tool", () => {
     delete process.env.GOVERNOR_BASELINE_REL;
     try {
       // Baseline taken with no territory listed: the key under 80-89 Sensitive is accepted debt.
-      const first = await runConformance({ root, baselineText: "", vocabularies: DEFAULT_VOCABULARIES, schemes: DEFAULT_SCHEMES, legacyPacks: true });
+      const first = await runConformance({ root, conventions: SEED, baselineText: "", vocabularies: DEFAULT_VOCABULARIES, schemes: DEFAULT_SCHEMES, legacyPacks: true });
       assert.ok(first.rebaseline.includes("80-89 Sensitive/L.md"), "fixture: a key inside the folder is in the baseline");
       const baselinePath = path.join(root, DEFAULT_BASELINE_REL);
       await mkdir(path.dirname(baselinePath), { recursive: true });
       await writeFile(baselinePath, "```ratchet-baseline\n" + first.rebaseline + "\n```\n");
-      const src = obsidianDebtSource(app(root), () => ["80-89"]);
+      const src = obsidianDebtSource(app(root), () => ["80-89"], () => SEED);
       await assert.rejects(() => src.liveFindings(), /refusing to run: a guarded territory was skipped \(80-89 Sensitive\)/);
     } finally {
       if (saved !== undefined) process.env.GOVERNOR_BASELINE_REL = saved;

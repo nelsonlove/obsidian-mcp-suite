@@ -21,7 +21,7 @@ import {
   debtBudgetFrom,
   DEFAULT_BASELINE_REL,
 } from "../src/conformance/cli.ts";
-import { vaultConventionsFrom, DEFAULT_VAULT_CONVENTIONS } from "../src/conformance/vault-conventions.ts";
+import { conventionsFromEnv, EMPTY_VAULT_CONVENTIONS } from "../src/conformance/vault-conventions.ts";
 
 describe("envAliased — the precedence contract", () => {
   test("GOVERNOR_ wins when both are set", () => {
@@ -96,11 +96,11 @@ describe("real call sites honor the alias", () => {
     assert.match(refusal, /ASSENT_CONTENT_ROOT/, "the refusal names the legacy spelling too");
   });
 
-  test("vaultConventionsFrom: both spellings, GOVERNOR_ first", () => {
+  test("the conventions knob left the GOVERNOR_/ASSENT_ alias family (#403): it is VAULT_MCP_CONVENTIONS, with the two old spellings as warned legacy reads — pinned in vault-conventions.test.mjs", () => {
     const g = JSON.stringify({ ungovernedRoots: ["G"] });
     const a = JSON.stringify({ ungovernedRoots: ["A"] });
-    assert.deepEqual(vaultConventionsFrom({ GOVERNOR_VAULT_CONVENTIONS: g, ASSENT_VAULT_CONVENTIONS: a }).ungovernedRoots, ["G"]);
-    assert.deepEqual(vaultConventionsFrom({ ASSENT_VAULT_CONVENTIONS: a }).ungovernedRoots, ["A"]);
-    assert.equal(vaultConventionsFrom({}), DEFAULT_VAULT_CONVENTIONS);
+    assert.deepEqual(conventionsFromEnv({ GOVERNOR_VAULT_CONVENTIONS: g, ASSENT_VAULT_CONVENTIONS: a }, () => {}).ungovernedRoots, ["G"]);
+    assert.deepEqual(conventionsFromEnv({ ASSENT_VAULT_CONVENTIONS: a }, () => {}).ungovernedRoots, ["A"]);
+    assert.deepEqual(conventionsFromEnv({}, () => {}), EMPTY_VAULT_CONVENTIONS, "unset is EMPTY: there is no default any more");
   });
 });
