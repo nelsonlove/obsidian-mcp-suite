@@ -35,6 +35,7 @@ export {
   isHumanVerification,
   hasHumanVerification,
   unverifiableProtectedPropertyIn,
+  unverifiableBeforeReason,
   parseProtectedPropertyLines,
   formatProtectedPropertyLines,
 } from "./accept-guard.js";
