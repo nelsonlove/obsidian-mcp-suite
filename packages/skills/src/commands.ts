@@ -97,7 +97,7 @@ export async function cmdValidate(ctx: SkillsGuiCtx): Promise<void> {
   const cfg = ctx.config();
   const a = await analyzeVault(ctx.backend, fieldsOf(cfg), cfg.pluginName, cfg.preloadCap);
   const lines = [
-    `${a.counts.agents} agents · ${a.counts.skills} skills · ${a.counts.policies} policies · ${a.counts.commands} commands`,
+    `${a.counts.agents} agents · ${a.counts.skills} skills · ${a.counts.policies} policies · ${a.excluded.total} not accepted (excluded) · ${a.counts.commands} commands`,
     "",
     ...(a.errors.length ? ["Errors:", ...a.errors.map((e) => "  ✖ " + e)] : ["No errors ✓"]),
     ...(a.warnings.length ? ["", "Warnings:", ...a.warnings.map((w) => "  ⚠ " + w)] : []),

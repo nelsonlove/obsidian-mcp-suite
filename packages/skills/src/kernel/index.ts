@@ -19,6 +19,8 @@ export {
   readPluginVersion,
   markFrontmatter,
   applyMark,
+  excludedSummary,
+  excludedWarning,
   agentCandidates,
   detectKind,
   fieldView,
@@ -58,3 +60,5 @@ export {
   expandTilde,
   type SkillsConfig,
 } from "./skills-config.js";
+
+export type { ExcludedNote, Excluded } from "./exporter.js";

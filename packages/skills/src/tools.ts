@@ -228,7 +228,7 @@ export function buildSkillsTools(source: SkillsBackend, ctx: SkillsToolsCtx): Sd
       const { cfg, fields } = resolve();
       const a = await analyzeVault(source, fields, cfg.pluginName, cfg.preloadCap);
       return {
-        ok: a.errors.length === 0, errors: a.errors, warnings: a.warnings, counts: a.counts,
+        ok: a.errors.length === 0, errors: a.errors, warnings: a.warnings, counts: a.counts, excluded: a.excluded,
         attachments: a.attachments, preloads: a.preloads, preloadCap: a.preloadCap,
       };
     },
@@ -272,7 +272,7 @@ export function buildSkillsTools(source: SkillsBackend, ctx: SkillsToolsCtx): Sd
         const summary = {
           diff: p.diff, removed: p.removed, policies: p.policies,
           attachments: p.attachments, preloads: p.preloads, preloadCap: p.preloadCap,
-          errors: p.errors, warnings: p.warnings, counts: p.counts,
+          errors: p.errors, warnings: p.warnings, counts: p.counts, excluded: p.excluded,
           outputDir: p.outputDir, assetsNote: p.assetsNote,
         };
         // THE COMPILE is whole-vault and must stay that way (parent edges span
@@ -381,7 +381,7 @@ export function buildSkillsTools(source: SkillsBackend, ctx: SkillsToolsCtx): Sd
       return {
         skills: summary.skills, agents: summary.agents, commands: summary.commands,
         assets: summary.assets, removed: summary.removed,
-        errors: summary.errors, warnings: summary.warnings, outputDir: summary.outputDir,
+        errors: summary.errors, warnings: summary.warnings, excluded: summary.excluded, outputDir: summary.outputDir,
         note: "Run /reload-plugins in Claude Code to load the changes.",
       };
     },
@@ -420,7 +420,7 @@ export function buildSkillsTools(source: SkillsBackend, ctx: SkillsToolsCtx): Sd
         version, previous,
         skills: summary.skills, agents: summary.agents, commands: summary.commands,
         assets: summary.assets, removed: summary.removed,
-        errors: summary.errors, warnings: summary.warnings, outputDir: summary.outputDir,
+        errors: summary.errors, warnings: summary.warnings, excluded: summary.excluded, outputDir: summary.outputDir,
         note: "Packaged only — commit & tag in the repo to publish.",
       };
     },

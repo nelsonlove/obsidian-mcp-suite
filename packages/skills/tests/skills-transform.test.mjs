@@ -456,7 +456,8 @@ describe("no-skills: the tools-level lockout, the one real boundary", () => {
 /** A fake SkillsSource over in-memory notes; wikilinks resolve by basename. */
 function fakeSource(notes) {
   return {
-    notes: async () => notes.map((n) => ({ path: n.path, frontmatter: n.frontmatter, body: n.body })),
+    // The supplied notes stand for ACCEPTED notes: the collect path's acceptance gate (01.41 rule 8) excludes an unverified one before the transform runs.
+    notes: async () => notes.map((n) => ({ path: n.path, frontmatter: { verified: [{ by: "human:nelson", at: "2026-09-25T05:08:39-04:00" }], ...n.frontmatter }, body: n.body })),
     resolveLink: (linkpath) => notes.find((n) => path.basename(n.path, ".md") === linkpath)?.path ?? null,
     embed: async () => null,
     basePath: () => null,

@@ -36,7 +36,12 @@ function sourceOf(notes) {
     basePath: () => null,
   };
 }
-const fm = (type, extra = {}) => ({ type, ...extra });
+// Every fixture note is ACCEPTED unless a test says otherwise: since the
+// acceptance gate (01.41 rule 8) a typed note without a human `verified` entry
+// does not compile at all. `unverified()` builds the exception on purpose.
+const HUMAN = { by: "human:nelson", at: "2026-09-25T05:08:39-04:00" };
+const fm = (type, extra = {}) => ({ type, verified: [HUMAN], ...extra });
+const unverified = (type, extra = {}) => ({ type, ...extra });
 const VAULT_MAP = { "Note/AgentPolicy": "policy", "Person/Agent": "agent", "Note/Skill": "skill" };
 const F = (over) => ({ ...DEFAULT_FIELDS, typeSource: "frontmatter", ...over });
 
@@ -198,9 +203,9 @@ describe("the switch — the test the fleet runs before retiring the ~/.claude/a
   // synthesized root (the one node with no parent when no note is `root: true`).
   const compiledNames = (a) => a.tree.filter((n) => n.parent !== null).map((n) => n.name).sort();
   const vault = sourceOf([
-    { path: `${R}/03.18 Claude Code agents.md`, frontmatter: { type: "Collection" }, body: "folder note — no name, not an agent" },
+    { path: `${R}/03.18 Claude Code agents.md`, frontmatter: { type: "Collection", verified: [HUMAN] }, body: "folder note — no name, not an agent" },
     ...RANKS.map((r) => ({ path: `${R}/${r}.md`, frontmatter: fm("Person/Agent", { name: r, description: `the ${r}` }), body: `${r} duties` })),
-    { path: `${R}/Promotion and demotion of sessions.md`, frontmatter: { type: "Note" }, body: "proposal, not an agent" },
+    { path: `${R}/Promotion and demotion of sessions.md`, frontmatter: { type: "Note", verified: [HUMAN] }, body: "proposal, not an agent" },
     { path: "03 Agents/03.01 Inbox/Agents/divorce-agent.md", frontmatter: fm("Person/Agent", { name: "divorce-agent" }), body: "scope agent" },
     { path: "00 System management/00.11 Templates/Template, Person%2FAgent.md", frontmatter: fm("Person/Agent", { name: "template" }), body: "" },
   ]);
@@ -326,5 +331,78 @@ describe("the #405 review's findings, pinned", () => {
     assert.deepEqual(good, { value: { "Person/Agent": "agent", "Note/AgentPolicy": "policy" }, problems: [] });
     const roots = textAreaValue(SKILLS_FIELDS.find((f) => f.key === "includeRoots"), " A \n\nB/C\n");
     assert.deepEqual(roots, { value: ["A", "B/C"], problems: [] });
+  });
+});
+
+describe("THE ACCEPTANCE GATE — nothing unaccepted reaches a compiled agent prompt (01.41 rule 8; 01.61 rule 11 as strict exclusion, ruled 2026-09-27)", () => {
+  const MAP = { "Person/Agent": "agent", "Note/AgentPolicy": "policy", "Note/Skill": "skill" };
+  const vault = sourceOf([
+    { path: "In/boss.md", frontmatter: fm("Person/Agent", { name: "boss", description: "d" }), body: "verified by a human" },
+    { path: "In/draft.md", frontmatter: unverified("Person/Agent", { name: "draft", description: "d" }), body: "no verified key at all" },
+    { path: "In/machine.md", frontmatter: unverified("Person/Agent", { name: "machine", description: "d", verified: [{ by: "vault-mcp/0.19.0", at: "x" }] }), body: "machine-checked only" },
+    { path: "In/blank.md", frontmatter: unverified("Note/Skill", { name: "blank", verified: [] }), body: "a blank verified — the shape rule 2a refuses" },
+    { path: "In/policy.md", frontmatter: unverified("Note/AgentPolicy", { name: "pol", parent: "[[boss]]" }), body: "an unratified policy" },
+    { path: "In/skill.md", frontmatter: fm("Note/Skill", { name: "ok-skill", parent: "[[boss]]" }), body: "verified skill" },
+  ]);
+  const F2 = F({ typeMap: MAP, includeRoots: ["In"] });
+
+  test("only the human-verified notes compile; the four others are excluded, counted per kind, named, and never in the tree", async () => {
+    const a = await analyzeVault(vault, F2);
+    assert.deepEqual(a.tree.filter((n) => n.parent !== null).map((n) => n.name).sort(), ["boss", "ok-skill"]);
+    assert.deepEqual(a.excluded, { total: 4, byKind: { skill: 1, agent: 2, policy: 1, command: 0 }, paths: ["In/draft.md", "In/machine.md", "In/blank.md", "In/policy.md"] });
+    assert.equal(a.counts.policies, 0, "an unratified policy is not injected anywhere");
+    const line = a.warnings.find((w) => /excluded from the compile/.test(w));
+    assert.ok(line, a.warnings.join("\n"));
+    assert.match(line, /4 typed note\(s\) excluded/);
+    assert.match(line, /01\.41 rule 8/);
+    assert.match(line, /2 agent, 1 policy/);
+    assert.match(line, /In\/draft\.md/);
+  });
+
+  test("the export report carries the excluded count, and the excluded notes are not written", async () => {
+    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "vaultmcp-skills-gate-"));
+    try {
+      const r = await runExport(vault, { outputDir, pluginName: "t", fields: F2 });
+      assert.equal(r.excluded.total, 4);
+      assert.deepEqual(r.excluded.byKind, { skill: 1, agent: 2, policy: 1, command: 0 });
+      const agents = fs.readdirSync(path.join(outputDir, "agents"));
+      assert.ok(agents.includes("boss.md"));
+      assert.ok(!agents.includes("draft.md") && !agents.includes("machine.md"), agents.join(","));
+      assert.ok(!fs.readFileSync(path.join(outputDir, "agents", "boss.md"), "utf8").includes("unratified policy"), "the unratified policy's text reaches no prompt");
+      assert.ok(r.warnings.some((w) => /excluded from the compile/.test(w)));
+    } finally {
+      fs.rmSync(outputDir, { recursive: true, force: true });
+    }
+  });
+
+  test("the preview reports the same excluded record as the analysis", async () => {
+    const { previewVault } = await import("../src/kernel/exporter.ts");
+    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "vaultmcp-skills-gate-p-"));
+    try {
+      const p = await previewVault(vault, { outputDir, pluginName: "t", fields: F2 });
+      assert.deepEqual(p.excluded.total, 4);
+      assert.ok(!p.entries.some((e) => /draft|machine|blank|\/pol\b/.test(e.relOut)), p.entries.map((e) => e.relOut).join(","));
+    } finally {
+      fs.rmSync(outputDir, { recursive: true, force: true });
+    }
+  });
+
+  test("the gate is the kernel's, not the plugin's: the identity map and bare kinds are gated the same", async () => {
+    const src = sourceOf([
+      { path: "s.md", frontmatter: { type: "skill", name: "s" }, body: "" },
+      { path: "v.md", frontmatter: { type: "skill", name: "v", verified: [HUMAN] }, body: "" },
+    ]);
+    const a = await analyzeVault(src, F({}));
+    assert.deepEqual(a.tree.filter((n) => n.parent !== null).map((n) => n.name), ["v"]);
+    assert.deepEqual(a.excluded.paths, ["s.md"]);
+  });
+
+  test("the switch: the six ranks compile only once each carries a human verified entry; one unverified rank is excluded, named, and the other five compile", async () => {
+    const RANKS = ["captain", "commander", "lieutenant-commander", "lieutenant-commander-repository", "lieutenant", "lieutenant-repository"];
+    const R = "03 Agents/03.18 Claude Code agents";
+    const notes = RANKS.map((r) => ({ path: `${R}/${r}.md`, frontmatter: r === "lieutenant" ? unverified("Person/Agent", { name: r, description: r }) : fm("Person/Agent", { name: r, description: r }), body: r }));
+    const a = await analyzeVault(sourceOf(notes), F({ typeMap: { "Person/Agent": "agent" }, includeRoots: [R] }));
+    assert.deepEqual(a.tree.filter((n) => n.parent !== null).map((n) => n.name).sort(), RANKS.filter((r) => r !== "lieutenant").sort());
+    assert.deepEqual(a.excluded, { total: 1, byKind: { skill: 0, agent: 1, policy: 0, command: 0 }, paths: [`${R}/lieutenant.md`] });
   });
 });

@@ -9,7 +9,7 @@ import { resolveTransclusions, stripFrontmatter } from "./transclude.js";
 import type { SkillsSource } from "./skills-source.js";
 import { STATIC_FILES } from "./static-skills.js";
 import { assetDirFor, collectAssets, copyAsset, type CollectAssetsOptions } from "./assets.js";
-import { matchesTerritoryPrefix } from "@vault-mcp/core";
+import { matchesTerritoryPrefix, hasHumanVerification } from "@vault-mcp/core";
 
 const MANIFEST_NAME = ".vault-skills-manifest.json";
 
@@ -163,6 +163,8 @@ export interface ExportSummary {
   commands: number;
   assets: number;
   removed: number;
+  /** Typed notes the acceptance gate refused (01.41 rule 8) — the count the export report carries. */
+  excluded: Excluded;
   warnings: string[];
   errors: string[];
   outputDir: string;
@@ -209,8 +211,38 @@ export function fieldView(fm: Record<string, unknown>, cfg: FieldConfig): { view
  *  When `warnings` is given, `![[X]]` transclusions in note bodies are also resolved (inlined),
  *  resolution problems reported through the same sink; without it, bodies keep raw embed syntax
  *  (cheap mode for callers that only need the note list). Reads the vault only through `src`. */
-export async function collectNotes(src: SkillsSource, fields: DetectConfig = DEFAULT_FIELDS, warnings?: string[]): Promise<NoteInput[]> {
+/** A typed note the compile refused because it is not ACCEPTED (01.41 rule 8):
+ *  no `verified` entry naming a `human:` actor. Counted and named, never silent. */
+export interface ExcludedNote {
+  path: string;
+  kind: ExportableKind;
+}
+
+/** The excluded record the three surfaces report: a total, a count per kind,
+ *  and the paths, so an operator sees which notes wait on acceptance. */
+export interface Excluded {
+  total: number;
+  byKind: Record<ExportableKind, number>;
+  paths: string[];
+}
+
+export function excludedSummary(list: readonly ExcludedNote[]): Excluded {
+  const byKind: Record<ExportableKind, number> = { skill: 0, agent: 0, policy: 0, command: 0 };
+  for (const e of list) byKind[e.kind] += 1;
+  return { total: list.length, byKind, paths: list.map((e) => e.path) };
+}
+
+/** The one warning line the gate emits when it excluded anything. */
+export function excludedWarning(list: readonly ExcludedNote[]): string {
+  const sum = excludedSummary(list);
+  const kinds = (Object.keys(sum.byKind) as ExportableKind[]).filter((k) => sum.byKind[k] > 0).map((k) => `${sum.byKind[k]} ${k}`).join(", ");
+  const shown = sum.paths.slice(0, 8).join(", ") + (sum.paths.length > 8 ? `, … ${sum.paths.length - 8} more` : "");
+  return `${sum.total} typed note(s) excluded from the compile — not accepted (no \`verified\` entry naming a \`human:\` actor; 01.41 rule 8: nothing unaccepted reaches a compiled agent prompt): ${kinds}: ${shown}`;
+}
+
+export async function collectNotes(src: SkillsSource, fields: DetectConfig = DEFAULT_FIELDS, warnings?: string[], excluded?: ExcludedNote[]): Promise<NoteInput[]> {
   const notes: NoteInput[] = [];
+  const excludedHere: ExcludedNote[] = excluded ?? [];
   const resolve = warnings
     ? (body: string, from: string, sources: Set<string>) => resolveTransclusions(body, from, src.embed, warnings, sources)
     : null;
@@ -238,6 +270,16 @@ export async function collectNotes(src: SkillsSource, fields: DetectConfig = DEF
       }
       continue;
     }
+    // THE ACCEPTANCE GATE (01.41 rule 8; 01.61 rule 11 as strict exclusion,
+    // ruled 2026-09-27): a typed note that no human has verified does not
+    // compile, whatever its kind and whatever the caller — the kernel's own
+    // callers included, because the rule is about what reaches a prompt, not
+    // about who asked. Checked on the RAW frontmatter (the vault's `verified`
+    // key is not a vault-skills field), with the perimeter's own predicate.
+    if (!hasHumanVerification(fm)) {
+      excludedHere.push({ path: note.path, kind });
+      continue;
+    }
     let body = stripFrontmatter(note.body);
     const sources = new Set<string>();
     if (resolve) body = await resolve(body, note.path, sources);
@@ -254,6 +296,7 @@ export async function collectNotes(src: SkillsSource, fields: DetectConfig = DEF
   for (const [spelling, n] of [...unmapped.entries()].sort()) {
     warnings?.push(`${n} note(s) carry type '${spelling}', which the type map does not name — skipped (map it to skill/agent/policy/command in the plugin settings, or leave it unmapped on purpose)`);
   }
+  if (excludedHere.length) warnings?.push(excludedWarning(excludedHere));
   if (fields.includeRoots !== undefined && fields.includeRoots.length === 0) {
     warnings?.push("include roots are EMPTY — nothing was read; name the folders to compile in the plugin settings");
   }
@@ -268,7 +311,7 @@ export async function collectNotes(src: SkillsSource, fields: DetectConfig = DEF
 }
 
 export async function runExport(src: SkillsSource, opts: ExportOptions): Promise<ExportSummary> {
-  const { notes, generated, warnings, errors, vaultPath } = await collectAndTransform(src, opts.fields ?? DEFAULT_FIELDS, opts.pluginName, opts.preloadCap);
+  const { notes, excluded, generated, warnings, errors, vaultPath } = await collectAndTransform(src, opts.fields ?? DEFAULT_FIELDS, opts.pluginName, opts.preloadCap);
 
   // A compile that read NO note is a misconfiguration, never an intent: with
   // the shipped empty roots or an empty type map the first export after an
@@ -356,6 +399,7 @@ export async function runExport(src: SkillsSource, opts: ExportOptions): Promise
     commands: files.filter((g) => g.kind === "command").length,
     assets: assetCopies.length,
     removed: toRemove.length,
+    excluded: excludedSummary(excluded),
     warnings,
     errors,
     outputDir: opts.outputDir,
@@ -368,6 +412,8 @@ export interface Analysis {
   errors: string[];
   warnings: string[];
   counts: { skills: number; agents: number; policies: number; commands: number };
+  /** Typed notes the acceptance gate refused (01.41 rule 8): total, per kind, and their paths. */
+  excluded: Excluded;
   /** Notes naming more than one parent: primary edge + recorded attachments. */
   attachments: Attachment[];
   /** What each agent's compiled `skills:` (preload) list carries, and the cap it was
@@ -380,6 +426,8 @@ export interface Analysis {
  *  so the three surfaces can never disagree about the same vault. */
 interface Compiled {
   notes: NoteInput[];
+  /** The typed notes the acceptance gate refused (01.41 rule 8). */
+  excluded: ExcludedNote[];
   vaultPath: string | undefined;
   generated: Generated[];
   tree: TreeNode[];
@@ -407,11 +455,12 @@ function outputFileSet(generated: Generated[]): OutputFile[] {
 
 async function collectAndTransform(src: SkillsSource, fields: DetectConfig, pluginName: string, preloadCap?: number): Promise<Compiled> {
   const collectWarnings: string[] = [];
-  const notes = await collectNotes(src, fields, collectWarnings);
+  const excluded: ExcludedNote[] = [];
+  const notes = await collectNotes(src, fields, collectWarnings, excluded);
   const vaultPath = src.basePath() ?? undefined;
   const result = transformAll(notes, { pluginName, synthesizeRoot: true, vaultPath, preloadCap });
   result.warnings.unshift(...collectWarnings);
-  return { notes, vaultPath, ...result };
+  return { notes, excluded, vaultPath, ...result };
 }
 
 function countsOf(tree: TreeNode[], notes: NoteInput[]): Analysis["counts"] {
@@ -432,6 +481,7 @@ export async function analyzeVault(src: SkillsSource, fields: DetectConfig = DEF
   const c = await collectAndTransform(src, fields, pluginName, preloadCap);
   return {
     tree: c.tree, errors: c.errors, warnings: c.warnings, counts: countsOf(c.tree, c.notes),
+    excluded: excludedSummary(c.excluded),
     attachments: c.attachments, preloads: c.preloads, preloadCap: c.preloadCap,
   };
 }
@@ -456,6 +506,8 @@ export interface PreviewEntry {
 
 export interface PreviewResult {
   tree: TreeNode[];
+  /** Typed notes the acceptance gate refused (01.41 rule 8). */
+  excluded: Excluded;
   entries: PreviewEntry[];
   /** Previously exported generated files no export would rewrite (would be deleted). */
   removed: string[];
@@ -486,7 +538,7 @@ export async function previewVault(
   src: SkillsSource,
   opts: { outputDir: string; pluginName: string; fields?: DetectConfig; preloadCap?: number },
 ): Promise<PreviewResult> {
-  const { notes, generated, tree, warnings, errors, policies, attachments, preloads, preloadCap } =
+  const { notes, excluded, generated, tree, warnings, errors, policies, attachments, preloads, preloadCap } =
     await collectAndTransform(src, opts.fields ?? DEFAULT_FIELDS, opts.pluginName, opts.preloadCap);
 
   const files = outputFileSet(generated);
@@ -512,6 +564,7 @@ export async function previewVault(
 
   return {
     tree, entries, removed,
+    excluded: excludedSummary(excluded),
     diff: {
       added: entries.filter((e) => e.status === "added").length,
       modified: entries.filter((e) => e.status === "modified").length,

@@ -116,6 +116,10 @@ opted-in attached skills, and a hand-written `tools:` list containing `Skill` al
 Scope note: this restricts the compiled subagent's Skill *tool*. It is a per-agent switch in the
 emitted plugin, not a claim about anything else the agent can reach.
 
+## The acceptance gate
+
+Nothing unaccepted reaches a compiled agent prompt (`01.41 The accept perimeter`, rule 8; `01.61 Agent compilation & policy`, rule 11 as strict exclusion; ruled 2026-09-27). A typed note compiles only when its frontmatter carries a `verified` entry naming a `human:` actor (`verified: [{by: human:<name>, at: <moment>}]`, the vault's accepted state); a note with no `verified` key, a blank one, or only machine entries (`by: <producer>/<version>` or `process:<id>`) is excluded, whatever its kind and whoever asked. The test is core's `hasHumanVerification`, the same definition the host's accept guard holds, so the compiler and the perimeter share one definition of "accepted". Excluded notes are counted per kind and named on every surface: `vaultmcp_skills_validate` and `_tree` (`excluded`), `_preview` (`excluded`), `_export` and `_release` (`excluded` in the summary), the pane's report line, and one warning line naming the first eight paths. There is no setting that turns the gate off.
+
 ## Config
 
 The `vaultmcp-skills` plugin's own settings tab (formerly rendered as `modules.skills.config` in the host's config tab — see "Now a satellite plugin" above for the one-shot adoption path): `outputDir`, `pluginName`, `typeSource` (`frontmatter` | `tags`), `typeMap`, `includeRoots`, `excludeRoots`, `tagPrefix`, `fieldMode` (`prefix` | `nested`), `fieldPrefix`, `fieldKey`, `assetsRoot`, `releaseDir`, `exportOnSave` (GUI only), `preloadCap` (default 5).

@@ -248,8 +248,9 @@ describe("vaultmcp_skills_preview: bodies are filtered by the source note's visi
   const twoSkills = {
     ...inertSkillsSource,
     notes: async () => [
-      { path: "Projects/Visible.md", frontmatter: { type: "skill" }, body: "VISIBLE-BODY-MARKER" },
-      { path: "Archive/Hidden.md", frontmatter: { type: "skill" }, body: "HIDDEN-BODY-MARKER" },
+      // ACCEPTED fixtures: since the acceptance gate (01.41 rule 8) an unverified note does not compile at all.
+      { path: "Projects/Visible.md", frontmatter: { type: "skill", verified: [{ by: "human:nelson", at: "2026-09-25T05:08:39-04:00" }] }, body: "VISIBLE-BODY-MARKER" },
+      { path: "Archive/Hidden.md", frontmatter: { type: "skill", verified: [{ by: "human:nelson", at: "2026-09-25T05:08:39-04:00" }] }, body: "HIDDEN-BODY-MARKER" },
     ],
   };
 
@@ -312,7 +313,8 @@ describe("vaultmcp_skills_preview: assembled bodies cannot smuggle hidden notes 
       buildSkillsTools(
         {
           ...inertSkillsSource,
-          notes: async () => notes,
+          // The supplied notes stand for ACCEPTED notes (the gate excludes an unverified one before any of this runs).
+          notes: async () => notes.map((n) => ({ ...n, frontmatter: { verified: [{ by: "human:nelson", at: "2026-09-25T05:08:39-04:00" }], ...n.frontmatter } })),
           embed: embed ?? (async () => null),
           // The inert source resolves nothing, which would leave a policy's
           // `parent` dangling — the policy would then be DROPPED as an error and
