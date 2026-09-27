@@ -55,7 +55,7 @@ every agent stops reimplementing them:
 **Stamping never writes acceptance.** It defaults `acceptance-status: proposed`, never mints or
 elevates to `accepted`, and preserves an existing on-disk `acceptance-status` **verbatim**
 (including a human-granted `accepted` — changing it would destroy the human's decision). Any
-item whose frontmatter introduces `accepted`/`accepted-by`/`accepted-on` is **rejected**
+item whose frontmatter introduces `accepted`/`accepted-by`/`accepted-on`, or introduces, changes, blanks or removes a filled live `verified` field (#406; removing a blank one is allowed), is **rejected**
 (`Error [accept_forbidden]`) whether or not `stamp` is set — see
 [acceptance-model.md](acceptance-model.md).
 

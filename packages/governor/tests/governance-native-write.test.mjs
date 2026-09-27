@@ -159,6 +159,14 @@ describe("authorityKeysDiffer — what the accept guard permits, the firewall st
     assert.ok(authorityKeysDiffer("---\nacceptance-status: accepted\n---\nx", "---\nacceptance-status: proposed\n---\nx"));
   });
 
+  test("the live `verified` key is authority-class too (#406): introduce, remove and change all differ; carry-forward does not", () => {
+    assert.ok(authorityKeysDiffer("---\ntitle: T\n---\nbody", "---\ntitle: T\nverified: [{by: human:nelson}]\n---\nbody"));
+    assert.ok(authorityKeysDiffer("---\nverified: [{by: human:nelson}]\n---\nbody", "---\n---\nbody"));
+    assert.ok(authorityKeysDiffer("---\nverified: [{by: human:nelson}]\n---\nbody", "---\nverified: []\n---\nbody"));
+    const t = "---\nverified: [{by: human:nelson}]\n---\nbody";
+    assert.ok(!authorityKeysDiffer(t, t.replace("body", "new body")));
+  });
+
   test("byte-identical preservation does not differ", () => {
     const t = "---\naccepted-by: Nelson\naccepted-on: 2026-01-01\n---\nbody";
     assert.ok(!authorityKeysDiffer(t, t.replace("body", "new body")));

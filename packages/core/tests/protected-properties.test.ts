@@ -208,10 +208,14 @@ describe("acceptTransitionNeedsBefore — the fast-path helper", () => {
     assert.equal(acceptTransitionNeedsBefore({ title: "x" }), true);
   });
 
-  test("with NONE declared, the historical shortcut holds", () => {
+  test("with NONE declared, the before read is STILL needed (#406): the floor itself now has a removal rule, so the historical shortcut is retired", () => {
+    // Until #406 a result that asserted nothing could skip the disk read. A
+    // filled `verified` may not be stripped by an agent, and absence in the
+    // result is only decidable against the before, so the shortcut is gone
+    // whatever the declared list says.
     setDeclaredProtectedProperties([], silent);
-    assert.equal(acceptTransitionNeedsBefore(null), false);
-    assert.equal(acceptTransitionNeedsBefore({ title: "x" }), false);
+    assert.equal(acceptTransitionNeedsBefore(null), true);
+    assert.equal(acceptTransitionNeedsBefore({ title: "x" }), true);
     assert.equal(acceptTransitionNeedsBefore({ "accepted-by": "me" }), true);
   });
 });

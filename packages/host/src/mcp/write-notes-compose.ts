@@ -46,6 +46,8 @@ import {
   AcceptForbiddenError,
   acceptTransitionReason,
   acceptForbiddenReason,
+  isVerifiedKey,
+  isBlankVerification,
   frontmatterOf,
   stripLeadingBom,
   LEADING_FRONTMATTER_RE,
@@ -208,6 +210,17 @@ export function composeNote(args: ComposeArgs): ComposeResult {
     if (!("acceptance-status" in merged)) {
       if ("acceptance-status" in existing) merged["acceptance-status"] = existing["acceptance-status"];
       else merged["acceptance-status"] = "proposed";
+    }
+
+    // verified (#406): the payload's value, else preserve a FILLED existing
+    // record VERBATIM — the shared guard refuses its removal, so a stamped
+    // rewrite that is silent on it (every ordinary write) must carry it
+    // forward or be refused. A BLANK existing one is dropped: an agent may
+    // remove a blank `verified`, never a record, and carrying the blank forward
+    // would be refused. The recognizers are core's, never a local copy.
+    for (const k of Object.keys(existing)) {
+      if (!isVerifiedKey(k) || k in merged || isBlankVerification(existing[k])) continue;
+      merged[k] = existing[k];
     }
 
     structuredFm = canonicalOrder(merged);
