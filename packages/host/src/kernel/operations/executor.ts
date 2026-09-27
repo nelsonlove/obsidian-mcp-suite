@@ -257,7 +257,18 @@ const EPOCH = Date.now().toString(36);
 const CODED_OUTCOMES: Record<string, OperationOutcome> = {
   rev_conflict: "conflict",
   write_timeout: "uncertain",
+  // A published tool's partial result (apiVersion 2, external-tools.ts
+  // `partialResult`): work happened AND something failed. Its own outcome, so
+  // the record never says "refused" about a call that mutated the vault.
+  partial: "partial",
 };
+
+/** Outcomes under which the handler did its work (all of it, or part of it):
+ *  what capture and the proposal path key on. A refusal, a conflict, an
+ *  uncertain or failed run did not. */
+function didWork(outcome: OperationOutcome): boolean {
+  return outcome === "completed" || outcome === "partial";
+}
 
 const CODED_ERROR = /^Error \[([a-z_]+)\]:/;
 
@@ -440,9 +451,10 @@ export function createOperationExecutor(opts: OperationExecutorOpts): OperationE
         );
 
         // Capture AFTER the handler, on what it actually returned, and only
-        // for a successful read — capturing a refusal envelope would store an
-        // error message as if it were vault content.
-        if (opts.capture && outcomeOf(result) === "completed") {
+        // for a read that did its work (completed, or partial: the data half
+        // of a partial result IS vault content) — capturing a refusal envelope
+        // would store an error message as if it were vault content.
+        if (opts.capture && didWork(outcomeOf(result))) {
           mark(operation, "observed");
           const captured = await opts.capture.capture({
             action: action!,
@@ -466,7 +478,9 @@ export function createOperationExecutor(opts: OperationExecutorOpts): OperationE
         // a completed operation only, never the caller's problem. What it
         // starts is the authority path — the wiring decides WHETHER (settings,
         // native action, write facts present); the executor only decides WHEN.
-        if (opts.propose && outcomeOf(result) === "completed") {
+        // A partial result from a mutating tool DID mutate: the proposal path
+        // runs for it exactly as for a completed one.
+        if (opts.propose && didWork(outcomeOf(result))) {
           try {
             await opts.propose(operation, result, resolvedSources ?? opts.sourcesOf?.(request) ?? []);
           } catch (e) {

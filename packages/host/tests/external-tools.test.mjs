@@ -198,8 +198,8 @@ test("apiVersion 2: an SDK partial() envelope becomes okError — structuredCont
   assert.equal(res.isError, true, "the error bit is set");
   assert.deepEqual(res.structuredContent, { done: ["a"] }, "the data, not the envelope");
   assert.equal(res.content.length, 2);
-  assert.equal(res.content[0].text, JSON.stringify({ done: ["a"] }, null, 2));
-  assert.equal(res.content[1].text, "b was unreadable");
+  assert.equal(res.content[0].text, "Error [partial]: b was unreadable", "the coded message line comes FIRST: the executor's outcome and the journal's error text read content[0]");
+  assert.equal(res.content[1].text, JSON.stringify({ done: ["a"] }, null, 2));
 });
 
 test("the envelope is checked on the TOP level only: a partial nested inside data is data, and a hand-built envelope partial() would refuse is wrapped as ordinary data", async () => {
@@ -229,6 +229,7 @@ test("apiVersion 2: every handler gets a CallContext built from the LIVE setting
   registerExternalTools(server, fakeApp(["p"]), fakeCtx(settings, entries));
   await server.calls[0].handler({ path: "Notes/a.md" });
   const paths = ["Notes/a.md", "Private/b.md"];
+  assert.deepEqual(Object.keys(seen[0]).sort(), ["isVisible", "readOnly", "visible"], "functions, never the list: the context carries exactly these three members and no allowlist or settings object");
   assert.equal(seen[0].visible(paths), paths, "no allowlist: the SAME array (identity)");
   assert.equal(seen[0].isVisible("Private/b.md"), true);
   assert.equal(seen[0].readOnly, false);

@@ -38,7 +38,7 @@ Dependents resolve `dist/index.js` through the workspace link, and `dist/` is no
 
 ## Partial results (SDK 1.1, host apiVersion 2)
 
-A handler that did part of its work returns `partial(data, message)` instead of throwing: the caller gets `data` AND the error bit. On a host at apiVersion 2 or later the result lands as `structuredContent = data`, the JSON plus the message as text, and `isError: true`; a thrown error stays text-only, as today. On a v1 host the branded object is wrapped as an ordinary result with the brand key (`vault-mcp-api/envelope`) visible: degraded, not broken. The brand is checked only on the top-level return value; a `partial` nested inside `data` is data.
+A handler that did part of its work returns `partial(data, message)` instead of throwing: the caller gets `data` AND the error bit. On a host at apiVersion 2 or later the result lands as `structuredContent = data`, `content` as the coded message line (`Error [partial]: <message>`) and then the JSON text, and `isError: true`; the host records the operation's outcome as `partial`, not refused. A thrown error stays text-only, as today. On a host before apiVersion 2 the branded object was wrapped as an ordinary result with the brand key (`vault-mcp-api/envelope`) visible: degraded, not broken. The brand is checked only on the top-level return value; a `partial` nested inside `data` is data.
 
     import { partial } from "vault-mcp-api";
     handler: async ({ paths }) => {

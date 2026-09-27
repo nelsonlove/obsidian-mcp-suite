@@ -130,6 +130,17 @@ describe("capture — a compatibility action captures nothing, even when enabled
     assert.equal(b.map.size, 0);
   });
 
+  test("a PARTIAL result is captured too — its data half IS vault content, and the operation did its work (apiVersion 2)", async () => {
+    const { executor, observations } = harness();
+    const partial = { isError: true, content: [{ type: "text", text: "Error [partial]: one section was unreadable" }, { type: "text", text: "{}" }], structuredContent: { text: "the readable half" } };
+    const { operation } = await executor.run({ ...READ, inputs: { path: "A.md" } }, async () => partial);
+    assert.equal(operation.outcome, "partial");
+    assert.equal(observations.length, 1, "captured, like a completed read");
+    const refused = { isError: true, content: [{ type: "text", text: "Error [out_of_allowlist]: nope" }] };
+    await executor.run({ ...READ, inputs: { path: "B.md" } }, async () => refused);
+    assert.equal(observations.length, 1, "a refusal is still not captured");
+  });
+
   test("the NATIVE read is captured when enabled", async () => {
     const { executor, blobs: b, observations } = harness({ enabled: true });
     await executor.run({ ...READ, inputs: { path: "A.md" } }, async () => ({ content: "the note text" }));

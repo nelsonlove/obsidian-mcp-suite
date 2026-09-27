@@ -83,12 +83,22 @@ export function isPartialEnvelope(value: unknown): value is PartialEnvelope {
     && !!v.data && typeof v.data === "object" && !Array.isArray(v.data);
 }
 
+/** The code a partial result carries in its first content line, in the
+ *  `Error [code]: detail` shape the rest of the surface uses for typed
+ *  outcomes (guarded.ts `codedError`, the batch decoder), so the operation
+ *  executor maps it to the `partial` outcome — not to `refused`, which is
+ *  what an uncoded `isError` means there — and the write journal's error
+ *  text is the message, not the JSON. */
+export const PARTIAL_CODE = "partial";
+
 /** The wire shape of a partial result (design §4 rule 1): `structuredContent`
- *  is the data, `content` is the JSON text plus the message, `isError` is set —
- *  the caller gets what was done AND the error bit. */
+ *  is the data, `content` is the coded message line and then the JSON text,
+ *  `isError` is set — the caller gets what was done AND the error bit, and
+ *  every reader of `content[0]` (the executor's outcome, the journal's error
+ *  text) sees the one sentence that says what failed. */
 export function partialResult(env: PartialEnvelope) {
   const base = okError(env.data);
-  return { ...base, content: [...base.content, { type: "text" as const, text: env.message }] };
+  return { ...base, content: [{ type: "text" as const, text: `Error [${PARTIAL_CODE}]: ${env.message}` }, ...base.content] };
 }
 
 export interface ExternalToolEntry {

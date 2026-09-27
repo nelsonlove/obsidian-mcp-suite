@@ -170,7 +170,7 @@ test("the host's declared apiVersion (2) meets the SDK's floor (1): a host bump 
   assert.equal(hostApiSupported(null), false);
 });
 
-test("a partial result crosses the real host registry as the branded object, unaltered by registration (what a v1 host then does with it is pinned in the host's own external-tools test)", async () => {
+test("a partial result crosses the real host registry as the branded object, unaltered by registration (the host's own external-tools test pins what a v2 host then makes of it; the v1 wrapping is no longer observable here)", async () => {
   const { registry, plugin } = hostWorld();
   publishTools(plugin, [{ name: "half", description: "d", handler: () => partial({ done: ["a"] }, "b was unreadable") }]);
   const entry = registry.entries().find((t) => t.toolName.endsWith("_half"));
