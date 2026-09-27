@@ -90,6 +90,16 @@ export function isVerifiedKey(key: string): boolean {
  *  `verified: {}`. Rule 2a refuses that shape on purpose — "a key that is
  *  present and empty reads as a field somebody may fill in" — so it is refused
  *  OUTRIGHT, carry-forward included: an empty value is never a human's record. */
+export function isBlankVerification(v: unknown): boolean {
+  if (v === null || v === undefined) return true;
+  if (typeof v === "string") return v.trim() === "";
+  if (Array.isArray(v)) return v.length === 0;
+  // Only a PLAIN empty object is blank: a Date (what a YAML timestamp parses
+  // to under Obsidian's parser) has no own enumerable keys and is a value.
+  if (typeof v === "object") return Object.getPrototypeOf(v) === Object.prototype && Object.keys(v as object).length === 0;
+  return false;
+}
+
 /** Whether one `verified` entry names a HUMAN actor (01.41 rule 1f): an object
  *  whose `by` is a string with the `human:` prefix. An agent's own check
  *  (`<producer>/<version>`) and a scheduled job's (`process:<id>`) are entries
@@ -97,7 +107,9 @@ export function isVerifiedKey(key: string): boolean {
 export function isHumanVerification(entry: unknown): boolean {
   if (!entry || typeof entry !== "object" || Array.isArray(entry)) return false;
   const by = (entry as Record<string, unknown>).by;
-  return typeof by === "string" && by.startsWith("human:");
+  // NAMING a human actor: the prefix alone is not a person (`by: "human:"` is
+  // a blank with a costume on), so the name after it must be non-empty.
+  return typeof by === "string" && by.startsWith("human:") && by.slice("human:".length).trim() !== "";
 }
 
 /** Whether a note's frontmatter carries at least one human verification: the
@@ -115,16 +127,6 @@ export function hasHumanVerification(fm: Record<string, unknown> | null | undefi
   const v = fm[key];
   const entries = Array.isArray(v) ? v : [v];
   return entries.some(isHumanVerification);
-}
-
-export function isBlankVerification(v: unknown): boolean {
-  if (v === null || v === undefined) return true;
-  if (typeof v === "string") return v.trim() === "";
-  if (Array.isArray(v)) return v.length === 0;
-  // Only a PLAIN empty object is blank: a Date (what a YAML timestamp parses
-  // to under Obsidian's parser) has no own enumerable keys and is a value.
-  if (typeof v === "object") return Object.getPrototypeOf(v) === Object.prototype && Object.keys(v as object).length === 0;
-  return false;
 }
 
 // ── the ONE recognizer for a note's leading frontmatter fence ───────────────

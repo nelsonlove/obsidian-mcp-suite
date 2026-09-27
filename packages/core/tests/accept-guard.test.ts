@@ -819,6 +819,9 @@ describe("hasHumanVerification — the ACCEPTED state of 01.41, one definition f
     assert.equal(hasHumanVerification({ verified: [{ at: "x" }] }), false, "no actor");
     assert.equal(hasHumanVerification({ verified: [{ by: "nelson" }] }), false, "no prefix, no tier");
     assert.equal(hasHumanVerification({ verified: [{ by: "Human:nelson" }] }), false, "the prefix is exact");
+    assert.equal(hasHumanVerification({ verified: [{ by: "human:" }] }), false, "the prefix alone names nobody");
+    assert.equal(hasHumanVerification({ verified: [{ by: "human:   " }] }), false, "blank after the prefix names nobody");
+    assert.equal(hasHumanVerification({ verified: [{ by: "human: nelson" }] }), true, "a space after the prefix still names someone");
     assert.equal(hasHumanVerification({ "accepted-by": "nelson", "acceptance-status": "accepted" }), false, "the retired family confirms nothing");
     assert.equal(hasHumanVerification({ "verified-by": "human:nelson" }), false, "only the live `verified` key holds entries");
     assert.equal(hasHumanVerification({}), false);

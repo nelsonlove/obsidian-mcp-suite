@@ -132,6 +132,14 @@ interface ResolveContext {
   /** When present, collects the vault path of every note whose content was inlined
    *  (all depths) — the compiled artifact's transclusion sources. */
   sources?: Set<string>;
+  /** THE ACCEPTANCE GATE ON EMBEDS (01.41 rule 8: nothing unaccepted reaches a
+   *  compiled agent prompt — the rule is over the prompt's TEXT, and an embed
+   *  inlines a note's text). When present, an embed target it refuses is not
+   *  inlined: a marker naming the path stands in its place, the path is
+   *  recorded in `refused` and in `sources` (so the export re-runs when the
+   *  note is later accepted), and a warning says why. Applies at every depth. */
+  accept?: (src: EmbedSource) => boolean;
+  refused?: Set<string>;
 }
 
 async function resolveBody(body: string, fromPath: string, ctx: ResolveContext): Promise<string> {
@@ -165,6 +173,13 @@ async function resolveBody(body: string, fromPath: string, ctx: ResolveContext):
     if (ctx.chain.includes(src.path)) {
       ctx.warnings.push(`${fromPath}: transclusion cycle through ${src.path} — left unresolved`);
       keep(); continue;
+    }
+    if (ctx.accept && !ctx.accept(src)) {
+      ctx.warnings.push(`${fromPath}: transclusion ${m[0]} refused — ${src.path} is not accepted (no \`verified\` entry naming a \`human:\` actor; 01.41 rule 8), so its text does not reach the compiled prompt`);
+      ctx.refused?.add(src.path);
+      ctx.sources?.add(src.path);
+      out.push(`<!-- transclusion refused: ${src.path} is not accepted -->`);
+      continue;
     }
 
     let content: string | null = stripFrontmatter(src.content).trim();
@@ -215,7 +230,8 @@ export async function resolveTransclusions(
   lookup: EmbedLookup,
   warnings: string[],
   sources?: Set<string>,
+  gate?: { accept: (src: EmbedSource) => boolean; refused: Set<string> },
 ): Promise<string> {
   if (!body.includes("![[")) return body;
-  return resolveBody(body, sourcePath, { lookup, warnings, chain: [sourcePath], sources });
+  return resolveBody(body, sourcePath, { lookup, warnings, chain: [sourcePath], sources, accept: gate?.accept, refused: gate?.refused });
 }

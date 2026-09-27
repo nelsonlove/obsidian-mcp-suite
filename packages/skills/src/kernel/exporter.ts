@@ -9,7 +9,7 @@ import { resolveTransclusions, stripFrontmatter } from "./transclude.js";
 import type { SkillsSource } from "./skills-source.js";
 import { STATIC_FILES } from "./static-skills.js";
 import { assetDirFor, collectAssets, copyAsset, type CollectAssetsOptions } from "./assets.js";
-import { matchesTerritoryPrefix, hasHumanVerification } from "@vault-mcp/core";
+import { matchesTerritoryPrefix, hasHumanVerification, parseGuardFrontmatter } from "@vault-mcp/core";
 
 const MANIFEST_NAME = ".vault-skills-manifest.json";
 
@@ -221,30 +221,48 @@ export interface ExcludedNote {
 /** The excluded record the three surfaces report: a total, a count per kind,
  *  and the paths, so an operator sees which notes wait on acceptance. */
 export interface Excluded {
+  /** Typed notes refused as compile units. */
   total: number;
   byKind: Record<ExportableKind, number>;
   paths: string[];
+  /** Notes whose text an accepted note tried to EMBED (`![[X]]`) and which are
+   *  not accepted themselves: not inlined, a marker in their place. Rule 8 is
+   *  over the prompt's text, so an embed is gated like a note. */
+  transclusions: string[];
 }
 
-export function excludedSummary(list: readonly ExcludedNote[]): Excluded {
+export function excludedSummary(list: readonly ExcludedNote[], refusedEmbeds: Iterable<string> = []): Excluded {
   const byKind: Record<ExportableKind, number> = { skill: 0, agent: 0, policy: 0, command: 0 };
   for (const e of list) byKind[e.kind] += 1;
-  return { total: list.length, byKind, paths: list.map((e) => e.path) };
+  return { total: list.length, byKind, paths: list.map((e) => e.path), transclusions: [...refusedEmbeds] };
+}
+
+/** Whether a note's RAW text (an embed target, read whole) is accepted: its
+ *  frontmatter carries a human verification. Unparseable frontmatter fails
+ *  closed — a note the perimeter cannot read is not one it can vouch for. */
+export function acceptedNoteText(raw: string): boolean {
+  try { return hasHumanVerification(parseGuardFrontmatter(raw)); } catch { return false; }
 }
 
 /** The one warning line the gate emits when it excluded anything. */
-export function excludedWarning(list: readonly ExcludedNote[]): string {
-  const sum = excludedSummary(list);
+export function excludedWarning(list: readonly ExcludedNote[], refusedEmbeds: Iterable<string> = []): string {
+  const sum = excludedSummary(list, refusedEmbeds);
   const kinds = (Object.keys(sum.byKind) as ExportableKind[]).filter((k) => sum.byKind[k] > 0).map((k) => `${sum.byKind[k]} ${k}`).join(", ");
-  const shown = sum.paths.slice(0, 8).join(", ") + (sum.paths.length > 8 ? `, … ${sum.paths.length - 8} more` : "");
-  return `${sum.total} typed note(s) excluded from the compile — not accepted (no \`verified\` entry naming a \`human:\` actor; 01.41 rule 8: nothing unaccepted reaches a compiled agent prompt): ${kinds}: ${shown}`;
+  const first = (paths: string[]) => paths.slice(0, 8).join(", ") + (paths.length > 8 ? `, … ${paths.length - 8} more` : "");
+  const notes = sum.total ? `${sum.total} typed note(s) excluded from the compile — not accepted (no \`verified\` entry naming a \`human:\` actor; 01.41 rule 8: nothing unaccepted reaches a compiled agent prompt): ${kinds}: ${first(sum.paths)}` : "";
+  const embeds = sum.transclusions.length ? `${sum.transclusions.length} embed(s) refused — the embedded note is not accepted, a marker stands in its place: ${first(sum.transclusions)}` : "";
+  return [notes, embeds].filter(Boolean).join("; ");
 }
 
-export async function collectNotes(src: SkillsSource, fields: DetectConfig = DEFAULT_FIELDS, warnings?: string[], excluded?: ExcludedNote[]): Promise<NoteInput[]> {
+export async function collectNotes(src: SkillsSource, fields: DetectConfig = DEFAULT_FIELDS, warnings?: string[], excluded?: ExcludedNote[], refusedEmbeds?: Set<string>): Promise<NoteInput[]> {
   const notes: NoteInput[] = [];
   const excludedHere: ExcludedNote[] = excluded ?? [];
+  const refusedHere: Set<string> = refusedEmbeds ?? new Set<string>();
+  // Embeds are gated like notes (01.41 rule 8 is over the prompt's TEXT): an
+  // embed target without a human verification is not inlined, at any depth.
+  const gate = { accept: (e: { path: string; content: string }) => acceptedNoteText(e.content), refused: refusedHere };
   const resolve = warnings
-    ? (body: string, from: string, sources: Set<string>) => resolveTransclusions(body, from, src.embed, warnings, sources)
+    ? (body: string, from: string, sources: Set<string>) => resolveTransclusions(body, from, src.embed, warnings, sources, gate)
     : null;
   // Frontmatter-mode notes whose `type` the map does not name: counted per
   // spelling and reported ONCE per spelling, so an operator who has not mapped
@@ -296,7 +314,7 @@ export async function collectNotes(src: SkillsSource, fields: DetectConfig = DEF
   for (const [spelling, n] of [...unmapped.entries()].sort()) {
     warnings?.push(`${n} note(s) carry type '${spelling}', which the type map does not name — skipped (map it to skill/agent/policy/command in the plugin settings, or leave it unmapped on purpose)`);
   }
-  if (excludedHere.length) warnings?.push(excludedWarning(excludedHere));
+  if (excludedHere.length || refusedHere.size) warnings?.push(excludedWarning(excludedHere, refusedHere));
   if (fields.includeRoots !== undefined && fields.includeRoots.length === 0) {
     warnings?.push("include roots are EMPTY — nothing was read; name the folders to compile in the plugin settings");
   }
@@ -311,7 +329,7 @@ export async function collectNotes(src: SkillsSource, fields: DetectConfig = DEF
 }
 
 export async function runExport(src: SkillsSource, opts: ExportOptions): Promise<ExportSummary> {
-  const { notes, excluded, generated, warnings, errors, vaultPath } = await collectAndTransform(src, opts.fields ?? DEFAULT_FIELDS, opts.pluginName, opts.preloadCap);
+  const { notes, excluded, refusedEmbeds, generated, warnings, errors, vaultPath } = await collectAndTransform(src, opts.fields ?? DEFAULT_FIELDS, opts.pluginName, opts.preloadCap);
 
   // A compile that read NO note is a misconfiguration, never an intent: with
   // the shipped empty roots or an empty type map the first export after an
@@ -399,7 +417,7 @@ export async function runExport(src: SkillsSource, opts: ExportOptions): Promise
     commands: files.filter((g) => g.kind === "command").length,
     assets: assetCopies.length,
     removed: toRemove.length,
-    excluded: excludedSummary(excluded),
+    excluded: excludedSummary(excluded, refusedEmbeds),
     warnings,
     errors,
     outputDir: opts.outputDir,
@@ -428,6 +446,8 @@ interface Compiled {
   notes: NoteInput[];
   /** The typed notes the acceptance gate refused (01.41 rule 8). */
   excluded: ExcludedNote[];
+  /** The embed targets the gate refused to inline. */
+  refusedEmbeds: Set<string>;
   vaultPath: string | undefined;
   generated: Generated[];
   tree: TreeNode[];
@@ -456,11 +476,12 @@ function outputFileSet(generated: Generated[]): OutputFile[] {
 async function collectAndTransform(src: SkillsSource, fields: DetectConfig, pluginName: string, preloadCap?: number): Promise<Compiled> {
   const collectWarnings: string[] = [];
   const excluded: ExcludedNote[] = [];
-  const notes = await collectNotes(src, fields, collectWarnings, excluded);
+  const refusedEmbeds = new Set<string>();
+  const notes = await collectNotes(src, fields, collectWarnings, excluded, refusedEmbeds);
   const vaultPath = src.basePath() ?? undefined;
   const result = transformAll(notes, { pluginName, synthesizeRoot: true, vaultPath, preloadCap });
   result.warnings.unshift(...collectWarnings);
-  return { notes, excluded, vaultPath, ...result };
+  return { notes, excluded, refusedEmbeds, vaultPath, ...result };
 }
 
 function countsOf(tree: TreeNode[], notes: NoteInput[]): Analysis["counts"] {
@@ -481,7 +502,7 @@ export async function analyzeVault(src: SkillsSource, fields: DetectConfig = DEF
   const c = await collectAndTransform(src, fields, pluginName, preloadCap);
   return {
     tree: c.tree, errors: c.errors, warnings: c.warnings, counts: countsOf(c.tree, c.notes),
-    excluded: excludedSummary(c.excluded),
+    excluded: excludedSummary(c.excluded, c.refusedEmbeds),
     attachments: c.attachments, preloads: c.preloads, preloadCap: c.preloadCap,
   };
 }
@@ -538,7 +559,7 @@ export async function previewVault(
   src: SkillsSource,
   opts: { outputDir: string; pluginName: string; fields?: DetectConfig; preloadCap?: number },
 ): Promise<PreviewResult> {
-  const { notes, excluded, generated, tree, warnings, errors, policies, attachments, preloads, preloadCap } =
+  const { notes, excluded, refusedEmbeds, generated, tree, warnings, errors, policies, attachments, preloads, preloadCap } =
     await collectAndTransform(src, opts.fields ?? DEFAULT_FIELDS, opts.pluginName, opts.preloadCap);
 
   const files = outputFileSet(generated);
@@ -564,7 +585,7 @@ export async function previewVault(
 
   return {
     tree, entries, removed,
-    excluded: excludedSummary(excluded),
+    excluded: excludedSummary(excluded, refusedEmbeds),
     diff: {
       added: entries.filter((e) => e.status === "added").length,
       modified: entries.filter((e) => e.status === "modified").length,

@@ -416,3 +416,35 @@ describe("settings adoption: the host's modules.skills.config is copied once, an
     assert.deepEqual(settingsOf({ config: [], adoptedFromHost: "yes" }), { config: {}, adoptedFromHost: false });
   });
 });
+
+// ── the excluded record on every TOOL payload (the surface an agent reads) ────
+
+describe("the acceptance gate's record reaches every tool payload", () => {
+  const gated = {
+    ...inertSkillsSource,
+    notes: async () => [
+      { path: "Projects/Ok.md", frontmatter: { type: "skill", verified: [{ by: "human:nelson", at: "2026-09-25T05:08:39-04:00" }] }, body: "ok" },
+      { path: "Projects/No.md", frontmatter: { type: "skill" }, body: "not accepted" },
+    ],
+    basePath: () => null,
+  };
+  const CONFIG = { typeMap: { skill: "skill" }, includeRoots: ["Projects"] };
+  const tool = (name) => toolNamed(buildSkillsTools(gated, { config: () => CONFIG }), name).handler;
+  const EXPECT = { total: 1, byKind: { skill: 1, agent: 0, policy: 0, command: 0 }, paths: ["Projects/No.md"], transclusions: [] };
+
+  test("validate, tree and preview carry `excluded`", async () => {
+    assert.deepEqual((await tool("validate")({})).excluded, EXPECT);
+    assert.deepEqual((await tool("tree")({})).excluded, EXPECT);
+    assert.deepEqual((await tool("preview")({})).excluded, EXPECT);
+  });
+
+  test("export carries `excluded` in its summary", async () => {
+    const fs = await import("node:fs"); const os = await import("node:os"); const path = await import("node:path");
+    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "vaultmcp-skills-tool-"));
+    try {
+      const withDir = toolNamed(buildSkillsTools(gated, { config: () => ({ ...CONFIG, outputDir }) }), "export").handler;
+      const r = await withDir({});
+      assert.deepEqual(r.excluded, EXPECT);
+    } finally { fs.rmSync(outputDir, { recursive: true, force: true }); }
+  });
+});

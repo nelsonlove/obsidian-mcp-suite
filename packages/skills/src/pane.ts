@@ -197,7 +197,7 @@ export class SkillsPreviewView extends ItemView {
     if (r) {
       const d = r.diff;
       header.createEl("span", {
-        text: `${d.added} added · ${d.modified} modified · ${d.unchanged} unchanged · ${d.removed} removed`,
+        text: `${d.added} added · ${d.modified} modified · ${d.unchanged} unchanged · ${d.removed} removed · ${r.excluded.total} not accepted (excluded)${r.excluded.transclusions.length ? ` · ${r.excluded.transclusions.length} embed(s) refused` : ""}`,
       }).style.color = "var(--text-muted)";
       header.createEl("span", { text: `→ ${r.outputDir}` }).style.cssText = "color: var(--text-faint); font-size: var(--font-ui-smaller);";
     }

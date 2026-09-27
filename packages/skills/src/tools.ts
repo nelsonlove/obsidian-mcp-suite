@@ -244,7 +244,7 @@ export function buildSkillsTools(source: SkillsBackend, ctx: SkillsToolsCtx): Sd
     handler: async () => {
       const { cfg, fields } = resolve();
       const a = await analyzeVault(source, fields, cfg.pluginName, cfg.preloadCap);
-      return { tree: a.tree, counts: a.counts, attachments: a.attachments, preloads: a.preloads };
+      return { tree: a.tree, counts: a.counts, excluded: a.excluded, attachments: a.attachments, preloads: a.preloads };
     },
   },
 
