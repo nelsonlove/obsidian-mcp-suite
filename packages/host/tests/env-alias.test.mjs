@@ -69,6 +69,11 @@ describe("real call sites honor the alias", () => {
     assert.doesNotMatch(DEFAULT_BASELINE_REL, /^Assent\//, "vault-root Assent/ was refiled in 2026-08");
     assert.doesNotMatch(DEFAULT_BASELINE_REL, /00\.89 Assent/, "00.89 was renamed to obsidian-governor");
     assert.match(DEFAULT_BASELINE_REL, /^00-09 System\/.*\/Conformance baseline\.md$/);
+    // Shape, not literal (the comment above): the note moved under Archive/ when the
+    // slot's build records were archived (2026-09), and the bare `Build/` path then
+    // named nothing — which the generic check above could not tell from a live one.
+    assert.match(DEFAULT_BASELINE_REL, /\/Archive\//, "the build records are archived; a path outside Archive/ names nothing");
+    assert.doesNotMatch(DEFAULT_BASELINE_REL, /obsidian-mcp-suite\/Build\//, "the pre-archive Build/ path is retired");
   });
 
   test("excludedRootsFrom: both spellings", () => {

@@ -737,10 +737,13 @@ function renderReport(
  * its baseline, and any other vault will keep it somewhere else. Overridable
  * without a release via `GOVERNOR_BASELINE_REL` (vault-relative) or `--baseline=`
  * (absolute), so the default is a starting point rather than a hardcoded
- * assumption about somebody's folder layout.
+ * assumption about somebody's folder layout. The note sits under
+ * `Archive/Build/` since the 00.89 slot's build records were archived
+ * (2026-09); the bare `Build/` path named nothing, and the in-app sources
+ * then read NO accepted debt rather than the record.
  */
 export const DEFAULT_BASELINE_REL =
-  "00-09 System/00 System management/00.89 obsidian-mcp-suite/Build/Conformance baseline.md";
+  "00-09 System/00 System management/00.89 obsidian-mcp-suite/Archive/Build/Conformance baseline.md";
 
 /** The baseline's vault-relative path for this invocation. */
 export function baselineRelFrom(env: Record<string, string | undefined>): string {
