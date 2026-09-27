@@ -19,6 +19,7 @@ import { AcceptForbiddenError } from "@vault-mcp/core";
 import {
   analyzeVault,
   applyMark,
+  agentCandidates,
   runExport,
   readPluginVersion,
   fieldsOf,
@@ -132,7 +133,9 @@ export async function cmdMark(ctx: SkillsGuiCtx): Promise<void> {
   let parent: string | undefined;
   if (type !== "command") {
     const notes = await ctx.backend.notes();
-    const agents = notes.filter((n) => n.frontmatter?.type === "agent").map((n) => base(n.path)).sort();
+    // The agent list honours the type map and the roots exactly as the compile
+    // does, so the picker offers the agents the export would know.
+    const agents = agentCandidates(notes, fields).map(base).sort();
     const NONE = "— none (attach to root) —";
     const choice = await pick(ctx.app, [NONE, ...agents], (t) => t);
     if (choice === undefined) return;

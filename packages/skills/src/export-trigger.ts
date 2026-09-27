@@ -13,7 +13,7 @@
 // the cache has settled and every cascaded link rewrite is done, so validation always runs
 // against the consistent post-rename tree.
 
-import { fieldView, detectKind, type DetectConfig } from "./kernel/exporter.js";
+import { fieldView, detectKind, inRoots, type DetectConfig } from "./kernel/exporter.js";
 
 /** A debounced trigger, plus a `cancel()` to drop a pending call (e.g. on plugin unload,
  *  so a queued export never fires against a torn-down plugin). */
@@ -70,6 +70,31 @@ export function handleNoteChanged(file: unknown, deps: ChangeTriggerDeps): void 
   const fm = deps.getFrontmatter(file);
   if (!fm) return;
   const cfg = deps.fields();
+  // A typed note OUTSIDE the compiled roots is not export-relevant: the compile
+  // would not read it, so its edits must not re-run the export (#404).
+  if (typeof path === "string" && !inRoots(path, cfg.includeRoots, cfg.excludeRoots)) return;
+  const { view } = fieldView(fm, cfg);
+  const kind = detectKind(view, fm, cfg);
+  if (kind && kind !== "ambiguous") deps.requestExport();
+}
+
+/** Handle a vault "rename" event (a move is a rename): a typed note that leaves the
+ *  compiled roots must re-run the export, or its compiled file survives on disk with
+ *  nothing in the vault behind it — the "changed" handler above cannot see the OLD
+ *  path, so it treats a note now outside the roots as irrelevant. A note that ENTERS
+ *  the roots is the same case in the other direction. When the cache has no
+ *  frontmatter for the file yet (a rename can beat the re-index), a note that left
+ *  the roots still requests the export: one debounced run is the safe direction. */
+export function handleNoteRenamed(file: unknown, oldPath: unknown, deps: ChangeTriggerDeps): void {
+  if (!deps.isEnabled()) return;
+  const path = (file as { path?: unknown } | null)?.path;
+  if (typeof oldPath === "string" && deps.isSource?.(oldPath)) { deps.requestExport(); return; }
+  const cfg = deps.fields();
+  const wasIn = typeof oldPath === "string" && inRoots(oldPath, cfg.includeRoots, cfg.excludeRoots);
+  const isIn = typeof path === "string" && inRoots(path, cfg.includeRoots, cfg.excludeRoots);
+  if (!wasIn && !isIn) return;
+  const fm = deps.getFrontmatter(file);
+  if (!fm) { if (wasIn) deps.requestExport(); return; }
   const { view } = fieldView(fm, cfg);
   const kind = detectKind(view, fm, cfg);
   if (kind && kind !== "ambiguous") deps.requestExport();

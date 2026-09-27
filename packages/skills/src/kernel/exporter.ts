@@ -9,6 +9,7 @@ import { resolveTransclusions, stripFrontmatter } from "./transclude.js";
 import type { SkillsSource } from "./skills-source.js";
 import { STATIC_FILES } from "./static-skills.js";
 import { assetDirFor, collectAssets, copyAsset, type CollectAssetsOptions } from "./assets.js";
+import { matchesTerritoryPrefix } from "@vault-mcp/core";
 
 const MANIFEST_NAME = ".vault-skills-manifest.json";
 
@@ -26,6 +27,23 @@ export interface FieldConfig {
 export interface DetectConfig extends FieldConfig {
   typeSource?: "frontmatter" | "tags";
   tagPrefix?: string; // e.g. "agent/" → #agent/skill, #agent/agent, #agent/policy
+  /** Frontmatter mode: the vault's OWN `type` spellings → the kind each compiles as
+   *  (`Note/AgentPolicy` → `policy`, `Person/Agent` → `agent`, …). Absent means the
+   *  kernel's identity map (bare `skill`/`agent`/`policy`/`command`), which is what
+   *  every direct caller of the pure core gets; the PLUGIN ships an EMPTY map
+   *  (#404 — one vault's spelling must not be baked into a plugin), so a fresh
+   *  install compiles nothing until the operator names their classes. Case-sensitive:
+   *  a class path is an identifier. */
+  typeMap?: Readonly<Record<string, ExportableKind>>;
+  /** Vault-relative folder prefixes the compiler reads. Absent means the whole
+   *  vault (pure-core callers); the plugin ships EMPTY, which means NOTHING is read
+   *  — the same "empty guards nothing, honestly" rule the host's territories use,
+   *  and the reason the six rank files in 03.18 (loaded natively by Claude Code
+   *  through ~/.claude/agents) are not compiled twice until the switch is made. */
+  includeRoots?: readonly string[];
+  /** Folders under an include root the compiler must NOT read (a template folder,
+   *  a natively-loaded folder). Same boundary rule. */
+  excludeRoots?: readonly string[];
 }
 
 export const DEFAULT_FIELDS: FieldConfig = { mode: "prefix", prefix: "", key: "vault-skills" };
@@ -36,7 +54,50 @@ export const DEFAULT_TAG_PREFIX = "agent/";
  *  in the export" — shared by collection (collectNotes), kind detection, and the export-on-save
  *  relevance check. */
 export const EXPORTABLE_TYPES = ["skill", "agent", "policy", "command"] as const;
-type ExportableKind = (typeof EXPORTABLE_TYPES)[number];
+export type ExportableKind = (typeof EXPORTABLE_TYPES)[number];
+
+/** The kernel's own type map: each kind spelled bare. NOT the plugin's default —
+ *  see `DetectConfig.typeMap`. */
+export const IDENTITY_TYPE_MAP: Readonly<Record<string, ExportableKind>> = Object.freeze({
+  skill: "skill", agent: "agent", policy: "policy", command: "command",
+});
+
+/** The kind a frontmatter `type` value compiles as under `map`, or null. A value
+ *  that is not a string (a list, a number) never matches: a class path is one
+ *  identifier, and coercing would let `["policy"]` read as a policy. */
+export function mappedKind(type: unknown, map: Readonly<Record<string, ExportableKind>>): ExportableKind | null {
+  if (typeof type !== "string") return null;
+  const k = map[type];
+  return k && isExportableType(k) ? k : null;
+}
+
+/** The vault spelling to WRITE for a kind under `map` — the reverse lookup the
+ *  `mark` write path needs. The first entry mapping to that kind, in map order;
+ *  null when the map names no spelling for it (then nothing can be marked as it). */
+export function spellingFor(kind: ExportableKind, map: Readonly<Record<string, ExportableKind>>): string | null {
+  for (const [spelling, k] of Object.entries(map)) if (k === kind) return spelling;
+  return null;
+}
+
+/** Whether a vault-relative path is inside the configured roots: in some include
+ *  root and in no exclude root. The boundary rule is core's `matchesTerritoryPrefix`
+ *  — the one rule the host's guarded territories use, so `03 Agents/03.18` covers
+ *  that folder and not `03 Agents/03.180 …`. Absent include roots read the whole
+ *  vault; an EMPTY list reads nothing. */
+export function inRoots(path: string, include: readonly string[] | undefined, exclude: readonly string[] = []): boolean {
+  if (exclude.some((r) => matchesTerritoryPrefix(path, r))) return false;
+  if (include === undefined) return true;
+  return include.some((r) => matchesTerritoryPrefix(path, r));
+}
+/** The vault paths of the AGENT notes a mark could attach to: inside the roots and
+ *  mapped to `agent`, exactly as the compile would see them. Pure, so the GUI
+ *  picker's filter (commands.ts) is pinned headlessly rather than read as a claim. */
+export function agentCandidates(notes: ReadonlyArray<{ path: string; frontmatter?: Record<string, unknown> | null }>, fields: DetectConfig): string[] {
+  return notes
+    .filter((n) => n.frontmatter && inRoots(n.path, fields.includeRoots, fields.excludeRoots))
+    .filter((n) => detectKind(fieldView(n.frontmatter!, fields).view, n.frontmatter!, fields) === "agent")
+    .map((n) => n.path);
+}
 export function isExportableType(type: unknown): type is ExportableKind {
   return (EXPORTABLE_TYPES as readonly unknown[]).includes(type);
 }
@@ -76,7 +137,7 @@ export function detectKind(
   cfg: DetectConfig,
 ): ExportableKind | null | "ambiguous" {
   if ((cfg.typeSource ?? "frontmatter") === "tags") return tagKind(extractTags(fm), cfg.tagPrefix ?? DEFAULT_TAG_PREFIX);
-  return isExportableType(view.type) ? view.type : null;
+  return mappedKind(view.type, cfg.typeMap ?? IDENTITY_TYPE_MAP);
 }
 
 export interface ExportOptions {
@@ -153,7 +214,16 @@ export async function collectNotes(src: SkillsSource, fields: DetectConfig = DEF
   const resolve = warnings
     ? (body: string, from: string, sources: Set<string>) => resolveTransclusions(body, from, src.embed, warnings, sources)
     : null;
+  // Frontmatter-mode notes whose `type` the map does not name: counted per
+  // spelling and reported ONCE per spelling, so an operator who has not mapped
+  // `Note/AgentPolicy` yet sees "17 notes carry it" rather than 17 lines — and
+  // sees it at all, which is the point (#404: an unmapped note is skipped and
+  // counted, never guessed). Only spellings that LOOK like a class the compiler
+  // could want are counted: a string value; `Note` alone or a `Task/...` note is
+  // not a candidate and would flood the list.
+  const unmapped = new Map<string, number>();
   for (const note of await src.notes()) {
+    if (!inRoots(note.path, fields.includeRoots, fields.excludeRoots)) continue;
     const fm = note.frontmatter;
     if (!fm) continue; // both modes key off frontmatter (type: field, or the note's tags: list)
     const { view, parent } = fieldView(fm, fields);
@@ -162,7 +232,12 @@ export async function collectNotes(src: SkillsSource, fields: DetectConfig = DEF
       warnings?.push(`${note.path}: multiple vault-skills kind tags — skipped (tag it as exactly one of skill/agent/policy)`);
       continue;
     }
-    if (!kind) continue;
+    if (!kind) {
+      if ((fields.typeSource ?? "frontmatter") === "frontmatter" && typeof view.type === "string" && /agent|skill|policy|command/i.test(view.type)) {
+        unmapped.set(view.type, (unmapped.get(view.type) ?? 0) + 1);
+      }
+      continue;
+    }
     let body = stripFrontmatter(note.body);
     const sources = new Set<string>();
     if (resolve) body = await resolve(body, note.path, sources);
@@ -176,11 +251,35 @@ export async function collectNotes(src: SkillsSource, fields: DetectConfig = DEF
       sources: [...sources],
     });
   }
+  for (const [spelling, n] of [...unmapped.entries()].sort()) {
+    warnings?.push(`${n} note(s) carry type '${spelling}', which the type map does not name — skipped (map it to skill/agent/policy/command in the plugin settings, or leave it unmapped on purpose)`);
+  }
+  if (fields.includeRoots !== undefined && fields.includeRoots.length === 0) {
+    warnings?.push("include roots are EMPTY — nothing was read; name the folders to compile in the plugin settings");
+  }
+  // An EMPTY map (the plugin's shipped default) makes no note exportable in
+  // frontmatter mode, and a vault whose class names do not look like a kind
+  // would otherwise compile nothing in silence — the unmapped-spelling warning
+  // above only fires for spellings that contain a kind word. Say it once.
+  if ((fields.typeSource ?? "frontmatter") === "frontmatter" && fields.typeMap !== undefined && Object.keys(fields.typeMap).length === 0) {
+    warnings?.push("type map is EMPTY — in frontmatter mode no note is exportable; map your vault types (e.g. `Person/Agent = agent`) in the plugin settings");
+  }
   return notes;
 }
 
 export async function runExport(src: SkillsSource, opts: ExportOptions): Promise<ExportSummary> {
-  const { generated, warnings, errors, vaultPath } = await collectAndTransform(src, opts.fields ?? DEFAULT_FIELDS, opts.pluginName, opts.preloadCap);
+  const { notes, generated, warnings, errors, vaultPath } = await collectAndTransform(src, opts.fields ?? DEFAULT_FIELDS, opts.pluginName, opts.preloadCap);
+
+  // A compile that read NO note is a misconfiguration, never an intent: with
+  // the shipped empty roots or an empty type map the first export after an
+  // upgrade would otherwise remove every file of the previous export (the
+  // stale-cleanup below deletes whatever the last manifest listed and this run
+  // did not produce). Refuse, and say why, before anything on disk is touched.
+  if (notes.length === 0) {
+    const previous = readManifestFiles(opts.outputDir).length;
+    const why = warnings.length ? ` (${warnings.join("; ")})` : "";
+    throw new Error(`nothing to export: the compile read no skill/agent/policy/command note${why} — refusing rather than remove the ${previous} file(s) of the previous export in ${opts.outputDir}; name the folders and the type map in the plugin settings`);
+  }
 
   ensurePluginManifest(opts.outputDir, opts.pluginName, opts.pluginDescription, opts.version);
 
@@ -459,7 +558,17 @@ export function markFrontmatter(input: MarkInput, fields: DetectConfig = DEFAULT
     addTags.push(`#${prefix}${input.type}`);
     // strip every sibling kind tag first, so re-marking swaps the kind (not two → "ambiguous")
     for (const k of EXPORTABLE_TYPES) removeTags.push(`#${prefix}${k}`);
-  } else flat.type = input.type;
+  } else {
+    // Write the VAULT'S spelling for the kind, never the bare kind: under a
+    // type map `policy` may be spelled `Note/AgentPolicy`, and writing `policy`
+    // would mark a note the compiler then cannot see (#404). A map that names
+    // no spelling for the kind cannot mark it — refuse rather than guess.
+    const spelling = spellingFor(input.type, fields.typeMap ?? IDENTITY_TYPE_MAP);
+    if (spelling === null) {
+      throw new Error(`the type map names no vault spelling for '${input.type}' — add one (e.g. \`Note/AgentPolicy = policy\`) in the plugin settings before marking a note as it`);
+    }
+    flat.type = spelling;
+  }
   const isCommand = input.type === "command";
   if (input.root) flat.root = true;
   // Commands are flat — a parent is meaningless, so never write one (and clear a stale one below).

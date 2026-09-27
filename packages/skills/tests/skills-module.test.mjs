@@ -120,8 +120,11 @@ describe("vaultmcp-skills satellite: the six published tools", () => {
 // ── 2. the settings tab's fields ────────────────────────────────────────────
 
 describe("vaultmcp-skills satellite: settings fields", () => {
-  test("renders eleven fields — the nine from the standalone settings tab, exportOnSave, and the preload cap", () => {
-    assert.equal(SKILLS_FIELDS.length, 11);
+  test("renders fourteen fields — the nine from the standalone settings tab, exportOnSave, the preload cap, and the three #404 settings (type map, include roots, exclude roots)", () => {
+    assert.equal(SKILLS_FIELDS.length, 14);
+    assert.equal(SKILLS_FIELDS.find((f) => f.key === "typeMap").type, "typemap");
+    assert.equal(SKILLS_FIELDS.find((f) => f.key === "includeRoots").type, "lines");
+    assert.equal(SKILLS_FIELDS.find((f) => f.key === "excludeRoots").type, "lines");
     const cap = SKILLS_FIELDS.find((f) => f.key === "preloadCap");
     assert.equal(cap.type, "number");
     const eos = SKILLS_FIELDS.find((f) => f.key === "exportOnSave");
@@ -192,7 +195,8 @@ function markHandler(config, before) {
 
 describe("vaultmcp_skills_mark handler: the guard blocks the write, not just the response", () => {
   test("a clean mark writes the frontmatter", async () => {
-    const { handler, writes } = markHandler({}, {});
+    // #404: a mark needs a spelling for the kind — the shipped map is empty, so the test names one.
+    const { handler, writes } = markHandler({ typeMap: { skill: "skill" } }, {});
     const res = await handler({ path: "Note.md", type: "skill" });
     assert.equal(res.marked, "Note.md");
     assert.equal(writes.length, 1);
@@ -202,7 +206,7 @@ describe("vaultmcp_skills_mark handler: the guard blocks the write, not just the
   test("a mark that would write an accepted-family field is refused AND nothing is written", async () => {
     // The satellite contract is THROW-on-refusal — the host renders a thrown
     // error as its error envelope, so what an agent sees is unchanged.
-    const { handler, writes } = markHandler({ fieldMode: "prefix", fieldPrefix: "accepted-" }, {});
+    const { handler, writes } = markHandler({ fieldMode: "prefix", fieldPrefix: "accepted-", typeMap: { skill: "skill" } }, {});
     await assert.rejects(() => handler({ path: "Note.md", type: "skill" }), AcceptForbiddenError);
     assert.equal(writes.length, 0, "the accept-forbidden write must not have landed");
   });
@@ -235,8 +239,12 @@ describe("vaultmcp_skills_preview: bodies are filtered by the source note's visi
     ],
   };
 
+  // Since #404 the SHIPPED config compiles nothing (empty type map, empty
+  // roots — the plugin assumes no vault spelling), so these visibility tests
+  // name the fixture's own map and folders. What they test is unchanged.
+  const PREVIEW_CONFIG = { typeMap: { skill: "skill" }, includeRoots: ["Projects", "Archive"] };
   const previewWith = (settings) =>
-    toolNamed(buildSkillsTools(twoSkills, { config: () => ({}), getSettings: () => settings }), "preview").handler;
+    toolNamed(buildSkillsTools(twoSkills, { config: () => PREVIEW_CONFIG, getSettings: () => settings }), "preview").handler;
 
   const SANDBOXED = { readOnly: false, allowlist: ["Projects"] };
 
@@ -263,7 +271,7 @@ describe("vaultmcp_skills_preview: bodies are filtered by the source note's visi
   });
 
   test("with NO getSettings at all — the SHIPPED configuration — the filter degrades open, exactly as the `!settings ||` branch always did", async () => {
-    const handler = toolNamed(buildSkillsTools(twoSkills, { config: () => ({}) }), "preview").handler;
+    const handler = toolNamed(buildSkillsTools(twoSkills, { config: () => PREVIEW_CONFIG }), "preview").handler;
     const blob = JSON.stringify(await handler({ content: true }));
     assert.ok(blob.includes("HIDDEN-BODY-MARKER") && blob.includes("VISIBLE-BODY-MARKER"));
   });
@@ -300,7 +308,7 @@ describe("vaultmcp_skills_preview: assembled bodies cannot smuggle hidden notes 
             notes.find((n) => n.path.split("/").pop().replace(/\.md$/, "") === linkpath.replace(/\.md$/, ""))?.path ??
             null,
         },
-        { config: () => ({}), getSettings: () => SANDBOXED },
+        { config: () => ({ typeMap: { skill: "skill", policy: "policy", agent: "agent" }, includeRoots: ["Projects", "Archive"] }), getSettings: () => SANDBOXED },
       ),
       "preview",
     ).handler;

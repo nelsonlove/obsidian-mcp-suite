@@ -41,7 +41,7 @@ import {
 import { obsidianSkillsBackend, type SkillsBackend } from "./tools.js";
 import { SkillsPreviewView, SKILLS_PREVIEW_VIEW_TYPE, SKILLS_EXPORTED_EVENT, type SkillsPreviewController } from "./pane.js";
 import { cmdValidate, cmdTree, cmdMark, cmdRelease, type SkillsGuiCtx } from "./commands.js";
-import { debounce, handleNoteChanged, type Debounced } from "./export-trigger.js";
+import { debounce, handleNoteChanged, handleNoteRenamed, type Debounced } from "./export-trigger.js";
 
 const EXPORT_ON_SAVE_DEBOUNCE_MS = 750;
 
@@ -156,17 +156,18 @@ export function wireSkills(plugin: Plugin, deps: SkillsWireDeps): void {
     void exportNow(true);
   }, EXPORT_ON_SAVE_DEBOUNCE_MS);
 
-  plugin.registerEvent(
-    app.metadataCache.on("changed", (file) =>
-      handleNoteChanged(file, {
-        isEnabled: () => config().exportOnSave,
-        fields: () => fieldsOf(config()),
-        getFrontmatter: (f) => app.metadataCache.getFileCache(f as TFile)?.frontmatter as Record<string, unknown> | undefined,
-        requestExport: () => requestExport?.(),
-        isSource: (p) => exportSources.has(p),
-      }),
-    ),
-  );
+  const triggerDeps = {
+    isEnabled: () => config().exportOnSave,
+    fields: () => fieldsOf(config()),
+    getFrontmatter: (f: unknown) => app.metadataCache.getFileCache(f as TFile)?.frontmatter as Record<string, unknown> | undefined,
+    requestExport: () => requestExport?.(),
+    isSource: (p: string) => exportSources.has(p),
+  };
+  plugin.registerEvent(app.metadataCache.on("changed", (file) => handleNoteChanged(file, triggerDeps)));
+  // A move out of the compiled roots is only visible through the rename event's
+  // OLD path (see handleNoteRenamed); without this the retired note's compiled
+  // file would outlive it.
+  plugin.registerEvent(app.vault.on("rename", (file, oldPath) => handleNoteRenamed(file, oldPath, triggerDeps)));
 
   // Drop any pending export-on-save on unload so it can't fire against a torn-down plugin;
   // flip `disposed` so a debounce callback already scheduled becomes a no-op.
