@@ -100,6 +100,37 @@ export function isBlankVerification(v: unknown): boolean {
   return false;
 }
 
+/** Whether one `verified` entry names a HUMAN actor (01.41 rule 1f): an object
+ *  whose `by` is a string with the `human:` prefix. An agent's own check
+ *  (`<producer>/<version>`) and a scheduled job's (`process:<id>`) are entries
+ *  too, and never count: the trust tier keys on the prefix and nothing else. */
+export function isHumanVerification(entry: unknown): boolean {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) return false;
+  const by = (entry as Record<string, unknown>).by;
+  // NAMING a human actor: the prefix alone is not a person (`by: "human:"` is
+  // a blank with a costume on), so the name after it must be non-empty.
+  return typeof by === "string" && by.startsWith("human:") && by.slice("human:".length).trim() !== "";
+}
+
+/** Whether a note's frontmatter carries at least one human verification: the
+ *  `verified` key (case-insensitive, the live key alone — not the retired
+ *  family), a list of entries or one entry, any of them naming a `human:`
+ *  actor. This is the ACCEPTED state of 01.41 ("a note carrying a `verified`
+ *  entry whose actor has the `human:` prefix"), the test the skills compiler
+ *  gates on (rule 8: nothing unaccepted reaches a compiled agent prompt). It
+ *  is kept HERE, beside the accept guard, so the compiler's definition of the
+ *  accepted state cannot drift from the perimeter's vocabulary; the guard
+ *  itself refuses agent writes to `verified` and does not call this. Blank,
+ *  absent, or machine-only ⇒ false. */
+export function hasHumanVerification(fm: Record<string, unknown> | null | undefined): boolean {
+  if (!fm) return false;
+  const key = Object.keys(fm).find((k) => k.trim().toLowerCase() === "verified");
+  if (key === undefined) return false;
+  const v = fm[key];
+  const entries = Array.isArray(v) ? v : [v];
+  return entries.some(isHumanVerification);
+}
+
 // ── the ONE recognizer for a note's leading frontmatter fence ───────────────
 //
 // #126 (fixed in the plugin by PR #129, `write-notes-compose.ts`): a guard

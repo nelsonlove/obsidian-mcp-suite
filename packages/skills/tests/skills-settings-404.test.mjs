@@ -21,7 +21,8 @@ import {
   DEFAULT_SKILLS_CONFIG, skillsConfigOf, fieldsOf, typeMapOf, parseTypeMapLines, typeMapLines, validateSkillsConfig,
 } from "../src/kernel/skills-config.ts";
 import { handleNoteChanged, handleNoteRenamed } from "../src/export-trigger.ts";
-import { runExport, agentCandidates } from "../src/kernel/exporter.ts";
+import { runExport, agentCandidates, acceptedEmbed } from "../src/kernel/exporter.ts";
+import { transclusionRefused } from "../src/kernel/transclude.ts";
 import { textAreaValue, SKILLS_FIELDS } from "../src/settings.ts";
 import fs from "node:fs";
 import os from "node:os";
@@ -36,7 +37,12 @@ function sourceOf(notes) {
     basePath: () => null,
   };
 }
-const fm = (type, extra = {}) => ({ type, ...extra });
+// Every fixture note is ACCEPTED unless a test says otherwise: since the
+// acceptance gate (01.41 rule 8) a typed note without a human `verified` entry
+// does not compile at all. `unverified()` builds the exception on purpose.
+const HUMAN = { by: "human:nelson", at: "2026-09-25T05:08:39-04:00" };
+const fm = (type, extra = {}) => ({ type, verified: [HUMAN], ...extra });
+const unverified = (type, extra = {}) => ({ type, ...extra });
 const VAULT_MAP = { "Note/AgentPolicy": "policy", "Person/Agent": "agent", "Note/Skill": "skill" };
 const F = (over) => ({ ...DEFAULT_FIELDS, typeSource: "frontmatter", ...over });
 
@@ -198,9 +204,9 @@ describe("the switch — the test the fleet runs before retiring the ~/.claude/a
   // synthesized root (the one node with no parent when no note is `root: true`).
   const compiledNames = (a) => a.tree.filter((n) => n.parent !== null).map((n) => n.name).sort();
   const vault = sourceOf([
-    { path: `${R}/03.18 Claude Code agents.md`, frontmatter: { type: "Collection" }, body: "folder note — no name, not an agent" },
+    { path: `${R}/03.18 Claude Code agents.md`, frontmatter: { type: "Collection", verified: [HUMAN] }, body: "folder note — no name, not an agent" },
     ...RANKS.map((r) => ({ path: `${R}/${r}.md`, frontmatter: fm("Person/Agent", { name: r, description: `the ${r}` }), body: `${r} duties` })),
-    { path: `${R}/Promotion and demotion of sessions.md`, frontmatter: { type: "Note" }, body: "proposal, not an agent" },
+    { path: `${R}/Promotion and demotion of sessions.md`, frontmatter: { type: "Note", verified: [HUMAN] }, body: "proposal, not an agent" },
     { path: "03 Agents/03.01 Inbox/Agents/divorce-agent.md", frontmatter: fm("Person/Agent", { name: "divorce-agent" }), body: "scope agent" },
     { path: "00 System management/00.11 Templates/Template, Person%2FAgent.md", frontmatter: fm("Person/Agent", { name: "template" }), body: "" },
   ]);
@@ -326,5 +332,223 @@ describe("the #405 review's findings, pinned", () => {
     assert.deepEqual(good, { value: { "Person/Agent": "agent", "Note/AgentPolicy": "policy" }, problems: [] });
     const roots = textAreaValue(SKILLS_FIELDS.find((f) => f.key === "includeRoots"), " A \n\nB/C\n");
     assert.deepEqual(roots, { value: ["A", "B/C"], problems: [] });
+  });
+});
+
+describe("THE ACCEPTANCE GATE — nothing unaccepted reaches a compiled agent prompt (01.41 rule 8; 01.61 rule 11 as strict exclusion, ruled 2026-09-27)", () => {
+  const MAP = { "Person/Agent": "agent", "Note/AgentPolicy": "policy", "Note/Skill": "skill" };
+  const vault = sourceOf([
+    { path: "In/boss.md", frontmatter: fm("Person/Agent", { name: "boss", description: "d" }), body: "verified by a human" },
+    { path: "In/draft.md", frontmatter: unverified("Person/Agent", { name: "draft", description: "d" }), body: "no verified key at all" },
+    { path: "In/machine.md", frontmatter: unverified("Person/Agent", { name: "machine", description: "d", verified: [{ by: "vault-mcp/0.19.0", at: "x" }] }), body: "machine-checked only" },
+    { path: "In/blank.md", frontmatter: unverified("Note/Skill", { name: "blank", verified: [] }), body: "a blank verified — the shape rule 2a refuses" },
+    { path: "In/policy.md", frontmatter: unverified("Note/AgentPolicy", { name: "pol", parent: "[[boss]]" }), body: "an unratified policy" },
+    { path: "In/skill.md", frontmatter: fm("Note/Skill", { name: "ok-skill", parent: "[[boss]]" }), body: "verified skill" },
+  ]);
+  const F2 = F({ typeMap: MAP, includeRoots: ["In"] });
+
+  test("only the human-verified notes compile; the four others are excluded, counted per kind, named, and never in the tree", async () => {
+    const a = await analyzeVault(vault, F2);
+    assert.deepEqual(a.tree.filter((n) => n.parent !== null).map((n) => n.name).sort(), ["boss", "ok-skill"]);
+    assert.deepEqual(a.excluded, { total: 4, byKind: { skill: 1, agent: 2, policy: 1, command: 0 }, paths: ["In/draft.md", "In/machine.md", "In/blank.md", "In/policy.md"], transclusions: [] });
+    assert.equal(a.counts.policies, 0, "an unratified policy is not injected anywhere");
+    const line = a.warnings.find((w) => /excluded from the compile/.test(w));
+    assert.ok(line, a.warnings.join("\n"));
+    assert.match(line, /4 typed note\(s\) excluded/);
+    assert.match(line, /01\.41 rule 8/);
+    assert.match(line, /2 agent, 1 policy/);
+    assert.match(line, /In\/draft\.md/);
+  });
+
+  test("the export report carries the excluded count, and the excluded notes are not written", async () => {
+    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "vaultmcp-skills-gate-"));
+    try {
+      const r = await runExport(vault, { outputDir, pluginName: "t", fields: F2 });
+      assert.equal(r.excluded.total, 4);
+      assert.deepEqual(r.excluded.byKind, { skill: 1, agent: 2, policy: 1, command: 0 });
+      const agents = fs.readdirSync(path.join(outputDir, "agents"));
+      assert.ok(agents.includes("boss.md"));
+      assert.ok(!agents.includes("draft.md") && !agents.includes("machine.md"), agents.join(","));
+      assert.ok(!fs.readFileSync(path.join(outputDir, "agents", "boss.md"), "utf8").includes("unratified policy"), "the unratified policy's text reaches no prompt");
+      assert.ok(r.warnings.some((w) => /excluded from the compile/.test(w)));
+    } finally {
+      fs.rmSync(outputDir, { recursive: true, force: true });
+    }
+  });
+
+  test("the preview reports the same excluded record as the analysis", async () => {
+    const { previewVault } = await import("../src/kernel/exporter.ts");
+    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "vaultmcp-skills-gate-p-"));
+    try {
+      const p = await previewVault(vault, { outputDir, pluginName: "t", fields: F2 });
+      assert.deepEqual(p.excluded.total, 4);
+      assert.ok(!p.entries.some((e) => /draft|machine|blank|\/pol\b/.test(e.relOut)), p.entries.map((e) => e.relOut).join(","));
+    } finally {
+      fs.rmSync(outputDir, { recursive: true, force: true });
+    }
+  });
+
+  test("the gate is the kernel's, not the plugin's: the identity map and bare kinds are gated the same", async () => {
+    const src = sourceOf([
+      { path: "s.md", frontmatter: { type: "skill", name: "s" }, body: "" },
+      { path: "v.md", frontmatter: { type: "skill", name: "v", verified: [HUMAN] }, body: "" },
+    ]);
+    const a = await analyzeVault(src, F({}));
+    assert.deepEqual(a.tree.filter((n) => n.parent !== null).map((n) => n.name), ["v"]);
+    assert.deepEqual(a.excluded.paths, ["s.md"]);
+  });
+
+  test("the switch: the six ranks compile only once each carries a human verified entry; one unverified rank is excluded, named, and the other five compile", async () => {
+    const RANKS = ["captain", "commander", "lieutenant-commander", "lieutenant-commander-repository", "lieutenant", "lieutenant-repository"];
+    const R = "03 Agents/03.18 Claude Code agents";
+    const notes = RANKS.map((r) => ({ path: `${R}/${r}.md`, frontmatter: r === "lieutenant" ? unverified("Person/Agent", { name: r, description: r }) : fm("Person/Agent", { name: r, description: r }), body: r }));
+    const a = await analyzeVault(sourceOf(notes), F({ typeMap: { "Person/Agent": "agent" }, includeRoots: [R] }));
+    assert.deepEqual(a.tree.filter((n) => n.parent !== null).map((n) => n.name).sort(), RANKS.filter((r) => r !== "lieutenant").sort());
+    assert.deepEqual(a.excluded, { total: 1, byKind: { skill: 0, agent: 1, policy: 0, command: 0 }, paths: [`${R}/lieutenant.md`], transclusions: [] });
+  });
+});
+
+describe("THE ACCEPTANCE GATE ON EMBEDS — an accepted note cannot carry an unaccepted note's text into a prompt", () => {
+  const raw = (fm, body) => `---\n${fm}\n---\n${body}`;
+  const HUMAN_YAML = "verified:\n  - by: human:nelson\n    at: 2026-09-25T05:08:39-04:00";
+  const files = {
+    "In/host.md": raw(`type: Note/Skill\nname: host\n${HUMAN_YAML}`, "HOST-START ![[secret]] HOST-MID ![[fine]] HOST-END"),
+    "In/secret.md": raw("type: Note", "UNRATIFIED-SECRET-TEXT"),
+    "In/fine.md": raw(`type: Note\n${HUMAN_YAML}`, "ACCEPTED-EMBED-TEXT ![[deeper]]"),
+    "In/deeper.md": raw("type: Note\nverified: []", "DEEPER-UNACCEPTED-TEXT"),
+    "In/pol.md": raw("type: Note/AgentPolicy\nname: pol\nparent: \"[[boss]]\"", "UNRATIFIED-POLICY-TEXT"),
+    "In/boss.md": raw(`type: Person/Agent\nname: boss\ndescription: d\n${HUMAN_YAML}`, "BOSS ![[pol]] END"),
+  };
+  const fmOf = (text) => { const m = /^---\n([\s\S]*?)\n---/.exec(text); const out = {}; if (!m) return out; for (const line of m[1].split("\n")) { const mm = /^(\w[\w\/]*):\s*(.*)$/.exec(line); if (mm && mm[2] !== "") out[mm[1]] = mm[2].replace(/^"|"$/g, ""); else if (mm) out[mm[1]] = []; } if (/by: human:/.test(m[1])) out.verified = [{ by: "human:nelson", at: "2026-09-25T05:08:39-04:00" }]; return out; };
+  const src = {
+    notes: async () => Object.entries(files).map(([path, text]) => ({ path, frontmatter: fmOf(text), body: text })),
+    resolveLink: (lp) => Object.keys(files).find((p) => p.endsWith(`/${lp}.md`)) ?? null,
+    embed: async (lp) => { const p = Object.keys(files).find((q) => q.endsWith(`/${lp}.md`)); return p ? { path: p, content: files[p] } : null; },
+    basePath: () => null,
+  };
+  const F3 = F({ typeMap: { "Note/Skill": "skill", "Person/Agent": "agent", "Note/AgentPolicy": "policy" }, includeRoots: ["In"] });
+
+  test("acceptedEmbed over raw text (no cache): a human entry is accepted; blank, absent, machine-only or unparseable frontmatter is not", () => {
+    const raw = (content) => ({ content });
+    assert.equal(acceptedEmbed(raw(files["In/fine.md"])), true);
+    assert.equal(acceptedEmbed(raw(files["In/secret.md"])), false);
+    assert.equal(acceptedEmbed(raw(files["In/deeper.md"])), false);
+    assert.equal(acceptedEmbed(raw("---\nverified:\n  - by: vault-mcp/0.19.0\n    at: 2026-09-25T05:08:39-04:00\n---\nbody")), false, "a machine actor is not a human one");
+    assert.equal(acceptedEmbed(raw("---\nverified: &a\n---\nbody")), false, "unparseable fails closed");
+    assert.equal(acceptedEmbed(raw("no frontmatter at all")), false);
+  });
+
+  test("acceptedEmbed prefers the CACHE's frontmatter when the lookup supplies it — the same reader as the note gate, so one note gets one answer", () => {
+    assert.equal(acceptedEmbed({ content: "no frontmatter in the bytes", frontmatter: { verified: [HUMAN] } }), true, "the cache says accepted");
+    assert.equal(acceptedEmbed({ content: files["In/fine.md"], frontmatter: null }), false, "the cache holds no frontmatter (as for a note the note gate never compiles), whatever the bytes say");
+    assert.equal(acceptedEmbed({ content: files["In/fine.md"], frontmatter: { verified: [{ by: "vault-mcp/0.19.0" }] } }), false, "machine-only in the cache");
+  });
+
+  test("the shipped embed lookup carries the cache's frontmatter (source pin on tools.ts)", () => {
+    const tools = fs.readFileSync(new URL("../src/tools.ts", import.meta.url), "utf8");
+    assert.match(tools, /return \{ path: dest\.path, content: await app\.vault\.cachedRead\(dest\), frontmatter: app\.metadataCache\.getFileCache\(dest\)\?\.frontmatter \?\? null \};/);
+  });
+
+  test("an unaccepted embed is NOT inlined at any depth: a marker stands in its place, the path is recorded and named, the accepted embed still inlines", async () => {
+    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "vaultmcp-skills-embed-"));
+    try {
+      const r = await runExport(src, { outputDir, pluginName: "t", fields: F3 });
+      const skill = fs.readFileSync(path.join(outputDir, "skills", "host", "SKILL.md"), "utf8");
+      assert.ok(skill.includes("HOST-START") && skill.includes("HOST-END"), "the accepted host compiles");
+      assert.ok(!skill.includes("UNRATIFIED-SECRET-TEXT"), "the unaccepted embed's text reaches no prompt");
+      assert.ok(skill.includes(transclusionRefused("In/secret.md")), "a marker names what was refused");
+      assert.equal(transclusionRefused("In/secret.md"), "<!-- transclusion refused: In/secret.md is not accepted -->");
+      assert.ok(skill.includes("ACCEPTED-EMBED-TEXT"), "an accepted embed still inlines");
+      assert.ok(!skill.includes("DEEPER-UNACCEPTED-TEXT"), "gated at every depth");
+      const agent = fs.readFileSync(path.join(outputDir, "agents", "boss.md"), "utf8");
+      assert.ok(!agent.includes("UNRATIFIED-POLICY-TEXT"), "an excluded policy embedded by an accepted agent does not ship either");
+      assert.deepEqual(r.excluded.transclusions.sort(), ["In/deeper.md", "In/pol.md", "In/secret.md"]);
+      assert.deepEqual(r.excluded.paths, ["In/pol.md"], "the policy is excluded as a note too");
+      assert.ok(r.sources.includes("In/secret.md"), "a refused embed is still an export source: accepting it later re-runs the export");
+      const line = r.warnings.find((w) => /embedded note\(s\) refused/.test(w));
+      assert.match(line ?? "", /3 embedded note\(s\) refused/);
+      assert.ok(r.warnings.some((w) => /transclusion !\[\[secret\]\] refused — In\/secret\.md is not accepted/.test(w)));
+    } finally {
+      fs.rmSync(outputDir, { recursive: true, force: true });
+    }
+  });
+
+  test("refused embeds alone (no typed note excluded) still warn, count and mark — the realistic case: an accepted agent embedding plain unverified notes", async () => {
+    const only = {
+      "In/host.md": raw(`type: Note/Skill\nname: host\n${HUMAN_YAML}`, "A ![[plain]] B ![[plain]] C ![[machine]] D"),
+      "In/plain.md": raw("type: Note", "PLAIN-UNVERIFIED-TEXT"),
+      "In/machine.md": raw("type: Note\nverified:\n  - by: vault-mcp/0.19.0\n    at: 2026-09-25T05:08:39-04:00", "MACHINE-ONLY-TEXT"),
+    };
+    const s2 = { ...src, notes: async () => Object.entries(only).map(([path, text]) => ({ path, frontmatter: fmOf(text), body: text })), resolveLink: (lp) => Object.keys(only).find((p) => p.endsWith(`/${lp}.md`)) ?? null, embed: async (lp) => { const p = Object.keys(only).find((q) => q.endsWith(`/${lp}.md`)); return p ? { path: p, content: only[p] } : null; } };
+    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "vaultmcp-skills-embed-only-"));
+    let a, body;
+    try {
+      a = await runExport(s2, { outputDir, pluginName: "t", fields: F({ typeMap: { "Note/Skill": "skill" }, includeRoots: ["In"] }) });
+      body = fs.readFileSync(path.join(outputDir, "skills", "host", "SKILL.md"), "utf8");
+    } finally { fs.rmSync(outputDir, { recursive: true, force: true }); }
+    assert.equal(a.excluded.total, 0, "no typed note was excluded");
+    assert.deepEqual(a.excluded.transclusions.sort(), ["In/machine.md", "In/plain.md"], "distinct notes: plain, embedded twice, counts once; a machine-only verification is not acceptance");
+    const line = a.warnings.find((w) => /embedded note\(s\) refused/.test(w));
+    assert.match(line ?? "", /^2 embedded note\(s\) refused/, "the warning is emitted with no excluded notes at all");
+    assert.doesNotMatch(line ?? "", /excluded from the compile/);
+    assert.ok(!/PLAIN-UNVERIFIED-TEXT|MACHINE-ONLY-TEXT/.test(body));
+    assert.equal((body.match(/transclusion refused: In\/plain\.md/g) ?? []).length, 2, "one marker per embed occurrence");
+  });
+
+  test("the refused marker escapes a path containing '-->' like the file's other markers do, so it stays one inert comment", async () => {
+    const tricky = {
+      "In/host.md": raw(`type: Note/Skill\nname: host\n${HUMAN_YAML}`, "X ![[a --> b]] Y"),
+      "In/a --> b.md": raw("type: Note", "TRICKY-TEXT"),
+    };
+    const s3 = { ...src, notes: async () => Object.entries(tricky).map(([path, text]) => ({ path, frontmatter: fmOf(text), body: text })), resolveLink: (lp) => Object.keys(tricky).find((p) => p.endsWith(`/${lp}.md`)) ?? null, embed: async (lp) => { const p = Object.keys(tricky).find((q) => q.endsWith(`/${lp}.md`)); return p ? { path: p, content: tricky[p] } : null; } };
+    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "vaultmcp-skills-embed-tricky-"));
+    let body;
+    try {
+      await runExport(s3, { outputDir, pluginName: "t", fields: F({ typeMap: { "Note/Skill": "skill" }, includeRoots: ["In"] }) });
+      body = fs.readFileSync(path.join(outputDir, "skills", "host", "SKILL.md"), "utf8");
+    } finally { fs.rmSync(outputDir, { recursive: true, force: true }); }
+    assert.ok(body.includes("<!-- transclusion refused: In/a --› b.md is not accepted -->"), body);
+    assert.ok(!body.includes("In/a --> b.md"), "the raw sequence never reaches the artifact");
+    assert.ok(!body.includes("TRICKY-TEXT"));
+  });
+
+  test("the analysis and the preview carry the same refused-embed record", async () => {
+    const a = await analyzeVault(src, F3);
+    assert.deepEqual(a.excluded.transclusions.sort(), ["In/deeper.md", "In/pol.md", "In/secret.md"]);
+    const { previewVault } = await import("../src/kernel/exporter.ts");
+    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "vaultmcp-skills-embed-p-"));
+    try {
+      const p = await previewVault(src, { outputDir, pluginName: "t", fields: F3 });
+      assert.deepEqual(p.excluded.transclusions.sort(), ["In/deeper.md", "In/pol.md", "In/secret.md"]);
+    } finally { fs.rmSync(outputDir, { recursive: true, force: true }); }
+  });
+
+  test("the warning line truncates after eight paths and says how many more", async () => {
+    const many = sourceOf(Array.from({ length: 11 }, (_, i) => ({ path: `In/u${i}.md`, frontmatter: unverified("Note/Skill", { name: `u${i}` }), body: "" })));
+    const a = await analyzeVault(many, F({ typeMap: { "Note/Skill": "skill" }, includeRoots: ["In"] }));
+    const line = a.warnings.find((w) => /excluded from the compile/.test(w));
+    assert.match(line, /11 typed note\(s\) excluded/);
+    assert.match(line, /In\/u7\.md, … 3 more/);
+    assert.doesNotMatch(line, /In\/u8\.md/);
+  });
+
+  test("there is NO switch: the gate in collectNotes is an unconditional `if` on the raw frontmatter, and no detect-config key names a gate", () => {
+    const exporter = fs.readFileSync(new URL("../src/kernel/exporter.ts", import.meta.url), "utf8");
+    assert.match(exporter, /\n    if \(!hasHumanVerification\(fm\)\) \{\n      excludedHere\.push\(\{ path: note\.path, kind \}\);\n      continue;\n    \}/, "the gate, unconditional, on `fm` (the raw frontmatter, not the namespaced view)");
+    const detect = exporter.slice(exporter.indexOf("export interface DetectConfig"), exporter.indexOf("}", exporter.indexOf("export interface DetectConfig")));
+    assert.doesNotMatch(detect, /gate|accept|verif/i, "no config key can turn the gate off");
+    assert.match(exporter, /resolveTransclusions\(body, from, src\.embed, warnings, sources, gate\)/, "and the embed gate is threaded into every transclusion");
+  });
+
+  test("the operator-facing lines carry the count (source pins: the pane's report line, the export and release notices)", () => {
+    const read = (rel) => fs.readFileSync(new URL(rel, import.meta.url), "utf8");
+    assert.match(read("../src/pane.ts"), /\$\{r\.excluded\.total\} not accepted \(excluded\)/, "the preview pane's header");
+    assert.match(read("../src/pane.ts"), /\$\{r\.excluded\.transclusions\.length\} embedded note\(s\) refused/, "… and its embed count");
+    assert.match(read("../src/wiring.ts"), /\$\{summary\.excluded\.total\} not accepted \(excluded\)/, "the export notice");
+    assert.match(read("../src/wiring.ts"), /\$\{summary\.excluded\.transclusions\.length\} embedded note\(s\) refused/, "… and its embed count");
+    assert.match(read("../src/commands.ts"), /\$\{summary\.excluded\.total\} not accepted \(excluded\)/, "the release notice");
+    assert.match(read("../src/commands.ts"), /\$\{summary\.excluded\.transclusions\.length\} embedded note\(s\) refused/, "… and its embed count");
+    assert.match(read("../src/pane.ts"), /sources \(inlined, or refused as not accepted\): /, "the detail panel does not call a refused source 'transcluded'");
+    assert.match(read("../src/commands.ts"), /\$\{a\.excluded\.total\} not accepted \(excluded\)/, "the validate report");
   });
 });

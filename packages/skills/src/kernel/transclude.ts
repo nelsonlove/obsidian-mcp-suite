@@ -11,6 +11,13 @@ export interface EmbedSource {
   path: string;
   /** Raw file content (frontmatter is stripped here). */
   content: string;
+  /** The target's frontmatter AS THE VAULT PARSES IT (Obsidian's metadata
+   *  cache), when the lookup can supply it: `null` when the cache holds none.
+   *  The acceptance gate prefers this to re-parsing `content`, so a note is
+   *  judged by the same reader whether it is a compile unit or an embed
+   *  target. Absent (undefined) means the lookup has no cache; the gate then
+   *  parses the raw text and fails closed on what it cannot read. */
+  frontmatter?: Record<string, unknown> | null;
 }
 
 /** Resolve an Obsidian linkpath relative to the note it appears in; null ⇒ unresolved.
@@ -34,6 +41,9 @@ const safeLabel = (s: string): string => s.replace(/-->/g, "--›");
  *  are left raw and warned). */
 export const transclusionOpen = (label: string): string => `<!-- transcluded from: ${safeLabel(label)} -->`;
 export const transclusionClose = (label: string): string => `<!-- end transclusion: ${safeLabel(label)} -->`;
+/** The marker that stands where a refused embed would have been inlined (the
+ *  acceptance gate): names the path, carries none of its text. */
+export const transclusionRefused = (path: string): string => `<!-- transclusion refused: ${safeLabel(path)} is not accepted -->`;
 
 /** Strip a single leading YAML frontmatter block. (Shared with exporter.ts.)
  *  Bound to the shared recognizer in @vault-mcp/core (#189) — the old local
@@ -132,6 +142,14 @@ interface ResolveContext {
   /** When present, collects the vault path of every note whose content was inlined
    *  (all depths) — the compiled artifact's transclusion sources. */
   sources?: Set<string>;
+  /** THE ACCEPTANCE GATE ON EMBEDS (01.41 rule 8: nothing unaccepted reaches a
+   *  compiled agent prompt — the rule is over the prompt's TEXT, and an embed
+   *  inlines a note's text). When present, an embed target it refuses is not
+   *  inlined: a marker naming the path stands in its place, the path is
+   *  recorded in `refused` and in `sources` (so the export re-runs when the
+   *  note is later accepted), and a warning says why. Applies at every depth. */
+  accept?: (src: EmbedSource) => boolean;
+  refused?: Set<string>;
 }
 
 async function resolveBody(body: string, fromPath: string, ctx: ResolveContext): Promise<string> {
@@ -165,6 +183,13 @@ async function resolveBody(body: string, fromPath: string, ctx: ResolveContext):
     if (ctx.chain.includes(src.path)) {
       ctx.warnings.push(`${fromPath}: transclusion cycle through ${src.path} — left unresolved`);
       keep(); continue;
+    }
+    if (ctx.accept && !ctx.accept(src)) {
+      ctx.warnings.push(`${fromPath}: transclusion ${m[0]} refused — ${src.path} is not accepted (no \`verified\` entry naming a \`human:\` actor; 01.41 rule 8), so its text does not reach the compiled prompt`);
+      ctx.refused?.add(src.path);
+      ctx.sources?.add(src.path);
+      out.push(transclusionRefused(src.path));
+      continue;
     }
 
     let content: string | null = stripFrontmatter(src.content).trim();
@@ -215,7 +240,8 @@ export async function resolveTransclusions(
   lookup: EmbedLookup,
   warnings: string[],
   sources?: Set<string>,
+  gate?: { accept: (src: EmbedSource) => boolean; refused: Set<string> },
 ): Promise<string> {
   if (!body.includes("![[")) return body;
-  return resolveBody(body, sourcePath, { lookup, warnings, chain: [sourcePath], sources });
+  return resolveBody(body, sourcePath, { lookup, warnings, chain: [sourcePath], sources, accept: gate?.accept, refused: gate?.refused });
 }
