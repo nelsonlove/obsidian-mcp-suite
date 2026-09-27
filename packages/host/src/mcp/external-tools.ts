@@ -1,8 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { App } from "obsidian";
-import { SHARED_ANNOTATIONS } from "@vault-mcp/core";
-import type { ToolAnnotations } from "@vault-mcp/core";
-import { ok, fail } from "./helpers.js";
+import { SHARED_ANNOTATIONS, isVisible } from "@vault-mcp/core";
+import type { ToolAnnotations, GuardSettings } from "@vault-mcp/core";
+import { ok, okError, fail } from "./helpers.js";
 import { jsonSchemaToZodShape, type JsonSchemaObject } from "./json-schema-to-zod.js";
 import { collectPaths } from "../guard.js";
 import type { ServerCtx } from "./tools-core.js";
@@ -17,7 +17,88 @@ export interface ExternalToolSpec {
   inputSchema?: JsonSchemaObject;
   /** Absent ⇒ treated as MUTATING (blocked in read-only mode). */
   annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean; idempotentHint?: boolean };
-  handler: (args: Record<string, unknown>) => Promise<unknown> | unknown;
+  /** Called with the tool's arguments and, since apiVersion 2 (#402 step B), a
+   *  per-call `CallContext` as the second argument. A handler may ignore it. */
+  handler: (args: Record<string, unknown>, ctx?: CallContext) => Promise<unknown> | unknown;
+}
+
+// ── apiVersion 2 members (#402 step B; the SDK carried them since 1.1.0) ─────
+//
+// The host may NOT import `vault-mcp-api` (tests/host-layering.test.mjs: it IS
+// the host), so the brand, the predicate and the context type are re-spelled
+// here and pinned against the SDK's by the SDK's contract test in both
+// directions — the two spellings cannot drift.
+
+/**
+ * What every published handler receives per call (design §5). FUNCTIONS,
+ * NEVER THE LIST: the allowlist is not handed over — a tool asks "may I show
+ * this" and gets yes or no. Built per call from the LIVE settings (the
+ * inert-toggle rule), never snapshotted at connection build.
+ *
+ * What it does NOT lift: F3 below still refuses a pathless external tool
+ * wholesale under an active allowlist, because the host cannot verify a
+ * satellite applied `visible`. The context re-lights the ROW filters of the
+ * calls that get through, and is identity when no allowlist is active.
+ */
+export interface CallContext {
+  /** The subset of `paths` this caller may see; the SAME array when no allowlist is active. */
+  visible(paths: readonly string[]): readonly string[];
+  /** One path. */
+  isVisible(path: string): boolean;
+  /** The session cannot write. */
+  readOnly: boolean;
+}
+
+/** The context for one call, from the settings as they are NOW. Pure and
+ *  exported so the identity convention and the live read are pinned. */
+export function makeCallContext(settings: GuardSettings): CallContext {
+  const active = settings.allowlist.length > 0;
+  return {
+    visible: (paths) => (active ? paths.filter((p) => isVisible(p, settings)) : paths),
+    isVisible: (path) => isVisible(path, settings),
+    readOnly: settings.readOnly === true,
+  };
+}
+
+/** The partial-result envelope's brand (design §4): a string-keyed property
+ *  because publisher and host are different bundles. Same spelling as the
+ *  SDK's `PARTIAL_BRAND`, pinned by the SDK's contract test. */
+export const PARTIAL_BRAND = "vault-mcp-api/envelope" as const;
+
+export interface PartialEnvelope {
+  [PARTIAL_BRAND]: "partial";
+  data: Record<string, unknown>;
+  message: string;
+}
+
+/** Whether a handler's TOP-LEVEL return value is a partial result. Exactly
+ *  as strict as the SDK's `partial()` constructor and its `isPartial`: a plain
+ *  object `data` (never an array — it goes into `structuredContent` verbatim)
+ *  and a non-blank `message`. A partial nested inside data is data. */
+export function isPartialEnvelope(value: unknown): value is PartialEnvelope {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  return v[PARTIAL_BRAND] === "partial"
+    && typeof v.message === "string" && v.message.trim() !== ""
+    && !!v.data && typeof v.data === "object" && !Array.isArray(v.data);
+}
+
+/** The code a partial result carries in its first content line, in the
+ *  `Error [code]: detail` shape the rest of the surface uses for typed
+ *  outcomes (guarded.ts `codedError`, the batch decoder), so the operation
+ *  executor maps it to the `partial` outcome — not to `refused`, which is
+ *  what an uncoded `isError` means there — and the write journal's error
+ *  text is the message, not the JSON. */
+export const PARTIAL_CODE = "partial";
+
+/** The wire shape of a partial result (design §4 rule 1): `structuredContent`
+ *  is the data, `content` is the coded message line and then the JSON text,
+ *  `isError` is set — the caller gets what was done AND the error bit, and
+ *  every reader of `content[0]` (the executor's outcome, the journal's error
+ *  text) sees the one sentence that says what failed. */
+export function partialResult(env: PartialEnvelope) {
+  const base = okError(env.data);
+  return { ...base, content: [{ type: "text" as const, text: `Error [${PARTIAL_CODE}]: ${env.message}` }, ...base.content] };
 }
 
 export interface ExternalToolEntry {
@@ -30,8 +111,10 @@ export interface ExternalToolEntry {
  * The tool-publishing half of `app.plugins.plugins['governor'].api`, mirrored
  * in the `vault-mcp-api` SDK and pinned against it by that package's
  * contract.test.ts. The api object the host exposes is this PLUS the governance
- * seam (mcp/seam.ts) — an additive surface, so `apiVersion` stays 1 and every
- * published SDK build keeps registering.
+ * seam (mcp/seam.ts), which was additive and left `apiVersion` at 1. The number
+ * became 2 at #402 step B for the partial-result envelope and the per-call
+ * context; the SDK reads it as a FLOOR since 1.1.0, so a satellite rebuilt
+ * against that SDK keeps registering.
  *
  * `unregisterTools(ownerPluginId)` USED TO LIVE HERE and was removed by S2 of
  * the suite split (condition 3, a correctness fix rather than armour): it was
@@ -45,15 +128,19 @@ export interface ExternalToolEntry {
  * to third-party plugins is unchanged in practice.
  */
 export interface VaultMcpApi {
-  apiVersion: 1;
+  /** The level of members this host carries; a LITERAL on purpose (the SDK's
+   *  contract test requires the host to declare one). 2 = the v1 surface plus
+   *  the partial-result envelope and the per-call `CallContext`. */
+  apiVersion: 2;
   registerTools(ownerPluginId: string, tools: ExternalToolSpec[]): () => void;
   /**
    * The operator's configured guarded territories, already resolved (trimmed,
    * blanks dropped). There is NO default (#397): a blank setting answers with
    * an EMPTY list, which means the operator guards nothing — honour it as-is.
    *
-   * ADDITIVE, so `apiVersion` stays 1 (same reasoning as the seam's methods):
-   * an older `vault-mcp-api` build that never calls this keeps registering.
+   * ADDITIVE, so it did not bump `apiVersion` when it landed (same reasoning
+   * as the seam's methods): an older `vault-mcp-api` build that never calls
+   * this keeps registering.
    *
    * WHY THE HOST PUBLISHES THIS AT ALL (#397). The list has consumers in both
    * plugins, and #396 first put the setting on Governor — which left this
@@ -66,7 +153,7 @@ export interface VaultMcpApi {
    * OPTIONAL, and that is the contract rather than laziness: `vault-mcp-api`
    * builds already in the wild were compiled against a host without this, and a
    * REQUIRED method would make every one of them fail to satisfy the type — the
-   * exact breakage `apiVersion: 1` promises not to cause. A caller must handle
+   * exact breakage an additive member promises not to cause. A caller must handle
    * its absence as "cannot tell" and FAIL CLOSED — never as "nothing is
    * guarded", and never by keeping a list of its own; `excludedUnderHost` in
    * packages/governor is the reference answer (absent ⇒ everything excluded).
@@ -338,7 +425,11 @@ export function registerExternalTools(server: McpServer, app: App, ctx: ServerCt
           // F5: normalize handler return value to a plain object so ok() emits
           // valid structuredContent (undefined, primitives, and arrays all wrapped).
           try {
-            const r = await spec.handler(args ?? {});
+            // apiVersion 2: the per-call context, from the settings as they are
+            // NOW (never captured at build), and the partial-result envelope,
+            // checked on the top-level return value only.
+            const r = await spec.handler(args ?? {}, makeCallContext(ctx.getSettings()));
+            if (isPartialEnvelope(r)) return partialResult(r);
             const data =
               r === undefined                                          ? { ok: true } :
               (typeof r === "object" && r !== null && !Array.isArray(r)) ? r :
