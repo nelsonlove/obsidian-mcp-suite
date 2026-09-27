@@ -19,9 +19,14 @@ import {
   AcceptForbiddenError,
   acceptTransitionReason,
   acceptForbiddenReason,
+  unverifiableProtectedPropertyIn,
+  acceptTransitionNeedsBefore,
+  normalizeProtectedProperties,
+  isAuthorityFamilyKey,
   parseGuardFrontmatter,
 } from "../src/accept-guard.js";
 import { FilesystemBackend } from "../src/fs-backend/filesystem-backend.js";
+import { scanForAcceptFence } from "../src/accept-scan.js";
 
 async function freshBackend(): Promise<{ backend: FilesystemBackend; vaultRoot: string }> {
   const vaultRoot = await mkdtemp(join(tmpdir(), "accept-guard-fs-"));
@@ -646,5 +651,151 @@ describe("FilesystemBackend.manageFrontmatter(set) — accept-forbidden guard", 
     await backend.manageFrontmatter("note.md", "acceptance-status", "set", "accepted");
     const result = await backend.manageFrontmatter("note.md", "acceptance-status", "get");
     assert.equal(result.value, "accepted");
+  });
+});
+
+describe("the live `verified` key is guarded like the retired family, and blank is refused outright (#406, ruled 2026-09-26)", () => {
+  const human = [{ by: "Nelson", on: "2026-09-17T06:26", said: "yes" }];
+
+  test("introducing `verified` is refused; so is every separator variant", () => {
+    assert.match(acceptTransitionReason(null, { verified: human }) ?? "", /introduce the verification field 'verified'/);
+    assert.match(acceptTransitionReason({}, { "verified-by": "an-agent" }) ?? "", /introduce the verification field 'verified-by'/);
+    assert.match(acceptTransitionReason({}, { verified_on: "2026-09-26" }) ?? "", /introduce the verification field 'verified_on'/);
+    assert.match(acceptTransitionReason({}, { Verified: human }) ?? "", /introduce the verification field 'Verified'/);
+  });
+
+  test("changing an existing `verified` is refused; carrying it forward byte-identical is allowed", () => {
+    assert.match(acceptTransitionReason({ verified: human }, { verified: [...human, { by: "an-agent" }] }) ?? "", /change the verification field 'verified'/);
+    assert.equal(acceptTransitionReason({ verified: human }, { verified: human, title: "edited beside it" }), null);
+  });
+
+  test("present-but-empty is refused OUTRIGHT (01.41 rule 2a) — introduce, carry-forward, or blanking a real one", () => {
+    for (const empty of [[], null, "", "  ", {}]) {
+      assert.match(acceptTransitionReason(null, { verified: empty }) ?? "", /present but empty/, JSON.stringify(empty));
+      assert.match(acceptTransitionReason({ verified: empty }, { verified: empty }) ?? "", /present but empty/, `carry-forward of ${JSON.stringify(empty)}`);
+    }
+    assert.match(acceptTransitionReason({ verified: human }, { verified: [] }) ?? "", /present but empty/);
+  });
+
+  test("the retired family stays guarded beside it — the floor grew, it did not move", () => {
+    assert.ok(acceptTransitionReason(null, { "accepted-by": "an-agent" }));
+    assert.ok(acceptTransitionReason(null, { "acceptance-status": "accepted" }));
+    assert.equal(acceptTransitionReason({ "accepted-by": "nelson" }, { "accepted-by": "nelson" }), null);
+  });
+
+  test("acceptForbiddenReason (the payload-only paths) flags a `verified` key by presence", () => {
+    assert.match(acceptForbiddenReason({ verified: human }) ?? "", /verification field 'verified'/);
+    assert.match(acceptForbiddenReason({ "verified-by": "x" }) ?? "", /verification field 'verified-by'/);
+    assert.equal(acceptForbiddenReason({ verifier: "x", unverified: true }), null, "only the key family, not words that contain it");
+  });
+
+  test("`verified` is an authority-family key: the class firewall sees it and config cannot restate it", () => {
+    assert.equal(isAuthorityFamilyKey("verified"), true);
+    assert.equal(isAuthorityFamilyKey("verified-by"), true);
+    assert.equal(isAuthorityFamilyKey("verifier"), false);
+    const warned: string[] = [];
+    const out = normalizeProtectedProperties([{ key: "verified", grade: "agent-forbidden" }], (m) => warned.push(m));
+    assert.equal(out.length, 0);
+    assert.match(warned.join("\n"), /hardcoded floor/);
+  });
+
+  test("REMOVING a filled `verified` is refused; removing a BLANK one is the allowed repair (#407 review)", () => {
+    assert.match(acceptTransitionReason({ verified: human }, { title: "rewritten without it" }) ?? "", /remove the verification field 'verified'/);
+    assert.match(acceptTransitionReason({ "verified-by": "Nelson" }, { verified_by: "Nelson" }) ?? "", /introduce the verification field 'verified_by'/, "a separator variant is not a carry-forward");
+    assert.equal(acceptTransitionReason({ verified: [] }, { title: "the blank is gone" }), null);
+    assert.equal(acceptTransitionReason({ verified: null }, {}), null);
+    assert.match(acceptTransitionReason({ verified: human }, null) ?? "", /remove the verification field/, "a result with NO frontmatter at all strips the record: refused, as the declared loop refuses it");
+  });
+
+  test("the blank refusal names the remedy, and a YAML timestamp is a value, not a blank", () => {
+    assert.match(acceptTransitionReason(null, { verified: [] }) ?? "", /remove the key instead/);
+    const d = new Date("2026-09-26T00:00:00Z");
+    assert.match(acceptTransitionReason(null, { "verified-on": d }) ?? "", /introduce the verification field/, "a Date is introduced, not blank");
+    assert.equal(acceptTransitionReason({ "verified-on": d }, { "verified-on": d }), null, "the same Date carried forward is allowed");
+  });
+
+  test("acceptTransitionNeedsBefore is always true now: absence in the result may be a removal of the floor key", () => {
+    assert.equal(acceptTransitionNeedsBefore({ title: "nothing asserted" }), true);
+    assert.equal(acceptTransitionNeedsBefore(null), true);
+  });
+
+  test("an UNPARSEABLE before that mentions `verified` fails closed on the floor, declared list or not", () => {
+    assert.equal(unverifiableProtectedPropertyIn("---\nverified: &a [\n---\nbody"), "verified");
+    assert.equal(unverifiableProtectedPropertyIn("---\ntitle: &a\n---\nverified in prose"), null, "scoped to the fence, not the body");
+  });
+
+  test("end-to-end: a NEW note carrying `verified: []` is REFUSED through writeNote, and so is a non-empty one", async () => {
+    const { backend } = await freshBackend();
+    await assert.rejects(
+      () => backend.writeNote("note.md", "---\nverified: []\n---\nbody", false),
+      (e: unknown) => e instanceof AcceptForbiddenError && /present but empty/.test((e as Error).message),
+    );
+    await assert.rejects(
+      () => backend.writeNote("note.md", "---\nverified:\n  - by: an-agent\n---\nbody", false),
+      (e: unknown) => e instanceof AcceptForbiddenError && /introduce the verification field/.test((e as Error).message),
+    );
+  });
+});
+
+describe("end-to-end through FilesystemBackend: removal, blank repair, append, manageFrontmatter, unparseable before (#406, #407 review)", () => {
+  const RECORD = "---\nverified:\n  - by: human:nelson\n    at: 2026-09-25T05:08:39-04:00\n---\nbody";
+
+  test("writeNote that OMITS a human's filled `verified` is REFUSED; carrying it forward with a new body is ALLOWED", async () => {
+    const { backend, vaultRoot } = await freshBackend();
+    await seedDirectly(vaultRoot, "note.md", RECORD);
+    await assert.rejects(
+      () => backend.writeNote("note.md", "---\ntitle: rewritten\n---\nbody", true),
+      (e: unknown) => e instanceof AcceptForbiddenError && /remove the verification field/.test((e as Error).message),
+    );
+    await backend.writeNote("note.md", RECORD.replace("body", "new body"), true);
+    assert.match(await backend.readNote("note.md"), /new body/);
+  });
+
+  test("manageFrontmatter delete of a filled `verified` is REFUSED; delete of a blank one is ALLOWED; set to blank is REFUSED", async () => {
+    const { backend, vaultRoot } = await freshBackend();
+    await seedDirectly(vaultRoot, "filled.md", RECORD);
+    await assert.rejects(() => backend.manageFrontmatter("filled.md", "verified", "delete"), (e: unknown) => e instanceof AcceptForbiddenError);
+    await seedDirectly(vaultRoot, "blank.md", "---\nverified: []\ntitle: T\n---\nbody");
+    await backend.manageFrontmatter("blank.md", "verified", "delete");
+    assert.doesNotMatch(await backend.readNote("blank.md"), /verified/);
+    await assert.rejects(() => backend.manageFrontmatter("filled.md", "verified", "set", []), (e: unknown) => e instanceof AcceptForbiddenError && /present but empty/.test((e as Error).message));
+  });
+
+  test("appendNote onto a note with a filled record works and the record survives; onto a BLANK one it is refused with the remedy named", async () => {
+    const { backend, vaultRoot } = await freshBackend();
+    await seedDirectly(vaultRoot, "filled.md", RECORD);
+    await backend.appendNote("filled.md", "\nappended");
+    const text = await backend.readNote("filled.md");
+    assert.match(text, /appended/); assert.match(text, /by: human:nelson/);
+    await seedDirectly(vaultRoot, "blank.md", "---\nverified: []\n---\nbody");
+    await assert.rejects(() => backend.appendNote("blank.md", "\nappended"), (e: unknown) => e instanceof AcceptForbiddenError && /remove the key instead/.test((e as Error).message));
+  });
+
+  test("an UNPARSEABLE before mentioning `verified` refuses a rewrite that omits it (cannot be verified to carry it forward)", async () => {
+    const { backend, vaultRoot } = await freshBackend();
+    await seedDirectly(vaultRoot, "note.md", "---\nverified: &anchor\n  - by: human:nelson\n---\nbody");
+    await assert.rejects(
+      () => backend.writeNote("note.md", "---\ntitle: T\n---\nbody", true),
+      (e: unknown) => e instanceof AcceptForbiddenError && /cannot be verified to carry/.test((e as Error).message),
+    );
+  });
+});
+
+describe("scanForAcceptFence: a block YAML cannot parse that carries a `verified…:` line is suspect, not let through (#406)", () => {
+  const broken = () => { throw new Error("unparseable"); };
+  test("textual fallback refuses on a verified line — bare, separator variants, and the QUOTED and flow forms (#143's quoted-key requirement)", () => {
+    assert.match(scanForAcceptFence("---\nverified: [\n---\nbody", broken) ?? "", /verification field 'verified'/);
+    assert.match(scanForAcceptFence("---\nverified_by: &a\n---\nbody", broken) ?? "", /verification field 'verified'/);
+    assert.match(scanForAcceptFence("---\n\"verified\": [\n---\nbody", broken) ?? "", /verification field 'verified'/);
+    assert.match(scanForAcceptFence("---\n'verified': &a\n---\nbody", broken) ?? "", /verification field 'verified'/);
+    assert.match(scanForAcceptFence("---\n{verified: [}\n---\nbody", broken) ?? "", /verification field 'verified'/);
+  });
+  test("an unparseable block WITHOUT the key still passes the fallback (only the key family is suspect)", () => {
+    assert.equal(scanForAcceptFence("---\nverifier: &a\n---\nbody", broken), null);
+    assert.equal(scanForAcceptFence("---\nunverified: &a\n---\nbody", broken), null);
+  });
+  test("a parseable block with `verified` is refused structurally, through acceptForbiddenReason", () => {
+    const yaml = (b: string) => ({ verified: [] });
+    assert.match(scanForAcceptFence("---\nverified: []\n---\nbody", yaml) ?? "", /verification field 'verified'/);
   });
 });

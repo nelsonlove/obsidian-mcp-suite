@@ -30,6 +30,8 @@ export {
   findPropertiesCanonical,
   frontmatterValuesEqual,
   acceptTransitionNeedsBefore,
+  isVerifiedKey,
+  isBlankVerification,
   unverifiableProtectedPropertyIn,
   parseProtectedPropertyLines,
   formatProtectedPropertyLines,

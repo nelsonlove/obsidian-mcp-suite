@@ -322,3 +322,117 @@ describe("cliAcceptRefusal — declared key coverage", () => {
     assert.match(cliAcceptRefusal("property:set", { name: "accepted-by", value: "x" }, parseYaml) ?? "", /acceptance field/);
   });
 });
+
+// ── the live `verified` key on every host transport (#406) ───────────────────
+
+function assertRefusedVerified(res, re = /verification field/) {
+  assert.equal(res.isError, true, "the write must be refused");
+  assert.match(res.content[0].text, /\[accept_forbidden\]/);
+  assert.match(res.content[0].text, re);
+}
+const RECORD_NOTE = "---\nverified:\n  - by: human:nelson\n    at: 2026-09-25T05:08:39-04:00\ntitle: T\n---\nbody\n";
+const BLANK_NOTE = "---\nverified: []\ntitle: T\n---\nbody\n";
+
+describe("ObsidianBackend transports — the live `verified` key (#406)", () => {
+  test("obsidian_write_note INTRODUCING verified refuses; nothing lands", async () => {
+    const { call, store } = harness({});
+    assertRefusedVerified(await call("obsidian_write_note", { path: "n.md", content: "---\nverified:\n  - by: an-agent\n---\nhi\n" }));
+    assert.equal(store.has("n.md"), false);
+  });
+
+  test("obsidian_write_note writing a BLANK verified refuses with the remedy named", async () => {
+    const { call, store } = harness({});
+    assertRefusedVerified(await call("obsidian_write_note", { path: "n.md", content: "---\nverified: []\n---\nhi\n" }), /remove the key instead/);
+    assert.equal(store.has("n.md"), false);
+  });
+
+  test("obsidian_write_note that OMITS a filled record refuses (removal); carrying it forward with a new body is ALLOWED", async () => {
+    const { call, store } = harness({ files: { "n.md": RECORD_NOTE } });
+    assertRefusedVerified(await call("obsidian_write_note", { path: "n.md", content: "---\ntitle: T\n---\nnew body\n", overwrite: true }), /remove the verification field/);
+    assert.equal(store.get("n.md"), RECORD_NOTE);
+    const ok = await call("obsidian_write_note", { path: "n.md", content: RECORD_NOTE.replace("body", "new body"), overwrite: true });
+    assert.notEqual(ok.isError, true, ok.content?.[0]?.text);
+    assert.match(store.get("n.md"), /new body/);
+  });
+
+  test("obsidian_manage_frontmatter: set/delete on a filled record refuses; delete of a BLANK one is the allowed repair; unrelated keys pass on both", async () => {
+    const { call, store } = harness({ files: { "f.md": RECORD_NOTE, "b.md": BLANK_NOTE } });
+    assertRefusedVerified(await call("obsidian_manage_frontmatter", { path: "f.md", key: "verified", op: "set", value: "yes" }));
+    assertRefusedVerified(await call("obsidian_manage_frontmatter", { path: "f.md", key: "verified", op: "delete" }), /remove the verification field/);
+    assert.match(store.get("f.md"), /by: human:nelson/);
+    const okF = await call("obsidian_manage_frontmatter", { path: "f.md", key: "title", op: "set", value: "U" });
+    assert.notEqual(okF.isError, true, okF.content?.[0]?.text);
+    // A note that carries the blank is otherwise unwritable — an unrelated set carries the blank forward and is refused; the delete repairs it.
+    assertRefusedVerified(await call("obsidian_manage_frontmatter", { path: "b.md", key: "title", op: "set", value: "U" }), /remove the key instead/);
+    const okB = await call("obsidian_manage_frontmatter", { path: "b.md", key: "verified", op: "delete" });
+    assert.notEqual(okB.isError, true, okB.content?.[0]?.text);
+    assert.doesNotMatch(store.get("b.md"), /verified/);
+  });
+
+  test("obsidian_append_note to a note with a filled record works; the record survives", async () => {
+    const { call, store } = harness({ files: { "n.md": RECORD_NOTE } });
+    const res = await call("obsidian_append_note", { path: "n.md", content: "appended\n" });
+    assert.notEqual(res.isError, true, res.content?.[0]?.text);
+    assert.match(store.get("n.md"), /appended/);
+    assert.match(store.get("n.md"), /by: human:nelson/);
+  });
+
+  test("with the declared list EMPTIED the verified floor still refuses (it is the floor, not config)", async () => {
+    setDeclaredProtectedProperties([], silent);
+    try {
+      const { call } = harness({ files: { "n.md": RECORD_NOTE } });
+      assertRefusedVerified(await call("obsidian_write_note", { path: "n.md", content: "---\ntitle: T\n---\nx\n", overwrite: true }), /remove the verification field/);
+    } finally {
+      setDeclaredProtectedProperties(undefined, silent);
+    }
+  });
+});
+
+describe("composeNote — the live `verified` key (#406)", () => {
+  const deps = {
+    stringifyYaml: (o) => Object.entries(o).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join("\n") + "\n",
+    parseYaml,
+    formatTs: () => "2026-09-26 12:00",
+    now: new Date("2026-09-26T12:00:00Z"),
+    mintUid: () => "uid-1",
+  };
+  const record = [{ by: "human:nelson", at: "2026-09-25T05:08:39-04:00" }];
+
+  test("a payload introducing verified throws typed accept_forbidden", () => {
+    assert.throws(
+      () => composeNote({ ...deps, frontmatter: { verified: record }, body: "hi", stamp: false, existing: null }),
+      (e) => e.code === "accept_forbidden" && /introduce the verification field/.test(e.message)
+    );
+  });
+
+  test("a stamped rewrite SILENT on a filled record carries it forward by name (else every ordinary write would be a removal)", () => {
+    const r = composeNote({ ...deps, frontmatter: { title: "T" }, body: "hi", stamp: true, existing: { verified: record, title: "T" } });
+    assert.deepEqual(r.frontmatter.verified, record);
+  });
+
+  test("a stamped rewrite silent on a BLANK record drops it (the allowed repair), and a NON-stamped rewrite that omits a filled one throws (removal)", () => {
+    const r = composeNote({ ...deps, frontmatter: { title: "T" }, body: "hi", stamp: true, existing: { verified: [], title: "T" } });
+    assert.equal("verified" in r.frontmatter, false);
+    assert.throws(
+      () => composeNote({ ...deps, frontmatter: { title: "T" }, body: "hi", stamp: false, existing: { verified: record } }),
+      (e) => e.code === "accept_forbidden" && /remove the verification field/.test(e.message)
+    );
+  });
+});
+
+describe("cliAcceptRefusal — the live `verified` key (#406)", () => {
+  test("property:set name=verified is refused (either param shape); a content fence carrying it is refused; unrelated content is clean", () => {
+    assert.match(cliAcceptRefusal("property:set", { name: "verified", value: "yes" }, parseYaml) ?? "", /verification field/);
+    assert.match(cliAcceptRefusal("property:set", { verified_by: "x" }, parseYaml) ?? "", /verification field/);
+    assert.match(cliAcceptRefusal("create", { content: "---\nverified: []\n---\nbody" }, parseYaml) ?? "", /verification field/);
+    assert.equal(cliAcceptRefusal("create", { content: "---\ntitle: x\n---\nbody" }, parseYaml), null);
+  });
+
+  test("a fence the stub still parses around an unclosed line is caught structurally; the throwing-parser fallback (quoted keys included) is pinned in core's accept-guard tests", () => {
+    // The test stub's parseYaml never throws (it skips lines it cannot read), so
+    // this row cannot reach the textual fallback; it proves the structural path
+    // through the CLI content guard sees a separator variant.
+    const broken = "---\n[unclosed\nverified_by: an-agent\n---\nbody";
+    assert.match(cliAcceptRefusal("create", { content: broken }, parseYaml) ?? "", /verification field/);
+  });
+});

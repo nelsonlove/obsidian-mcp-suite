@@ -18,7 +18,8 @@
 // No write may INTRODUCE or CHANGE a note's acceptance to the accepted-family:
 // a payload/result whose frontmatter sets `acceptance-status: accepted` (or an
 // `accepted-*` variant) or carries any `accepted` / `accepted-by` /
-// `accepted-on` field is REJECTED before any write lands. The transport must
+// `accepted-on` field, or introduces / changes / blanks the live `verified`
+// field (#406), is REJECTED before any write lands. The transport must
 // never persist acceptance — acceptance is a human gesture only, granted
 // directly in Obsidian, never through an API.
 //
@@ -72,6 +73,31 @@ function isAcceptedValue(v: unknown): boolean {
 /** A frontmatter KEY that is an acceptance-provenance field: `accepted`, `accepted-by`, `accepted-on`, `accepted_by`, … */
 function isAcceptedKey(key: string): boolean {
   return /^accepted([-_ ].*)?$/.test(key.trim().toLowerCase());
+}
+
+/** The LIVE verification key (#406, ruled 2026-09-26): `verified`, `verified-by`,
+ *  `verified_on`, … Since the vault retired the `accepted*` family, what confirms
+ *  a note is a `verified` entry only a human writes (01.41 The accept perimeter,
+ *  rule 2a) — and the guard had never learned the new key, so an agent write of
+ *  `verified: [...]` passed while `accepted-by` was refused. The retired family
+ *  stays guarded beside it: a stray old-format note must not be re-accepted by
+ *  accident, and a floor never shrinks. */
+export function isVerifiedKey(key: string): boolean {
+  return /^verified([-_ ].*)?$/.test(key.trim().toLowerCase());
+}
+
+/** Present-but-empty: `verified: []`, `verified:` (null), `verified: ""`,
+ *  `verified: {}`. Rule 2a refuses that shape on purpose — "a key that is
+ *  present and empty reads as a field somebody may fill in" — so it is refused
+ *  OUTRIGHT, carry-forward included: an empty value is never a human's record. */
+export function isBlankVerification(v: unknown): boolean {
+  if (v === null || v === undefined) return true;
+  if (typeof v === "string") return v.trim() === "";
+  if (Array.isArray(v)) return v.length === 0;
+  // Only a PLAIN empty object is blank: a Date (what a YAML timestamp parses
+  // to under Obsidian's parser) has no own enumerable keys and is a value.
+  if (typeof v === "object") return Object.getPrototypeOf(v) === Object.prototype && Object.keys(v as object).length === 0;
+  return false;
 }
 
 // ── the ONE recognizer for a note's leading frontmatter fence ───────────────
@@ -286,7 +312,7 @@ function isFloorKey(canonical: string): boolean {
  * one-recognizer comment above documents for the frontmatter fence.
  */
 export function isAuthorityFamilyKey(canonical: string): boolean {
-  return isAcceptedKey(canonical) || canonical === "acceptance-status";
+  return isAcceptedKey(canonical) || isVerifiedKey(canonical) || canonical === "acceptance-status";
 }
 
 const GRADES: ReadonlyArray<ProtectedPropertyGrade> = ["agent-forbidden", "authority-conferring"];
@@ -311,7 +337,7 @@ export const DEFAULT_PROTECTED_PROPERTIES: ReadonlyArray<ProtectedProperty> = Ob
  *   - an unknown grade → dropped, loudly (never guessed: coercing an intended
  *     `authority-conferring` down to `agent-forbidden` would silently shed the
  *     honor rule);
- *   - floor keys (`accepted*`, `acceptance-status`) → dropped, loudly — the
+ *   - floor keys (`accepted*`, `verified*`, `acceptance-status`) → dropped, loudly — the
  *     hardcoded floor cannot be shrunk, downgraded, or restated by config;
  *   - duplicates (canonical) → first wins, loudly.
  */
@@ -443,10 +469,13 @@ export function frontmatterValuesEqual(a: unknown, b: unknown): boolean {
  * trips it; no fence ⇒ no prior frontmatter ⇒ genuinely nothing to remove.
  */
 export function unverifiableProtectedPropertyIn(rawBefore: string): string | null {
-  if (declared.length === 0) return null;
   const block = leadingFrontmatterBlock(rawBefore);
   if (block === null) return null;
   const l = block.toLowerCase();
+  // The floor's own removal rule (#406): an unreadable before that mentions
+  // `verified` may hold a filled record this write would strip.
+  if (/\bverified\b/.test(l)) return "verified";
+  if (declared.length === 0) return null;
   for (const p of declared) {
     if (l.includes(p.key) || l.includes(p.key.replace(/-/g, "_"))) return p.key;
   }
@@ -464,7 +493,12 @@ export function unverifiableProtectedPropertyIn(rawBefore: string): string | nul
  */
 export function acceptTransitionNeedsBefore(after: Record<string, unknown> | null | undefined): boolean {
   if (declared.length > 0) return true;
-  return !!after && acceptTransitionReason(null, after) !== null;
+  // Since #406 the FLOOR itself has a removal rule (a filled `verified` may not
+  // be stripped), so a result that asserts nothing can still be a removal and
+  // the before read is always needed. The parameter stays for the callers'
+  // shape; the shortcut is retired, not narrowed.
+  void after;
+  return true;
 }
 
 /**
@@ -496,6 +530,17 @@ export function acceptTransitionReason(
         if (!(prev.present && fmEqual(prev.value, after[key]))) {
           return `write would ${prev.present ? "change" : "introduce"} the acceptance field '${key}'`;
         }
+      } else if (isVerifiedKey(key)) {
+        // The live key (#406): empty is refused outright (rule 2a); otherwise
+        // exactly the accepted family's rule — introduce or change refused,
+        // byte-identical carry-forward of a human's record allowed.
+        if (isBlankVerification(after[key])) {
+          return `write would leave the verification field '${key}' present but empty — a verification is a human's record or absent, never a blank to fill in; remove the key instead (an agent may remove a BLANK '${key}', never a filled one)`;
+        }
+        const prev = lookupCI(before, key);
+        if (!(prev.present && fmEqual(prev.value, after[key]))) {
+          return `write would ${prev.present ? "change" : "introduce"} the verification field '${key}'`;
+        }
       } else if (kl === "acceptance-status" || kl === "acceptance_status") {
         if (isAcceptedValue(after[key])) {
           const prev = lookupCI(before, key);
@@ -503,6 +548,19 @@ export function acceptTransitionReason(
             return `write would set ${key} to an accepted value`;
           }
         }
+      }
+    }
+  }
+  // Removal of a FILLED `verified` record (#406, the #407 review): an agent
+  // stripping a human's verification is a change of standing, refused exactly
+  // as a declared property's removal is. Removal of a BLANK one is the repair
+  // rule 2a asks for and is allowed — a blank is never a record, so nothing is
+  // lost, and it is the only way an agent can make such a note writable again.
+  if (before) {
+    for (const key of Object.keys(before)) {
+      if (!isVerifiedKey(key) || isBlankVerification(before[key])) continue;
+      if (findPropertiesCanonical(after, key).length === 0) {
+        return `write would remove the verification field '${key}' — a human's record leaves only by a human's hand`;
       }
     }
   }
@@ -539,6 +597,7 @@ export function acceptForbiddenReason(fm: Record<string, unknown> | undefined | 
   if (!fm) return null;
   for (const key of Object.keys(fm)) {
     if (isAcceptedKey(key)) return `frontmatter carries the acceptance field '${key}'`;
+    if (isVerifiedKey(key)) return `frontmatter carries the verification field '${key}'`;
     const k = key.trim().toLowerCase();
     if ((k === "acceptance-status" || k === "acceptance_status") && isAcceptedValue(fm[key])) {
       return `frontmatter sets ${key}='${String(fm[key])}'`;
