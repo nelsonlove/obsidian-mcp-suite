@@ -8,7 +8,7 @@ import {
   executeQuickAddChoice,
   parseGuardFrontmatter,
   stripLeadingFrontmatter,
-  unverifiableProtectedPropertyIn,
+  unverifiableProtectedPropertyIn, unverifiableBeforeReason,
 } from "@vault-mcp/core";
 import { ok, fail, codedError } from "./helpers.js";
 import { visiblePaths } from "../guard.js";
@@ -47,10 +47,7 @@ export function guardAppendResult(beforeText: string | null, resultingContent: s
     } catch {
       const k = unverifiableProtectedPropertyIn(beforeText);
       if (k) {
-        throw new AcceptForbiddenError(
-          `the note's current frontmatter mentions the protected property '${k}' but cannot be confidently ` +
-            `parsed, so this write cannot be verified to carry the property forward unchanged`
-        );
+        throw new AcceptForbiddenError(unverifiableBeforeReason(k));
       }
       before = null;
     }
