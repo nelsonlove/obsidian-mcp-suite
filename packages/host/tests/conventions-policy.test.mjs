@@ -11,7 +11,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { conventionsOnLoad, CONVENTION_FIELDS, conventionFieldValue } from "../src/conventions-policy.ts";
+import { conventionsOnLoad, CONVENTION_FIELDS, conventionFieldValue, commitConvention } from "../src/conventions-policy.ts";
+import { deadConventionPaths } from "../src/conformance/vault-conventions.ts";
 import { EMPTY_VAULT_CONVENTIONS, LEGACY_CONVENTIONS_SEED } from "../src/conformance/vault-conventions.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -44,6 +45,20 @@ describe("the six settings fields", () => {
       assert.ok(f.help.length > 20 && f.label.length > 3);
     }
   });
+  test("commitConvention: what the tab stores is what the next run reads — a blanked path field is a DEAD convention on that run; a list field commits its lines", () => {
+    const reg = CONVENTION_FIELDS.find((f) => f.key === "registriesRoot");
+    const ung = CONVENTION_FIELDS.find((f) => f.key === "ungovernedRoots");
+    const blanked = commitConvention(LEGACY_CONVENTIONS_SEED, reg, "   ");
+    assert.equal(blanked.registriesRoot, "");
+    assert.deepEqual(blanked.systemRoot, LEGACY_CONVENTIONS_SEED.systemRoot, "the other keys are untouched");
+    const walk = { dirs: [LEGACY_CONVENTIONS_SEED.systemRoot, LEGACY_CONVENTIONS_SEED.artifactsRoot, ...LEGACY_CONVENTIONS_SEED.ungovernedRoots], files: [LEGACY_CONVENTIONS_SEED.pluginStackPath, ...LEGACY_CONVENTIONS_SEED.uidExemptPaths] };
+    assert.deepEqual(deadConventionPaths(blanked, walk), [{ key: "registriesRoot", path: "" }], "the blank field is the one dead convention of the next run");
+    const pointed = commitConvention(blanked, reg, ` ${LEGACY_CONVENTIONS_SEED.registriesRoot} `);
+    assert.deepEqual(deadConventionPaths(pointed, { ...walk, dirs: [...walk.dirs, LEGACY_CONVENTIONS_SEED.registriesRoot] }), [], "pointing it at a live folder revives it");
+    assert.deepEqual(commitConvention({}, ung, " A \n\nB/ ").ungovernedRoots, ["A", "B/"]);
+    assert.deepEqual(commitConvention("garbage", reg, "R"), { ...EMPTY_VAULT_CONVENTIONS, registriesRoot: "R" }, "a corrupt current value cannot crash the tab");
+  });
+
   test("conventionFieldValue: a path trims; paths split lines, trim, drop blanks", () => {
     const pathF = CONVENTION_FIELDS.find((f) => f.key === "registriesRoot");
     const listF = CONVENTION_FIELDS.find((f) => f.key === "ungovernedRoots");
@@ -73,12 +88,22 @@ describe("who supplies the conventions — source-scan pins against 'threaded bu
     assert.match(cli, /const conv = opts\.conventions;/, "the runner reads the option, nothing else");
   });
   test("the in-app sources are handed a per-call conventions thunk from the live settings", () => {
-    assert.match(src("mcp/server.ts"), /\(\) => resolveConventions\(ctx\.getSettings\(\)\.vaultConventions\)/, "server.ts supplies the debt source's thunk, read per call");
+    assert.match(src("mcp/server.ts"), /obsidianDebtRenderSource\(\s*app,\s*\(\) => resolveTerritories\(ctx\.getSettings\(\)\.guardedTerritories\),\s*(?:\/\/[^\n]*\n\s*)*\(\) => resolveConventions\(ctx\.getSettings\(\)\.vaultConventions\),?\s*\)/, "server.ts supplies the debt source's conventions thunk as the THIRD argument of the one call, read per call — not as an expression left elsewhere");
     assert.match(src("main.ts"), /getConventions: \(\) => resolveConventions\(this\.settings\.vaultConventions\)/, "main.ts supplies the drift pane's thunk");
     assert.match(src("scheme/wiring.ts"), /obsidianDriftSource\(app, opts\.getTerritories, opts\.getConventions\)/, "wiring passes it through");
     assert.match(src("mcp/obsidian-debt-source.ts"), /conventions: conventions\?\.\(\) \?\? EMPTY_VAULT_CONVENTIONS/, "the debt source reads the thunk per run, EMPTY without one");
     assert.match(src("mcp/obsidian-drift-source.ts"), /conventions: conventions\?\.\(\) \?\? EMPTY_VAULT_CONVENTIONS/, "the drift source reads the thunk per run, EMPTY without one");
   });
+  test("the settings tab is wired: display() renders the Conformance tab, every field commits through commitConvention on blur and saves", () => {
+    const ui = src("connection-ui.ts");
+    assert.match(ui, /this\.renderConformanceTab\(panes\.get\("conformance"\)!\)/, "display() must render the tab or the fields never exist");
+    const tab = ui.slice(ui.indexOf("private renderConformanceTab("), ui.indexOf("private renderSecurityTab("));
+    assert.match(tab, /for \(const field of CONVENTION_FIELDS\)/, "one field per CONVENTION_FIELDS entry, not a hand-written subset");
+    assert.match(tab, /this\.plugin\.settings\.vaultConventions = commitConvention\(this\.plugin\.settings\.vaultConventions, field, raw\);\s*void this\.plugin\.saveSettings\(\);/, "the commit is the pure rule, then a save");
+    assert.equal((tab.match(/addEventListener\("blur", \(\) => commit\(t\.inputEl\.value\)\)/g) ?? []).length, 2, "both field kinds commit on blur (textarea and text)");
+    assert.match(ui, /import \{ CONVENTION_FIELDS, commitConvention \} from "\.\/conventions-policy\.js"/);
+  });
+
   test("main.ts seeds through conventionsOnLoad(own, seed) and persists when the key was absent", () => {
     const main = src("main.ts");
     assert.match(main, /const conventions = conventionsOnLoad\(own, seed\);/);

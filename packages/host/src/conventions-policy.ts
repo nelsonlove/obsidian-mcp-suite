@@ -69,3 +69,15 @@ export const CONVENTION_FIELDS: readonly ConventionField[] = [
 export function conventionFieldValue(field: ConventionField, raw: string): string | string[] {
   return field.kind === "path" ? raw.trim() : raw.split("\n").map((l) => l.trim()).filter(Boolean);
 }
+
+/** The record the settings tab STORES after one field loses focus: the
+ *  current setting (whatever shape it has) coerced, that one key replaced by
+ *  what the operator typed, coerced again — so what the tab writes is exactly
+ *  what `resolveConventions` reads back on the next debt or drift run. Pure:
+ *  the tab is Obsidian-bound, this rule is not, and a blank committed here is
+ *  a dead convention on the next run (pinned in conventions-policy.test.mjs). */
+export function commitConvention(current: unknown, field: ConventionField, raw: string): VaultConventions {
+  const next = resolveConventions(current) as unknown as Record<string, unknown>;
+  next[field.key] = conventionFieldValue(field, raw);
+  return resolveConventions(next);
+}

@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { runConformance, guardedTerritoryRefusal, NON_PATH_KEYED_CHECKS } from "../src/conformance/cli.ts";
+import { runConformance, runCli, guardedTerritoryRefusal, NON_PATH_KEYED_CHECKS } from "../src/conformance/cli.ts";
 import fs from "node:fs";
 import { ENGINE_ID } from "../src/conformance/engine.ts";
 import { coverageRefusal, baselinePackIds } from "../src/conformance/cli.ts";
@@ -346,5 +346,63 @@ describe("#403 — the plugin ships EMPTY conventions: every scalar key dead, lo
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe("#403 — the CLI entry reads VAULT_MCP_CONVENTIONS, and a legacy spelling still reaches the run", () => {
+  const ENV_KEYS = ["VAULT_MCP_CONVENTIONS", "GOVERNOR_VAULT_CONVENTIONS", "ASSENT_VAULT_CONVENTIONS"];
+  const withEnv = async (set, fn) => {
+    const saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
+    for (const k of ENV_KEYS) delete process.env[k];
+    Object.assign(process.env, set);
+    try { return await fn(); } finally {
+      for (const k of ENV_KEYS) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
+    }
+  };
+  const liveFixture = async () => {
+    const root = await vault();
+    for (const d of ["Sys/Registries", "Sys/Artifacts", "Sys/Framework", "Sys/T"]) await mkdir(path.join(root, d), { recursive: true });
+    await writeFile(path.join(root, "Sys", "Plugin stack.md"), "| Plugin | Status |\n");
+    await writeFile(path.join(root, "Sys", "T", "Daily.md"), "---\nuid:\n---\n");
+    await mkdir(path.join(root, ".obsidian", "plugins", "quickadd"), { recursive: true });
+    await writeFile(path.join(root, ".obsidian", "plugins", "quickadd", "data.json"), '{"choices":[]}');
+    await writeFile(path.join(root, ".obsidian", "community-plugins.json"), "[]");
+    // A baseline that NAMES drift_audit: with the conventions dead the coverage refusal fires (#294 by way of #298).
+    const baseline = path.join(root, "baseline.md");
+    await writeFile(baseline, "```ratchet-baseline\ndrift_audit|A|x|y\n```\n");
+    return { root, baseline };
+  };
+  const LIVE = JSON.stringify({ registriesRoot: "Sys/Registries", systemRoot: "Sys", artifactsRoot: "Sys/Artifacts", pluginStackPath: "Sys/Plugin stack.md", uidExemptPaths: ["Sys/T/Daily.md"], ungovernedRoots: ["Sys/Framework"] });
+  // runCli sets process.exitCode on a failed ratchet, which the test runner would read as this FILE failing; the run's outcome here is its message, so the code is reset after each call.
+  const cli = async (...argv) => {
+    const savedCode = process.exitCode;
+    try { await runCli(argv); return ""; } catch (e) { return e instanceof Error ? e.message : String(e); } finally { process.exitCode = savedCode ?? 0; }
+  };
+
+  test("unset: every convention is dead, and the coverage refusal names the settings remedy and VAULT_MCP_CONVENTIONS", async () => {
+    const { root, baseline } = await liveFixture();
+    try {
+      const msg = await withEnv({}, () => cli(`--root=${root}`, `--baseline=${baseline}`));
+      assert.match(msg, /DEAD convention path — set it in the plugin settings \(Conformance\) or VAULT_MCP_CONVENTIONS/);
+      assert.match(msg, /registriesRoot = \(empty\)/);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("VAULT_MCP_CONVENTIONS pointing at live paths: no dead convention, no coverage refusal", async () => {
+    const { root, baseline } = await liveFixture();
+    try {
+      const msg = await withEnv({ VAULT_MCP_CONVENTIONS: LIVE }, () => cli(`--root=${root}`, `--baseline=${baseline}`));
+      assert.doesNotMatch(msg, /DEAD convention/);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("the legacy spelling GOVERNOR_VAULT_CONVENTIONS still reaches the run (warned), and VAULT_MCP_CONVENTIONS wins when both are set", async () => {
+    const { root, baseline } = await liveFixture();
+    try {
+      const legacy = await withEnv({ GOVERNOR_VAULT_CONVENTIONS: LIVE }, () => cli(`--root=${root}`, `--baseline=${baseline}`));
+      assert.doesNotMatch(legacy, /DEAD convention/);
+      const both = await withEnv({ VAULT_MCP_CONVENTIONS: "{}", GOVERNOR_VAULT_CONVENTIONS: LIVE }, () => cli(`--root=${root}`, `--baseline=${baseline}`));
+      assert.match(both, /DEAD convention path/, "the new spelling (EMPTY here) wins over the legacy one");
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
 });

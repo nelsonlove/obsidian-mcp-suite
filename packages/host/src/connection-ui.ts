@@ -31,7 +31,7 @@ import {
   resolveTerritories,
 } from "@vault-mcp/core";
 import { hasGuardedTerritory } from "./territory-policy.js";
-import { CONVENTION_FIELDS, conventionFieldValue } from "./conventions-policy.js";
+import { CONVENTION_FIELDS, commitConvention } from "./conventions-policy.js";
 import { resolveConventions } from "./conformance/vault-conventions.js";
 
 // ── tabbed settings UI: the pure, DOM-free half ─────────────────────────────
@@ -451,9 +451,7 @@ export class VaultMcpSettingTab extends PluginSettingTab {
       const current = resolveConventions(this.plugin.settings.vaultConventions)[field.key];
       const shown = Array.isArray(current) ? current.join("\n") : current;
       const commit = (raw: string) => {
-        const next = resolveConventions(this.plugin.settings.vaultConventions);
-        (next as unknown as Record<string, unknown>)[field.key] = conventionFieldValue(field, raw);
-        this.plugin.settings.vaultConventions = resolveConventions(next);
+        this.plugin.settings.vaultConventions = commitConvention(this.plugin.settings.vaultConventions, field, raw);
         void this.plugin.saveSettings();
       };
       const setting = new Setting(containerEl).setName(field.label).setDesc(field.help);

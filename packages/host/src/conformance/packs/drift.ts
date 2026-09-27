@@ -239,8 +239,9 @@ export function driftPack(conv: VaultConventions): RulePack {
       // whose name ends with `suffix`, sorted by path (Python `sorted(rglob())`).
       const registryFamily = (suffix: string): RegistryNote[] =>
         sources
-          // The INJECTED root, not the module constant — the constant ignored
-          // every GOVERNOR_VAULT_CONVENTIONS override of this key (#298).
+          // The INJECTED root, not a module constant — a constant ignored every
+          // override of this key (#298); since #403 the root is the operator's
+          // conventions setting (or VAULT_MCP_CONVENTIONS for the CLI).
           .filter((s) => s.path.startsWith(REGISTRIES_ROOT + "/") && s.path.endsWith(suffix))
           .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
           .map((s) => ({ name: s.path.split("/").pop() ?? s.path, text: s.text }));
