@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { obsidianDriftSource } from "../src/mcp/obsidian-drift-source.ts";
 import { DEFAULT_BASELINE_REL } from "../src/conformance/cli.ts";
+import { LEGACY_CONVENTIONS_SEED as SEED } from "../src/conformance/vault-conventions.ts";
 
 const app = (root) => ({ vault: { adapter: { basePath: root } } });
 
@@ -30,7 +31,7 @@ describe("obsidianDriftSource — #294 coverage refusal", () => {
     delete process.env.GOVERNOR_BASELINE_REL;
     const root = await withBaseline("```ratchet-baseline\ndrift_audit|B|02.12|\n```\n");
     try {
-      await assert.rejects(() => obsidianDriftSource(app(root), () => []).scan(), /refusing to report: the baseline holds accepted debt for drift_audit/);
+      await assert.rejects(() => obsidianDriftSource(app(root), () => [], () => SEED).scan(), /refusing to report: the baseline holds accepted debt for drift_audit/);
     } finally {
       if (saved !== undefined) process.env.GOVERNOR_BASELINE_REL = saved;
       await rm(root, { recursive: true, force: true });
@@ -42,7 +43,7 @@ describe("obsidianDriftSource — #294 coverage refusal", () => {
     delete process.env.GOVERNOR_BASELINE_REL;
     const root = await withBaseline("```ratchet-baseline\nste_lint|editable|Notes/A.md|x\n```\n");
     try {
-      const groups = await obsidianDriftSource(app(root), () => []).scan();
+      const groups = await obsidianDriftSource(app(root), () => [], () => SEED).scan();
       assert.ok(Array.isArray(groups));
     } finally {
       if (saved !== undefined) process.env.GOVERNOR_BASELINE_REL = saved;

@@ -47,7 +47,7 @@
 // E/F without re-reading that issue.
 
 import { leadingFrontmatterBlock } from "@vault-mcp/core";
-import { DEFAULT_VAULT_CONVENTIONS, type VaultConventions } from "../vault-conventions.js";
+import type { VaultConventions } from "../vault-conventions.js";
 import type { Finding } from "../finding.js";
 import type { RulePack, SourceFile, VaultSnapshot } from "../rule-pack.js";
 import { requireSources, requireListing_ } from "../rule-pack.js";
@@ -57,7 +57,9 @@ export const DRIFT_PACK_ID = "drift_audit";
 
 /** Registries root (drift_audit.py's FBF) — where `.action`/`.property`/`.type`/
  * `.tag` registry notes live. */
-export const DEFAULT_REGISTRIES_ROOT = DEFAULT_VAULT_CONVENTIONS.registriesRoot;
+// (#403) There is no default registries root: the pack takes the operator's
+// conventions as a REQUIRED argument; the former constant was a second reader
+// of the shipped layout.
 /** The System spine (drift_audit.py's SYS) — J's category-collision scan root. */
 
 /** Where user-script/module surfaces resolve (drift_audit.py's BASE02). */
@@ -194,7 +196,7 @@ function requireQuickAddChoices(qaText: string | undefined): unknown[] {
   return choices;
 }
 
-export function driftPack(conv: VaultConventions = DEFAULT_VAULT_CONVENTIONS): RulePack {
+export function driftPack(conv: VaultConventions): RulePack {
   const UID_EXEMPT = new Set(conv.uidExemptPaths);
   const REGISTRIES_ROOT = conv.registriesRoot;
   const SYS_ROOT = conv.systemRoot;
@@ -237,8 +239,9 @@ export function driftPack(conv: VaultConventions = DEFAULT_VAULT_CONVENTIONS): R
       // whose name ends with `suffix`, sorted by path (Python `sorted(rglob())`).
       const registryFamily = (suffix: string): RegistryNote[] =>
         sources
-          // The INJECTED root, not the module constant — the constant ignored
-          // every GOVERNOR_VAULT_CONVENTIONS override of this key (#298).
+          // The INJECTED root, not a module constant — a constant ignored every
+          // override of this key (#298); since #403 the root is the operator's
+          // conventions setting (or VAULT_MCP_CONVENTIONS for the CLI).
           .filter((s) => s.path.startsWith(REGISTRIES_ROOT + "/") && s.path.endsWith(suffix))
           .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
           .map((s) => ({ name: s.path.split("/").pop() ?? s.path, text: s.text }));

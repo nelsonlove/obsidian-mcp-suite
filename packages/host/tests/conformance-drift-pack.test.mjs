@@ -27,11 +27,11 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { driftPack, DEFAULT_REGISTRIES_ROOT } from "../src/conformance/packs/index.ts";
-import { DEFAULT_VAULT_CONVENTIONS } from "../src/conformance/vault-conventions.ts";
+import { driftPack } from "../src/conformance/packs/index.ts";
+import { LEGACY_CONVENTIONS_SEED as SEED } from "../src/conformance/vault-conventions.ts";
 import { findingKey } from "../src/conformance/finding.ts";
 
-const FBF = DEFAULT_REGISTRIES_ROOT;
+const FBF = SEED.registriesRoot; // the legacy seed's root is the fixture (#403: the plugin ships none)
 const BASE02 = "00-09 System/02 Obsidian/02.03 Artifacts for 02 Obsidian";
 const PLUGSTACK = "00-09 System/02 Obsidian/02.12 Plugin stack.md";
 
@@ -51,7 +51,7 @@ function snap({ sources = [], files = [], dirs = [], walkOrder = [], config = {}
   const obsidianConfig = Object.entries(merged).map(([path, text]) => ({ path, text }));
   return { notes: [], paths: [], blueprints: [], sources, files, dirs, walkOrder, obsidianConfig };
 }
-const run = (s) => driftPack().run(s);
+const run = (s) => driftPack(SEED).run(s);
 const targets = (findings, letter) => findings.filter((f) => f.check === letter).map((f) => f.target);
 
 // ── key shape ─────────────────────────────────────────────────────────────────
@@ -117,7 +117,7 @@ describe("driftPack A (choices <-> actions)", () => {
 
   test("the refusal surfaces as a conformance_engine pack_error through the engine", async () => {
     const { runEngine } = await import("../src/conformance/engine.ts");
-    const pack = driftPack();
+    const pack = driftPack(SEED);
     const findings = runEngine([pack], snap({ sources: [actGhost], noQuickadd: true }));
     const err = findings.find((f) => f.script === "conformance_engine" && f.check === "pack_error");
     assert.ok(err, "expected a pack_error finding attributing the drift pack's refusal");
@@ -365,13 +365,13 @@ describe("driftPack J (category numbering)", () => {
 });
 
 describe("registryFamily reads the INJECTED registries root (#298 / #401 review)", () => {
-  test("an .action note under an overridden registriesRoot is a registry note; the same note under the default root is not", () => {
-    const conv = { ...DEFAULT_VAULT_CONVENTIONS, registriesRoot: "Reg" };
+  test("an .action note under an overridden registriesRoot is a registry note; the same note under the seed's root is not", () => {
+    const conv = { ...SEED, registriesRoot: "Reg" };
     const qa = JSON.stringify({ choices: [{ name: "Do X", command: true, type: "Macro" }] });
     const act = { path: "Reg/Actions/dox.action.md", text: "---\nsurfaces:\n  quickadd-choice: Do X\n---\n" };
     const ghostA = targets(driftPack(conv).run(snap({ sources: [act], config: { ".obsidian/plugins/quickadd/data.json": qa } })), "A");
     assert.ok(!ghostA.some((t) => /Do X/.test(t)), `with the override, 'Do X' is a registered action: ${JSON.stringify(ghostA)}`);
-    const withDefault = targets(driftPack().run(snap({ sources: [act], config: { ".obsidian/plugins/quickadd/data.json": qa } })), "A");
-    assert.ok(withDefault.some((t) => /Do X/.test(t)), `under the default root the same note is invisible, so the QuickAdd choice reads as unregistered: ${JSON.stringify(withDefault)}`);
+    const withDefault = targets(driftPack(SEED).run(snap({ sources: [act], config: { ".obsidian/plugins/quickadd/data.json": qa } })), "A");
+    assert.ok(withDefault.some((t) => /Do X/.test(t)), `under the seed's root the same note is invisible, so the QuickAdd choice reads as unregistered: ${JSON.stringify(withDefault)}`);
   });
 });

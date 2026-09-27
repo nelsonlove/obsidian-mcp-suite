@@ -20,12 +20,13 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { runEngine, ENGINE_ID } from "../src/conformance/engine.ts";
 import { portPack, stePack, structurePack, driftPack } from "../src/conformance/packs/index.ts";
+import { LEGACY_CONVENTIONS_SEED as SEED } from "../src/conformance/vault-conventions.ts";
 
 const PACKS = [
   ["port_lint", portPack],
   ["ste_lint", stePack],
-  ["conformance_check", structurePack],
-  ["drift_audit", driftPack],
+  ["conformance_check", () => structurePack({ conventions: SEED })],
+  ["drift_audit", () => driftPack(SEED)],
 ];
 
 const base = { notes: [], paths: [] };
@@ -64,7 +65,7 @@ describe("#125 — an ABSENT sources listing refuses; an EMPTY one is a real ans
   }
 
   test("structurePack distinguishes an absent BLUEPRINTS listing specifically", () => {
-    const findings = runEngine([structurePack()], { ...base, sources: [] });
+    const findings = runEngine([structurePack({ conventions: SEED })], { ...base, sources: [] });
     const errs = findings.filter((f) => f.check === "pack_error");
     assert.equal(errs.length, 1, "sources present but blueprints absent must still refuse");
     assert.match(errs[0].detail, /blueprints/i);
