@@ -97,7 +97,7 @@ export async function cmdValidate(ctx: SkillsGuiCtx): Promise<void> {
   const cfg = ctx.config();
   const a = await analyzeVault(ctx.backend, fieldsOf(cfg), cfg.pluginName, cfg.preloadCap);
   const lines = [
-    `${a.counts.agents} agents · ${a.counts.skills} skills · ${a.counts.policies} policies · ${a.counts.commands} commands`,
+    `${a.counts.agents} agents · ${a.counts.skills} skills · ${a.counts.policies} policies · ${a.excluded.total} not accepted (excluded) · ${a.counts.commands} commands`,
     "",
     ...(a.errors.length ? ["Errors:", ...a.errors.map((e) => "  ✖ " + e)] : ["No errors ✓"]),
     ...(a.warnings.length ? ["", "Warnings:", ...a.warnings.map((w) => "  ⚠ " + w)] : []),
@@ -149,7 +149,7 @@ export async function cmdMark(ctx: SkillsGuiCtx): Promise<void> {
     const before = ctx.backend.frontmatterOf(file.path) ?? {};
     const result = guardSkillsMark(before, { type, parent } as MarkInput, fields);
     await ctx.backend.applyFrontmatter(file.path, (fm) => applyMark(fm, result));
-    new Notice(`Vault Skills: marked "${file.basename}" as ${type}${parent ? ` · parent ${parent}` : ""}. Re-export to publish.`);
+    new Notice(`Vault Skills: marked "${file.basename}" as ${type}${parent ? ` · parent ${parent}` : ""}. It compiles once a human has verified it; then re-export to publish.`);
   } catch (e) {
     if (e instanceof AcceptForbiddenError) {
       new Notice(`Vault Skills: mark refused — it would set an acceptance field (${e.message}). Nothing written.`, 10000);
@@ -186,7 +186,7 @@ export async function cmdRelease(ctx: SkillsGuiCtx): Promise<void> {
     const issues = summary.errors.length ? ` · ${summary.errors.length} error(s): ${summary.errors[0]}` : "";
     new Notice(
       `Vault Skills: packaged ${version} → ${releaseDir}\n` +
-        `${summary.skills} skill(s) + ${summary.agents} agent(s) + ${summary.commands} command(s) + ${summary.assets} supporting file(s)${issues}\n` +
+        `${summary.skills} skill(s) + ${summary.agents} agent(s) + ${summary.commands} command(s) + ${summary.assets} supporting file(s)${summary.excluded.total ? ` · ${summary.excluded.total} not accepted (excluded)` : ""}${summary.excluded.transclusions.length ? ` · ${summary.excluded.transclusions.length} embedded note(s) refused` : ""}${issues}\n` +
         `Commit & tag in the repo to publish.`,
       summary.errors.length ? 12000 : 8000,
     );

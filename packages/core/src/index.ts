@@ -32,6 +32,8 @@ export {
   acceptTransitionNeedsBefore,
   isVerifiedKey,
   isBlankVerification,
+  isHumanVerification,
+  hasHumanVerification,
   unverifiableProtectedPropertyIn,
   parseProtectedPropertyLines,
   formatProtectedPropertyLines,

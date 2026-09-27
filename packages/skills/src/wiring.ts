@@ -91,6 +91,8 @@ export function wireSkills(plugin: Plugin, deps: SkillsWireDeps): void {
         `Vault Skills: exported ${summary.skills} skill(s) + ${summary.agents} agent(s)` +
           (summary.commands ? ` + ${summary.commands} command(s)` : "") +
           (summary.removed ? `, removed ${summary.removed}` : "") +
+          (summary.excluded.total ? `, ${summary.excluded.total} not accepted (excluded)` : "") +
+          (summary.excluded.transclusions.length ? `, ${summary.excluded.transclusions.length} embedded note(s) refused` : "") +
           issue("error(s)", summary.errors) +
           issue("warning(s)", summary.warnings) +
           `\nRun /reload-plugins in Claude Code to load.`,

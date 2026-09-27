@@ -248,8 +248,9 @@ describe("vaultmcp_skills_preview: bodies are filtered by the source note's visi
   const twoSkills = {
     ...inertSkillsSource,
     notes: async () => [
-      { path: "Projects/Visible.md", frontmatter: { type: "skill" }, body: "VISIBLE-BODY-MARKER" },
-      { path: "Archive/Hidden.md", frontmatter: { type: "skill" }, body: "HIDDEN-BODY-MARKER" },
+      // ACCEPTED fixtures: since the acceptance gate (01.41 rule 8) an unverified note does not compile at all.
+      { path: "Projects/Visible.md", frontmatter: { type: "skill", verified: [{ by: "human:nelson", at: "2026-09-25T05:08:39-04:00" }] }, body: "VISIBLE-BODY-MARKER" },
+      { path: "Archive/Hidden.md", frontmatter: { type: "skill", verified: [{ by: "human:nelson", at: "2026-09-25T05:08:39-04:00" }] }, body: "HIDDEN-BODY-MARKER" },
     ],
   };
 
@@ -312,7 +313,8 @@ describe("vaultmcp_skills_preview: assembled bodies cannot smuggle hidden notes 
       buildSkillsTools(
         {
           ...inertSkillsSource,
-          notes: async () => notes,
+          // The supplied notes stand for ACCEPTED notes (the gate excludes an unverified one before any of this runs).
+          notes: async () => notes.map((n) => ({ ...n, frontmatter: { verified: [{ by: "human:nelson", at: "2026-09-25T05:08:39-04:00" }], ...n.frontmatter } })),
           embed: embed ?? (async () => null),
           // The inert source resolves nothing, which would leave a policy's
           // `parent` dangling — the policy would then be DROPPED as an error and
@@ -412,5 +414,37 @@ describe("settings adoption: the host's modules.skills.config is copied once, an
     assert.deepEqual(settingsOf(null), { config: {}, adoptedFromHost: false });
     assert.deepEqual(settingsOf("nonsense"), { config: {}, adoptedFromHost: false });
     assert.deepEqual(settingsOf({ config: [], adoptedFromHost: "yes" }), { config: {}, adoptedFromHost: false });
+  });
+});
+
+// ── the excluded record on every TOOL payload (the surface an agent reads) ────
+
+describe("the acceptance gate's record reaches every tool payload", () => {
+  const gated = {
+    ...inertSkillsSource,
+    notes: async () => [
+      { path: "Projects/Ok.md", frontmatter: { type: "skill", verified: [{ by: "human:nelson", at: "2026-09-25T05:08:39-04:00" }] }, body: "ok" },
+      { path: "Projects/No.md", frontmatter: { type: "skill" }, body: "not accepted" },
+    ],
+    basePath: () => null,
+  };
+  const CONFIG = { typeMap: { skill: "skill" }, includeRoots: ["Projects"] };
+  const tool = (name) => toolNamed(buildSkillsTools(gated, { config: () => CONFIG }), name).handler;
+  const EXPECT = { total: 1, byKind: { skill: 1, agent: 0, policy: 0, command: 0 }, paths: ["Projects/No.md"], transclusions: [] };
+
+  test("validate, tree and preview carry `excluded`", async () => {
+    assert.deepEqual((await tool("validate")({})).excluded, EXPECT);
+    assert.deepEqual((await tool("tree")({})).excluded, EXPECT);
+    assert.deepEqual((await tool("preview")({})).excluded, EXPECT);
+  });
+
+  test("export carries `excluded` in its summary", async () => {
+    const fs = await import("node:fs"); const os = await import("node:os"); const path = await import("node:path");
+    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "vaultmcp-skills-tool-"));
+    try {
+      const withDir = toolNamed(buildSkillsTools(gated, { config: () => ({ ...CONFIG, outputDir }) }), "export").handler;
+      const r = await withDir({});
+      assert.deepEqual(r.excluded, EXPECT);
+    } finally { fs.rmSync(outputDir, { recursive: true, force: true }); }
   });
 });

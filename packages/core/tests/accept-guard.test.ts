@@ -19,6 +19,8 @@ import {
   AcceptForbiddenError,
   acceptTransitionReason,
   acceptForbiddenReason,
+  hasHumanVerification,
+  isHumanVerification,
   unverifiableProtectedPropertyIn,
   acceptTransitionNeedsBefore,
   normalizeProtectedProperties,
@@ -797,5 +799,38 @@ describe("scanForAcceptFence: a block YAML cannot parse that carries a `verified
   test("a parseable block with `verified` is refused structurally, through acceptForbiddenReason", () => {
     const yaml = (b: string) => ({ verified: [] });
     assert.match(scanForAcceptFence("---\nverified: []\n---\nbody", yaml) ?? "", /verification field 'verified'/);
+  });
+});
+
+describe("hasHumanVerification — the ACCEPTED state of 01.41, kept in core beside the guard as the one predicate the compiler reads", () => {
+  const human = { by: "human:nelson", at: "2026-09-25T05:08:39-04:00" };
+  test("a `verified` list with one entry naming a `human:` actor is accepted; machine entries beside it change nothing", () => {
+    assert.equal(hasHumanVerification({ verified: [human] }), true);
+    assert.equal(hasHumanVerification({ verified: [{ by: "vault-mcp/0.19.0", at: "x" }, human] }), true);
+    assert.equal(hasHumanVerification({ Verified: [human], title: "t" }), true, "the key is matched case-insensitively");
+    assert.equal(hasHumanVerification({ verified: human }), true, "one entry object, not a list, still counts");
+  });
+  test("machine-only, blank, absent, retired-family or malformed ⇒ NOT accepted", () => {
+    assert.equal(hasHumanVerification({ verified: [{ by: "vault-mcp/0.19.0", at: "x" }] }), false, "an agent's own check");
+    assert.equal(hasHumanVerification({ verified: [{ by: "process:nightly", at: "x" }] }), false, "a scheduled job's check");
+    assert.equal(hasHumanVerification({ verified: [] }), false, "blank");
+    assert.equal(hasHumanVerification({ verified: null }), false);
+    assert.equal(hasHumanVerification({ verified: "human:nelson" }), false, "a string is not an entry");
+    assert.equal(hasHumanVerification({ verified: [{ at: "x" }] }), false, "no actor");
+    assert.equal(hasHumanVerification({ verified: [{ by: "nelson" }] }), false, "no prefix, no tier");
+    assert.equal(hasHumanVerification({ verified: [{ by: "Human:nelson" }] }), false, "the prefix is exact");
+    assert.equal(hasHumanVerification({ verified: [{ by: "human:" }] }), false, "the prefix alone names nobody");
+    assert.equal(hasHumanVerification({ verified: [{ by: "human:   " }] }), false, "blank after the prefix names nobody");
+    assert.equal(hasHumanVerification({ verified: [{ by: "human: nelson" }] }), true, "a space after the prefix still names someone");
+    assert.equal(hasHumanVerification({ "accepted-by": "nelson", "acceptance-status": "accepted" }), false, "the retired family confirms nothing");
+    assert.equal(hasHumanVerification({ "verified-by": "human:nelson" }), false, "only the live `verified` key holds entries");
+    assert.equal(hasHumanVerification({}), false);
+    assert.equal(hasHumanVerification(null), false);
+  });
+  test("isHumanVerification on one entry", () => {
+    assert.equal(isHumanVerification(human), true);
+    assert.equal(isHumanVerification({ by: "process:x" }), false);
+    assert.equal(isHumanVerification([human]), false, "a list is not an entry");
+    assert.equal(isHumanVerification("human:nelson"), false);
   });
 });

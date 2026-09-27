@@ -48,7 +48,9 @@ npm test               # tsc --noEmit && node --test 'tests/*.test.mjs'
 
 `pretest` rebuilds `@vault-mcp/core` first, for the same reason the host's does: several tests import published core contracts from `packages/core/dist`, so without the rebuild you are testing the previous build's bytes.
 
-## Nothing compiles until the operator names their classes and folders
+## Nothing unaccepted compiles, and nothing compiles until the operator names their classes and folders
+
+A typed note compiles only when a human has verified it (a `verified` entry naming a `human:` actor, 01.41 rule 8); the excluded notes are counted and named on every surface. The rule and its pins are in `CLAUDE.md` and `docs/skills.md`.
 
 Since #404 the plugin ships no vault convention: the type map (`<vault type> = skill|agent|policy|command`) and the folders to compile (`includeRoots` / `excludeRoots`) are settings with EMPTY defaults, and the compile, the preview and the settings validation say so loudly rather than compile nothing in silence. The kernel keeps an identity map for its direct callers, so `analyzeVault` / `runExport` over bare `type: skill` notes are unchanged. `tests/skills-settings-404.test.mjs` holds the switch test the fleet runs before retiring the `~/.claude/agents` symlink: with the rank folder as the only root and `Person/Agent = agent`, exactly the rank definitions compile. The full account is `docs/skills.md` ("Config") and the locked decision in `CLAUDE.md`.
 
