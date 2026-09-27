@@ -130,7 +130,18 @@ describe("driftPack E (duplicate uid)", () => {
     assert.deepEqual(run(s), []);
   });
 
-  test("a blank or absent uid is no identity — nothing to exempt, so nothing is (#412 retired the carve-out)", () => {
+  test("the carve-out is GONE (#412): a duplicate claimant at the seed's former uid-exempt path IS a home, and the pair is a finding", () => {
+    const tpl = "00-09 System/00 System management/00.05 Registries for the system/Daily notes/Daily note.template.md";
+    const s = snap({ walkOrder: [tpl, "Notes/a.md"], sources: [withUid(tpl), withUid("Notes/a.md")] });
+    const [f] = run(s);
+    assert.ok(f && f.check === "E", "the former exemption no longer hides a claimant");
+    assert.equal(f.detail, `E: uid ${UID} is claimed by 2 notes: ${tpl}; Notes/a.md`);
+    // and no path shape is exempt under another name either
+    const t2 = "Templates/x.template.md";
+    assert.equal(run(snap({ walkOrder: [t2, "Notes/a.md"], sources: [withUid(t2), withUid("Notes/a.md")] })).length, 1);
+  });
+
+  test("a blank or absent uid is no identity", () => {
     const blank = (p) => ({ path: p, text: "---\nuid:\n---\n" });
     const s = snap({ walkOrder: ["T/a.md", "T/b.md", "Notes/c.md"], sources: [blank("T/a.md"), blank("T/b.md"), noUid("Notes/c.md")] });
     assert.deepEqual(run(s), []);
@@ -171,6 +182,11 @@ describe("driftPack J (category numbering)", () => {
     const dirs = ["Sys/00 Alpha", "Sys/00 Beta"];
     assert.deepEqual(targets(run(snap({ dirs })), "J"), [], "under the seed's spine these folders are invisible");
     assert.deepEqual(targets(driftPack({ ...SEED, systemRoot: "Sys" }).run(snap({ dirs })), "J"), ["category number 00 is claimed by 2 folders: 00 Alpha; 00 Beta"]);
+  });
+
+  test("the claimants in a J message are SORTED, whatever order the walk listed them (the key is a function of the vault)", () => {
+    const dirs = ["00-09 System/00 Zeta", "00-09 System/00 Alpha", "00-09 System/00 Mid"];
+    assert.deepEqual(targets(run(snap({ dirs })), "J"), ["category number 00 is claimed by 3 folders: 00 Alpha; 00 Mid; 00 Zeta"]);
   });
 
   test("a folder whose name does not start with a two-digit code and a space is not a claimant", () => {

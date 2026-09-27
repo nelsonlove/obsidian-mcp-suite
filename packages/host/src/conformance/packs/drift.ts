@@ -17,7 +17,7 @@
 //   C  RETIRED before the port (print-only)
 //   D  `.action` script/module/template surfaces  <->  filesystem existence          RETIRED (#412: read the registry family and `artifactsRoot`)
 //   E  duplicate note `uid` values                                                    [findings] — kept
-//   F  notes without a usable `uid` (one aggregated finding)                          RETIRED (#412: its only convention was the uid-exempt carve-out; uid coverage is the fileclass system's required-field validation)
+//   F  notes without a usable `uid` (one aggregated finding)                          RETIRED (#412: its only convention was the uid-exempt carve-out; uid coverage is reported by `obsidian_check_links` (`uid_coverage`) and enforced at accept by Governor's required-frontmatter-keys gate)
 //   G  registry naming self-consistency (title / filename / H1 agree)                 RETIRED (#412: read the registry family)
 //   H  tag registration — dropped before the port (print-only)
 //   I  band filing — dropped before the port (print-only)
@@ -28,8 +28,11 @@
 // with a blank uid cannot be a duplicate claimant. The retired checks' accepted
 // keys (`drift_audit|A|…`, `|B|`, `|D|`, `|G|`) in a live baseline are no
 // longer produced, and the coverage refusal works at PACK granularity, so they
-// read CLEARED on the next run: that pruning is a deliberate rebaseline, a
-// human act, not something this file does.
+// read CLEARED on the next run (the report names them as RETIRED CHECK
+// clears). Pruning them is a human act — `--rebaseline --baseline=<copy>`
+// over a reviewed copy, then the human applies it to the vault's acceptance
+// record, which `--rebaseline` refuses to touch directly — not something
+// this file does.
 //
 // Finding key (the ratchet's `parse_drift` normalization, frozen by the live
 // `Conformance baseline.md`): each Python finding string was `"{LETTER}: {rest}"`,

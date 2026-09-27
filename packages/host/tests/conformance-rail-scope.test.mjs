@@ -47,7 +47,7 @@ describe("#112 — an excluded root must never silently clear accepted debt", ()
 
   test("a drift key whose target is a MESSAGE, not a path, is unaffected", () => {
     assert.equal(
-      excludedRootRefusal(new Set(["drift_audit|A|choice 'X' does not exist in QuickAdd config|"]), ["Vault archaeology"]),
+      excludedRootRefusal(new Set(["drift_audit|J|category number 00 is claimed by 2 folders: 00 A; 00 B|"]), ["Vault archaeology"]),
       null,
     );
   });

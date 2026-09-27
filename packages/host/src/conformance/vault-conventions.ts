@@ -196,8 +196,11 @@ export interface WalkPruning {
 
 /**
  * Every convention path the walk did not see. `dirs`/`files` are the walk's
- * own listings (vault-relative) and are REQUIRED (`files` is kept in the
- * contract so a caller that walked cannot half-supply it): an absent listing throws,
+ * own listings (vault-relative) and are REQUIRED: an absent listing throws,
+ * never reads as "everything is dead". Since #412 every key names a FOLDER,
+ * so no key is checked against `files` any more; it stays in the contract so
+ * the walk's two listings travel together and a half-supplied walk refuses.
+ * Also: an absent listing throws,
  * never reads as "everything is dead" — the absence-read-as-emptiness idiom
  * this rail refuses by name (`requireListing_`). A path under anything the
  * walk pruned — an excluded root, a skipped territory, a skip-dir segment — is

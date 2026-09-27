@@ -51,7 +51,7 @@ export interface ConventionField {
 }
 
 /** One field per key of `VaultConventions`, in the order the tab shows them.
- *  A `path` field is one folder or note path (blank = that convention is
+ *  A `path` field is one folder path (blank = that convention is
  *  DEAD, its packs not measured); a `paths` field is one path per line (empty
  *  = none). The help names the packs each key feeds, from `CONVENTION_PACKS`. */
 export const CONVENTION_FIELDS: readonly ConventionField[] = [

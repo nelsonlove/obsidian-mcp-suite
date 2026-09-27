@@ -42,34 +42,27 @@ export interface VaultSnapshot {
    * sources — emitted-H2 derivation + `{% include %}` resolution). Optional
    * for the same reason; reach it through `requireBlueprints`. */
   blueprints?: SourceFile[];
-  /** Every FILE path under root (all extensions, not just note types), for the
-   * drift pack's `.exists()` checks (`user-script` / `module` / `template`
-   * surfaces resolve to arbitrary files — `.js` library scripts, `.md`
-   * templates). Skip-dirs and `excludedRoots` are pruned, matching the walk.
-   * Optional so a hand-built snapshot (tests, other packs) is unaffected. */
+  /** Every FILE path under root (all extensions, not just note types),
+   * skip-dirs and `excludedRoots` pruned, matching the walk. No pack reads it
+   * since #412 retired drift's surface-existence check; it travels with
+   * `dirs` into the dead-convention check, which takes the walk's two
+   * listings together. Optional so a hand-built snapshot is unaffected. */
   files?: string[];
   /** Every DIRECTORY path under root (skip-dirs/`excludedRoots` pruned), for
-   * the drift pack's `.exists()` checks and its category-collision scan (J,
-   * which enumerates the `00-09 System` spine's direct children). Optional. */
+   * the drift pack's category-collision scan (J, which enumerates the system
+   * spine's direct children) and the dead-convention check. Optional. */
   dirs?: string[];
   /** Every collected `.md` note path in Python-`rglob` TRAVERSAL ORDER (raw
    * directory order, a directory's files before its subdirectories, pre-order
-   * DFS) — NOT sorted. The drift pack's uid checks (E duplicate-uid, F
-   * uid-coverage) embed a traversal-ordered sample of paths in their finding
-   * MESSAGE (`detail`), so they must iterate the exact order
-   * `drift_audit.py`'s `iter_notes` did to stay message-parity with the
-   * Python rail. The traversal order does NOT feed the finding KEY for E/F —
-   * that key is deliberately count/order-independent (issue #136) — but it
-   * still governs `detail` and must match. Every other pack (and drift's
-   * other checks) is order-independent and reads the sorted listings above.
+   * DFS) — NOT sorted. The drift pack's duplicate-uid check (E) embeds a
+   * traversal-ordered homes list in its finding MESSAGE (`detail`), so it
+   * must iterate the exact order `drift_audit.py`'s `iter_notes` did to stay
+   * message-parity with the Python rail. The traversal order does NOT feed
+   * E's finding KEY — that key is deliberately count/order-independent (issue
+   * #136) — but it still governs `detail` and must match. Every other pack
+   * (and drift's J) is order-independent and reads the sorted listings above.
    * Optional. */
   walkOrder?: string[];
-  /** Raw text of the specific `.obsidian` config files the drift pack reads —
-   * `.obsidian/community-plugins.json`, `.obsidian/plugins/quickadd/data.json`,
-   * and each `.obsidian/plugins/<id>/manifest.json` — keyed by their
-   * vault-relative path. These live under a skip-dir, so the walk never
-   * collects them; the snapshot reads this fixed set explicitly. Optional. */
-  obsidianConfig?: SourceFile[];
 }
 
 export interface RulePack {
@@ -119,8 +112,9 @@ function requireListing(
  * empty). Generic because the class has five recorded members: a missing
  * baseline read as empty (#133), an absent quickadd config reported as
  * CONFORMING (#136), unparseable frontmatter read as no frontmatter (#104's
- * residual), absent `sources` (#125), and the `files`/`dirs`/`obsidianConfig`/
- * `walkOrder` fields closed here. Each cost an investigation; a shared helper
+ * residual), absent `sources` (#125), and the `files`/`dirs`/`walkOrder`
+ * fields closed here (`obsidianConfig` was a fifth until #412 retired the
+ * drift checks that read it, and the listing with them). Each cost an investigation; a shared helper
  * is what stops a sixth being written by copying the old idiom.
  */
 export function requireListing_<T>(listing: T[] | undefined, packId: string, which: string): T[] {

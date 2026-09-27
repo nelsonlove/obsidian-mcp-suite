@@ -55,7 +55,7 @@ export interface SettingsTab {
 export const STATIC_SETTINGS_TABS: readonly SettingsTab[] = [
   { id: "connection", name: "Connection" },
   { id: "security", name: "Security" },
-  // #403: the conformance rail's vault conventions, six fields, no shipped values.
+  // #403: the conformance rail's vault conventions, three fields since #412, no shipped values.
   { id: "conformance", name: "Conformance" },
 ];
 

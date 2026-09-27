@@ -13,7 +13,7 @@ import path from "node:path";
 import { runConformance, runCli, guardedTerritoryRefusal, NON_PATH_KEYED_CHECKS } from "../src/conformance/cli.ts";
 import fs from "node:fs";
 import { ENGINE_ID } from "../src/conformance/engine.ts";
-import { coverageRefusal, baselinePackIds } from "../src/conformance/cli.ts";
+import { coverageRefusal, baselinePackIds, RETIRED_CHECKS, retiredClears } from "../src/conformance/cli.ts";
 import { parseBaseline } from "../src/conformance/ratchet.ts";
 import { fileURLToPath } from "node:url";
 import { LEGACY_CONVENTIONS_SEED as SEED } from "../src/conformance/vault-conventions.ts";
@@ -211,7 +211,7 @@ describe("#398 / #400 review — a uid-keyed baseline key must not clear silentl
   const vocab = [{ id: "reg", provider: "blueprint", root: "Reg" }];
 
   test("a uid-keyed baseline key the live run does not reproduce: CLEARED when nothing was skipped, REFUSED when something was", async () => {
-    // Drift's E/F keys carry a uid or a bare token, not a path, so the strand
+    // Drift's E key carries a uid, not a path, so the strand
     // check cannot place them inside or outside a skipped folder. The bare
     // fixture cannot make the drift pack emit one (it needs vault scaffolding —
     // #298), so the key is planted in the baseline: what is under test is the
@@ -289,6 +289,27 @@ describe("#298 — a dead convention path is a loud finding and an unmeasured pa
       assert.ok(!res.findings.some((f) => f.check === "dead_convention"));
       assert.ok(res.coveredPackIds.includes("drift_audit") && res.coveredPackIds.includes("conformance_check"));
       assert.doesNotMatch(res.report, /DEAD CONVENTION/);
+      assert.doesNotMatch(res.report, /RETIRED CHECK/, "nothing cleared, nothing retired to name");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("#412: a baseline key of a RETIRED check clears at pack granularity (drift_audit ran) — the report names it as cleared by retirement, not repair; an E key that clears is an ordinary clear", async () => {
+    const root = await vault();
+    try {
+      for (const d of ["Sys/Registries", "Sys/Framework"]) await mkdir(path.join(root, d), { recursive: true });
+      const live = { registriesRoot: "Sys/Registries", systemRoot: "Sys", ungovernedRoots: ["Sys/Framework"] };
+      const A = "drift_audit|A|choice 'X' is command-enabled but no .action entry names it|", G = "drift_audit|G|x.tag.md title is 'None', the filename says 'x.tag'|", E = "drift_audit|E|01234567-89ab-7cde-8f01-23456789abcd|dup-uid";
+      const res = await runConformance({ root, conventions: live, baselineText: "```ratchet-baseline\n" + [A, G, E].join("\n") + "\n```\n", vocabularies: vocab, schemes: [] });
+      assert.ok(res.coveredPackIds.includes("drift_audit"), "the pack ran, so the coverage refusal does not fire");
+      assert.equal(coverageRefusal(baselinePackIds(parseBaseline("```ratchet-baseline\n" + A + "\n```\n")), new Set(res.coveredPackIds), "run"), null, "pack granularity cannot see a retired check");
+      for (const k of [A, G, E]) assert.ok(res.ratchet.clearedKeys.includes(k), `${k} clears`);
+      assert.deepEqual(retiredClears(res.ratchet.clearedKeys).sort(), [A, G].sort(), "the two retired keys, not the live E");
+      assert.match(res.report, /RETIRED CHECK: 2 of the 3 cleared key\(s\) clear because their check was retired \(#412: drift_audit A\/B\/D\/F\/G\), not because the vault was fixed — prune them by a reviewed rebaseline \(--rebaseline --baseline=<copy>, then a human applies it to the acceptance record\)/);
+      assert.deepEqual([...RETIRED_CHECKS].sort(), ["drift_audit|A", "drift_audit|B", "drift_audit|D", "drift_audit|F", "drift_audit|G"]);
+      const drift = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "conformance", "packs", "drift.ts"), "utf8");
+      for (const c of RETIRED_CHECKS) assert.doesNotMatch(drift, new RegExp(`push\\(\\s*"${c.split("|")[1]}"`), `${c} is indeed retired in the pack`);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

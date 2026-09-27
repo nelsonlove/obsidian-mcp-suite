@@ -175,8 +175,8 @@ interface VaultMcpSettings {
   guardedTerritories: string[];
   /**
    * The vault conventions the conformance rail's legacy packs read (#403):
-   * where the registries live, the system spine, the artifacts root, the
-   * plugin-stack note, the uid-exempt notes, the ungoverned roots. EMPTY BY
+   * where the registries live, the system spine, the ungoverned roots (three
+   * since #412 retired the drift checks that read the other three). EMPTY BY
    * DEFAULT — the plugin ships no vault layout (the 2026-09-22 ruling) — and an
    * empty key reads as that convention DEAD: its packs register, are not
    * measured, and the report says so. An install that predates this setting
