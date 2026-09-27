@@ -168,8 +168,13 @@ export interface DeadConvention {
  *  measure honestly while the key is dead. `registriesRoot` was drift's
  *  registry-family root as well as structure's blueprint-registry root until
  *  #412 retired the registry-family checks; it now feeds structure alone.
- *  `port_lint` and `ste_lint` read no convention. Pinned against the packs'
- *  own sources. */
+ *  `port_lint` reads no convention. `ste_lint` reads `registriesRoot` ONLY to
+ *  narrow its editable bucket (the registries' `System architecture` folder
+ *  is reviewer prose, #411), never to enable a measurement, so it is not
+ *  listed: a blank root narrows nothing and the pack still measures honestly,
+ *  whereas listing it would make the whole STE pack "not measured" over a
+ *  vault that simply has no registries. Pinned against the packs' own
+ *  sources. */
 export const CONVENTION_PACKS: Record<ConventionPathKey, readonly string[]> = {
   registriesRoot: ["conformance_check"],
   systemRoot: ["drift_audit"],

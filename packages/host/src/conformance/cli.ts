@@ -152,7 +152,7 @@ export async function runConformance(opts: RunOpts): Promise<RunResult> {
       skipDirs: DEFAULT_SKIP,
     });
     const unmeasured = new Set(deadConventions.flatMap((d) => CONVENTION_PACKS[d.key]));
-    const legacy: RulePack[] = [structurePack({ conventions: conv }), portPack(), stePack(), driftPack(conv)];
+    const legacy: RulePack[] = [structurePack({ conventions: conv }), portPack(), stePack(conv), driftPack(conv)];
     for (const pack of legacy) {
       packs.push(unmeasured.has(pack.id) ? { id: pack.id, run: () => [] } : pack);
       if (unmeasured.has(pack.id)) unmeasuredPackIds.add(pack.id);

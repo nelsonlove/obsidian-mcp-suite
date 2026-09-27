@@ -14,6 +14,7 @@
  */
 
 import { test, describe } from "node:test";
+import fs from "node:fs";
 import assert from "node:assert/strict";
 import { structurePack, portPack, stePack } from "../src/conformance/packs/index.ts";
 import { proseLines, steHits } from "../src/conformance/packs/ste.ts";
@@ -194,7 +195,7 @@ describe("portPack (port_lint)", () => {
 
 describe("stePack (ste_lint)", () => {
   const run1 = (text, path = "Notes/prose.md") =>
-    stePack().run(snapshot({ sources: [{ path, text }] }));
+    stePack(SEED).run(snapshot({ sources: [{ path, text }] }));
 
   test("flags each mechanical check; kind = \"<name> '<token lower-cased>'\"", () => {
     const kinds = new Set(run1("This Should be split; it's been fixed.\n").map((f) => f.kind));
@@ -229,6 +230,21 @@ describe("stePack (ste_lint)", () => {
     assert.ok(run1(bad, "Notes/editable.md").length > 0);
   });
 
+  test("#411: the registries' System architecture folder is band01 under the INJECTED registriesRoot, not a baked-in path", () => {
+    const bad = "This should not count; really.\n";
+    const underSeed = `${SEED.registriesRoot}/System architecture/z.md`;
+    assert.deepEqual(run1(bad, underSeed), [], "under the seed's root: reviewer prose, excluded");
+    assert.ok(stePack({ ...SEED, registriesRoot: "Reg" }).run(snapshot({ sources: [{ path: underSeed, text: bad }] })).length > 0, "under another root the same note is editable prose");
+    assert.deepEqual(stePack({ ...SEED, registriesRoot: "Reg" }).run(snapshot({ sources: [{ path: "Reg/System architecture/z.md", text: bad }] })), [], "and the other root's folder is band01");
+    assert.ok(stePack({ ...SEED, registriesRoot: "" }).run(snapshot({ sources: [{ path: underSeed, text: bad }] })).length > 0, "a BLANK root names no registries folder: the note is editable and still measured");
+    assert.ok(stePack({ ...SEED, registriesRoot: "Reg/" }).run(snapshot({ sources: [{ path: "Reg/System architecture-ish/z.md", text: bad }] })).length > 0, "segment boundary: a sibling folder with the prefix is not the band");
+    assert.deepEqual(stePack({ ...SEED, registriesRoot: "Reg/" }).run(snapshot({ sources: [{ path: "Reg/System architecture/z.md", text: bad }] })), [], "a trailing slash on the root is not a difference: the folder is still the band");
+    assert.ok(stePack({ ...SEED, registriesRoot: "Reg" }).run(snapshot({ sources: [{ path: "10-19 Personal/notes about Reg/System architecture/x.md", text: bad }] })).length > 0, "the root is a PREFIX: its folder name appearing mid-path is not the band");
+    const src = fs.readFileSync(new URL("../src/conformance/packs/ste.ts", import.meta.url), "utf8");
+    assert.doesNotMatch(src, /Registries for the system/, "no vault path baked into the pack");
+    assert.match(src, /conv\.registriesRoot/, "the pack reads the injected root");
+  });
+
   test("identical-token hits in one file collapse to one finding", () => {
     const hits = run1("should here\nshould there\nShould again\n").filter((f) => f.kind === "modal 'should'");
     assert.equal(hits.length, 1);
@@ -244,7 +260,7 @@ describe("stePack (ste_lint)", () => {
 
 describe("stePack (#227) — BOM'd frontmatter is exempt via the shared recognizer", () => {
   const run1 = (text, path = "Notes/prose.md") =>
-    stePack().run(snapshot({ sources: [{ path, text }] }));
+    stePack(SEED).run(snapshot({ sources: [{ path, text }] }));
 
   test("a BOM'd note's frontmatter is exempt (was linted as prose)", () => {
     // Pre-fix, `lines[0] === "---"` failed on a BOM-prefixed "---", so `desc:` was
