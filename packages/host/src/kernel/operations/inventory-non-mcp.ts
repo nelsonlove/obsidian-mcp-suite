@@ -339,7 +339,7 @@ export const BRIDGE_SURFACES: PlainSurfaceRow[] = [
     // On success — and on "already registered" — it calls
     // `claudeEnsureConnectPlugin`, which runs
     //
-    //     claude plugin marketplace add nelsonlove/claude-code-plugins
+    //     claude plugin marketplace add nelsonlove/obsidian-mcp-suite
     //     claude plugin install vault-mcp-connect@... --scope user
     //
     // That adds a third-party MARKETPLACE SOURCE to the user's Claude Code
