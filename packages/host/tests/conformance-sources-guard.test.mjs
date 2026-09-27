@@ -24,7 +24,7 @@ import { LEGACY_CONVENTIONS_SEED as SEED } from "../src/conformance/vault-conven
 
 const PACKS = [
   ["port_lint", portPack],
-  ["ste_lint", stePack],
+  ["ste_lint", () => stePack(SEED)],
   ["conformance_check", () => structurePack({ conventions: SEED })],
   ["drift_audit", () => driftPack(SEED)],
 ];
@@ -68,7 +68,7 @@ describe("#125 — an ABSENT sources listing refuses; an EMPTY one is a real ans
   });
 
   test("the refusal is per-pack: one broken pack does not suppress the others", () => {
-    const findings = runEngine([portPack(), stePack()], { ...base });
+    const findings = runEngine([portPack(), stePack(SEED)], { ...base });
     const errs = findings.filter((f) => f.check === "pack_error");
     assert.deepEqual(errs.map((e) => e.target).sort(), ["port_lint", "ste_lint"]);
     for (const e of errs) assert.match(e.detail, /absent|missing/i, "each must be a refusal, not a crash");

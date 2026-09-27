@@ -19,6 +19,7 @@
 
 import { stripLeadingBom, stripLeadingFrontmatter } from "@vault-mcp/core";
 import type { Finding } from "../finding.js";
+import type { VaultConventions } from "../vault-conventions.js";
 import type { RulePack, VaultSnapshot } from "../rule-pack.js";
 import { requireSources } from "../rule-pack.js";
 import { hasDotOrTrashSegment, firstSegment } from "./legacy-scope.js";
@@ -116,19 +117,27 @@ export function steHits(text: string): { line: number; name: string; token: stri
  * frozen history; the architecture band (the `01 System architecture` spine or
  * the registries' `System architecture` folder) is reviewer-owned prose;
  * everything else is editable — what a cycle can actually improve. Only
- * "editable" is keyed by the ratchet. */
-export function classify(vaultPath: string): "frozen" | "band01" | "editable" {
+ * "editable" is keyed by the ratchet.
+ *
+ * The registries' folder is derived from the operator's `registriesRoot`
+ * (#411): it was one vault's path baked into the pack, unreachable from the
+ * conventions setting, so on any other layout the bucket silently never
+ * matched. A BLANK root names no registries folder, so nothing lands in that
+ * bucket — the pack still measures every other note honestly, which is why
+ * `ste_lint` is NOT listed in `CONVENTION_PACKS` (the key only narrows the
+ * editable set; it never enables the measurement). */
+export function classify(vaultPath: string, registriesRoot = ""): "frozen" | "band01" | "editable" {
   if (/\.04 Records for /.test(vaultPath)) return "frozen";
-  if (
-    vaultPath.includes("/01 System architecture/") ||
-    vaultPath.includes("/00.05 Registries for the system/System architecture/")
-  ) {
+  const root = registriesRoot.replace(/\/+$/, "");
+  const registriesBand = root !== "" && vaultPath.startsWith(root + "/System architecture/");
+  if (vaultPath.includes("/01 System architecture/") || registriesBand) {
     return "band01";
   }
   return "editable";
 }
 
-export function stePack(): RulePack {
+export function stePack(conv: VaultConventions): RulePack {
+  const REGISTRIES_ROOT = conv.registriesRoot;
   return {
     id: STE_PACK_ID,
     run(snapshot: VaultSnapshot): Finding[] {
@@ -142,7 +151,7 @@ export function stePack(): RulePack {
         if (hasDotOrTrashSegment(src.path)) continue;
         const root = firstSegment(src.path);
         if (root.startsWith("_") || root === "Assent") continue;
-        if (classify(src.path) !== "editable") continue;
+        if (classify(src.path, REGISTRIES_ROOT) !== "editable") continue;
         for (const h of steHits(src.text)) {
           const kind = `${h.name} '${h.token.toLowerCase()}'`;
           const dedupe = `${src.path}\u0000${kind}`;
