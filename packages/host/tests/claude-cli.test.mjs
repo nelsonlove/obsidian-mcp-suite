@@ -54,25 +54,25 @@ import {
 
 test("marketplaceAddArgs adds the GitHub-sourced marketplace", () => {
   assert.deepEqual(marketplaceAddArgs(), [
-    "plugin", "marketplace", "add", "nelsonlove/claude-code-plugins",
+    "plugin", "marketplace", "add", "nelsonlove/obsidian-mcp-suite",
   ]);
 });
 
 test("connectInstallArgs installs pinned plugin@marketplace at user scope", () => {
   assert.deepEqual(connectInstallArgs(), [
-    "plugin", "install", "vault-mcp-connect@claude-code-plugins-mac", "--scope", "user",
+    "plugin", "install", "vault-mcp-connect@obsidian-mcp-suite", "--scope", "user",
   ]);
 });
 
 test("hasMarketplace matches the marketplace name in list output", () => {
-  const out = "Configured marketplaces:\n\n  ❯ claude-plugins-official\n    Source: GitHub (anthropics/claude-plugins-official)\n\n  ❯ claude-code-plugins-mac\n    Source: Directory (/Users/nelson/repos/claude-code-plugins)\n";
+  const out = "Configured marketplaces:\n\n  ❯ claude-plugins-official\n    Source: GitHub (anthropics/claude-plugins-official)\n\n  ❯ obsidian-mcp-suite\n    Source: Directory (/Users/nelson/repos/claude-code-plugins)\n";
   assert.equal(hasMarketplace(out), true);
   assert.equal(hasMarketplace("Configured marketplaces:\n\n  ❯ claude-plugins-official\n"), false);
 });
 
 test("hasConnectPlugin matches vault-mcp-connect@ in plugin list output", () => {
-  assert.equal(hasConnectPlugin("Installed plugins:\n  ❯ vault-mcp-connect@claude-code-plugins-mac\n"), true);
-  assert.equal(hasConnectPlugin("Installed plugins:\n  ❯ vaultmcp-skills@claude-code-plugins-mac\n"), false);
+  assert.equal(hasConnectPlugin("Installed plugins:\n  ❯ vault-mcp-connect@obsidian-mcp-suite\n"), true);
+  assert.equal(hasConnectPlugin("Installed plugins:\n  ❯ vaultmcp-skills@obsidian-mcp-suite\n"), false);
   assert.equal(hasConnectPlugin("No plugins installed\n"), false);
 });
 
@@ -80,8 +80,8 @@ test("claudeEnsureConnectPlugin: already provisioned → no mutating calls", asy
   const calls = [];
   const exec = async (bin, args) => {
     calls.push(args.join(" "));
-    if (args.join(" ") === "plugin marketplace list") return { stdout: "❯ claude-code-plugins-mac\n" };
-    if (args.join(" ") === "plugin list") return { stdout: "❯ vault-mcp-connect@claude-code-plugins-mac\n" };
+    if (args.join(" ") === "plugin marketplace list") return { stdout: "❯ obsidian-mcp-suite\n" };
+    if (args.join(" ") === "plugin list") return { stdout: "❯ vault-mcp-connect@obsidian-mcp-suite\n" };
     throw new Error("unexpected call: " + args.join(" "));
   };
   const result = await claudeEnsureConnectPlugin("claude", { exec });
@@ -101,9 +101,9 @@ test("claudeEnsureConnectPlugin: missing both → adds marketplace then installs
   assert.equal(result, "installed");
   assert.deepEqual(calls, [
     "plugin marketplace list",
-    "plugin marketplace add nelsonlove/claude-code-plugins",
+    "plugin marketplace add nelsonlove/obsidian-mcp-suite",
     "plugin list",
-    "plugin install vault-mcp-connect@claude-code-plugins-mac --scope user",
+    "plugin install vault-mcp-connect@obsidian-mcp-suite --scope user",
   ]);
 });
 
@@ -111,8 +111,8 @@ test("claudeEnsureConnectPlugin: marketplace present, plugin missing → install
   const calls = [];
   const exec = async (bin, args) => {
     calls.push(args.join(" "));
-    if (args.join(" ") === "plugin marketplace list") return { stdout: "❯ claude-code-plugins-mac\n" };
-    if (args.join(" ") === "plugin list") return { stdout: "Installed plugins:\n  ❯ vaultmcp-skills@claude-code-plugins-mac\n" };
+    if (args.join(" ") === "plugin marketplace list") return { stdout: "❯ obsidian-mcp-suite\n" };
+    if (args.join(" ") === "plugin list") return { stdout: "Installed plugins:\n  ❯ vaultmcp-skills@obsidian-mcp-suite\n" };
     return { stdout: "" };
   };
   const result = await claudeEnsureConnectPlugin("claude", { exec });
@@ -120,6 +120,6 @@ test("claudeEnsureConnectPlugin: marketplace present, plugin missing → install
   assert.deepEqual(calls, [
     "plugin marketplace list",
     "plugin list",
-    "plugin install vault-mcp-connect@claude-code-plugins-mac --scope user",
+    "plugin install vault-mcp-connect@obsidian-mcp-suite --scope user",
   ]);
 });

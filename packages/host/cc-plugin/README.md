@@ -1,6 +1,6 @@
 # vault-mcp-connect
 
-A small Claude Code plugin that makes the [vault-mcp](https://github.com/nelsonlove/obsidian-vault-mcp-plugin)
+A small Claude Code plugin that makes the [vault-mcp](https://github.com/nelsonlove/obsidian-mcp-suite)
 Obsidian bridge more transparent about its connection state.
 
 The `vault-mcp` MCP server lives inside Obsidian and is reachable only while
