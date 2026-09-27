@@ -36,7 +36,7 @@ import {
   acceptTransitionNeedsBefore,
   deriveJdIdFromPath,
   parseGuardFrontmatter,
-  unverifiableProtectedPropertyIn,
+  unverifiableProtectedPropertyIn, unverifiableBeforeReason,
 } from "@vault-mcp/core";
 import { backlinkKeys } from "./helpers.js";
 import { AcceptForbiddenError, acceptTransitionReason } from "./write-notes-compose.js";
@@ -169,10 +169,7 @@ export class ObsidianBackend implements VaultBackend {
     } catch {
       const k = unverifiableProtectedPropertyIn(raw);
       if (k) {
-        throw new AcceptForbiddenError(
-          `the note's current frontmatter mentions the protected property '${k}' but cannot be confidently ` +
-            `parsed, so this write cannot be verified to carry the property forward unchanged`
-        );
+        throw new AcceptForbiddenError(unverifiableBeforeReason(k));
       }
       return null;
     }

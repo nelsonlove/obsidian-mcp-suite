@@ -23,7 +23,7 @@
 import { test, describe, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
 import {
-  AcceptForbiddenError,
+  AcceptForbiddenError, unverifiableBeforeReason,
   DEFAULT_PROTECTED_PROPERTIES,
   acceptForbiddenReason,
   acceptTransitionNeedsBefore,
@@ -250,9 +250,9 @@ describe("AcceptForbiddenError — message trailer per refusal family, one code"
   });
 
   test("verified-family refusals (#408) name the field the reason refused and the remedy that fits — never the retired accepted keys", () => {
-    const blank = new AcceptForbiddenError("write would leave the verification field 'verified' present but empty — a verification is a human's record or absent, never a blank to fill in; remove the key instead (an agent may remove a BLANK 'verified', never a filled one)");
+    const blank = new AcceptForbiddenError("write would leave the verification field 'Verified' present but empty — a verification is a human's record or absent, never a blank to fill in; remove the key instead (an agent may remove a BLANK 'Verified', never a filled one)");
     assert.equal(blank.code, "accept_forbidden");
-    assert.match(blank.message, /Remove the blank 'verified' and retry; a verification is a human's record, written only by a human\.$/);
+    assert.match(blank.message, /Remove the blank 'Verified' and retry; a verification is a human's record, written only by a human\.$/, "the key is interpolated, not the literal 'verified'");
     assert.doesNotMatch(blank.message, /accepted\/accepted-by\/accepted-on/, "the retired keys are not the remedy for the live key");
     const introduce = new AcceptForbiddenError("write would introduce the verification field 'Verified'");
     assert.match(introduce.message, /Leave 'Verified' exactly as it is on disk and retry; a verification is a human's record/);
@@ -260,11 +260,27 @@ describe("AcceptForbiddenError — message trailer per refusal family, one code"
     assert.match(change.message, /Leave 'verified' exactly as it is on disk and retry/);
     const remove = new AcceptForbiddenError("write would remove the verification field 'verified' — a human's record leaves only by a human's hand");
     assert.match(remove.message, /Leave 'verified' exactly as it is on disk and retry/);
-    const payload = new AcceptForbiddenError("frontmatter carries the verification field 'verified'");
-    assert.match(payload.message, /Leave 'verified' out of the payload and retry/);
+    const payload = new AcceptForbiddenError("frontmatter carries the verification field 'verified-2026'");
+    assert.match(payload.message, /Leave 'verified-2026' out of the payload and retry/, "the key is interpolated, not the literal 'verified'");
     const wrapped = new AcceptForbiddenError("register render refused: frontmatter carries the verification field 'verified'");
     assert.match(wrapped.message, /^register render refused: frontmatter carries the verification field 'verified'\. The transport never persists acceptance — the accept verb is in no API\. Leave 'verified' out of the payload/);
     for (const e of [blank, introduce, change, remove, payload, wrapped]) assert.match(e.message, /the accept verb is in no API/, "the invariant sentence is in every family");
+  });
+
+  test("the unparseable-BEFORE backstop names the key by what it is (#408 review): `verified` is the verification field, not a protected property, and gets the repair-or-leave remedy", () => {
+    const v = new AcceptForbiddenError(unverifiableBeforeReason("verified"));
+    assert.match(v.message, /^the note's current frontmatter mentions the verification field 'verified' but cannot be confidently parsed, so this write cannot be verified to carry the record forward unchanged\. /);
+    assert.match(v.message, /Repair the note's frontmatter in Obsidian, or leave 'verified' exactly as it is on disk, and retry; a verification is a human's record/);
+    assert.doesNotMatch(v.message, /protected propert/);
+    const d = new AcceptForbiddenError(unverifiableBeforeReason("auto-accept"));
+    assert.match(d.message, /^the note's current frontmatter mentions the protected property 'auto-accept' but cannot be confidently parsed, so this write cannot be verified to carry the property forward unchanged\. Declared protected frontmatter properties are human-only/);
+  });
+
+  test("the YAML-unclassifiable refusal keeps its own remedy and gets the invariant alone — never the retired keys", () => {
+    const reason = "the frontmatter could not be confidently inspected for an acceptance assertion — it contains a YAML construct this guard's parser cannot classify (a tab used as indentation). Correct the frontmatter, or make the edit directly in Obsidian, and retry";
+    const e = new AcceptForbiddenError(reason);
+    assert.equal(e.message, reason + ". The transport never persists acceptance — the accept verb is in no API; acceptance is a human gesture only.");
+    assert.doesNotMatch(e.message, /accepted\/accepted-by\/accepted-on|Remove|Leave/);
   });
 
   test("accepted-family refusals keep the exact historical message", () => {

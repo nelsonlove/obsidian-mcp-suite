@@ -71,8 +71,16 @@ export function acceptForbiddenTrailer(reason: string): string {
       ? `Remove the blank '${key}' and retry`
       : /frontmatter carries the verification field/.test(reason)
         ? `Leave '${key}' out of the payload and retry`
-        : `Leave '${key}' exactly as it is on disk and retry`;
+        : /cannot be confidently parsed/.test(reason)
+          ? `Repair the note's frontmatter in Obsidian, or leave '${key}' exactly as it is on disk, and retry`
+          : `Leave '${key}' exactly as it is on disk and retry`;
     return `The transport never persists acceptance — the accept verb is in no API. ${remedy}; a verification is a human's record, written only by a human.`;
+  }
+  // The YAML-unclassifiable refusal names its own remedy (correct the
+  // frontmatter, or edit in Obsidian); repeating the retired keys after it
+  // would point at the wrong problem. The invariant alone.
+  if (/could not be confidently inspected/.test(reason)) {
+    return `The transport never persists acceptance — the accept verb is in no API; acceptance is a human gesture only.`;
   }
   return (
     `The transport never persists acceptance — the accept verb is in no API. ` +
@@ -525,6 +533,19 @@ export function frontmatterValuesEqual(a: unknown, b: unknown): boolean {
  * to the frontmatter block, not the body, so prose mentioning a key name never
  * trips it; no fence ⇒ no prior frontmatter ⇒ genuinely nothing to remove.
  */
+/** The reason for the unparseable-BEFORE backstop (#224, #406): the note's
+ *  current frontmatter names a guarded key but cannot be confidently parsed,
+ *  so the write cannot be proven to carry it forward. One builder for the
+ *  three transports that throw it, naming the key by what it IS — the live
+ *  verification field or a declared protected property — so the trailer fits
+ *  (#408: calling `verified` a "protected property" sent the agent to the
+ *  declared-properties setting, where it is not). */
+export function unverifiableBeforeReason(key: string): string {
+  const noun = isVerifiedKey(key) ? "verification field" : "protected property";
+  const what = isVerifiedKey(key) ? "the record" : "the property";
+  return `the note's current frontmatter mentions the ${noun} '${key}' but cannot be confidently parsed, so this write cannot be verified to carry ${what} forward unchanged`;
+}
+
 export function unverifiableProtectedPropertyIn(rawBefore: string): string | null {
   const block = leadingFrontmatterBlock(rawBefore);
   if (block === null) return null;
