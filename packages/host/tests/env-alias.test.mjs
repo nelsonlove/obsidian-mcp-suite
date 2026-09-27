@@ -69,6 +69,7 @@ describe("real call sites honor the alias", () => {
     assert.doesNotMatch(DEFAULT_BASELINE_REL, /^Assent\//, "vault-root Assent/ was refiled in 2026-08");
     assert.doesNotMatch(DEFAULT_BASELINE_REL, /00\.89 Assent/, "00.89 was renamed to obsidian-governor");
     assert.match(DEFAULT_BASELINE_REL, /^00-09 System\/.*\/Conformance baseline\.md$/);
+    assert.match(DEFAULT_BASELINE_REL, /\/00\.89 obsidian-mcp-suite\/Archive\/Build\/Conformance baseline\.md$/, "the note sits under Archive/Build since 2026-09; the bare Build/ path named nothing");
   });
 
   test("excludedRootsFrom: both spellings", () => {
