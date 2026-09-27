@@ -110,14 +110,17 @@ export async function claudeRemove(bin: string): Promise<void> {
 
 // ── #38: auto-provision the vault-mcp-connect Claude Code plugin ──────────────
 // The connect plugin (SessionStart health hook + /vault-mcp-status) ships from
-// the nelsonlove/claude-code-plugins marketplace at packages/host/cc-plugin.
+// THIS repository's own marketplace (`.claude-plugin/marketplace.json`, named
+// `obsidian-mcp-suite` since the repo rename; source packages/host/cc-plugin).
+// It used to be provisioned from the nelsonlove/claude-code-plugins catalogue,
+// which dropped it at d36b1b1, so that path had been broken since (#409 review).
 // The MCP server itself stays a DIRECT `claude mcp add` registration — bundling
 // it into a CC plugin would rename the tools to mcp__plugin_*, breaking every
 // mcp__vault-mcp__* allowlist reference (decision 2026-07-10; the prefix was
 // mcp__governor__* between the 0.12.0 id migration and the S3c wire rename).
 
-export const CONNECT_MARKETPLACE_NAME = "claude-code-plugins-mac";
-export const CONNECT_MARKETPLACE_SOURCE = "nelsonlove/claude-code-plugins";
+export const CONNECT_MARKETPLACE_NAME = "obsidian-mcp-suite";
+export const CONNECT_MARKETPLACE_SOURCE = "nelsonlove/obsidian-mcp-suite";
 export const CONNECT_PLUGIN_NAME = "vault-mcp-connect";
 
 export function marketplaceAddArgs(): string[] {
