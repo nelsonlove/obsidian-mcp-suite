@@ -179,7 +179,7 @@ export async function runConformance(opts: RunOpts): Promise<RunResult> {
   // it could, both refused here, after the ratchet so the second is visible:
   // a baseline key whose TARGET is a path under a skipped folder (unreproducible
   // by construction), and a baseline key with no path target at all — drift's
-  // uid-keyed E/F checks — that this run reports cleared while something was
+  // uid-keyed E check — that this run reports cleared while something was
   // skipped, because nothing can tell whether the skip is what cleared it
   // (#400 review). --exclude gets the first check up front in runCli; the
   // second cannot be known before the engine runs.
@@ -395,7 +395,7 @@ export function guardedTerritoryRefusal(
   }
   if (unplaceable.length) {
     parts.push(
-      `has ${unplaceable.length} key(s) this run would clear that are keyed by uid, not by path (drift E/F) — with a ` +
+      `has ${unplaceable.length} key(s) this run would clear that are keyed by uid, not by path (drift E) — with a ` +
         `territory skipped, nothing can tell whether the skip is what cleared them:\n${shownKeys(unplaceable)}`,
     );
   }
@@ -407,10 +407,30 @@ export function guardedTerritoryRefusal(
   );
 }
 
-/** The checks whose baseline KEY carries no path — drift's E (`target: uid`)
- *  and F (`target: "uid-coverage"`), see packs/drift.ts's frozen-contract notes.
- *  Pinned by `conformance-cli.test.mjs` against the pack's own emitted keys. */
-export const NON_PATH_KEYED_CHECKS: ReadonlySet<string> = new Set(["drift_audit|E", "drift_audit|F"]);
+/** The checks whose baseline KEY carries no path — drift's E (`target: uid`);
+ *  F (`target: "uid-coverage"`) was the other until #412 retired it. See
+ *  packs/drift.ts's frozen-contract notes. Pinned by `conformance-cli.test.mjs`
+ *  against the pack's own emitted keys. */
+export const NON_PATH_KEYED_CHECKS: ReadonlySet<string> = new Set(["drift_audit|E"]);
+
+/** The checks #412 retired (drift's A, B, D, F, G). A baseline key of one of
+ *  these clears because nothing produces it any more, not because the vault
+ *  was fixed — and the coverage refusal cannot see that, since it works at
+ *  pack granularity and `drift_audit` still runs. So the report NAMES them
+ *  beside the CLEARED count instead of letting them read as repairs; pruning
+ *  them is a human act (`--rebaseline --baseline=<copy>` over a reviewed
+ *  copy, then applied by hand: the live acceptance record refuses
+ *  `--rebaseline` by design), which is why this is a line and not a refusal
+ *  (a refusal would brick the rail until that hand edit landed). */
+export const RETIRED_CHECKS: ReadonlySet<string> = new Set(["drift_audit|A", "drift_audit|B", "drift_audit|D", "drift_audit|F", "drift_audit|G"]);
+
+/** The cleared keys whose check is retired: cleared by retirement, not repair. */
+export function retiredClears(clearedKeys: readonly string[]): string[] {
+  return clearedKeys.filter((k) => {
+    const { script, check } = parseKey(k);
+    return RETIRED_CHECKS.has(`${script}|${check}`);
+  });
+}
 
 /**
  * The reason an excluded root would silently discard accepted debt, or null.
@@ -671,6 +691,13 @@ function renderReport(
   // (#298): name the key, the dead path, and the pack that therefore did not run.
   for (const d of deadConventions) {
     lines.push(`DEAD CONVENTION: ${d.key} = ${d.path || "(empty)"} — ${CONVENTION_PACKS[d.key].map((id) => `'${id}'`).join(", ")} not measured; set it in the plugin settings (Conformance) or ${CONVENTIONS_ENV}`);
+  }
+  // A key that clears because its CHECK was retired (#412) is not a repair,
+  // and nothing else in the report can tell the two apart: say so, with the
+  // count, so the CLEARED number reads right and the prune is deliberate.
+  const retired = retiredClears(r.clearedKeys);
+  if (retired.length) {
+    lines.push(`RETIRED CHECK: ${retired.length} of the ${r.clearedKeys.length} cleared key(s) clear because their check was retired (#412: drift_audit A/B/D/F/G), not because the vault was fixed — prune them by a reviewed rebaseline (--rebaseline --baseline=<copy>, then a human applies it to the acceptance record)`);
   }
   // A pack with NO baseline representation reports its entire output as NEW.
   // Undistinguished, that is indistinguishable from a catastrophic regression —

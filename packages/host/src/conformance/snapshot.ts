@@ -367,9 +367,10 @@ export async function buildSnapshot(opts: SnapshotOpts): Promise<VaultSnapshot> 
   // files, matching Python's `Path.read_text`.
   const sources: SourceFile[] = [];
   const blueprints: SourceFile[] = [];
-  // Drift-pack inputs. `files`/`dirs` are the `.exists()` universe; `walkOrder`
-  // is the `.md` paths in raw traversal order (drift's E/F embed a
-  // traversal-ordered sample in their finding key). See rule-pack.ts.
+  // Drift-pack inputs. `dirs` is J's universe (and, with `files`, the dead-
+  // convention check's); `walkOrder` is the `.md` paths in raw traversal
+  // order (drift's E embeds a traversal-ordered homes list in its finding
+  // MESSAGE). See rule-pack.ts.
   const files: string[] = [];
   const dirs: string[] = [];
   const skippedTerritories: SkippedTerritory[] = [];
@@ -451,7 +452,7 @@ export async function buildSnapshot(opts: SnapshotOpts): Promise<VaultSnapshot> 
       if (isMd) {
         paths.push(vaultPath);
         sources.push({ path: vaultPath, text: raw });
-        walkOrder.push(vaultPath); // raw traversal order (drift E/F)
+        walkOrder.push(vaultPath); // raw traversal order (drift E)
       }
     }
     // Pass 2 — subdirectories (raw order).
@@ -491,43 +492,14 @@ export async function buildSnapshot(opts: SnapshotOpts): Promise<VaultSnapshot> 
   }
 
   await walk(opts.root);
-  const obsidianConfig = await readObsidianConfig(opts.root);
   notes.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   paths.sort();
   const byPath = (a: SourceFile, b: SourceFile) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
   sources.sort(byPath);
   blueprints.sort(byPath);
   // notes/paths/sources/blueprints are SORTED (order-independent consumers);
-  // files/dirs/walkOrder keep TRAVERSAL order (drift's `.exists()` set is a
-  // Set, but walkOrder's order is load-bearing — leave it unsorted).
-  return { notes, paths, sources, blueprints, files, dirs, walkOrder, obsidianConfig, skippedTerritories };
+  // files/dirs/walkOrder keep TRAVERSAL order (walkOrder's order is
+  // load-bearing for drift's E message — leave it unsorted).
+  return { notes, paths, sources, blueprints, files, dirs, walkOrder, skippedTerritories };
 }
 
-/** The fixed set of `.obsidian` config files the drift pack reads. These live
- * under a skip-dir (`.obsidian`), so the walk never sees them; we read exactly
- * this set. The plugins directory is enumerated in raw `opendir` order to match
- * Python's per-subdirectory manifest glob scandir order (matters only for the
- * last-wins tiebreak when two plugins share a display name). Missing files are
- * silently omitted — the pack degrades per Python (B guards on the note; A on
- * the quickadd config being present). */
-async function readObsidianConfig(root: string): Promise<SourceFile[]> {
-  const out: SourceFile[] = [];
-  const single = [".obsidian/community-plugins.json", ".obsidian/plugins/quickadd/data.json"];
-  for (const rel of single) {
-    try {
-      out.push({ path: rel, text: await readFile(join(root, rel), "utf8") });
-    } catch {
-      /* absent — omit */
-    }
-  }
-  for (const entry of await rawEntries(join(root, ".obsidian/plugins"))) {
-    if (!entry.isDirectory()) continue;
-    const rel = `.obsidian/plugins/${entry.name}/manifest.json`;
-    try {
-      out.push({ path: rel, text: await readFile(join(root, rel), "utf8") });
-    } catch {
-      /* no manifest — omit */
-    }
-  }
-  return out;
-}

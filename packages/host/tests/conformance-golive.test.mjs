@@ -31,7 +31,7 @@ const KEYS = (...k) => new Set(k);
 
 describe("baselinePackIds — which packs the accepted debt actually describes", () => {
   test("reads the pack id from each key's first field", () => {
-    const ids = baselinePackIds(KEYS("drift_audit|E|uid|dup-uid", "ste_lint|editable|x.md|", "drift_audit|G|y|"));
+    const ids = baselinePackIds(KEYS("drift_audit|E|uid|dup-uid", "ste_lint|editable|x.md|", "drift_audit|J|y|"));
     assert.deepEqual([...ids].sort(), ["drift_audit", "ste_lint"]);
   });
 

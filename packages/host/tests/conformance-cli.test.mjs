@@ -13,7 +13,7 @@ import path from "node:path";
 import { runConformance, runCli, guardedTerritoryRefusal, NON_PATH_KEYED_CHECKS } from "../src/conformance/cli.ts";
 import fs from "node:fs";
 import { ENGINE_ID } from "../src/conformance/engine.ts";
-import { coverageRefusal, baselinePackIds } from "../src/conformance/cli.ts";
+import { coverageRefusal, baselinePackIds, RETIRED_CHECKS, retiredClears } from "../src/conformance/cli.ts";
 import { parseBaseline } from "../src/conformance/ratchet.ts";
 import { fileURLToPath } from "node:url";
 import { LEGACY_CONVENTIONS_SEED as SEED } from "../src/conformance/vault-conventions.ts";
@@ -211,7 +211,7 @@ describe("#398 / #400 review — a uid-keyed baseline key must not clear silentl
   const vocab = [{ id: "reg", provider: "blueprint", root: "Reg" }];
 
   test("a uid-keyed baseline key the live run does not reproduce: CLEARED when nothing was skipped, REFUSED when something was", async () => {
-    // Drift's E/F keys carry a uid or a bare token, not a path, so the strand
+    // Drift's E key carries a uid, not a path, so the strand
     // check cannot place them inside or outside a skipped folder. The bare
     // fixture cannot make the drift pack emit one (it needs vault scaffolding —
     // #298), so the key is planted in the baseline: what is under test is the
@@ -238,8 +238,8 @@ describe("#398 / #400 review — a uid-keyed baseline key must not clear silentl
     const here = path.dirname(fileURLToPath(import.meta.url));
     const drift = fs.readFileSync(path.join(here, "..", "src", "conformance", "packs", "drift.ts"), "utf8");
     assert.match(drift, /push\("E",[\s\S]{0,200}target: uid,/, "E is keyed by uid");
-    assert.match(drift, /push\(\s*"F",[\s\S]{0,300}target: "uid-coverage"/, "F is keyed by a bare token");
-    assert.deepEqual([...NON_PATH_KEYED_CHECKS].sort(), ["drift_audit|E", "drift_audit|F"]);
+    assert.doesNotMatch(drift, /push\(\s*"F"/, "F is retired (#412), so it must not be listed either");
+    assert.deepEqual([...NON_PATH_KEYED_CHECKS].sort(), ["drift_audit|E"]);
   });
 
   test("guardedTerritoryRefusal is silent with nothing skipped, even over a cleared uid key", () => {
@@ -257,14 +257,15 @@ describe("#298 — a dead convention path is a loud finding and an unmeasured pa
     try {
       const res = await runConformance({ root, conventions: SEED, baselineText: "", vocabularies: vocab, schemes: [] });
       const dead = res.findings.filter((f) => f.script === ENGINE_ID && f.check === "dead_convention");
-      assert.deepEqual(dead.map((f) => f.target).sort(), ["artifactsRoot", "pluginStackPath", "registriesRoot", "systemRoot", "uidExemptPaths", "ungovernedRoots"]);
-      assert.deepEqual(res.deadConventions.length, 6);
+      assert.deepEqual(dead.map((f) => f.target).sort(), ["registriesRoot", "systemRoot", "ungovernedRoots"]);
+      assert.deepEqual(res.deadConventions.length, 3);
       assert.ok(res.packIds.includes("drift_audit") && res.packIds.includes("conformance_check"), "the packs still REGISTER");
       assert.ok(!res.coveredPackIds.includes("drift_audit") && !res.coveredPackIds.includes("conformance_check"), "but are NOT covered");
       assert.ok(res.coveredPackIds.includes("port_lint") && res.coveredPackIds.includes("ste_lint"), "packs that read no convention still run");
       assert.ok(!res.findings.some((f) => f.script === "drift_audit"), "a pack with a dead convention emits nothing of its own — not clean, not noise");
       assert.ok(!res.findings.some((f) => f.script === ENGINE_ID && f.check === "pack_error"), "and it does not RUN — it would throw over this fixture (#136), and that throw must not be how it is silenced");
-      assert.match(res.report, /DEAD CONVENTION: registriesRoot = .* — 'drift_audit', 'conformance_check' not measured/);
+      assert.match(res.report, /DEAD CONVENTION: registriesRoot = .* — 'conformance_check' not measured/);
+      assert.match(res.report, /DEAD CONVENTION: systemRoot = .* — 'drift_audit' not measured/);
       assert.ok(!res.rebaseline.includes("conformance_engine|"), "an engine finding is never rebaseline text — it describes the run, and a baseline naming it would refuse every later run as uncovered (#401 review)");
       // The consequence, stated: over a vault whose conventions are dead the run
       // is NEW on every run until the operator re-points or retires the packs.
@@ -281,23 +282,34 @@ describe("#298 — a dead convention path is a loud finding and an unmeasured pa
   test("with the conventions OPTION pointing at live paths, nothing is dead and drift_audit is measured", async () => {
     const root = await vault();
     try {
-      for (const d of ["Sys/Registries", "Sys/Artifacts", "Sys/Framework", "Sys/T"]) await mkdir(path.join(root, d), { recursive: true });
-      await writeFile(path.join(root, "Sys", "Plugin stack.md"), "| Plugin | Status |\n");
-      await writeFile(path.join(root, "Sys", "T", "Daily.md"), "---\nuid:\n---\n");
-      // The drift pack refuses a missing QuickAdd config (#136) — give it one,
-      // so what this test measures is the convention paths, not that refusal.
-      await mkdir(path.join(root, ".obsidian", "plugins", "quickadd"), { recursive: true });
-      await writeFile(path.join(root, ".obsidian", "plugins", "quickadd", "data.json"), '{"choices":[]}');
-      await writeFile(path.join(root, ".obsidian", "community-plugins.json"), "[]");
-      const live = {
-        registriesRoot: "Sys/Registries", systemRoot: "Sys", artifactsRoot: "Sys/Artifacts",
-        pluginStackPath: "Sys/Plugin stack.md", uidExemptPaths: ["Sys/T/Daily.md"], ungovernedRoots: ["Sys/Framework"],
-      };
+      for (const d of ["Sys/Registries", "Sys/Framework"]) await mkdir(path.join(root, d), { recursive: true });
+      const live = { registriesRoot: "Sys/Registries", systemRoot: "Sys", ungovernedRoots: ["Sys/Framework"] };
       const res = await runConformance({ root, conventions: live, baselineText: "", vocabularies: vocab, schemes: [] });
       assert.deepEqual(res.deadConventions, []);
       assert.ok(!res.findings.some((f) => f.check === "dead_convention"));
       assert.ok(res.coveredPackIds.includes("drift_audit") && res.coveredPackIds.includes("conformance_check"));
       assert.doesNotMatch(res.report, /DEAD CONVENTION/);
+      assert.doesNotMatch(res.report, /RETIRED CHECK/, "nothing cleared, nothing retired to name");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("#412: a baseline key of a RETIRED check clears at pack granularity (drift_audit ran) — the report names it as cleared by retirement, not repair; an E key that clears is an ordinary clear", async () => {
+    const root = await vault();
+    try {
+      for (const d of ["Sys/Registries", "Sys/Framework"]) await mkdir(path.join(root, d), { recursive: true });
+      const live = { registriesRoot: "Sys/Registries", systemRoot: "Sys", ungovernedRoots: ["Sys/Framework"] };
+      const A = "drift_audit|A|choice 'X' is command-enabled but no .action entry names it|", G = "drift_audit|G|x.tag.md title is 'None', the filename says 'x.tag'|", E = "drift_audit|E|01234567-89ab-7cde-8f01-23456789abcd|dup-uid";
+      const res = await runConformance({ root, conventions: live, baselineText: "```ratchet-baseline\n" + [A, G, E].join("\n") + "\n```\n", vocabularies: vocab, schemes: [] });
+      assert.ok(res.coveredPackIds.includes("drift_audit"), "the pack ran, so the coverage refusal does not fire");
+      assert.equal(coverageRefusal(baselinePackIds(parseBaseline("```ratchet-baseline\n" + A + "\n```\n")), new Set(res.coveredPackIds), "run"), null, "pack granularity cannot see a retired check");
+      for (const k of [A, G, E]) assert.ok(res.ratchet.clearedKeys.includes(k), `${k} clears`);
+      assert.deepEqual(retiredClears(res.ratchet.clearedKeys).sort(), [A, G].sort(), "the two retired keys, not the live E");
+      assert.match(res.report, /RETIRED CHECK: 2 of the 3 cleared key\(s\) clear because their check was retired \(#412: drift_audit A\/B\/D\/F\/G\), not because the vault was fixed — prune them by a reviewed rebaseline \(--rebaseline --baseline=<copy>, then a human applies it to the acceptance record\)/);
+      assert.deepEqual([...RETIRED_CHECKS].sort(), ["drift_audit|A", "drift_audit|B", "drift_audit|D", "drift_audit|F", "drift_audit|G"]);
+      const drift = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "conformance", "packs", "drift.ts"), "utf8");
+      for (const c of RETIRED_CHECKS) assert.doesNotMatch(drift, new RegExp(`push\\(\\s*"${c.split("|")[1]}"`), `${c} is indeed retired in the pack`);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -306,7 +318,7 @@ describe("#298 — a dead convention path is a loud finding and an unmeasured pa
   test("a baseline that describes drift_audit, over a vault where its convention is dead, is REFUSED by coverageRefusal — the #294 rule, fed by the #298 mechanism", async () => {
     const root = await vault();
     try {
-      const baselineText = "```ratchet-baseline\ndrift_audit|B|02.12|\n```\n";
+      const baselineText = "```ratchet-baseline\ndrift_audit|J|category number 00 is claimed by 2 folders: 00 A; 00 B|\n```\n";
       const res = await runConformance({ root, conventions: SEED, baselineText, vocabularies: vocab, schemes: [] });
       const refusal = coverageRefusal(baselinePackIds(parseBaseline(baselineText)), new Set(res.coveredPackIds), "run");
       assert.ok(refusal && /drift_audit/.test(refusal), "an unmeasured pack with accepted debt refuses rather than clearing it");
@@ -323,25 +335,26 @@ describe("#298 — a dead convention path is a loud finding and an unmeasured pa
     assert.match(site, /set it in the plugin settings \(Conformance\) or \$\{CONVENTIONS_ENV\}/, "and names the remedy, not 'enable the packs'");
   });
 
-  test("the drift pack reads the INJECTED registries root, not the module constant (pinned at the source)", () => {
+  test("the drift pack reads its ONE convention from the injected record, never a module constant (pinned at the source; #298, #403, #412)", () => {
     const here = path.dirname(fileURLToPath(import.meta.url));
     const drift = fs.readFileSync(path.join(here, "..", "src", "conformance", "packs", "drift.ts"), "utf8");
-    const family = drift.slice(drift.indexOf("const registryFamily"), drift.indexOf("const actionNotes"));
-    assert.match(family, /REGISTRIES_ROOT \+ "\/"/, "registryFamily filters on the per-run root");
-    assert.doesNotMatch(family, /DEFAULT_REGISTRIES_ROOT/, "the constant ignored every conventions override (#298), and since #403 does not exist");
+    assert.match(drift, /const SYS_ROOT = conv\.systemRoot;/, "J's spine is the per-run conventions");
+    assert.doesNotMatch(drift, /DEFAULT_REGISTRIES_ROOT|DEFAULT_SYSTEM_ROOT/, "no shipped constant");
+    assert.doesNotMatch(drift, /conv\.registriesRoot/, "the registry-family checks are retired (#412), so the pack no longer reads that key");
   });
 });
 
 describe("#403 — the plugin ships EMPTY conventions: every scalar key dead, loudly; the list keys empty are 'none'", () => {
-  test("EMPTY conventions: the four scalar keys are dead_convention findings reported as (empty); the two list keys are not", async () => {
+  test("EMPTY conventions: the two scalar keys are dead_convention findings reported as (empty); the list key is not", async () => {
     const root = await vault();
     try {
       const { EMPTY_VAULT_CONVENTIONS } = await import("../src/conformance/vault-conventions.ts");
       const res = await runConformance({ root, conventions: EMPTY_VAULT_CONVENTIONS, baselineText: "", vocabularies: [{ id: "reg", provider: "blueprint", root: "Reg" }], schemes: [] });
       const dead = res.findings.filter((f) => f.script === ENGINE_ID && f.check === "dead_convention");
-      assert.deepEqual(dead.map((f) => f.target).sort(), ["artifactsRoot", "pluginStackPath", "registriesRoot", "systemRoot"]);
+      assert.deepEqual(dead.map((f) => f.target).sort(), ["registriesRoot", "systemRoot"]);
       assert.ok(dead.every((f) => f.kind === "" && /is EMPTY/.test(f.detail)), dead.map((f) => f.detail).join("\n"));
-      assert.match(res.report, /DEAD CONVENTION: registriesRoot = \(empty\) — 'drift_audit', 'conformance_check' not measured; set it in the plugin settings \(Conformance\) or VAULT_MCP_CONVENTIONS/);
+      assert.match(res.report, /DEAD CONVENTION: registriesRoot = \(empty\) — 'conformance_check' not measured; set it in the plugin settings \(Conformance\) or VAULT_MCP_CONVENTIONS/);
+      assert.match(res.report, /DEAD CONVENTION: systemRoot = \(empty\) — 'drift_audit' not measured/);
       assert.ok(!res.coveredPackIds.includes("drift_audit") && !res.coveredPackIds.includes("conformance_check"));
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -361,18 +374,13 @@ describe("#403 — the CLI entry reads VAULT_MCP_CONVENTIONS, and a legacy spell
   };
   const liveFixture = async () => {
     const root = await vault();
-    for (const d of ["Sys/Registries", "Sys/Artifacts", "Sys/Framework", "Sys/T"]) await mkdir(path.join(root, d), { recursive: true });
-    await writeFile(path.join(root, "Sys", "Plugin stack.md"), "| Plugin | Status |\n");
-    await writeFile(path.join(root, "Sys", "T", "Daily.md"), "---\nuid:\n---\n");
-    await mkdir(path.join(root, ".obsidian", "plugins", "quickadd"), { recursive: true });
-    await writeFile(path.join(root, ".obsidian", "plugins", "quickadd", "data.json"), '{"choices":[]}');
-    await writeFile(path.join(root, ".obsidian", "community-plugins.json"), "[]");
+    for (const d of ["Sys/Registries", "Sys/Framework"]) await mkdir(path.join(root, d), { recursive: true });
     // A baseline that NAMES drift_audit: with the conventions dead the coverage refusal fires (#294 by way of #298).
     const baseline = path.join(root, "baseline.md");
-    await writeFile(baseline, "```ratchet-baseline\ndrift_audit|A|x|y\n```\n");
+    await writeFile(baseline, "```ratchet-baseline\ndrift_audit|J|category number 00 is claimed by 2 folders: 00 A; 00 B|\n```\n");
     return { root, baseline };
   };
-  const LIVE = JSON.stringify({ registriesRoot: "Sys/Registries", systemRoot: "Sys", artifactsRoot: "Sys/Artifacts", pluginStackPath: "Sys/Plugin stack.md", uidExemptPaths: ["Sys/T/Daily.md"], ungovernedRoots: ["Sys/Framework"] });
+  const LIVE = JSON.stringify({ registriesRoot: "Sys/Registries", systemRoot: "Sys", ungovernedRoots: ["Sys/Framework"] });
   // runCli sets process.exitCode on a failed ratchet, which the test runner would read as this FILE failing; the run's outcome here is its message, so the code is reset after each call.
   const cli = async (...argv) => {
     const savedCode = process.exitCode;

@@ -36,8 +36,9 @@ describe("obsidianDebtSource — #294: an unmeasured pack with accepted debt ref
     try {
       const baselinePath = path.join(root, DEFAULT_BASELINE_REL);
       await mkdir(path.dirname(baselinePath), { recursive: true });
-      await writeFile(baselinePath, "```ratchet-baseline\ndrift_audit|B|02.12|\n```\n");
-      const src = obsidianDebtSource(app(root), () => [], () => SEED);
+      await writeFile(baselinePath, "```ratchet-baseline\ndrift_audit|J|category number 00 is claimed by 2 folders: 00 A; 00 B|\n```\n");
+      // The seed's systemRoot (`00-09 System`) is LIVE in this fixture, since the baseline path lives under it; a dead spine is what this test is about (#412: systemRoot is the one convention drift reads).
+      const src = obsidianDebtSource(app(root), () => [], () => ({ ...SEED, systemRoot: "Nowhere/Spine" }));
       await assert.rejects(() => src.liveFindings(), /refusing to report: the baseline holds accepted debt for drift_audit, which did not run/);
     } finally {
       if (saved !== undefined) process.env.GOVERNOR_BASELINE_REL = saved;

@@ -3,15 +3,15 @@
 // keys exposed via settings for the user"). Two pure pieces, headless-tested:
 //
 //  1. `conventionsOnLoad` — the ONE reader of `LEGACY_CONVENTIONS_SEED`. The
-//     plugin ships the six keys EMPTY (every scalar convention dead, the legacy
+//     plugin ships the three keys EMPTY (every scalar convention dead, the legacy
 //     packs registered and not measured until the operator points them). An
 //     install whose data.json predates the setting is seeded ONCE with what it
 //     used to measure, so an upgrade changes nothing for it; a fresh install
 //     starts empty; an install that has the key keeps exactly what it has. The
 //     key is then always persisted, so the branch cannot run twice — the same
 //     shape as `territoriesOnLoad` (#397), for the same reason.
-//  2. `CONVENTION_FIELDS` — the six settings-tab fields as data (key, label,
-//     help, kind), so the tab renders a list rather than six hand-written
+//  2. `CONVENTION_FIELDS` — the settings-tab fields as data (key, label,
+//     help, kind), so the tab renders a list rather than hand-written
 //     blocks, and a test can pin that every key of the record has a field.
 
 import {
@@ -51,15 +51,12 @@ export interface ConventionField {
 }
 
 /** One field per key of `VaultConventions`, in the order the tab shows them.
- *  A `path` field is one folder or note path (blank = that convention is
+ *  A `path` field is one folder path (blank = that convention is
  *  DEAD, its packs not measured); a `paths` field is one path per line (empty
  *  = none). The help names the packs each key feeds, from `CONVENTION_PACKS`. */
 export const CONVENTION_FIELDS: readonly ConventionField[] = [
-  { key: "registriesRoot", label: "Registries root", kind: "path", help: "Folder under which the registry families (action / property / type / tag) live. Feeds drift_audit and conformance_check. Blank = not measured." },
-  { key: "systemRoot", label: "System root", kind: "path", help: "The governed system spine's root folder. Feeds drift_audit. Blank = not measured." },
-  { key: "artifactsRoot", label: "Artifacts root", kind: "path", help: "Folder the drift check resolves module / script / template surfaces under. Feeds drift_audit. Blank = not measured." },
-  { key: "pluginStackPath", label: "Plugin stack note", kind: "path", help: "The note recording which plugins are live (a .md path). Feeds drift_audit. Blank = not measured." },
-  { key: "uidExemptPaths", label: "uid-exempt notes", kind: "paths", help: "One note path per line, exempt from the uid-coverage check (payload templates, not identity). Empty = nothing exempt." },
+  { key: "registriesRoot", label: "Registries root", kind: "path", help: "Folder under which the structure check's blueprint registry lives. Feeds conformance_check. Blank = not measured." },
+  { key: "systemRoot", label: "System root", kind: "path", help: "The governed system spine's root folder (the drift check's category-number scan). Feeds drift_audit. Blank = not measured." },
   { key: "ungovernedRoots", label: "Ungoverned roots", kind: "paths", help: "One folder per line the structure check never treats as governed content. Empty = everything under the root is governed." },
 ];
 

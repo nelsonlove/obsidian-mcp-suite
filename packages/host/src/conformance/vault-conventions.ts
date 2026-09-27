@@ -4,14 +4,14 @@
 //
 // WHY THIS FILE EXISTS. The four legacy packs are faithful ports of Python
 // scripts written for one specific vault, so they necessarily know that vault's
-// folder layout: where the registries live, where the plugin-stack note is,
-// which template is uid-exempt. That knowledge is legitimate — it is the packs'
-// subject matter — but scattering it as string literals through the pack
-// sources made it invisible and unchangeable: a different vault could not use
-// these packs at all, and changing a path meant a release.
+// folder layout: where the registries live, where the system spine is. That
+// knowledge is legitimate — it is the packs' subject matter — but scattering it
+// as string literals through the pack sources made it invisible and
+// unchangeable: a different vault could not use these packs at all, and
+// changing a path meant a release.
 //
 // So the keys are named and discoverable in one file. Where they point is the
-// operator's: the six keys are a host setting (settings tab, Conformance),
+// operator's: the three keys are a host setting (settings tab, Conformance),
 // read live per call by the in-app debt and drift sources, and the standalone
 // CLI takes them from `VAULT_MCP_CONVENTIONS` (a JSON object; the old spellings
 // `GOVERNOR_VAULT_CONVENTIONS` and `ASSENT_VAULT_CONVENTIONS` are accepted as
@@ -21,6 +21,13 @@
 // `LEGACY_CONVENTIONS_SEED`, written ONCE into an install whose data.json
 // predates the setting, by exactly one reader (`conventions-policy.ts`).
 //
+// THREE keys since #412 (ruled 2026-09-27). The record had six; the other
+// three (`artifactsRoot`, `pluginStackPath`, `uidExemptPaths`) named a vault
+// shape the rebuilt vault no longer has, and their only readers were the
+// drift checks #412 retired. A key nobody reads is a setting that lies, so
+// they are gone from the record, not blank: `resolveConventions` drops them
+// from a data.json that still carries them.
+//
 // This does NOT make the packs vault-agnostic — a pack that checks "registry
 // entries are named consistently" is meaningful only where such a registry
 // exists. It makes the coupling explicit and configurable rather than baked in,
@@ -28,36 +35,27 @@
 
 
 export interface VaultConventions {
-  /** Root under which the registry families (action/property/type/tag) live. */
+  /** Root under which the structure pack's blueprint registry lives. */
   registriesRoot: string;
-  /** The governed system spine's root folder. */
+  /** The governed system spine's root folder (drift's category-collision scan). */
   systemRoot: string;
-  /** Artifacts root the port checks resolve module/script/template surfaces under. */
-  artifactsRoot: string;
-  /** The note recording which plugins are live. */
-  pluginStackPath: string;
-  /** Notes exempt from the uid-coverage check (payload templates, not identity). */
-  uidExemptPaths: string[];
   /** Roots the structure pack never treats as governed content. */
   ungovernedRoots: string[];
 }
 
-/** The six keys, EMPTY: what the plugin ships. Every scalar key empty reads as
- *  dead (its packs are not measured); the two list keys empty read as "none",
- *  a legitimate configuration (nothing exempt, nothing ungoverned). */
+/** The three keys, EMPTY: what the plugin ships. Every scalar key empty reads
+ *  as dead (its packs are not measured); the list key empty reads as "none",
+ *  a legitimate configuration (nothing ungoverned). */
 export const EMPTY_VAULT_CONVENTIONS: VaultConventions = Object.freeze({
   registriesRoot: "",
   systemRoot: "",
-  artifactsRoot: "",
-  pluginStackPath: "",
-  uidExemptPaths: [],
   ungovernedRoots: [],
 }) as VaultConventions;
 
 /** The keys whose value is one path (a blank one is a DEAD convention). */
-export const SCALAR_CONVENTION_KEYS = ["registriesRoot", "systemRoot", "artifactsRoot", "pluginStackPath"] as const;
+export const SCALAR_CONVENTION_KEYS = ["registriesRoot", "systemRoot"] as const;
 /** The keys whose value is a list of paths (an empty list is "none", not dead). */
-export const LIST_CONVENTION_KEYS = ["uidExemptPaths", "ungovernedRoots"] as const;
+export const LIST_CONVENTION_KEYS = ["ungovernedRoots"] as const;
 
 /** Coerce an UNTRUSTED settings value (data.json, a hand edit, a partial
  *  object) into a full record: strings trimmed, lists of trimmed non-blank
@@ -70,12 +68,11 @@ export function resolveConventions(raw: unknown): VaultConventions {
     const arr = Array.isArray(v) ? v : typeof v === "string" ? v.split("\n") : [];
     return arr.map((x) => (typeof x === "string" ? x.trim() : "")).filter(Boolean);
   };
+  // Only the three live keys are read: a stale key from a pre-#412 data.json
+  // (`artifactsRoot`, `pluginStackPath`, `uidExemptPaths`) is dropped here.
   return {
     registriesRoot: str(o.registriesRoot),
     systemRoot: str(o.systemRoot),
-    artifactsRoot: str(o.artifactsRoot),
-    pluginStackPath: str(o.pluginStackPath),
-    uidExemptPaths: list(o.uidExemptPaths),
     ungovernedRoots: list(o.ungovernedRoots),
   };
 }
@@ -92,11 +89,6 @@ export function resolveConventions(raw: unknown): VaultConventions {
 export const LEGACY_CONVENTIONS_SEED: VaultConventions = {
   registriesRoot: "00-09 System/00 System management/00.05 Registries for the system",
   systemRoot: "00-09 System",
-  artifactsRoot: "00-09 System/02 Obsidian/02.03 Artifacts for 02 Obsidian",
-  pluginStackPath: "00-09 System/02 Obsidian/02.12 Plugin stack.md",
-  uidExemptPaths: [
-    "00-09 System/00 System management/00.05 Registries for the system/Daily notes/Daily note.template.md",
-  ],
   // The framework corpus, ungoverned since it is written as prose rather than
   // filed as vault content. It was the vault-root `Assent/` tree; it was
   // refiled under 00.89 (2026-08-17) and that folder was then renamed from
@@ -138,12 +130,12 @@ export function conventionsFromEnv(
       }
     }
   }
-  if (raw === undefined || raw.trim() === "") return { ...EMPTY_VAULT_CONVENTIONS, uidExemptPaths: [], ungovernedRoots: [] };
+  if (raw === undefined || raw.trim() === "") return { ...EMPTY_VAULT_CONVENTIONS, ungovernedRoots: [] };
   try {
     return resolveConventions(JSON.parse(raw));
   } catch (e) {
     warn(`conformance: ${CONVENTIONS_ENV} is not valid JSON — every convention reads as EMPTY (dead) for this run. ${e instanceof Error ? e.message : String(e)}`);
-    return { ...EMPTY_VAULT_CONVENTIONS, uidExemptPaths: [], ungovernedRoots: [] };
+    return { ...EMPTY_VAULT_CONVENTIONS, ungovernedRoots: [] };
   }
 }
 
@@ -151,8 +143,8 @@ export function conventionsFromEnv(
 //
 // A convention path that names nothing never errors: a registries root that
 // does not exist means the registry checks find no registries and report
-// clean; a uid-exempt path that has moved means the template is no longer
-// exempt. Both directions are silent, which is how six of seven shipped paths
+// clean; a system root that has moved means no category collision is ever
+// seen. Both directions are silent, which is how six of seven shipped paths
 // drifted dead without a test noticing. So every path-valued key is checked
 // against the walk BEFORE the legacy packs run, and a dead one becomes a
 // `conformance_engine / dead_convention` finding (NEW, so the run fails loudly)
@@ -173,21 +165,16 @@ export interface DeadConvention {
 }
 
 /** Which legacy packs each convention key feeds — the packs that cannot
- *  measure honestly while the key is dead. A key can feed more than one:
- *  `registriesRoot` is both drift's registry-family root and structure's
- *  blueprint-registry root (#401 review — the first cut listed one reader and
- *  left `conformance_check` measuring over an empty registry). `port_lint`
- *  and `ste_lint` read no convention. Pinned against the packs' own sources. */
+ *  measure honestly while the key is dead. `registriesRoot` was drift's
+ *  registry-family root as well as structure's blueprint-registry root until
+ *  #412 retired the registry-family checks; it now feeds structure alone.
+ *  `port_lint` and `ste_lint` read no convention. Pinned against the packs'
+ *  own sources. */
 export const CONVENTION_PACKS: Record<ConventionPathKey, readonly string[]> = {
-  registriesRoot: ["drift_audit", "conformance_check"],
+  registriesRoot: ["conformance_check"],
   systemRoot: ["drift_audit"],
-  artifactsRoot: ["drift_audit"],
-  pluginStackPath: ["drift_audit"],
-  uidExemptPaths: ["drift_audit"],
   ungovernedRoots: ["conformance_check"],
 };
-
-const FILE_KEYS: ReadonlySet<ConventionPathKey> = new Set(["pluginStackPath", "uidExemptPaths"]);
 
 function underAny(path: string, roots: readonly string[]): boolean {
   return roots.some((r) => {
@@ -210,6 +197,10 @@ export interface WalkPruning {
 /**
  * Every convention path the walk did not see. `dirs`/`files` are the walk's
  * own listings (vault-relative) and are REQUIRED: an absent listing throws,
+ * never reads as "everything is dead". Since #412 every key names a FOLDER,
+ * so no key is checked against `files` any more; it stays in the contract so
+ * the walk's two listings travel together and a half-supplied walk refuses.
+ * Also: an absent listing throws,
  * never reads as "everything is dead" — the absence-read-as-emptiness idiom
  * this rail refuses by name (`requireListing_`). A path under anything the
  * walk pruned — an excluded root, a skipped territory, a skip-dir segment — is
@@ -228,7 +219,6 @@ export function deadConventionPaths(
     );
   }
   const dirs = new Set(walk.dirs.map((d) => d.replace(/\/+$/, "")));
-  const files = new Set(walk.files);
   const prunedRoots = [...(pruning.excludedRoots ?? []), ...(pruning.skippedTerritories ?? []).map((t) => t.path)];
   const skipDirs = pruning.skipDirs ?? new Set<string>();
   const pruned = (path: string) => underAny(path, prunedRoots) || path.split("/").some((seg) => skipDirs.has(seg));
@@ -237,8 +227,9 @@ export function deadConventionPaths(
     const path = raw.replace(/\/+$/, "");
     if (!path) { dead.push({ key, path: "" }); return; } // a BLANK scalar key: dead, reported as such (#403)
     if (pruned(path)) return;
-    const live = FILE_KEYS.has(key) ? files.has(path) : dirs.has(path);
-    if (!live) dead.push({ key, path });
+    // Every key names a FOLDER since #412 (the two note-valued keys retired
+    // with their checks); a file at the path is not the folder.
+    if (!dirs.has(path)) dead.push({ key, path });
   };
   for (const key of Object.keys(CONVENTION_PACKS) as ConventionPathKey[]) {
     const v = conv[key];

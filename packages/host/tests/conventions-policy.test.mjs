@@ -1,5 +1,5 @@
 /**
- * conventions-policy.test.mjs — #403: the six vault conventions are a host
+ * conventions-policy.test.mjs — #403: the vault conventions (three since #412) are a host
  * setting with EMPTY defaults; the former shipped paths are a one-time
  * migration seed with exactly one reader; the in-app sources read the setting
  * per call; the CLI reads VAULT_MCP_CONVENTIONS. Source-scan pins say WHO
@@ -37,7 +37,7 @@ describe("conventionsOnLoad — seed once, fresh empty, present kept", () => {
   });
 });
 
-describe("the six settings fields", () => {
+describe("the settings fields — one per key of the record", () => {
   test("CONVENTION_FIELDS covers every key of the record exactly once, and each key's kind matches its value shape", () => {
     assert.deepEqual(CONVENTION_FIELDS.map((f) => f.key).sort(), Object.keys(EMPTY_VAULT_CONVENTIONS).sort());
     for (const f of CONVENTION_FIELDS) {
@@ -51,7 +51,7 @@ describe("the six settings fields", () => {
     const blanked = commitConvention(LEGACY_CONVENTIONS_SEED, reg, "   ");
     assert.equal(blanked.registriesRoot, "");
     assert.deepEqual(blanked.systemRoot, LEGACY_CONVENTIONS_SEED.systemRoot, "the other keys are untouched");
-    const walk = { dirs: [LEGACY_CONVENTIONS_SEED.systemRoot, LEGACY_CONVENTIONS_SEED.artifactsRoot, ...LEGACY_CONVENTIONS_SEED.ungovernedRoots], files: [LEGACY_CONVENTIONS_SEED.pluginStackPath, ...LEGACY_CONVENTIONS_SEED.uidExemptPaths] };
+    const walk = { dirs: [LEGACY_CONVENTIONS_SEED.systemRoot, ...LEGACY_CONVENTIONS_SEED.ungovernedRoots], files: [] };
     assert.deepEqual(deadConventionPaths(blanked, walk), [{ key: "registriesRoot", path: "" }], "the blank field is the one dead convention of the next run");
     const pointed = commitConvention(blanked, reg, ` ${LEGACY_CONVENTIONS_SEED.registriesRoot} `);
     assert.deepEqual(deadConventionPaths(pointed, { ...walk, dirs: [...walk.dirs, LEGACY_CONVENTIONS_SEED.registriesRoot] }), [], "pointing it at a live folder revives it");
