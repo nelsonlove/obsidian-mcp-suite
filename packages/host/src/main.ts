@@ -288,12 +288,14 @@ export default class VaultMcpPlugin extends Plugin {
   // Public plugin-to-plugin API: app.plugins.plugins['vault-mcp'].api.
   //
   // apiVersion stays 1 while the object CARRIES the governance seam: the seam's
-  // methods are additive, so every published `vault-mcp-api` build (which
-  // refuses to register against an unexpected apiVersion) keeps working. What
-  // the object LOST at S2 is `unregisterTools(ownerPluginId)` — an id-addressed
-  // revocation anyone holding this object could aim at anyone else's tools; the
-  // disposer `registerTools` returns is now the only way to revoke, and it can
-  // only revoke what its holder registered.
+  // methods are additive, and the published `vault-mcp-api` builds up to 1.0.x
+  // refused any other number. Since SDK 1.1.0 (#402 step A) the number is a
+  // FLOOR on the SDK side, so step B bumps this to 2 for the partial-result
+  // envelope and the per-call context without darkening a rebuilt satellite.
+  // What the object LOST at S2 is `unregisterTools(ownerPluginId)` — an
+  // id-addressed revocation anyone holding this object could aim at anyone
+  // else's tools; the disposer `registerTools` returns is now the only way to
+  // revoke, and it can only revoke what its holder registered.
   api: VaultMcpApi & GovernanceSeam = {
     apiVersion: 1,
     registerTools: (owner, tools) => externalRegistryOf(this).registerTools(owner, tools),

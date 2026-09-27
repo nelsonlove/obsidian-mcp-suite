@@ -1,11 +1,14 @@
 {
   "name": "vault-mcp-api",
-  "version": "1.0.0",
-  "description": "Publisher SDK for Governor's external tool registry — let your Obsidian plugin publish MCP tools to Claude Code through Governor (plugin id `governor`, `vault-mcp` before 0.12.0). The package name is unchanged by that rename.",
+  "version": "1.1.0",
+  "description": "Publisher SDK for the vault-mcp host's external tool registry \u2014 let your Obsidian plugin publish MCP tools to Claude Code through vault-mcp (plugin id `vault-mcp`; `governor` between 0.12.0 and the host/provider split). The package name is unchanged by those renames.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist", "src"],
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "tsc",
     "prepare": "tsc",
@@ -13,7 +16,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nelsonlove/obsidian-governor.git",
+    "url": "git+https://github.com/nelsonlove/obsidian-mcp-suite.git",
     "directory": "packages/vault-mcp-api"
   },
   "license": "MIT",
