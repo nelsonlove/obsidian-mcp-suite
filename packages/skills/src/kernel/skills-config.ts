@@ -16,7 +16,8 @@
 
 import * as os from "node:os";
 import * as path from "node:path";
-import type { DetectConfig } from "./exporter.js";
+import { EXPORTABLE_TYPES, isExportableType, type DetectConfig, type ExportableKind } from "./exporter.js";
+import { resolveTerritories } from "@vault-mcp/core";
 import { DEFAULT_PRELOAD_CAP } from "./transform.js";
 
 /** The skills module's config, as stored under `modules.skills.config` and
@@ -30,6 +31,17 @@ export interface SkillsConfig {
   pluginName: string;
   /** How a note declares its kind: the `type` frontmatter field, or a kind tag. */
   typeSource: "frontmatter" | "tags";
+  /** Frontmatter mode: the vault's own `type` spellings → the kind each compiles
+   *  as (`Note/AgentPolicy` → `policy`). SHIPS EMPTY (#404): a plugin must not
+   *  bake in one vault's class names, so nothing compiles until the operator maps
+   *  theirs. Case-sensitive. */
+  typeMap: Record<string, ExportableKind>;
+  /** Vault-relative folders the compiler reads. SHIPS EMPTY = reads nothing; the
+   *  operator names the folders. `03 Agents/03.18 Claude Code agents` stays out
+   *  until the fleet's switch (Claude Code loads it natively today). */
+  includeRoots: string[];
+  /** Folders under an include root the compiler must not read. */
+  excludeRoots: string[];
   /** Tags mode: `#{tagPrefix}{kind}` (e.g. `agent/` -> `#agent/skill`). */
   tagPrefix: string;
   /** How the vault-skills frontmatter fields are namespaced. */
@@ -60,6 +72,9 @@ export const DEFAULT_SKILLS_CONFIG: SkillsConfig = {
   outputDir: "~/.claude/skills/vault-skills",
   pluginName: "vault-skills",
   typeSource: "frontmatter",
+  typeMap: {},
+  includeRoots: [],
+  excludeRoots: [],
   tagPrefix: "agent/",
   fieldMode: "prefix",
   fieldPrefix: "",
@@ -83,6 +98,12 @@ export function skillsConfigOf(config: Record<string, unknown>): SkillsConfig {
     outputDir: str("outputDir"),
     pluginName: str("pluginName"),
     typeSource,
+    typeMap: typeMapOf(config.typeMap),
+    // The same resolver the host's territories use: trimmed, blanks and
+    // non-strings dropped, a leading `/` or `./` stripped — so a stray blank
+    // line can never read as "the whole vault".
+    includeRoots: [...resolveTerritories(config.includeRoots)],
+    excludeRoots: [...resolveTerritories(config.excludeRoots)],
     tagPrefix: str("tagPrefix"),
     fieldMode,
     fieldPrefix: str("fieldPrefix"),
@@ -100,9 +121,50 @@ export function skillsConfigOf(config: Record<string, unknown>): SkillsConfig {
 }
 
 /** The detection + field-namespacing config the exporter reads — the single
- * mapping shared by export, the read-only tools, and the mark write path. */
+ * mapping shared by export, the read-only tools, and the mark write path.
+ * `typeMap` and the roots ride along so every collector applies them. */
 export function fieldsOf(s: SkillsConfig): DetectConfig {
-  return { mode: s.fieldMode, prefix: s.fieldPrefix, key: s.fieldKey, typeSource: s.typeSource, tagPrefix: s.tagPrefix };
+  return {
+    mode: s.fieldMode, prefix: s.fieldPrefix, key: s.fieldKey, typeSource: s.typeSource, tagPrefix: s.tagPrefix,
+    typeMap: s.typeMap, includeRoots: s.includeRoots, excludeRoots: s.excludeRoots,
+  };
+}
+
+/** Coerce a stored type map: an object whose values are exportable kinds. Any
+ *  other shape, and any entry with a non-kind value or a blank key, is DROPPED
+ *  (reported by `validateSkillsConfig`), never guessed. */
+export function typeMapOf(raw: unknown): Record<string, ExportableKind> {
+  const out: Record<string, ExportableKind> = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const key = k.trim();
+    if (key && isExportableType(v)) out[key] = v;
+  }
+  return out;
+}
+
+/** The settings tab stores the map as lines of `<vault type> = <kind>`; this is
+ *  the parse (one entry per line, first `=` splits, blanks ignored) and its
+ *  inverse. Kept pure so the tab's round-trip is testable headlessly. */
+export function parseTypeMapLines(text: string): { map: Record<string, ExportableKind>; problems: string[] } {
+  const map: Record<string, ExportableKind> = {};
+  const problems: string[] = [];
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+    const eq = line.indexOf("=");
+    if (eq < 0) { problems.push(`'${line}': expected '<vault type> = <kind>'`); continue; }
+    const key = line.slice(0, eq).trim();
+    const kind = line.slice(eq + 1).trim();
+    if (!key) { problems.push(`'${line}': the vault type is blank`); continue; }
+    if (!isExportableType(kind)) { problems.push(`'${line}': '${kind}' is not one of ${EXPORTABLE_TYPES.join("/")}`); continue; }
+    map[key] = kind;
+  }
+  return { map, problems };
+}
+
+export function typeMapLines(map: Readonly<Record<string, ExportableKind>>): string {
+  return Object.entries(map).map(([k, v]) => `${k} = ${v}`).join("\n");
 }
 
 /** Validate a merged config for the config tab (manifest.config.validate).
@@ -119,6 +181,22 @@ export function validateSkillsConfig(config: Record<string, unknown>): string[] 
   }
   if (config.fieldMode !== undefined && config.fieldMode !== "prefix" && config.fieldMode !== "nested") {
     problems.push('fieldMode must be "prefix" or "nested"');
+  }
+  if (config.typeMap !== undefined) {
+    if (!config.typeMap || typeof config.typeMap !== "object" || Array.isArray(config.typeMap)) {
+      problems.push("typeMap must be an object of '<vault type>': '<kind>' — a hand-edited value of another shape is ignored entirely");
+    } else {
+      for (const [k, v] of Object.entries(config.typeMap as Record<string, unknown>)) {
+        if (!k.trim()) problems.push("typeMap has an entry with a blank vault type — ignored");
+        else if (!isExportableType(v)) problems.push(`typeMap: '${k}' → '${String(v)}' is not one of ${EXPORTABLE_TYPES.join("/")} — ignored`);
+      }
+    }
+  }
+  if (Object.keys(typeMapOf(config.typeMap)).length === 0 && (config.typeSource ?? "frontmatter") === "frontmatter") {
+    problems.push("the type map is EMPTY: in frontmatter mode nothing will be compiled until you map your vault's type values (e.g. Note/AgentPolicy = policy)");
+  }
+  if (resolveTerritories(config.includeRoots).length === 0) {
+    problems.push("include roots are EMPTY: nothing will be read until you name the folders to compile");
   }
   if (config.preloadCap !== undefined &&
       !(typeof config.preloadCap === "number" && Number.isFinite(config.preloadCap) && config.preloadCap >= 0)) {

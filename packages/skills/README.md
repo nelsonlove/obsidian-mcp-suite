@@ -48,6 +48,10 @@ npm test               # tsc --noEmit && node --test 'tests/*.test.mjs'
 
 `pretest` rebuilds `@vault-mcp/core` first, for the same reason the host's does: several tests import published core contracts from `packages/core/dist`, so without the rebuild you are testing the previous build's bytes.
 
+## Nothing compiles until the operator names their classes and folders
+
+Since #404 the plugin ships no vault convention: the type map (`<vault type> = skill|agent|policy|command`) and the folders to compile (`includeRoots` / `excludeRoots`) are settings with EMPTY defaults, and the compile, the preview and the settings validation say so loudly rather than compile nothing in silence. The kernel keeps an identity map for its direct callers, so `analyzeVault` / `runExport` over bare `type: skill` notes are unchanged. `tests/skills-settings-404.test.mjs` holds the switch test the fleet runs before retiring the `~/.claude/agents` symlink: with the rank folder as the only root and `Person/Agent = agent`, exactly the rank definitions compile. The full account is `docs/skills.md` ("Config") and the locked decision in `CLAUDE.md`.
+
 ## It works with no host installed
 
 The pane, the commands, the ribbon, and export-on-save are pure Obsidian plus the compiler core. With Governor absent all of that still works; only the six MCP tools go unpublished, and they appear on their own the moment a host loads (the SDK registers on the host's ready event). `main.ts` registers the human surface before it publishes, so the claim and the code agree.
