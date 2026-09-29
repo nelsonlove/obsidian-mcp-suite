@@ -67,7 +67,7 @@ describe("real call sites honor the alias", () => {
   // so a future move still only has to update one constant.
   test("DEFAULT_BASELINE_REL names a live folder, not a retired ancestor", () => {
     assert.doesNotMatch(DEFAULT_BASELINE_REL, /^Assent\//, "vault-root Assent/ was refiled in 2026-08");
-    assert.doesNotMatch(DEFAULT_BASELINE_REL, /00\.89 Assent/, "00.89 was renamed to obsidian-governor");
+    assert.doesNotMatch(DEFAULT_BASELINE_REL, /00\.89 Assent/, "00.89 was renamed away from Assent");
     assert.match(DEFAULT_BASELINE_REL, /^00-09 System\/.*\/Conformance baseline\.md$/);
     // Shape, not literal (the comment above): the note moved under Archive/ when the
     // slot's build records were archived (2026-09), and the bare `Build/` path then
