@@ -20,6 +20,7 @@ import {
   acceptTransitionReason,
   acceptForbiddenReason,
   hasHumanVerification,
+  humanVerificationOf,
   isHumanVerification,
   unverifiableProtectedPropertyIn,
   acceptTransitionNeedsBefore,
@@ -799,6 +800,32 @@ describe("scanForAcceptFence: a block YAML cannot parse that carries a `verified
   test("a parseable block with `verified` is refused structurally, through acceptForbiddenReason", () => {
     const yaml = (b: string) => ({ verified: [] });
     assert.match(scanForAcceptFence("---\nverified: []\n---\nbody", yaml) ?? "", /verification field 'verified'/);
+  });
+});
+
+describe("humanVerificationOf — the record of a note's acceptance, for the compiled artifact (01.61 rule 11)", () => {
+  test("the LAST human entry wins; machine entries are never it; a Date is ISO; a missing date is null", () => {
+    const H1 = { by: "human:nelson", at: "2026-09-01T10:00:00-04:00" };
+    const H2 = { by: "human:nelson", at: "2026-09-20T10:00:00-04:00" };
+    const M = { by: "vault-mcp/0.19.0", at: "2026-09-28T00:00:00Z" };
+    assert.deepEqual(humanVerificationOf({ verified: [H1, H2, M] }), { by: "human:nelson", at: "2026-09-20T10:00:00-04:00" });
+    assert.deepEqual(humanVerificationOf({ Verified: H1 }), { by: "human:nelson", at: "2026-09-01T10:00:00-04:00" }, "one entry, and the key case-insensitive");
+    assert.deepEqual(humanVerificationOf({ verified: [{ by: "human:nelson", at: new Date("2026-09-25T09:08:39Z") }] }), { by: "human:nelson", at: "2026-09-25T09:08:39.000Z" });
+    assert.deepEqual(humanVerificationOf({ verified: [{ by: "human:nelson" }] }), { by: "human:nelson", at: null });
+    assert.equal(humanVerificationOf({ verified: [M] }), null);
+    assert.equal(humanVerificationOf({ verified: [{ by: "human:" }] }), null, "the bare prefix names nobody");
+    assert.equal(humanVerificationOf({ verified: [] }), null);
+    assert.equal(humanVerificationOf({}), null);
+    assert.equal(humanVerificationOf(null), null);
+  });
+
+  test("it describes EXACTLY the notes hasHumanVerification accepts — never a note the gate refused, never nothing for one it passed", () => {
+    const corpus = [
+      {}, { verified: [] }, { verified: "" }, { verified: {} }, { verified: [{ by: "human:" }] }, { verified: [{ by: "vault-mcp/1" }] },
+      { verified: [{ by: "human:nelson" }] }, { verified: { by: "human:nelson", at: "x" } }, { VERIFIED: [{ by: "human:a" }, { by: "bot" }] },
+      { verified: [{ by: "Human:nelson" }] }, { verified: ["human:nelson"] }, { verified: [null, { by: "human:b", at: new Date(0) }] },
+    ];
+    for (const fm of corpus) assert.equal(humanVerificationOf(fm) !== null, hasHumanVerification(fm), JSON.stringify(fm));
   });
 });
 
