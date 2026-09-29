@@ -119,7 +119,7 @@ Failure is a conflict and changes nothing. Multi-target operations must document
 
 Retry safety for calls that returned or remain in flight. Identity includes key, action id/version, normalized arguments, and revision precondition. Reuse with a different identity is refused. (The shipped kernel-v0 identity is `(key, operation, arguments, if_rev)` — see [kernel-v0](kernel-v0.md); folding the action version into identity arrives with the registry-native execution path.)
 
-Keys have a bounded lifetime and clear on plugin restart. An uncertain timeout is not retained as a completed identity.
+Keys have a bounded lifetime (10 minutes). A plugin reload keeps them; after a full restart a key that ran answers "already done" from the journal. A timed-out (uncertain) call keeps its key reserved until the write settles, so it is never retained as a completed identity before its real outcome is known.
 
 ### `intent`
 
