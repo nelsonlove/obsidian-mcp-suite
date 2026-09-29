@@ -33,7 +33,7 @@ export {
   isVerifiedKey,
   isBlankVerification,
   isHumanVerification,
-  hasHumanVerification,
+  hasHumanVerification, humanVerificationOf,
   unverifiableProtectedPropertyIn,
   unverifiableBeforeReason,
   parseProtectedPropertyLines,
