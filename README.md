@@ -140,6 +140,7 @@ The refusal comes before the write queue, so a refused call is not in the journa
 | `obsidian_plugin_uninstall` | nothing (not a vault write) |  |
 | `obsidian_refile_address` | `idempotency_key` |  |
 | `obsidian_release_scope` | nothing (not a vault write) |  |
+| `obsidian_rename_heading` | `if_rev` |  |
 | `obsidian_renew_scope` | nothing (not a vault write) |  |
 | `obsidian_renumber_address` | `idempotency_key` |  |
 | `obsidian_repoint_link` | nothing | Temporarily exempt (Nelson's "a", 2026-09-29): ruled token, but its only named path is target_path, the note links point AT, so an if_rev would check the wrong file; back to token with #427. |
