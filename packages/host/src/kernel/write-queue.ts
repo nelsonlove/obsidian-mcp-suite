@@ -52,6 +52,24 @@ export class WriteTimeoutError extends Error {
 }
 
 /**
+ * Typed refusal for an operation still WAITING in the queue when the plugin
+ * instance unloaded (#435). It never started, so nothing was written and a
+ * retry is safe. Without this, a reload left the old instance's queue running:
+ * its waiting writes ran minutes later against the live vault, outside the new
+ * instance's idempotency store, so a key could not stop them.
+ */
+export class QueueClosedError extends Error {
+  readonly code = "plugin_unloaded";
+  constructor(readonly op: string) {
+    super(
+      `'${op}' was still waiting in the write queue when vault-mcp was unloaded or reloaded, so it was NOT run: ` +
+        `nothing was written. It is safe to retry.`
+    );
+    this.name = "QueueClosedError";
+  }
+}
+
+/**
  * How an ABANDONED operation eventually settled. The queue has already rejected
  * it with WriteTimeoutError and moved on, so this is the only remaining evidence
  * of what the vault actually did — the journal turns it into a corrective record.
@@ -77,6 +95,7 @@ interface RunningOp {
 export class WriteQueue {
   private readonly pending: QueueItem[] = [];
   private current: RunningOp | null = null;
+  private closed = false;
 
   constructor(
     private readonly timeoutMs: number = WRITE_TIMEOUT_MS,
@@ -111,6 +130,7 @@ export class WriteQueue {
    */
   run<T>(op: string, fn: () => Promise<T> | T, onLate?: (settlement: LateSettlement) => void): Promise<T> {
     return new Promise<T>((resolve, reject) => {
+      if (this.closed) { reject(new QueueClosedError(op)); return; }
       this.pending.push({ op, fn, resolve, reject, onLate });
       // Enqueue is a queue event: check the running operation's wall-clock
       // deadline before pumping, so a newcomer never sits behind an operation
@@ -135,6 +155,18 @@ export class WriteQueue {
     const cur = this.current;
     if (cur !== null && this.now() - cur.startedAt >= this.timeoutMs) cur.abandon();
     this.pump();
+  }
+
+  /**
+   * Close the queue at plugin unload (#435): every operation still WAITING is
+   * refused with QueueClosedError (it never ran, so nothing was written), and
+   * every later run() is refused the same way. The operation already RUNNING
+   * is left to finish — Obsidian offers no cancellation — and settles to its
+   * caller as usual. Idempotent.
+   */
+  close(): void {
+    this.closed = true;
+    for (const item of this.pending.splice(0)) item.reject(new QueueClosedError(item.op));
   }
 
   private pump(): void {
@@ -185,7 +217,9 @@ export class WriteQueue {
     // Promise.resolve().then keeps a SYNCHRONOUS throw from fn() inside the
     // queue's control flow — otherwise it would escape run()'s executor.
     Promise.resolve()
-      .then(() => item.fn())
+      // #435 review: the item was dequeued, but fn has not started yet (it
+      // starts a microtask later). A close in between must refuse it too.
+      .then(() => { if (this.closed) throw new QueueClosedError(item.op); return item.fn(); })
       .then(
         (v) => { if (claim()) item.resolve(v); else late({ ok: true, value: v }); },
         (e) => { if (claim()) item.reject(e); else late({ ok: false, error: e }); }
