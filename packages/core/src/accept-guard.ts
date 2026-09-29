@@ -146,16 +146,6 @@ export function isHumanVerification(entry: unknown): boolean {
   return typeof by === "string" && by.startsWith("human:") && by.slice("human:".length).trim() !== "";
 }
 
-/** Whether a note's frontmatter carries at least one human verification: the
- *  `verified` key (case-insensitive, the live key alone — not the retired
- *  family), a list of entries or one entry, any of them naming a `human:`
- *  actor. This is the ACCEPTED state of 01.41 ("a note carrying a `verified`
- *  entry whose actor has the `human:` prefix"), the test the skills compiler
- *  gates on (rule 8: nothing unaccepted reaches a compiled agent prompt). It
- *  is kept HERE, beside the accept guard, so the compiler's definition of the
- *  accepted state cannot drift from the perimeter's vocabulary; the guard
- *  itself refuses agent writes to `verified` and does not call this. Blank,
- *  absent, or machine-only ⇒ false. */
 /** The human verification a note carries, for the record: the LAST entry in
  *  the `verified` list whose actor names a human (01.41 rule 1f), as
  *  `{by, at}` — `at` rendered as the vault wrote it (a string as-is, a parsed
@@ -178,6 +168,16 @@ export function humanVerificationOf(fm: Record<string, unknown> | null | undefin
   };
 }
 
+/** Whether a note's frontmatter carries at least one human verification: the
+ *  `verified` key (case-insensitive, the live key alone — not the retired
+ *  family), a list of entries or one entry, any of them naming a `human:`
+ *  actor. This is the ACCEPTED state of 01.41 ("a note carrying a `verified`
+ *  entry whose actor has the `human:` prefix"), the test the skills compiler
+ *  gates on (rule 8: nothing unaccepted reaches a compiled agent prompt). It
+ *  is kept HERE, beside the accept guard, so the compiler's definition of the
+ *  accepted state cannot drift from the perimeter's vocabulary; the guard
+ *  itself refuses agent writes to `verified` and does not call this. Blank,
+ *  absent, or machine-only ⇒ false. */
 export function hasHumanVerification(fm: Record<string, unknown> | null | undefined): boolean {
   if (!fm) return false;
   const key = Object.keys(fm).find((k) => k.trim().toLowerCase() === "verified");
