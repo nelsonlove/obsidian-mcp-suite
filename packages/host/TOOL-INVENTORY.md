@@ -14,14 +14,14 @@ The FULL set is locked by `tests/tool-inventory.test.mjs`: the names documented
 here must equal the names registered in source, both directions, or the suite
 fails (the fs-expressible and scheme sub-locks from #25/task-6 still apply).
 
-**Count summary:** 17 fs-expressible + 42 always-live + 6 module-mounted
-(default enabled, settings-toggleable) = **65 base** tools, plus up to
+**Count summary:** 17 fs-expressible + 43 always-live + 6 module-mounted
+(default enabled, settings-toggleable) = **66 base** tools, plus up to
 6 conditional integration tools, 1 Importer-plugin-conditional import tool
 (`obsidian_import_apple_notes`), 5 CLI-binary-conditional dedicated tools
 (`obsidian_note_history`, `obsidian_note_diff`, `obsidian_base_create`,
 `obsidian_plugin_install`, `obsidian_plugin_uninstall`), and 1 settings-gated
 CLI-conditional tool (`obsidian_cli`, default OFF)
-= **up to 78 total**.  The 3 Code Mode meta-tools are an alternative
+= **up to 79 total**.  The 3 Code Mode meta-tools are an alternative
 per-connection surface and are not counted (a session sees one surface or the
 other, never both).  Nothing outside the locked `obsidian_*` family is counted
 here any more: the two always-on `governance_*` revision tools left for the
@@ -80,7 +80,7 @@ against its `FilesystemBackend`.
 
 ---
 
-## Section 2 — live-only, always registered (42)
+## Section 2 — live-only, always registered (43)
 
 These tools depend on live Obsidian `app.*` state and cannot be expressed on the
 filesystem.  They are unconditionally registered on every `buildMcpServer` call,
@@ -99,6 +99,7 @@ regardless of which community plugins are installed.
 |---|---|
 | `obsidian_move_notes` | Batch move/rename (live-only — not in the shared 17) |
 | `obsidian_repoint_link` | Repoint every `[[link_name]]` at `target_path`, vault-wide (live-only; fixes broken links that rename-based rewrite can't touch). Flags: `dry_run`, `unresolved_only` (skip still-resolving links), `drop_echo_alias` (drop [[x\|x]] echo aliases) |
+| `obsidian_rename_heading` | Rename one heading in `path` and rewrite every link to it across visible notes — wikilinks, embeds, markdown links, same-note `[[#H]]`, heading chains (#424). Use this, not a text edit, to rename a heading: a text edit leaves every `[[Note#Heading]]` link broken. Refuses a missing or duplicated heading, a clashing new name, and `[ ] \| # ^`. Record notes and frontmatter links are reported under `skipped`, not rewritten. Contained by the allowlist. Flag: `dry_run` |
 
 ### `tools-scheme-write.ts` — `registerSchemeWriteTools` (3 tools)
 

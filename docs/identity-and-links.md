@@ -96,7 +96,7 @@ an area you can't see. The validator behind both codes is `resolveScope`, which 
 `@vault-mcp/core` at S7 so this tool and the `vaultmcp-health` satellite's lint share one copy; the
 backslash case arrived with that move and made both callers stricter at once.
 
-## `obsidian_repoint_link` — the one deliberate repair
+## `obsidian_repoint_link` — the deliberate link repair
 
 To act on a report, **`obsidian_repoint_link`** (`packages/host/src/mcp/tools-vault-write.ts`)
 rewrites every wikilink matching a name to a target you choose — `dry_run` first,
@@ -108,6 +108,10 @@ Its blast radius isn't in its arguments (it scans notes to find the links it rew
 is contained by the **same allowlist**: with an allowlist configured it reads, rewrites, and
 names only visible notes — the response says `scoped_to_allowlist: true`, and the repair is
 then **partial** (dangling links to the same name survive outside the allowlist).
+
+## `obsidian_rename_heading` — renaming a heading heals its links
+
+A heading is part of every link that names it (`[[Note#Heading]]`), so changing the heading text with an ordinary edit breaks those links and nothing reports it. **`obsidian_rename_heading`** (`packages/host/src/mcp/tools-vault-write.ts`, #424) is the headless form of Obsidian's *Rename this heading* command: it renames one heading and rewrites every link to it, in wikilinks, embeds, markdown links, same-note links and heading chains. It matches links the way Obsidian's `resolveSubpath` does (punctuation stripped, case ignored), and refuses a rename that a link could not tell apart from another heading. It discovers its blast radius like the repair above and is contained by the same allowlist (`scoped_to_allowlist`); it also leaves record notes as they are and reports them under `skipped`.
 
 ## Read-boundary containment
 

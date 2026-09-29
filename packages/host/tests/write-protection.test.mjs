@@ -41,7 +41,7 @@ const TABLE = [
   { op: "run a command", class: "key", calls: [["obsidian_run_command", {}]] },
   { op: "create if absent", class: "exempt", calls: [["obsidian_write_note", { overwrite: false }], ["obsidian_write_note", {}]] },
   { op: "move, rename", class: "key", calls: [["obsidian_move_note", {}], ["obsidian_move_notes", {}]] },
-  { op: "rename a heading", class: "token", calls: [["obsidian_rename_heading", {}]], note: "the tool lands with #425; this row is checked once both are on main" },
+  { op: "rename a heading", class: "token", calls: [["obsidian_rename_heading", {}]] },
   { op: "scheme move", class: "key", calls: [["obsidian_assign_address", {}], ["obsidian_refile_address", {}], ["obsidian_renumber_address", {}]] },
   { op: "repoint a link", class: "exempt (temporary)", calls: [["obsidian_repoint_link", {}]], code: "exempt", why: "its only named path is target_path, the note links point AT, not the notes it rewrites; a token would check the wrong file" },
   { op: "trash", class: "both", calls: [["obsidian_trash", {}]] },
