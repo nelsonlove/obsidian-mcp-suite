@@ -134,6 +134,10 @@ A useful preview includes collisions, partial-scope behavior, dependencies, revi
 
 ## Mutate safely
 
+### Renaming a heading
+
+Rename a heading with `obsidian_rename_heading`, never by editing its text. A link can point at a heading (`[[Note#Heading]]`, `![[Note#Heading]]`, `[[#Heading]]`), and a heading renamed by `obsidian_patch_note`, `obsidian_write_note` or any other text edit leaves every such link pointing at nothing, with no error anywhere. `obsidian_rename_heading` renames the heading and rewrites the links in one operation, and reports under `skipped` what it did not rewrite (links in record notes, frontmatter links, notes that changed mid-run). Run it with `dry_run: true` first to see which notes it will touch.
+
 ### Revision precondition
 
 For a change based on a prior read, pass the returned revision as `if_rev`. A conflict means the world changed before execution. Re-read and decide; do not drop the precondition to force the old plan through.

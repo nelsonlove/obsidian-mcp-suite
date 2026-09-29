@@ -397,7 +397,9 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   // ctx carries the guard's settings: obsidian_repoint_link scans the vault for
   // itself, so it must contain that scan by the allowlist on its own — no
   // argument-level check can see a set the handler discovers.
-  registerVaultWriteTools(server, app, ctx);
+  // isRecord: obsidian_rename_heading rewrites links in notes it discovers,
+  // which the kernel's record check (paths an operation NAMES) cannot see.
+  registerVaultWriteTools(server, app, { getSettings: () => ctx.getSettings(), isRecord: (p) => probe.record?.(p) === true });
   // ── scope-provider write surface: assign/refile/renumber address ───────────
   // Cannot go through mountModules below: that host's registerAll gate refuses
   // any tool whose readOnlyHint !== true (its own header comment), and these
