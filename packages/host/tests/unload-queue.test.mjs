@@ -115,6 +115,56 @@ describe("through the kernel", () => {
   });
 });
 
+describe("#438 review", () => {
+  test("an item dequeued but not yet started when the queue closes is refused, not run", async () => {
+    const q = new WriteQueue(60_000);
+    let ran = false;
+    const p = q.run("x", () => { ran = true; }).catch((e) => e);
+    q.close(); // same tick: pump has dequeued the item, fn starts a microtask later
+    const e = await p;
+    assert.equal(e?.code, "plugin_unloaded");
+    assert.equal(ran, false);
+  });
+
+  test("a RUNNING write's key survives a reload through the shared store: the retry waits and does not run again", async () => {
+    const shared = new IdempotencyStore();
+    const a = harness(shared);
+    const g = gate();
+    let runs = 0;
+    const first = a.kernel.runMutation(mc("K3"), async () => { runs++; await g.p; return { content: [{ type: "text", text: "made" }] }; });
+    await tick();
+    a.kernel.queue.close(); // unload while it runs
+    const b = harness(shared); // the new instance gets the same store
+    assert.equal(seedFromJournal(shared, a.records(), Date.now()), 0, "nothing journaled yet, nothing seeded");
+    const retry = b.kernel.runMutation(mc("K3"), async () => { runs++; return { content: [] }; });
+    g.open();
+    assert.equal((await first).content[0].text, "made");
+    assert.equal((await retry).content[0].text, "made", "the retry gets the running write's result");
+    assert.equal(runs, 1);
+  });
+
+  test("a RETURNED failure envelope under a key is seeded (it replayed before the reload too); a thrown failure is not", async () => {
+    const a = harness();
+    await a.kernel.runMutation(mc("K4"), async () => ({ content: [{ type: "text", text: "Error: 2 of 5 failed" }], isError: true }));
+    await a.kernel.runMutation(mc("K5"), async () => { throw new Error("boom"); }).catch(() => {});
+    await tick();
+    const recs = a.records();
+    assert.equal(recs.find((r) => r.idempotencyKey === "K4").returned, true);
+    assert.equal(recs.find((r) => r.idempotencyKey === "K5").returned, undefined);
+    const store = new IdempotencyStore();
+    assert.equal(seedFromJournal(store, recs, Date.now()), 1);
+    assert.ok(store.get("K4"));
+    assert.equal(store.get("K5"), undefined);
+  });
+
+  test("seeding never overwrites a key the live store already holds", () => {
+    const store = new IdempotencyStore();
+    store.set("K6", { op: "obsidian_write_note", args: "x", result: "LIVE", ts: "t" });
+    seedFromJournal(store, [{ ts: new Date().toISOString(), op: "obsidian_write_note", outcome: "ok", argsDigest: {}, idempotencyKey: "K6", argsHash: "h" }], Date.now());
+    assert.equal(store.get("K6").result, "LIVE");
+  });
+});
+
 describe("main.ts wiring (source pins)", () => {
   const src = fs.readFileSync(new URL("../src/main.ts", import.meta.url), "utf8");
   test("unload closes the write queue (a registered callback runs at unload)", () => {
@@ -122,5 +172,10 @@ describe("main.ts wiring (source pins)", () => {
   });
   test("load seeds the idempotency store from the journal", () => {
     assert.match(src, /seedFromJournal\(/);
+  });
+  test("a reload hands the live key store to the new instance (one store per vault on globalThis)", () => {
+    assert.match(src, /__vaultMcpIdempotency \?\?= new Map\(\)/);
+    assert.match(src, /stores\.get\(this\.slug\) \?\? new IdempotencyStore\(\)/);
+    assert.ok(src.indexOf("const idempotency = stores.get") > src.indexOf("this.slug = vaultSlug"), "the slug is set before the store is looked up");
   });
 });

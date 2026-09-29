@@ -48,10 +48,13 @@
 // never evaluated. Present-vs-absent is divergence too: dropping the
 // precondition on a retry is exactly the mistake worth catching.
 //
-// IN MEMORY, PER PLUGIN INSTANCE. Nothing is persisted: a plugin reload (or an
-// Obsidian restart) clears every key, after which the same key re-executes.
-// That is the v0 boundary — the store exists to collapse retries inside one
-// session's lifetime, not to make an operation exactly-once forever.
+// IN MEMORY, SHARED ACROSS RELOADS, SEEDED ACROSS RESTARTS (#435). main.ts
+// keeps ONE store per vault on `globalThis` and hands it to each new plugin
+// instance, so a reload keeps every key — including a key whose operation is
+// still RUNNING on the unloaded instance, whose retry then waits for it. A full
+// Obsidian restart loses memory, so the store is also seeded from the journal
+// (seedFromJournal). The store exists to collapse retries of one request, not
+// to make an operation exactly-once forever: after the TTL a key is gone.
 
 /** Default replay window. Long enough to cover a stuck write plus a retry, short enough to stay small. */
 export const IDEMPOTENCY_TTL_MS = 10 * 60_000;
@@ -173,6 +176,8 @@ export interface SeedRecord {
   ts: string;
   op: string;
   outcome: string;
+  /** True when the operation RETURNED an envelope (ok or isError), false or absent when it threw. */
+  returned?: boolean;
   argsDigest: Record<string, unknown>;
   idempotencyKey?: string;
   argsHash?: string;
@@ -197,7 +202,14 @@ export function seedFromJournal(store: IdempotencyStore, records: SeedRecord[], 
   let seeded = 0;
   for (const r of records) {
     if (r.idempotencyKey === undefined || r.argsHash === undefined) continue;
-    if (r.outcome !== "ok" && r.outcome !== "late-ok") continue;
+    // ok / late-ok: the write happened. A RETURNED failure envelope (outcome
+    // "error" with returned: true) is replayed before a reload too — a partial
+    // batch report, say, whose items did land — so it is seeded as well. A
+    // thrown failure is not: its key was free before the reload as well.
+    if (r.outcome !== "ok" && r.outcome !== "late-ok" && !(r.outcome === "error" && r.returned === true)) continue;
+    // A key the store already holds (a live store handed over across a reload,
+    // #435) knows more than the journal: never overwrite it.
+    if (store.has(r.idempotencyKey)) continue;
     const at = Date.parse(r.ts);
     if (!Number.isFinite(at) || nowMs - at >= ttlMs) continue;
     const first = r.corrects ?? r.ts;
@@ -289,6 +301,11 @@ export class IdempotencyStore {
   }
 
   /** Keys claimed but not yet settled. */
+  /** True when `key` is stored (inside its TTL) or reserved by a call still running. */
+  has(key: string): boolean {
+    return this.reservations.has(key) || this.get(key) !== undefined;
+  }
+
   get inFlight(): number {
     return this.reservations.size;
   }

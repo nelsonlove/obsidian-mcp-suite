@@ -626,7 +626,13 @@ export default class VaultMcpPlugin extends Plugin {
       });
       return done;
     };
-    const idempotency = new IdempotencyStore();
+    // #435: ONE key store per vault, kept on globalThis so a reload hands it to
+    // the new instance. A write still RUNNING on the unloaded instance keeps its
+    // reservation here, so a retry on the new instance waits for it instead of
+    // running it again; seeding from the journal (below) covers a full restart.
+    const stores: Map<string, IdempotencyStore> = ((globalThis as Record<string, unknown>).__vaultMcpIdempotency ??= new Map()) as Map<string, IdempotencyStore>;
+    const idempotency = stores.get(this.slug) ?? new IdempotencyStore();
+    stores.set(this.slug, idempotency);
     const kernel = new Kernel(
       writeQueue,
       journal,

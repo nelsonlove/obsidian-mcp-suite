@@ -622,6 +622,7 @@ export class Kernel {
         ...(lockNotice !== undefined ? { lockNotice } : {}),
         ...(effects !== undefined ? { effects } : {}),
         ...this.preconditionFields(mc),
+        ...(mc.idempotencyKey !== undefined && settled !== undefined ? { returned: true } : {}),
       });
       // Release the key: waiters adopt this outcome verbatim, and only now does
       // the store decide the key's future. A RETURNED envelope (success or a
