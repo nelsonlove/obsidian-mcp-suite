@@ -90,7 +90,7 @@ Private operators may add separately installed capability packs. Those packs are
 
 Neither plugin is yet in Obsidian's Community Plugins directory (the submission is target state — see [Status and compatibility](docs/status-and-compatibility.md)). Governor ships as two plugins: install the host, and optionally install the governance provider on top of it.
 
-1. **Build** (or grab a [release](https://github.com/nelsonlove/obsidian-governor/releases) — BRAT-installable):
+1. **Build** (or grab a [release](https://github.com/nelsonlove/obsidian-mcp-suite/releases) — BRAT-installable):
    ```bash
    npm install && npm run build      # builds both packages/host and packages/governor
    ```

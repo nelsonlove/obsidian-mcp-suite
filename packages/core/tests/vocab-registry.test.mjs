@@ -80,17 +80,15 @@ describe("VocabRegistry", () => {
         ["glossary", "glossary"],
       ]
     );
-    // Stale-defaults regression pins: never gen3, never the dead 00.05
-    // registries slot (emptied by the 2026-08 reorganizations), never the
-    // vault-root Assent tree (refiled to 00.89), and never 00.89's own former
-    // `Assent` folder name (renamed to `obsidian-governor` on 2026-08-19).
+    // The shipped defaults name NO vault path at all: every root is the whole
+    // vault and no row carries a config path. A vault path in a default went
+    // dead silently three times (Assent → 00.89 obsidian-governor → 00.89
+    // obsidian-mcp-suite); the operator sets `termsRoot` in the satellite.
     for (const row of DEFAULT_VOCABULARIES) {
-      assert.doesNotMatch(row.root, /gen3/);
-      assert.doesNotMatch(row.root, /00\.05 Registries/);
+      assert.equal(row.root, "", `${row.id}: the whole vault, no shipped folder`);
+      assert.equal(row.config, undefined, `${row.id}: no shipped config, so no shipped path`);
     }
-    const termsRoot = String(DEFAULT_VOCABULARIES[1].config?.termsRoot);
-    assert.match(termsRoot, /00\.89 obsidian-governor/);
-    assert.doesNotMatch(termsRoot, /00\.89 Assent/);
+    assert.doesNotMatch(JSON.stringify(DEFAULT_VOCABULARIES), /00-09|00\.\d\d|Assent|governor/, "no vault layout anywhere in the defaults");
   });
 
   test("the defaults parse a fixture mirroring the live vault shapes", () => {
