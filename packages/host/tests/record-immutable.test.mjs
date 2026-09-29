@@ -307,7 +307,7 @@ describe("record_immutable through makeGuarded", () => {
       RW_DEF,
       async () => ({ content: [{ type: "text", text: "appended" }] }),
       "obsidian_append_note"
-    )({ path: "Records/2026-08.md", content: "\n## 2026-08-19\n…" }, {});
+    )({ path: "Records/2026-08.md", content: "\n## 2026-08-19\n…", idempotency_key: "k-rec" }, {});
     assert.equal(res.content[0].text, "appended");
   });
 });

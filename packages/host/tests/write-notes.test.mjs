@@ -17,7 +17,7 @@ import { ok } from "../src/mcp/helpers.ts";
 import { makeGuarded, resolveGuardedPath } from "../src/mcp/guarded.ts";
 import { Kernel, WriteQueue, WriteJournal, IdempotencyStore, LockStore, UidIndex } from "../src/kernel/index.ts";
 import { makeRegistry, DEFAULT_SCHEMES } from "../src/kernel/scheme/registry.ts";
-import { registerWriteNotesTool } from "../src/mcp/tools-write-notes.ts";
+import { registerWriteNotesTool, batchItemWriter } from "../src/mcp/tools-write-notes.ts";
 import { parseYaml } from "./obsidian-stub.mjs";
 
 const ACTOR = { transport: "mcp", client: "claude-code/1.0.0", connection: "conn-1" };
@@ -95,7 +95,8 @@ function harness({ existing = new Map(), settings = OPEN_SETTINGS, uidSource, sc
   const guarded = makeGuarded(guardedOpts);
   const guardedWrite = guarded(
     { annotations: RW, inputSchema: {} },
-    async ({ path, content, overwrite }) => ok(writeNote(path, content, overwrite ?? true)),
+    // The REAL per-item writer server.ts uses, over this harness's vault.
+    batchItemWriter((path, content, overwrite) => writeNote(path, content, overwrite), (path) => vault.has(path)),
     "obsidian_write_notes"
   );
 
@@ -228,7 +229,7 @@ describe("obsidian_write_notes — stamp end-to-end", () => {
       ["Keep/K.md", { rev: 100, content: "old", frontmatter: { uid: "KEEP-UID", created: "2019-01-01T00:00:00", "acceptance-status": "accepted" } }],
     ]);
     const { call, vault } = harness({ existing });
-    await call({ notes: [{ path: "Keep/K.md", frontmatter: { name: "K" }, body: "rewritten" }], stamp: true });
+    await call({ notes: [{ path: "Keep/K.md", frontmatter: { name: "K" }, body: "rewritten", if_rev: 100 }], stamp: true }); // an overwrite needs its token (01.33.5)
     const content = vault.get("Keep/K.md").content;
     assert.match(content, /uid: "KEEP-UID"/, "existing uid preserved");
     assert.match(content, /created: "2019-01-01T00:00:00"/, "existing created preserved");
@@ -254,11 +255,11 @@ describe("obsidian_write_notes — stamp end-to-end", () => {
     const uidSource = { paths: () => [path], uidOf: (p) => (p === path ? "KEEP-UID" : undefined) };
 
     const plain = harness({ existing, uidSource });
-    await plain.call({ notes: [{ path, frontmatter: { name: "K" }, body: "rewritten" }], stamp: true });
+    await plain.call({ notes: [{ path, frontmatter: { name: "K" }, body: "rewritten", if_rev: 100 }], stamp: true });
     const plainContent = plain.vault.get(path).content;
 
     const byUid = harness({ existing, uidSource });
-    const res = await byUid.call({ notes: [{ path: "uid:KEEP-UID", frontmatter: { name: "K" }, body: "rewritten" }], stamp: true });
+    const res = await byUid.call({ notes: [{ path: "uid:KEEP-UID", frontmatter: { name: "K" }, body: "rewritten", if_rev: 100 }], stamp: true });
     const byUidContent = byUid.vault.get(path).content;
 
     assert.equal(structured(res).error_count, 0);
@@ -276,7 +277,7 @@ describe("obsidian_write_notes — stamp end-to-end", () => {
     ]);
     const schemes = makeRegistry(DEFAULT_SCHEMES);
     const { call, vault } = harness({ existing, schemes, schemeNotes: [path] });
-    const res = await call({ notes: [{ path: "jd:06.11", frontmatter: { name: "V" }, body: "rewritten" }], stamp: true });
+    const res = await call({ notes: [{ path: "jd:06.11", frontmatter: { name: "V" }, body: "rewritten", if_rev: 100 }], stamp: true });
     const content = vault.get(path).content;
     assert.equal(structured(res).error_count, 0);
     assert.match(content, /uid: "JD-UID"/, "existing uid preserved");
@@ -298,7 +299,7 @@ describe("obsidian_write_notes — stamp end-to-end", () => {
     ]);
     const { call, vault } = harness({ existing });
     const res = await call({
-      notes: [{ path: "Keep/Typed.md", frontmatter: { name: "T", "acceptance-status": "proposed" }, body: "edited" }],
+      notes: [{ path: "Keep/Typed.md", frontmatter: { name: "T", "acceptance-status": "proposed" }, body: "edited", if_rev: 100 }],
       stamp: true,
     });
     assert.equal(structured(res).error_count, 0, "a typed, explicit non-accepted value is never refused");
@@ -436,7 +437,7 @@ describe("obsidian_write_notes — accept-forbidden guard", () => {
       ["Keep/Acc.md", { rev: 100, content: "old", frontmatter: { "acceptance-status": "accepted" } }],
     ]);
     const { call, vault } = harness({ existing });
-    const res = await call({ notes: [{ path: "Keep/Acc.md", frontmatter: { name: "A" }, body: "edited" }], stamp: true });
+    const res = await call({ notes: [{ path: "Keep/Acc.md", frontmatter: { name: "A" }, body: "edited", if_rev: 100 }], stamp: true });
     const body = structured(res);
     assert.equal(body.error_count, 0, "carrying an existing accepted forward is allowed");
     assert.equal(body.count, 1);
@@ -481,5 +482,33 @@ describe("obsidian_write_notes — B2 batch intent", () => {
     await call({ notes: [{ path: "Inbox/C.md", frontmatter: { name: "C" }, body: "c" }] });
     await new Promise((r) => setTimeout(r, 10));
     assert.equal("intent" in records()[0], false);
+  });
+});
+
+describe("obsidian_write_notes — per item, as write_note (01.33.5)", () => {
+  test("an item for an EXISTING note without if_rev is refused per item with the coded message; the batch goes on", async () => {
+    const { call, vault } = harness({ existing: new Map([["E/Old.md", { rev: 500, content: "old" }]]) });
+    const res = structured(await call({ notes: [{ path: "E/Old.md", body: "new" }, { path: "E/New.md", body: "fresh" }], stamp: false }));
+    assert.equal(vault.get("E/Old.md").content, "old", "not overwritten without a token");
+    const err = res.errors.find((e) => e.path === "E/Old.md");
+    assert.equal(err.code, "protection_required");
+    assert.match(err.error, /already exists, and this batch item carries no if_rev/);
+    assert.match(err.error, /pass that value as the item's if_rev/);
+    assert.ok(res.written.some((w) => w.path === "E/New.md" && w.created), "a new note is a create: exempt");
+  });
+  test("the same item WITH the note's if_rev overwrites it", async () => {
+    const { call, vault } = harness({ existing: new Map([["E/Old.md", { rev: 500, content: "old" }]]) });
+    const res = structured(await call({ notes: [{ path: "E/Old.md", body: "new", if_rev: 500 }], stamp: false }));
+    assert.equal(res.count, 1);
+    assert.match(vault.get("E/Old.md").content, /new/);
+  });
+  test("a retry of a CREATE under the same key replays instead of being refused as an existing note", async () => {
+    const { call, writeCalls } = harness();
+    const item = { path: "E/Once.md", body: "v1", idempotency_key: "K-create" };
+    assert.equal(structured(await call({ notes: [item], stamp: false })).count, 1);
+    const again = structured(await call({ notes: [item], stamp: false }));
+    assert.equal(again.count, 1, "the replay reports the first result");
+    assert.deepEqual(again.errors, []);
+    assert.equal(writeCalls.filter((p) => p === "E/Once.md").length, 1);
   });
 });

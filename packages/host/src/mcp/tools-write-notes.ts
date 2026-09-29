@@ -29,15 +29,42 @@
 // is unit-testable headlessly against a real Kernel and fake vault.
 
 import { z } from "zod";
-import { ok, okError } from "./helpers.js";
+import { ok, okError, codedError } from "./helpers.js";
+import { PROTECTION_REQUIRED } from "../kernel/write-protection.js";
 import { composeNote, AcceptForbiddenError, type ComposeResult } from "./write-notes-compose.js";
 
 /** readOnlyHint:false is honest — this tool mutates. It bypasses the monkeypatch, not the truth. */
 const RW = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
 
+/**
+ * The per-item writer behind `GuardedWrite` — the handler the guarded wrapper
+ * runs at DEQUEUE, after the kernel's idempotency and if_rev checks. One item
+ * is one write_note (01.33: "write notes (batch): per item, as write note"):
+ * an item carrying no if_rev arrives with `create_only` and is a create
+ * (exempt), so a note that already exists is refused here with the coded
+ * message naming if_rev — never overwritten without a token. Refusing HERE,
+ * not before the queue, is what keeps a retry working: a replay under the
+ * same idempotency_key is answered by the kernel before this runs.
+ */
+export function batchItemWriter(
+  write: (path: string, content: string, overwrite: boolean) => unknown | Promise<unknown>,
+  exists: (path: string) => boolean
+) {
+  return async ({ path, content, overwrite, create_only }: { path: string; content: string; overwrite?: boolean; create_only?: boolean }) => {
+    if (create_only && exists(path)) {
+      return codedError(
+        PROTECTION_REQUIRED,
+        `'${path}' already exists, and this batch item carries no if_rev, so it is a create (01.33 rule 6f: an overwrite needs a token). ` +
+          "Nothing was written. To overwrite it, read the note (obsidian_read_note returns `rev`) and pass that value as the item's if_rev."
+      );
+    }
+    return ok(await write(path, content, create_only ? false : (overwrite ?? true)));
+  };
+}
+
 /** The guarded single-writer this tool drives, one call per item. Returns an MCP result envelope. */
 export type GuardedWrite = (
-  args: { path: string; content: string; overwrite: boolean; if_rev?: number; idempotency_key?: string; intent?: string },
+  args: { path: string; content: string; overwrite: boolean; create_only?: boolean; if_rev?: number; idempotency_key?: string; intent?: string },
   extra: unknown
 ) => Promise<{ isError?: boolean; content?: Array<{ text?: string }>; structuredContent?: Record<string, unknown> }>;
 
@@ -134,7 +161,7 @@ export function registerWriteNotesTool(
               if_rev: z
                 .number()
                 .optional()
-                .describe("Per-item optimistic concurrency: only write if the note is still at this rev (from a read); else Error [rev_conflict], nothing written."),
+                .describe("REQUIRED to overwrite a note that exists (01.33 rule 6f): the note's rev from a read. An item without it is a CREATE, and is refused with Error [protection_required] if the note already exists. With it, the write lands only if the note is still at this rev; else Error [rev_conflict], nothing written."),
               idempotency_key: z
                 .string()
                 .min(1)
@@ -221,11 +248,21 @@ export function registerWriteNotesTool(
         // inside guardedWrite, since it is no longer `uid:`/`jd:`-shaped) — the
         // second allowlist check is defense-in-depth, not a second decision.
         try {
+          // Each item is a single write_note under the 01.33 table ("write
+          // notes (batch): per item, as write note"). An item WITH if_rev is an
+          // overwrite, and the kernel checks the token at dequeue. An item
+          // WITHOUT one is a create-if-absent (exempt): `create_only` tells
+          // the per-item writer to refuse, at dequeue, a note that already
+          // exists — naming if_rev as the way to overwrite it. The decision
+          // is made from the ARGUMENTS, not from the vault, so a retry with
+          // the same idempotency_key carries the same arguments and replays
+          // the first result instead of being refused (01.43 rules 3, 4, 4a).
           const envelope = await guardedWrite(
             {
               path: resolvedPath,
               content: composed.content,
               overwrite: true,
+              create_only: item.if_rev === undefined,
               ...(item.if_rev !== undefined ? { if_rev: item.if_rev } : {}),
               ...(item.idempotency_key !== undefined ? { idempotency_key: item.idempotency_key } : {}),
               // The batch-level intent describes the change-SET; the guarded
