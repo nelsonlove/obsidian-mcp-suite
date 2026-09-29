@@ -30,8 +30,9 @@ const WIKI = /(!?)\[\[((?:[^\[\]\n]|\[[^\[\]\n]*\])*?)\]\]/g;
 // A destination may hold one level of balanced parentheses (`Note (1).md`, as
 // Obsidian writes it: it encodes spaces but not parentheses).
 const DEST = String.raw`<[^>\n]*>|(?:[^()\s]|\([^()\s]*\))*`;
-// The display text may hold one level of brackets (`[![badge](url)](Note.md)`).
-const TEXT = String.raw`(?:[^\[\]\n\\]|\\.|\[(?:[^\[\]\n\\]|\\.)*\])*`;
+// The display text may hold one level of brackets (`[![badge](url)](Note.md)`). It is
+// bounded, so a long line of stray brackets cannot make the scan quadratic.
+const TEXT = String.raw`(?:[^\[\]\n\\]|\\.|\[(?:[^\[\]\n\\]|\\.){0,1000}\]){0,1000}`;
 const MARKDOWN = new RegExp(String.raw`(!?)\[(${TEXT})\]\((${DEST})(\s+"[^"\n]*")?\)`, "g");
 /** One markdown link, whole: embed marker, display text, destination, title. */
 const MARKDOWN_ONE = new RegExp(String.raw`^(!?)\[(${TEXT})\]\((${DEST})(\s+"[^"]*")?\)$`);
@@ -41,6 +42,29 @@ export const isRelativeLinkpath = (p: string): boolean => /^\.\.?\//.test(p);
 
 /** Where a line's content starts: after indentation and any blockquote markers (`> > `). */
 const LEAD = /^[ \t]*(?:>[ \t]?)*/;
+/** The same, and also past a list marker: a fence may open on a list item's first line (`- ```js`). */
+const FENCE_LEAD = /^[ \t]*(?:>[ \t]?)*(?:(?:[-*+]|\d+[.)])[ \t]+)?/;
+
+/** Sorted, merged [start, end) spans, and an O(log n) "is i inside one". */
+function coverage(spans: Array<[number, number]>): (i: number) => boolean {
+  const sorted = [...spans].sort((x, y) => x[0] - y[0]);
+  const merged: Array<[number, number]> = [];
+  for (const [a, b] of sorted) {
+    const last = merged[merged.length - 1];
+    if (last && a <= last[1]) last[1] = Math.max(last[1], b);
+    else merged.push([a, b]);
+  }
+  return (i) => {
+    let lo = 0, hi = merged.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (merged[mid][1] <= i) lo = mid + 1;
+      else if (merged[mid][0] > i) hi = mid - 1;
+      else return true;
+    }
+    return false;
+  };
+}
 
 /** [start, end) of every line from `from` on. */
 function linesOf(text: string, from: number): Array<[number, number]> {
@@ -64,7 +88,7 @@ function fencedSpans(text: string, from: number): Array<[number, number]> {
   const spans: Array<[number, number]> = [];
   let open: { start: number; ch: string; len: number } | null = null;
   for (const [a, b] of linesOf(text, from)) {
-    const line = text.slice(a, b).replace(LEAD, "");
+    const line = text.slice(a, b).replace(FENCE_LEAD, "");
     if (!open) {
       const m = /^(`{3,}|~{3,})/.exec(line);
       // A backtick fence's info string may not hold a backtick (then it is inline code).
@@ -88,14 +112,25 @@ function fencedSpans(text: string, from: number): Array<[number, number]> {
 function codeSpans(text: string, from: number, fenced: (i: number) => boolean): Array<[number, number]> {
   const spans: Array<[number, number]> = [];
   const pair = (a: number, b: number) => {
-    const runs = [...text.slice(a, b).matchAll(/`+/g)].map((m) => ({ at: a + m.index!, n: m[0].length, escaped: text[a + m.index! - 1] === "\\" }));
+    const escapedAt = (i: number) => { let n = 0; while (i - 1 - n >= 0 && text[i - 1 - n] === "\\") n++; return n % 2 === 1; };
+    const runs = [...text.slice(a, b).matchAll(/`+/g)].map((m) => ({ at: a + m.index!, n: m[0].length, escaped: escapedAt(a + m.index!) }));
+    // Where each run length occurs, in order, so finding a closer is a binary search.
+    const byLength = new Map<number, number[]>();
+    runs.forEach((r, x) => { const l = byLength.get(r.n); if (l) l.push(x); else byLength.set(r.n, [x]); });
+    const nextOfLength = (n: number, after: number): number => {
+      const l = byLength.get(n);
+      if (!l) return -1;
+      let lo = 0, hi = l.length;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (l[mid] <= after) lo = mid + 1; else hi = mid; }
+      return lo < l.length ? l[lo] : -1;
+    };
     for (let k = 0; k < runs.length; k++) {
       // A backslash cannot escape inside code, so an escaped run still closes a span;
       // it opens one only with the backticks after the escaped first one.
       const at = runs[k].escaped ? runs[k].at + 1 : runs[k].at;
       const n = runs[k].escaped ? runs[k].n - 1 : runs[k].n;
       if (n === 0) continue;
-      const j = runs.findIndex((r, x) => x > k && r.n === n);
+      const j = nextOfLength(n, k);
       if (j < 0) continue;
       spans.push([at, runs[j].at + runs[j].n]);
       k = j;
@@ -122,17 +157,17 @@ function codeSpans(text: string, from: number, fenced: (i: number) => boolean): 
  * live index, 2026-09-29), so a move must rewrite it too.
  */
 export function unindexedSpans(text: string): Array<[number, number]> {
-  const spans: Array<[number, number]> = [];
   // Frontmatter is YAML, not markdown: nothing in it opens code, a comment or math.
   const fm = /^---\n[\s\S]*?\n---(?:\n|$)/.exec(text);
   const body = fm ? fm[0].length : 0;
-  const inside = (i: number) => i < body || spans.some(([a, b]) => i >= a && i < b);
   // Code first: a `%%` or `$$` inside code is plain text, not a comment or math.
-  spans.push(...fencedSpans(text, body));
-  spans.push(...codeSpans(text, body, inside));
+  const spans: Array<[number, number]> = fencedSpans(text, body);
+  const inFence = coverage(spans);
+  spans.push(...codeSpans(text, body, (i) => i < body || inFence(i)));
+  const inCode = coverage(spans);
   // Then math, from delimiters that are not inside code.
   const pairUp = (re: RegExp, delim: number) => {
-    const at = [...text.matchAll(re)].map((m) => m.index!).filter((i) => !inside(i));
+    const at = [...text.matchAll(re)].map((m) => m.index!).filter((i) => i >= body && !inCode(i));
     // Pairs only: a delimiter with no partner hides nothing (missing a real link is damage;
     // rewriting one inside a stray comment is not).
     for (let k = 0; k + 1 < at.length; k += 2) spans.push([at[k], at[k + 1] + delim]);
@@ -148,8 +183,7 @@ function splitTarget(raw: string): { linkpath: string; subpath: string } {
 
 /** Every wikilink, embed and markdown link in `text` that Obsidian would index. */
 export function parseLinks(text: string): TextLink[] {
-  const spans = unindexedSpans(text);
-  const skip = (i: number) => spans.some(([a, b]) => i >= a && i < b);
+  const skip = coverage(unindexedSpans(text));
   const out: TextLink[] = [];
   for (const m of text.matchAll(WIKI)) {
     if (skip(m.index!)) continue;
@@ -162,8 +196,16 @@ export function parseLinks(text: string): TextLink[] {
     // Obsidian NFC-normalizes a link target before resolving it; so does this.
     out.push({ start: m.index!, end: m.index! + m[0].length, original: m[0], kind: "wiki", embed: m[1] === "!", linkpath: linkpath.trim().normalize("NFC"), subpath });
   }
-  for (const m of text.matchAll(MARKDOWN)) {
-    if (skip(m.index!)) continue;
+  // A markdown link's text may hold a link of its own (`[![alt](Pic.md)](Note.md)`): Obsidian
+  // indexes both, so the text is scanned too (one level, as the pattern allows).
+  const markdown = [...text.matchAll(MARKDOWN)].filter((m) => !skip(m.index!));
+  const nested: Array<{ index: number; m: RegExpMatchArray }> = [];
+  for (const m of markdown) {
+    if (!m[2].includes("](")) continue;
+    const offset = m.index! + m[1].length + 1;
+    for (const n of m[2].matchAll(MARKDOWN)) nested.push({ index: offset + n.index!, m: n });
+  }
+  for (const { index, m } of [...markdown.map((m) => ({ index: m.index!, m })), ...nested]) {
     let dest = m[3];
     if (dest.startsWith("<")) dest = dest.slice(1, -1);
     if (/^[a-z][a-z0-9+.-]*:/i.test(dest)) continue; // a URL, not a note
@@ -171,7 +213,7 @@ export function parseLinks(text: string): TextLink[] {
     try { decoded = decodeURI(dest); } catch { decoded = dest; }
     const { linkpath, subpath } = splitTarget(decoded);
     if (linkpath === "" && subpath === "") continue;
-    out.push({ start: m.index!, end: m.index! + m[0].length, original: m[0], kind: "markdown", embed: m[1] === "!", linkpath: linkpath.normalize("NFC"), subpath });
+    out.push({ start: index, end: index + m[0].length, original: m[0], kind: "markdown", embed: m[1] === "!", linkpath: linkpath.normalize("NFC"), subpath });
   }
   return out.sort((a, b) => a.start - b.start);
 }
@@ -233,7 +275,9 @@ export function rewriteLink(link: TextLink, newPath: string, sourcePath: string,
   if (isRelativeLinkpath(oldDest)) target = relativePath(folderOf(sourcePath), hadMd ? newPath : noExt);
   else if (oldDest.includes("/")) target = hadMd ? newPath : noExt;
   else target = hadMd && !/\.md$/i.test(wikiTarget) ? `${wikiTarget}.md` : wikiTarget;
-  const dest = angled ? `<${target}${link.subpath}>` : encodeMarkdownDest(target) + link.subpath.replace(/ /g, "%20");
+  const hash = oldDest.indexOf("#");
+  const rawSubpath = hash < 0 ? "" : oldDest.slice(hash);
+  const dest = angled ? `<${target}${rawSubpath}>` : encodeMarkdownDest(target) + rawSubpath;
   return `${m[1]}[${m[2]}](${dest}${m[4] ?? ""})`;
 }
 
@@ -242,7 +286,18 @@ export interface Edit { start: number; end: number; expected: string; replacemen
 
 /** Apply edits from the end backwards; null when a position no longer holds its expected text. */
 export function applyEdits(text: string, edits: Edit[]): string | null {
-  const sorted = [...edits].sort((a, b) => b.start - a.start);
+  // An edit inside another (a link in a link's text) is applied to the outer edit's
+  // replacement, which keeps the text at the same offset; null if it does not.
+  const outer = [...edits].sort((a, b) => a.start - b.start || b.end - a.end);
+  const kept: Edit[] = [];
+  for (const e of outer) {
+    const host = kept.find((h) => e.start >= h.start && e.end <= h.end);
+    if (!host) { kept.push({ ...e }); continue; }
+    const off = e.start - host.start;
+    if (host.replacement.slice(off, off + e.expected.length) !== e.expected) return null;
+    host.replacement = host.replacement.slice(0, off) + e.replacement + host.replacement.slice(off + e.expected.length);
+  }
+  const sorted = kept.sort((a, b) => b.start - a.start);
   let out = text;
   let floor = Infinity;
   for (const e of sorted) {

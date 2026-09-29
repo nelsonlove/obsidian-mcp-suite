@@ -128,6 +128,18 @@ describe("link-rewrite rules", () => {
     assert.deepEqual(parseLinks("say `\\` then [[A]] and `[[B]]`\n").map((l) => l.linkpath), ["A"], "a backslash does not escape inside code, so `\\` is a span");
     assert.deepEqual(parseLinks("[![badge](https://x.org/b.svg)](Read%20me.md)\n").map((l) => l.linkpath), ["Read me.md"], "a link whose text is an image");
   });
+  test("parseLinks: a fence may open on a list item's first line; an escaped backslash does not escape a backtick", () => {
+    assert.deepEqual(parseLinks("- ```\n  [[A]]\n  ```\n\nafter [[B]]\n1. ~~~js\n   [[C]]\n   ~~~\n[[D]]\n").map((l) => l.linkpath), ["B", "D"]);
+    assert.deepEqual(parseLinks("x \\\\`[[A]]` [[B]]\n").map((l) => l.linkpath), ["B"], "\\\\ is a backslash, so the backtick after it opens code");
+  });
+  test("parseLinks stays fast on a large note and on long lines of stray brackets or backticks", () => {
+    const big = "line `code` and [[Link]] and [t](Other.md)\n".repeat(17000);
+    for (const [name, t] of [["a 700 KB note", big], ["a paragraph of 17,000 lines", big.replace(/\n/g, " ")], ["stray brackets", "[a\\".repeat(50000)], ["stray backticks", "`a ".repeat(100000)]]) {
+      const t0 = Date.now();
+      parseLinks(t);
+      assert.ok(Date.now() - t0 < 1500, `${name}: ${Date.now() - t0} ms`);
+    }
+  });
   test("rewriteLink changes only the target: alias, subpath, embed marker, display text, title and angle brackets stay", () => {
     const [w] = parseLinks("![[Old#Sec|shown]]");
     assert.equal(rewriteLink(w, "B/New.md", "S.md", "New"), "![[New#Sec|shown]]");
@@ -285,6 +297,29 @@ describe("moveWithLinks", () => {
     const { app, text } = fakeApp({ "A/Old (1).md": "x\n", "S/P.md": "see [x](A/Old%20(1).md#H) and [[Old (1)]]\n" });
     const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old (1).md"), "B/New (2).md");
     assert.equal(text.get("S/P.md"), "see [x](B/New%20%282%29.md#H) and [[New (2)]]\n");
+    assert.equal(r.ok, true, JSON.stringify(r));
+  });
+
+  test("a fence opened on a list item hides its link, and the real link after it is rewritten (review A)", async () => {
+    const note = "- ```\n  [[Old]]\n  ```\n\nafter [[Old]]\n";
+    const { app, text } = fakeApp({ "A/Old.md": "x\n", "S/L.md": note });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md");
+    assert.equal(text.get("S/L.md"), "- ```\n  [[Old]]\n  ```\n\nafter [[New]]\n");
+    assert.equal(r.ok, true, JSON.stringify(r));
+  });
+
+  test("a link inside a link's image text is rewritten with the outer one (review B)", async () => {
+    const { app, text } = fakeApp({ "A/Old.md": "x\n", "S/I.md": "[![alt](../A/Old.md)](../A/Old.md) and [![b](Pic.md)](../A/Old.md)\n", "S/Pic.md": "p\n" });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md");
+    assert.equal(text.get("S/I.md"), "[![alt](../B/New.md)](../B/New.md) and [![b](Pic.md)](../B/New.md)\n");
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.equal(r.links_rewritten, 3);
+  });
+
+  test("a subpath is written back as it was written, encoded characters included (review C)", async () => {
+    const { app, text } = fakeApp({ "A/Old.md": "x\n", "S/H.md": "[x](../A/Old.md#a%29%25b) [y](<../A/Old.md#c d>)\n" });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md");
+    assert.equal(text.get("S/H.md"), "[x](../B/New.md#a%29%25b) [y](<../B/New.md#c d>)\n");
     assert.equal(r.ok, true, JSON.stringify(r));
   });
 
