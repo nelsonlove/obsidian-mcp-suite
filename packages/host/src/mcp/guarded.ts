@@ -157,7 +157,7 @@ const IDEMPOTENCY_KEY = z
       "server-side and may still have landed, so its key is not held and a retry re-executes; re-read before " +
       "retrying. Same key + different arguments — or a different (or dropped) if_rev — is " +
       "Error [idempotency_mismatch], never a replay. " +
-      "10-minute window. A plugin reload keeps a key that already ran (it answers 'already done', from the journal), but not its first result. Use a fresh key per logical operation."
+      "10-minute window. A plugin reload keeps every key; after a full Obsidian restart a key that ran answers 'already done' (from the journal) without its first result. Use a fresh key per logical operation."
   );
 
 const INTENT = z
