@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { TFile, stringifyYaml, parseYaml, type App } from "obsidian";
 import { registerFsTools, ok } from "@vault-mcp/core";
-import { serverInfo } from "./helpers.js";
+import { serverInfo, codedError } from "./helpers.js";
 import { registerCoreTools, type ServerCtx } from "./tools-core.js";
 import { registerVaultWriteTools } from "./tools-vault-write.js";
 import { registerSchemeWriteTools } from "./tools-scheme-write.js";
@@ -29,7 +29,7 @@ import { visiblePaths } from "../guard.js";
 import type { JournalActor } from "../kernel/index.js";
 import { obsidianProbe } from "../kernel/obsidian-probe.js";
 import { ObsidianBackend } from "./obsidian-backend.js";
-import { registerWriteNotesTool, type GuardedWrite } from "./tools-write-notes.js";
+import { registerWriteNotesTool, batchItemWriter, type GuardedWrite } from "./tools-write-notes.js";
 import { uuidv7, formatLocalTimestamp } from "./write-notes-compose.js";
 import { makeRegistry, DEFAULT_SCHEMES } from "../kernel/scheme/registry.js";
 import { buildMcpActionRegistry } from "../kernel/operations/mcp-registry.js";
@@ -357,7 +357,7 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   // are stripped by the SDK's own validation, so declaring here is what makes
   // them reachable by a client at all.
   (server as any).registerTool = (name: string, def: any, handler: any) =>
-    register(name, withKernelArgs(def), handler);
+    register(name, withKernelArgs(def, name), handler);
 
   // Patching registerTool alone left FIVE other registration entry points on
   // the SDK server unguarded (#83). Sealing them is what makes module.ts's
@@ -569,8 +569,9 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
     const RW = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
     const guardedWrite = guarded(
       { title: "write one note", inputSchema: {}, annotations: RW },
-      async ({ path, content, overwrite }: { path: string; content: string; overwrite?: boolean }) =>
-        ok(await backend.writeNote(path, content, overwrite ?? true)),
+      // Per item, as write_note (01.33); the rule and why it runs at dequeue:
+      // batchItemWriter in tools-write-notes.ts.
+      batchItemWriter((p, c, o) => backend.writeNote(p, c, o), (p) => app.vault.getAbstractFileByPath(p) !== null),
       "obsidian_write_notes"
     ) as unknown as GuardedWrite;
     registerWriteNotesTool(origRegister, guardedWrite, {

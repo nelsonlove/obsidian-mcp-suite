@@ -112,7 +112,7 @@ describe("journal addressedAs (issue #91)", () => {
     const notes = ["00-09 System/06 Agent tooling/06.11 Something.md"];
     const guarded = guardedWith(kernel, index, notes);
 
-    await guarded(RW_DEF, OK, "obsidian_move_note")({ from: "uid:uid-a", to: "jd:06.11" }, {});
+    await guarded(RW_DEF, OK, "obsidian_move_note")({ from: "uid:uid-a", to: "jd:06.11", idempotency_key: "k-move" }, {});
     await tick();
     const [rec] = records();
     assert.deepEqual(rec.addressedAs, [
