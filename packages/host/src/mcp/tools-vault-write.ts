@@ -269,6 +269,9 @@ export function registerVaultWriteTools(server: McpServer, app: App, ctx: VaultW
           return fail(new Error(`${sameKey.length} headings in ${path} are reached by the same links (${sameKey.map((h) => `'${h.heading}' line ${h.position.start.line + 1}`).join(", ")}); a link cannot tell them apart, so it is not renamed`));
         }
         const target = matches[0];
+        // A heading of punctuation only has an empty key: no link can name it,
+        // and an empty key would match the empty segment of a plain [[Note#]].
+        if (headingKey(heading) === "") return fail(new Error(`heading '${heading}' has no character a link can match (Obsidian ignores punctuation), so no link points at it; edit it by hand`));
         const clash = headings.find((h) => h !== target && headingKey(h.heading) === headingKey(new_heading));
         if (clash) return fail(new Error(`${path} already has a heading '${clash.heading}' (line ${clash.position.start.line + 1}); renaming to '${new_heading}' would make links to either ambiguous`));
 

@@ -43,6 +43,7 @@ export function newHeadingRefusal(oldHeading: string, newHeading: string): strin
  *  name `oldHeading`; null when none does. */
 function rewriteSegments(subpath: string, oldHeading: string, newHeading: string, decode: (s: string) => string, encode: (s: string) => string): string | null {
   const key = headingKey(oldHeading);
+  if (key === "") return null; // an empty key would match the empty segment of [[A#]]
   let hit = false;
   const out = subpath.split("#").map((seg) => {
     let plain: string;
@@ -75,9 +76,11 @@ export function rewriteLinkOriginal(original: string, oldHeading: string, newHea
   const m = MARKDOWN.exec(original);
   if (m) {
     // decodeURI, not decodeURIComponent: it is what the cache applies, so the
-    // rewrite matches exactly the links Obsidian resolves. Parentheses are
-    // encoded too, because a raw `)` ends the destination.
-    const seg = rewriteSegments(m[4], oldHeading, newHeading, (s) => decodeURI(s), (s) => encodeURIComponent(s).replace(/%2F/g, "/").replace(/\(/g, "%28").replace(/\)/g, "%29"));
+    // rewrite matches exactly the links Obsidian resolves. The encoder is its
+    // inverse: encodeURI (decodeURI would leave encodeURIComponent's %3A as
+    // text, and the link would miss). Parentheses and # are encoded too: a raw
+    // `)` ends the destination and a raw `#` starts a new segment.
+    const seg = rewriteSegments(m[4], oldHeading, newHeading, (s) => decodeURI(s), (s) => encodeURI(s).replace(/\(/g, "%28").replace(/\)/g, "%29").replace(/#/g, "%23"));
     return seg === null ? null : `${m[1]}${m[2]}${m[3]}#${seg}${m[5]}${m[6] ?? ""}${m[7]}`;
   }
   return null;
