@@ -174,7 +174,7 @@ describe("main.ts wiring (source pins)", () => {
     assert.match(src, /seedFromJournal\(/);
   });
   test("a reload hands the live key store to the new instance (one store per vault on globalThis)", () => {
-    assert.match(src, /__vaultMcpIdempotency \?\?= new Map\(\)/);
+    assert.match(src, /__vaultMcpIdempotencyV1 \?\?= new Map\(\)/);
     assert.match(src, /stores\.get\(this\.slug\) \?\? new IdempotencyStore\(\)/);
     assert.ok(src.indexOf("const idempotency = stores.get") > src.indexOf("this.slug = vaultSlug"), "the slug is set before the store is looked up");
   });
