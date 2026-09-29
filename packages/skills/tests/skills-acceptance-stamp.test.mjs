@@ -114,6 +114,14 @@ describe("01.61 rule 11 — every compiled file records each source's acceptance
 
 describe("01.61 rule 11 — the edges the first cut left untested", () => {
   const H = (at) => [human(at)];
+  test("a transclusion marker softens '--!>' like the header does", async () => {
+    const notes = [{ path: "In/h.md", frontmatter: { type: "Note/Skill", name: "h", verified: H("2026-09-01") }, body: "H ![[a --!> b]]" }];
+    const embeds = { "In/a --!> b.md": "---\nverified:\n  - by: human:nelson\n    at: 2026-09-02\n---\nINNER" };
+    const c = (await compile(notes, embeds)).files["skills/h/SKILL.md"];
+    assert.ok(c.includes("INNER"), "the accepted embed inlined");
+    assert.ok(!c.includes("--!>"), "no raw --!> anywhere in the compiled file");
+  });
+
   test("a cross-cutting agent records the hard policies inlined from other scopes, and a policy's marker is softened", async () => {
     const notes = [
       { path: "In/scope.md", frontmatter: { type: "Person/Agent", name: "scope", description: "s", verified: H("2026-09-01") }, body: "SCOPE" },
@@ -140,7 +148,9 @@ describe("01.61 rule 11 — the edges the first cut left untested", () => {
     const { files } = await compile(notes, embeds);
     const hb = header(files["agents/boss.md"]);
     assert.match(hb, /In\/no\.md \(transcluded\) — NOT accepted; its text was not inlined/);
-    assert.ok(hb.indexOf("In/aa.md (transcluded)") < hb.indexOf("In/no.md (transcluded)") && hb.indexOf("In/no.md (transcluded)") < hb.indexOf("In/zz.md (transcluded)"), "sorted by path");
+    const [ia, ino, iz] = ["In/aa.md (transcluded)", "In/no.md (transcluded)", "In/zz.md (transcluded)"].map((l) => hb.indexOf(l));
+    assert.ok(ia >= 0 && ino >= 0 && iz >= 0, "all three lines are present");
+    assert.ok(ia < ino && ino < iz, "sorted by path");
     const hc = header(files["commands/cmd.md"]);
     assert.match(hc, /In\/aa\.md \(transcluded\) — verified by human:nelson at 2026-09-05/);
     assert.match(hc, /In\/no\.md \(transcluded\) — NOT accepted/);
@@ -204,7 +214,8 @@ describe("01.61 rule 11 on real vault notes (skipped where the vault is absent)"
     const { files } = await compile(notes, embeds);
     const c = files["skills/host/SKILL.md"];
     const h = header(c);
-    assert.ok(h.includes(`In/${A}.md (transcluded) — verified by ${REAL.acc.rec.by} at ${REAL.acc.rec.at}`), `${REAL.acc.f}\n${h}`);
+    const want = `In/${A}.md (transcluded) — verified by ${REAL.acc.rec.by} at ${REAL.acc.rec.at}`;
+    assert.ok(h.includes(want + "\n") || h.includes(want + " -->"), `the whole line, not a prefix of it — ${REAL.acc.f}\n${h}`);
     assert.ok(h.includes(`In/${U}.md (transcluded) — NOT accepted; its text was not inlined`), h);
     assert.ok(!c.includes(REAL.una.body), "no text of the unaccepted real note reaches the artifact");
   });
