@@ -84,11 +84,14 @@ describe("VocabRegistry", () => {
     // vault and no row carries a config path. A vault path in a default went
     // dead silently three times (Assent → 00.89 obsidian-governor → 00.89
     // obsidian-mcp-suite); the operator sets `termsRoot` in the satellite.
+    // Options are allowed; a vault PATH is not. A string that names a folder
+    // (contains a "/") or a JD address is one vault's layout.
+    const strings = (v) => (typeof v === "string" ? [v] : v && typeof v === "object" ? Object.values(v).flatMap(strings) : []);
     for (const row of DEFAULT_VOCABULARIES) {
       assert.equal(row.root, "", `${row.id}: the whole vault, no shipped folder`);
-      assert.equal(row.config, undefined, `${row.id}: no shipped config, so no shipped path`);
+      for (const v of strings(row.config ?? {})) assert.doesNotMatch(v, /\/|\b\d\d-\d\d\b|\b\d\d\.\d\d\b/, `${row.id}: config value '${v}' is a vault path`);
+      assert.equal(row.config?.termsRoot, undefined, `${row.id}: no shipped termsRoot`);
     }
-    assert.doesNotMatch(JSON.stringify(DEFAULT_VOCABULARIES), /00-09|00\.\d\d|Assent|governor/, "no vault layout anywhere in the defaults");
   });
 
   test("the defaults parse a fixture mirroring the live vault shapes", () => {
