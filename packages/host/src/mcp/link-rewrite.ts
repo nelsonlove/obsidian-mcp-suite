@@ -29,7 +29,7 @@ export interface TextLink {
 const WIKI = /(!?)\[\[((?:[^\[\]\n]|\[[^\[\]\n]*\])*?)\]\]/g;
 // A destination may hold one level of balanced parentheses (`Note (1).md`, as
 // Obsidian writes it: it encodes spaces but not parentheses).
-const DEST = String.raw`<[^>\n]*>|(?:[^()\s]|\([^()\s]*\))*`;
+const DEST = String.raw`<[^<>\n]*>|(?:[^()\s]|\([^()\s]*\))*`;
 // The display text may hold one level of brackets (`[![badge](url)](Note.md)`). It is
 // bounded, so a long line of stray brackets cannot make the scan quadratic.
 const TEXT = String.raw`(?:[^\[\]\n\\]|\\.|\[(?:[^\[\]\n\\]|\\.){0,1000}\]){0,1000}`;
@@ -88,7 +88,8 @@ function fencedSpans(text: string, from: number): Array<[number, number]> {
   const spans: Array<[number, number]> = [];
   let open: { start: number; ch: string; len: number } | null = null;
   for (const [a, b] of linesOf(text, from)) {
-    const line = text.slice(a, b).replace(FENCE_LEAD, "");
+    // A list marker may precede an opening fence, never a closing one.
+    const line = text.slice(a, b).replace(open ? LEAD : FENCE_LEAD, "");
     if (!open) {
       const m = /^(`{3,}|~{3,})/.exec(line);
       // A backtick fence's info string may not hold a backtick (then it is inline code).
@@ -203,7 +204,7 @@ export function parseLinks(text: string): TextLink[] {
   for (const m of markdown) {
     if (!m[2].includes("](")) continue;
     const offset = m.index! + m[1].length + 1;
-    for (const n of m[2].matchAll(MARKDOWN)) nested.push({ index: offset + n.index!, m: n });
+    for (const n of m[2].matchAll(MARKDOWN)) if (!skip(offset + n.index!)) nested.push({ index: offset + n.index!, m: n });
   }
   for (const { index, m } of [...markdown.map((m) => ({ index: m.index!, m })), ...nested]) {
     let dest = m[3];

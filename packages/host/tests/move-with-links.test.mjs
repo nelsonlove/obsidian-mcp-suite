@@ -131,10 +131,12 @@ describe("link-rewrite rules", () => {
   test("parseLinks: a fence may open on a list item's first line; an escaped backslash does not escape a backtick", () => {
     assert.deepEqual(parseLinks("- ```\n  [[A]]\n  ```\n\nafter [[B]]\n1. ~~~js\n   [[C]]\n   ~~~\n[[D]]\n").map((l) => l.linkpath), ["B", "D"]);
     assert.deepEqual(parseLinks("x \\\\`[[A]]` [[B]]\n").map((l) => l.linkpath), ["B"], "\\\\ is a backslash, so the backtick after it opens code");
+    assert.deepEqual(parseLinks("```\n- ```\n```\n[[Me]]\n").map((l) => l.linkpath), ["Me"], "a list item inside a fence does not close it");
+    assert.deepEqual(parseLinks("[a `[b](Me.md)` c](Other.md)\n").map((l) => l.linkpath), ["Other.md"], "a link in inline code inside link text is code");
   });
   test("parseLinks stays fast on a large note and on long lines of stray brackets or backticks", () => {
     const big = "line `code` and [[Link]] and [t](Other.md)\n".repeat(17000);
-    for (const [name, t] of [["a 700 KB note", big], ["a paragraph of 17,000 lines", big.replace(/\n/g, " ")], ["stray brackets", "[a\\".repeat(50000)], ["stray backticks", "`a ".repeat(100000)]]) {
+    for (const [name, t] of [["a 700 KB note", big], ["a paragraph of 17,000 lines", big.replace(/\n/g, " ")], ["stray brackets", "[a\\".repeat(50000)], ["stray backticks", "`a ".repeat(100000)], ["unclosed angle destinations", "[a](<x".repeat(80000)]]) {
       const t0 = Date.now();
       parseLinks(t);
       assert.ok(Date.now() - t0 < 1500, `${name}: ${Date.now() - t0} ms`);
