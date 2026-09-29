@@ -127,6 +127,12 @@ export interface JournalRecord {
   /** The caller's `idempotency_key`, when one was supplied. */
   idempotencyKey?: string;
   /**
+   * With `idempotencyKey`: the hash half of the call's args fingerprint
+   * (`fingerprintArgs` = stable argsDigest + "#" + this). Lets a reloaded
+   * instance rebuild the key's identity from the journal (#435).
+   */
+  argsHash?: string;
+  /**
    * The caller's advisory `intent` text, when one was supplied (B2): the
    * agent's own description of why it made this change, for review surfaces to
    * display as "agent says". Untrusted free text — recorded verbatim, never

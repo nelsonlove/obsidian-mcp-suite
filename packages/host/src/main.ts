@@ -11,7 +11,8 @@ import { findClaudeBinary, claudeIsRegistered, claudeRegister, claudeRemove, cla
 import { ExternalToolRegistry, type VaultMcpApi } from "./mcp/external-tools.js";
 import { createGovernanceSeam, type GovernanceSeam } from "./mcp/seam.js";
 import { DEFAULT_VOCABULARIES, splitSettings, resolveTerritories, type VocabInstanceSettings } from "@vault-mcp/core";
-import { Kernel, WriteQueue, WriteJournal, IdempotencyStore, LockStore, UidIndex, loadInstallId, migrateLegacyModuleIds, type ModuleSettings } from "./kernel/index.js";
+import { Kernel, WriteQueue, WriteJournal, IdempotencyStore, LockStore, UidIndex, loadInstallId, migrateLegacyModuleIds, monthKey, type ModuleSettings } from "./kernel/index.js";
+import { seedFromJournal, type SeedRecord } from "./kernel/idempotency.js";
 import { createSessionLog } from "./kernel/sessions/session-log.js";
 import { obsidianProbe, obsidianServerIdentity, obsidianUidSource } from "./kernel/obsidian-probe.js";
 import { DEFAULT_SCHEMES, type SchemeInstanceConfig } from "./kernel/scheme/registry.js";
@@ -625,14 +626,41 @@ export default class VaultMcpPlugin extends Plugin {
       });
       return done;
     };
+    const idempotency = new IdempotencyStore();
     const kernel = new Kernel(
       writeQueue,
       journal,
       obsidianProbe(this.app, () => this.settings.enforceRecordImmutability, () => this.settings.recordIdentification),
-      new IdempotencyStore(),
+      idempotency,
       new LockStore(),
       uidIndex,
     );
+    // #435: a reload must not leave this instance's queue running. Obsidian
+    // calls registered callbacks at unload; closing refuses every write still
+    // waiting ("not run; safe to retry"). The write already running cannot be
+    // cancelled and settles on its own.
+    this.register(() => writeQueue.close());
+    // #435: the key store is in memory, so a reload forgot every key and a
+    // retry across it ran the write again. Seed it from the journal's keyed
+    // records inside the TTL (this month's file and last month's, for a reload
+    // just after midnight UTC on the 1st), BEFORE the socket accepts a call.
+    // A journal that cannot be read seeds nothing and never fails the load.
+    try {
+      const now = new Date();
+      const prev = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+      const records: SeedRecord[] = [];
+      for (const key of [monthKey(prev), monthKey(now)]) {
+        const path = `${pluginDir}/journal/${key}.jsonl`;
+        if (!(await this.app.vault.adapter.exists(path))) continue;
+        for (const line of (await this.app.vault.adapter.read(path)).split("\n")) {
+          if (!line.includes('"idempotencyKey"')) continue;
+          try { records.push(JSON.parse(line)); } catch { /* a torn line is skipped */ }
+        }
+      }
+      seedFromJournal(idempotency, records, now.getTime());
+    } catch (e) {
+      console.error("[vault-mcp] seeding idempotency keys from the journal failed; keys start empty", e);
+    }
 
     // Server identity — the transport asserting which vault and which install.
     // The install id is a small file beside the journal (`install-id.json`), so
