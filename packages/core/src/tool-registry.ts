@@ -380,7 +380,7 @@ export const FS_TOOLS: ToolDef[] = [
         .default(true)
         .describe(
           "Rewrite [[wikilinks]] in other notes that currently resolve to `from`. " +
-          "Honoured by the live Obsidian backend too: false renames only. " +
+          "Honoured by the live Obsidian backend too: false renames only, and no link is rewritten, the moved note's own relative links included. " +
           "Fully honoured by the filesystem backend."
         ),
       overwrite: z

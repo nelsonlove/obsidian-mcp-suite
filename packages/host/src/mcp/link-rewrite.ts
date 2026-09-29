@@ -27,7 +27,93 @@ export interface TextLink {
 // real link) but never `[[`: in `[[a [[b]] c]]` Obsidian reads the innermost
 // `[[b]]`, and so does this.
 const WIKI = /(!?)\[\[((?:[^\[\]\n]|\[[^\[\]\n]*\])*?)\]\]/g;
-const MARKDOWN = /(!?)\[((?:[^\]\n\\]|\\.)*)\]\((<[^>\n]*>|[^)\s]*)(\s+"[^"\n]*")?\)/g;
+// A destination may hold one level of balanced parentheses (`Note (1).md`, as
+// Obsidian writes it: it encodes spaces but not parentheses).
+const DEST = String.raw`<[^>\n]*>|(?:[^()\s]|\([^()\s]*\))*`;
+// The display text may hold one level of brackets (`[![badge](url)](Note.md)`).
+const TEXT = String.raw`(?:[^\[\]\n\\]|\\.|\[(?:[^\[\]\n\\]|\\.)*\])*`;
+const MARKDOWN = new RegExp(String.raw`(!?)\[(${TEXT})\]\((${DEST})(\s+"[^"\n]*")?\)`, "g");
+/** One markdown link, whole: embed marker, display text, destination, title. */
+const MARKDOWN_ONE = new RegExp(String.raw`^(!?)\[(${TEXT})\]\((${DEST})(\s+"[^"]*")?\)$`);
+
+/** A link path written relative to the note it is in (`./x`, `../x`). */
+export const isRelativeLinkpath = (p: string): boolean => /^\.\.?\//.test(p);
+
+/** Where a line's content starts: after indentation and any blockquote markers (`> > `). */
+const LEAD = /^[ \t]*(?:>[ \t]?)*/;
+
+/** [start, end) of every line from `from` on. */
+function linesOf(text: string, from: number): Array<[number, number]> {
+  const out: Array<[number, number]> = [];
+  for (let i = from; ; ) {
+    const nl = text.indexOf("\n", i);
+    out.push([i, nl < 0 ? text.length : nl]);
+    if (nl < 0) return out;
+    i = nl + 1;
+  }
+}
+
+/**
+ * Fenced code blocks, by line: a fence opens on a line of three or more
+ * backticks or tildes (after any indentation or blockquote markers, so a fence
+ * inside a list item or a quote counts), and closes on a line holding only a
+ * run of the same character at least as long. An unclosed fence runs to the end
+ * of the note.
+ */
+function fencedSpans(text: string, from: number): Array<[number, number]> {
+  const spans: Array<[number, number]> = [];
+  let open: { start: number; ch: string; len: number } | null = null;
+  for (const [a, b] of linesOf(text, from)) {
+    const line = text.slice(a, b).replace(LEAD, "");
+    if (!open) {
+      const m = /^(`{3,}|~{3,})/.exec(line);
+      // A backtick fence's info string may not hold a backtick (then it is inline code).
+      if (m && !(m[1][0] === "`" && line.slice(m[0].length).includes("`"))) open = { start: a, ch: m[1][0], len: m[1].length };
+    } else {
+      const m = /^(`{3,}|~{3,})[ \t]*$/.exec(line);
+      if (m && m[1][0] === open.ch && m[1].length >= open.len) { spans.push([open.start, b]); open = null; }
+    }
+  }
+  if (open) spans.push([open.start, text.length]);
+  return spans;
+}
+
+/**
+ * Inline code, paired as CommonMark pairs it: within one block (a paragraph may
+ * run over several lines), a run of n backticks is closed by the next run of
+ * exactly n; a run with no partner is plain text. A blank line, a list item, a
+ * heading and a table row each start a new block, so a lone backtick in one list
+ * item never pairs with one in the next.
+ */
+function codeSpans(text: string, from: number, fenced: (i: number) => boolean): Array<[number, number]> {
+  const spans: Array<[number, number]> = [];
+  const pair = (a: number, b: number) => {
+    const runs = [...text.slice(a, b).matchAll(/`+/g)].map((m) => ({ at: a + m.index!, n: m[0].length, escaped: text[a + m.index! - 1] === "\\" }));
+    for (let k = 0; k < runs.length; k++) {
+      // A backslash cannot escape inside code, so an escaped run still closes a span;
+      // it opens one only with the backticks after the escaped first one.
+      const at = runs[k].escaped ? runs[k].at + 1 : runs[k].at;
+      const n = runs[k].escaped ? runs[k].n - 1 : runs[k].n;
+      if (n === 0) continue;
+      const j = runs.findIndex((r, x) => x > k && r.n === n);
+      if (j < 0) continue;
+      spans.push([at, runs[j].at + runs[j].n]);
+      k = j;
+    }
+  };
+  let block: [number, number] | null = null;
+  const flush = () => { if (block) pair(block[0], block[1]); block = null; };
+  for (const [a, b] of linesOf(text, from)) {
+    const line = text.slice(a, b).replace(LEAD, "");
+    if (fenced(a) || line.trim() === "") { flush(); continue; }
+    const single = /^(?:#{1,6}(?:[ \t]|$)|\|)/.test(line);
+    if (single || /^(?:[-*+]|\d+[.)])(?:[ \t]|$)/.test(line)) flush();
+    block = block ? [block[0], b] : [a, b];
+    if (single) flush();
+  }
+  flush();
+  return spans;
+}
 
 /**
  * Spans Obsidian does not index links in: fenced code blocks (``` and ~~~),
@@ -42,12 +128,8 @@ export function unindexedSpans(text: string): Array<[number, number]> {
   const body = fm ? fm[0].length : 0;
   const inside = (i: number) => i < body || spans.some(([a, b]) => i >= a && i < b);
   // Code first: a `%%` or `$$` inside code is plain text, not a comment or math.
-  const fence = /^([ \t]{0,3})(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:\n\1?\2[^\n]*(?=\n|$)|$)/gm;
-  for (const m of text.matchAll(fence)) if (m.index! >= body) spans.push([m.index!, m.index! + m[0].length]);
-  // Inline code: a run of backticks closed by the same run on the same line. A
-  // span over a line break is rare; a lone backtick in one list item pairing with
-  // one in the next (hiding real links between them) is not.
-  for (const m of text.matchAll(/(`+)[^`\n]+?\1(?!`)/g)) if (!inside(m.index!)) spans.push([m.index!, m.index! + m[0].length]);
+  spans.push(...fencedSpans(text, body));
+  spans.push(...codeSpans(text, body, inside));
   // Then math, from delimiters that are not inside code.
   const pairUp = (re: RegExp, delim: number) => {
     const at = [...text.matchAll(re)].map((m) => m.index!).filter((i) => !inside(i));
@@ -77,7 +159,8 @@ export function parseLinks(text: string): TextLink[] {
     const bar = inner.indexOf("|");
     const target = (bar < 0 ? inner : inner.slice(0, bar)).replace(/\\$/, "");
     const { linkpath, subpath } = splitTarget(target);
-    out.push({ start: m.index!, end: m.index! + m[0].length, original: m[0], kind: "wiki", embed: m[1] === "!", linkpath: linkpath.trim(), subpath });
+    // Obsidian NFC-normalizes a link target before resolving it; so does this.
+    out.push({ start: m.index!, end: m.index! + m[0].length, original: m[0], kind: "wiki", embed: m[1] === "!", linkpath: linkpath.trim().normalize("NFC"), subpath });
   }
   for (const m of text.matchAll(MARKDOWN)) {
     if (skip(m.index!)) continue;
@@ -88,7 +171,7 @@ export function parseLinks(text: string): TextLink[] {
     try { decoded = decodeURI(dest); } catch { decoded = dest; }
     const { linkpath, subpath } = splitTarget(decoded);
     if (linkpath === "" && subpath === "") continue;
-    out.push({ start: m.index!, end: m.index! + m[0].length, original: m[0], kind: "markdown", embed: m[1] === "!", linkpath, subpath });
+    out.push({ start: m.index!, end: m.index! + m[0].length, original: m[0], kind: "markdown", embed: m[1] === "!", linkpath: linkpath.normalize("NFC"), subpath });
   }
   return out.sort((a, b) => a.start - b.start);
 }
@@ -120,7 +203,8 @@ export function encodeMarkdownDest(path: string): string {
  * changes; embed marker, subpath, alias, display text and title stay as written.
  *
  * - A wikilink gets `wikiTarget` (Obsidian's own link text for the new file from
- *   this source, `fileToLinktext`), keeping a `.md` suffix if the original had one.
+ *   this source, `fileToLinktext`), keeping a `.md` suffix if the original had one;
+ *   one written relative (`./`, `../`) stays relative to `sourcePath`.
  * - A markdown link keeps its style: a destination written relative (`./`, `../`)
  *   is rewritten relative to `sourcePath`; one with a folder is rewritten as the
  *   vault path; a bare name gets `wikiTarget`. A `.md` suffix is kept when the
@@ -135,15 +219,18 @@ export function rewriteLink(link: TextLink, newPath: string, sourcePath: string,
     const bar = inner.indexOf("|");
     const tail = bar < 0 ? "" : inner.slice(bar);
     const escapedBar = bar > 0 && inner[bar - 1] === "\\";
-    const target = (hadMd && !/\.md$/i.test(wikiTarget) ? `${wikiTarget}.md` : wikiTarget) + link.subpath;
+    const name = isRelativeLinkpath(link.linkpath)
+      ? relativePath(folderOf(sourcePath), hadMd ? newPath : noExt)
+      : hadMd && !/\.md$/i.test(wikiTarget) ? `${wikiTarget}.md` : wikiTarget;
+    const target = name + link.subpath;
     return `${m[1]}[[${target}${escapedBar ? "\\" : ""}${tail}]]`;
   }
-  const m = /^(!?)\[((?:[^\]\\]|\\.)*)\]\((<[^>]*>|[^)\s]*)(\s+"[^"]*")?\)$/.exec(link.original)!;
+  const m = MARKDOWN_ONE.exec(link.original)!;
   const rawDest = m[3];
   const angled = rawDest.startsWith("<");
   const oldDest = angled ? rawDest.slice(1, -1) : rawDest;
   let target: string;
-  if (/^\.\.?\//.test(oldDest)) target = relativePath(folderOf(sourcePath), hadMd ? newPath : noExt);
+  if (isRelativeLinkpath(oldDest)) target = relativePath(folderOf(sourcePath), hadMd ? newPath : noExt);
   else if (oldDest.includes("/")) target = hadMd ? newPath : noExt;
   else target = hadMd && !/\.md$/i.test(wikiTarget) ? `${wikiTarget}.md` : wikiTarget;
   const dest = angled ? `<${target}${link.subpath}>` : encodeMarkdownDest(target) + link.subpath.replace(/ /g, "%20");

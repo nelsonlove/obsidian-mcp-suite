@@ -69,6 +69,8 @@ function fakeApp(files, { stale = [], wrongCache = {}, throwOn = [], changeBefor
   // A stale note: written after the cache read it (new text, same cache).
   for (const [p, newText] of Object.entries(stale)) { text.set(p, newText); tfiles.get(p).stat = { mtime: clock++, size: newText.length }; }
   const calls = { renameFile: 0, vaultRename: [] };
+  // Every write moves the file's mtime and size, as on disk.
+  const write = (p, t) => { text.set(p, t); tfiles.get(p).stat = { mtime: clock++, size: t.length }; };
   const app = {
     vault: {
       getMarkdownFiles: all,
@@ -86,9 +88,9 @@ function fakeApp(files, { stale = [], wrongCache = {}, throwOn = [], changeBefor
       },
       async process(f, fn) {
         if (throwOn.includes(f.path)) throw new Error("disk full");
-        if (changeBeforeProcess[f.path]) { text.set(f.path, changeBeforeProcess[f.path]); delete changeBeforeProcess[f.path]; }
+        if (changeBeforeProcess[f.path]) { write(f.path, changeBeforeProcess[f.path]); delete changeBeforeProcess[f.path]; }
         const next = fn(text.get(f.path));
-        text.set(f.path, next);
+        write(f.path, next);
         return next;
       },
     },
@@ -105,7 +107,7 @@ function fakeApp(files, { stale = [], wrongCache = {}, throwOn = [], changeBefor
     },
     fileManager: { async renameFile() { calls.renameFile++; throw new Error("the move must not wait on renameFile"); } },
   };
-  return { app, text, tfiles, calls };
+  return { app, text, tfiles, calls, write };
 }
 
 describe("link-rewrite rules", () => {
@@ -118,6 +120,13 @@ describe("link-rewrite rules", () => {
     assert.deepEqual(parseLinks("see [[[draft] Note|d]] here").map((l) => l.linkpath), ["[draft] Note"]);
     assert.deepEqual(parseLinks("[[a t[[b]]c]]").map((l) => l.original), ["[[b]]"]);
     assert.deepEqual(parseLinks("- one ` lone\n- two [[B]] and `c`\n").map((l) => l.linkpath), ["B"]);
+  });
+  test("parseLinks follows Obsidian's index on quoted fences, paragraph-wide inline code, escaped backticks and badge links (each seen in the real vault)", () => {
+    assert.deepEqual(parseLinks("> ~~~md\n> [[A]]\n> ~~~\n> [[B]]\n").map((l) => l.linkpath), ["B"], "a fence inside a quote hides its lines");
+    assert.deepEqual(parseLinks("x `one\ntwo [[A]]` [[B]]\n").map((l) => l.linkpath), ["B"], "inline code runs over a line break inside one paragraph");
+    assert.deepEqual(parseLinks("- a ` lone\n- b [[A]] `c`\n# h ` x\n[[B]] `\n").map((l) => l.linkpath), ["A", "B"], "a list item and a heading each start a new block");
+    assert.deepEqual(parseLinks("say `\\` then [[A]] and `[[B]]`\n").map((l) => l.linkpath), ["A"], "a backslash does not escape inside code, so `\\` is a span");
+    assert.deepEqual(parseLinks("[![badge](https://x.org/b.svg)](Read%20me.md)\n").map((l) => l.linkpath), ["Read me.md"], "a link whose text is an image");
   });
   test("rewriteLink changes only the target: alias, subpath, embed marker, display text, title and angle brackets stay", () => {
     const [w] = parseLinks("![[Old#Sec|shown]]");
@@ -210,6 +219,13 @@ describe("moveWithLinks", () => {
     assert.deepEqual(r.index_only, ["S/Ghost.md"]);
   });
 
+  test("a current index entry counting more links than the text scan found is reported, and ok is false", async () => {
+    const { app } = fakeApp({ "A/Old.md": "x\n", "S/P.md": "one [[Old]] here\n" }, { wrongCache: { "S/P.md": "[[Old]] and [[Old]]\n" } });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md");
+    assert.equal(r.ok, false);
+    assert.deepEqual(r.index_only, ["S/P.md"]);
+  });
+
   test("a same-note heading link [[#H]] in the moved note is not reported as missing", async () => {
     const { app } = fakeApp({ "A/Old.md": "# H\nsee [[#H]]\n" });
     app.metadataCache.resolvedLinks["A/Old.md"] = { "A/Old.md": 1 };
@@ -253,6 +269,86 @@ describe("moveWithLinks", () => {
     const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md", { updateBacklinks: false });
     assert.equal(text.get("S/One.md"), "a [[Old]]\n");
     assert.equal(r.links_rewritten, 0);
+  });
+
+  test("a fenced block hides every line up to its close, and a link after the block is found (review #1)", async () => {
+    const note = "```js\nconst a = \"[[Old]]\";\n[[Old]]\n```\nafter [[Old]]\n  ~~~~\n  [[Old]]\n  ~~~\n  ~~~~~\nlast [[Old]]\n```\nunclosed [[Old]]\n";
+    assert.deepEqual(parseLinks(note).map((l) => note.slice(0, l.start).split("\n").length), [5, 10]);
+    const { app, text } = fakeApp({ "A/Old.md": "x\n", "S/F.md": note });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md");
+    assert.equal(text.get("S/F.md"), note.replace("after [[Old]]", "after [[New]]").replace("last [[Old]]", "last [[New]]"));
+    assert.equal(r.ok, true, JSON.stringify(r));
+  });
+
+  test("a markdown destination with balanced parentheses is one link (review #4)", async () => {
+    assert.deepEqual(parseLinks("[x](A/Old%20(1).md#H) y").map((l) => [l.original, l.linkpath, l.subpath]), [["[x](A/Old%20(1).md#H)", "A/Old (1).md", "#H"]]);
+    const { app, text } = fakeApp({ "A/Old (1).md": "x\n", "S/P.md": "see [x](A/Old%20(1).md#H) and [[Old (1)]]\n" });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old (1).md"), "B/New (2).md");
+    assert.equal(text.get("S/P.md"), "see [x](B/New%20%282%29.md#H) and [[New (2)]]\n");
+    assert.equal(r.ok, true, JSON.stringify(r));
+  });
+
+  test("a note whose only link is %20-encoded, or written in the other Unicode form, is found (review #3)", async () => {
+    const nfd = "Café note";
+    const { app, text } = fakeApp({ "A/Old name.md": "x\n", "S/E.md": "[x](../A/Old%20name.md)\n", "A/Café note.md": "y\n", "S/N.md": `[[${nfd}]]\n` });
+    const r1 = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old name.md"), "B/New name.md");
+    assert.equal(text.get("S/E.md"), "[x](../B/New%20name.md)\n");
+    const r2 = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Café note.md"), "B/Moved.md");
+    assert.equal(text.get("S/N.md"), "[[Moved]]\n");
+    assert.equal(r1.ok && r2.ok, true, JSON.stringify([r1, r2]));
+  });
+
+  test("the moved note's own relative links in angle brackets and relative wikilinks are rewritten (review #2)", async () => {
+    const { app, text } = fakeApp({ "A/Old.md": "[o](<../C/Other one.md>) and [[../C/Other one|w]] and ![[./Pic.md]]\n", "C/Other one.md": "x\n", "A/Pic.md": "p\n" });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/D/New.md");
+    assert.equal(text.get("B/D/New.md"), "[o](<../../C/Other one.md>) and [[../../C/Other one|w]] and ![[../../A/Pic.md]]\n");
+    assert.equal(r.ok, true, JSON.stringify(r));
+  });
+
+  test("a relative wikilink to the moved note stays relative", async () => {
+    const { app, text } = fakeApp({ "A/Old.md": "x\n", "S/R.md": "[[../A/Old#H]]\n" });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/C/New.md");
+    assert.equal(text.get("S/R.md"), "[[../B/C/New#H]]\n");
+    assert.equal(r.ok, true, JSON.stringify(r));
+  });
+
+  test("a relative link of the moved note that could not be rewritten is reported, and ok is false (review #2)", async () => {
+    const { app } = fakeApp({ "A/Old.md": "[o](../C/Other.md)\n", "C/Other.md": "x\n" }, { throwOn: ["B/D/New.md"] });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/D/New.md");
+    assert.equal(r.ok, false);
+    assert.deepEqual(r.own_links_broken, [{ target: "C/Other.md", before: 1, after: 0 }]);
+  });
+
+  test("the moved note's own links are rewritten from its current text when it changed mid-move", async () => {
+    const { app, text } = fakeApp({ "A/Old.md": "[o](../C/Other.md)\n", "C/Other.md": "x\n" }, { changeBeforeProcess: { "B/D/New.md": "NEW LINE\n[o](../C/Other.md)\n" } });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/D/New.md");
+    assert.equal(text.get("B/D/New.md"), "NEW LINE\n[o](../../C/Other.md)\n");
+    assert.equal(r.ok, true, JSON.stringify(r));
+  });
+
+  test("update_backlinks: false leaves the moved note's own links alone too (review #5)", async () => {
+    const { app, text } = fakeApp({ "A/Old.md": "[o](../C/Other.md)\n", "C/Other.md": "x\n" });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/D/New.md", { updateBacklinks: false });
+    assert.equal(text.get("B/D/New.md"), "[o](../C/Other.md)\n");
+    assert.equal(r.links_rewritten, 0);
+  });
+
+  test("a batch's shared text sees a write made between two moves by someone else (review #6)", async () => {
+    // S/X is read (and cached) by the first move's scan, but not rewritten by it.
+    const { app, text, write } = fakeApp({ "A/One.md": "1\n", "A/Two.md": "2\n", "S/X.md": "nothing yet\n" });
+    const texts = new TextCache(app);
+    await moveWithLinks(app, app.vault.getAbstractFileByPath("A/One.md"), "B/Uno.md", { texts });
+    write("S/X.md", "now [[Two]]\n"); // the editor, another plugin, a sync
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Two.md"), "B/Dos.md", { texts });
+    assert.equal(text.get("S/X.md"), "now [[Dos]]\n");
+    assert.equal(r.ok, true, JSON.stringify(r));
+  });
+
+  test("counts name only what the caller may see: a hidden note's rewrite is in neither count (review #8)", async () => {
+    const { app, text } = fakeApp({ "A/Old.md": "x\n", "Secret/S.md": "a [[Old]] [[Old]]\n", "S/V.md": "[[Old]]\n" });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md", { visible: (p) => !p.startsWith("Secret/") });
+    assert.equal(text.get("Secret/S.md"), "a [[New]] [[New]]\n", "the hidden note is still healed");
+    assert.deepEqual([r.links_rewritten, r.files_rewritten, r.ok], [1, ["S/V.md"], true]);
   });
 
   test("a note outside the caller's view is counted, never named, and its damage still makes ok false", async () => {

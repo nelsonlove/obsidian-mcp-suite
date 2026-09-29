@@ -36,15 +36,59 @@ installObsidianStub();
 const { moveWithLinks } = await import("../src/mcp/move-with-links.ts");
 
 // ── an independent link model (deliberately NOT link-rewrite.ts) ──────────────
-const LINK = /!?\[\[(?:[^\[\]\n]|\[[^\[\]\n]*\])*?\]\]|!?\[[^\]\n]*\]\((?:<[^>\n]*>|[^)\s]*)(?:\s+"[^"\n]*")?\)/g;
+const LINK = /!?\[\[(?:[^\[\]\n]|\[[^\[\]\n]*\])*?\]\]|!?\[(?:[^\[\]\n]|\[[^\[\]\n]*\])*\]\((?:<[^>\n]*>|(?:[^()\s]|\([^()\s]*\))*)(?:\s+"[^"\n]*")?\)/g;
+/** Fenced blocks, walked line by line: open on 3+ backticks or tildes, close on a bare run of the same character at least as long. */
+function fences(text, from) {
+  const out = [];
+  let at = 0, open = null;
+  for (const line of text.split("\n")) {
+    const start = at; at += line.length + 1;
+    if (start < from) continue;
+    const run = /^[\s>]*(`{3,}|~{3,})(.*)$/.exec(line);
+    if (!open) { if (run && !(run[1][0] === "`" && run[2].includes("`"))) open = { start, ch: run[1][0], n: run[1].length }; }
+    else if (run && run[1][0] === open.ch && run[1].length >= open.n && run[2].trim() === "") { out.push([open.start, start + line.length]); open = null; }
+  }
+  if (open) out.push([open.start, text.length]);
+  return out;
+}
+/** Inline code per paragraph: a run of n backticks pairs with the next run of exactly n (an escaped run closes, and opens with the rest). */
+function inlineCode(text, from, inCode) {
+  const out = [];
+  const paras = [];
+  let at = 0, cur = null;
+  for (const line of text.split("\n")) {
+    const start = at, end = at + line.length; at = end + 1;
+    if (start < from) continue;
+    const bare = line.replace(/^[ \t]*(?:>[ \t]?)*/, "");
+    const blank = bare.trim() === "" || inCode(start);
+    const newBlock = /^(#{1,6}(\s|$)|\||[-*+](\s|$)|\d+[.)](\s|$))/.test(bare);
+    if (blank || newBlock) { if (cur) paras.push(cur); cur = null; }
+    if (blank) continue;
+    cur = cur ? [cur[0], end] : [start, end];
+    if (/^(#{1,6}(\s|$)|\|)/.test(bare)) { paras.push(cur); cur = null; }
+  }
+  if (cur) paras.push(cur);
+  for (const [a, b] of paras) {
+    const runs = [];
+    for (const m of text.slice(a, b).matchAll(/`+/g)) runs.push({ i: a + m.index, n: m[0].length, esc: text[a + m.index - 1] === "\\" });
+    let k = 0;
+    while (k < runs.length) {
+      const o = runs[k], oi = o.esc ? o.i + 1 : o.i, on = o.esc ? o.n - 1 : o.n;
+      let j = k + 1;
+      while (on > 0 && j < runs.length && runs[j].n !== on) j++;
+      if (on > 0 && j < runs.length) { out.push([oi, runs[j].i + runs[j].n]); k = j + 1; } else k++;
+    }
+  }
+  return out;
+}
 function spansOf(text) {
   // Code fences, inline code, math and comments hold no links (Obsidian's rule).
   const out = [];
   const fm = /^---\n[\s\S]*?\n---(?:\n|$)/.exec(text);
   const body = fm ? fm[0].length : 0;
   const inCode = (i) => i < body || out.some(([a, b]) => i >= a && i < b);
-  for (const m of text.matchAll(/^([ \t]{0,3})(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:\n\1?\2[^\n]*(?=\n|$)|$)/gm)) if (m.index >= body) out.push([m.index, m.index + m[0].length]);
-  for (const m of text.matchAll(/(`+)[^`\n]+?\1(?!`)/g)) if (!inCode(m.index)) out.push([m.index, m.index + m[0].length]);
+  out.push(...fences(text, body));
+  out.push(...inlineCode(text, body, inCode));
   for (const re of [/\$\$/g]) {
     const at = [...text.matchAll(re)].map((m) => m.index).filter((i) => !inCode(i));
     for (let k = 0; k + 1 < at.length; k += 2) out.push([at[k], at[k + 1] + 2]);
@@ -56,27 +100,28 @@ function linksOf(text) {
   const r = [];
   for (const m of text.matchAll(LINK)) {
     if (skip.some(([a, b]) => m.index >= a && m.index < b)) continue;
-    if (/^!?\[[^\]]*\]\((?:<)?[a-z][a-z0-9+.-]*:/i.test(m[0])) continue; // URL
+    if (!m[0].endsWith("]]") && /^<?[a-z][a-z0-9+.-]*:/i.test(destOf(m[0]))) continue; // URL
     r.push({ at: m.index, text: m[0] });
   }
   return r;
 }
+/** A markdown link's destination, raw: the last `](…)` of the link (its text may hold an image). */
+const destOf = (linkText) => /\]\((<[^>]*>|(?:[^()\s]|\([^()\s]*\))*)(?:\s+"[^"]*")?\)$/.exec(linkText)[1];
 function targetOf(linkText) {
   let t;
   const w = /^!?\[\[([\s\S]*)\]\]$/.exec(linkText);
   if (w) t = w[1].split("|")[0].replace(/\\$/, "");
   else {
-    const m = /\]\((<[^>]*>|[^)\s]*)/.exec(linkText);
-    t = m[1].replace(/^<|>$/g, "");
+    t = destOf(linkText).replace(/^<|>$/g, "");
     try { t = decodeURI(t); } catch { /* keep */ }
   }
-  return t.split("#")[0].trim();
+  return t.split("#")[0].trim().normalize("NFC");
 }
 /** A link with its target removed: embed marker, subpath, alias, display text and title must survive a rewrite. */
 function shape(linkText) {
   const w = /^(!?)\[\[([\s\S]*)\]\]$/.exec(linkText);
   if (w) { const bar = w[2].indexOf("|"); const t = bar < 0 ? w[2] : w[2].slice(0, bar); const h = t.indexOf("#"); return `${w[1]}[[${h < 0 ? "" : t.slice(h)}${bar < 0 ? "" : w[2].slice(bar)}]]`; }
-  const m = /^(!?)\[([\s\S]*)\]\((<[^>]*>|[^)\s]*)(\s+"[^"]*")?\)$/.exec(linkText);
+  const m = /^(!?)\[([\s\S]*)\]\((<[^>]*>|(?:[^()\s]|\([^()\s]*\))*)(\s+"[^"]*")?\)$/.exec(linkText);
   let dest = m[3].replace(/^<|>$/g, ""); try { dest = decodeURI(dest); } catch { /* keep */ }
   const h = dest.indexOf("#");
   return `${m[1]}[${m[2]}](${h < 0 ? "" : dest.slice(h)}${m[4] ?? ""})`;
@@ -88,6 +133,13 @@ const skeleton = (text) => { let out = "", i = 0; for (const l of linksOf(text))
 const stripMd = (s) => s.replace(/\.md$/i, "");
 const baseOf = (p) => stripMd(p.split("/").pop());
 const folderOf = (p) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "");
+/** `to` written relative to the folder of `from`. */
+function rel(from, to) {
+  const a = folderOf(from).split("/").filter(Boolean), b = to.split("/");
+  let i = 0;
+  while (i < a.length && i < b.length - 1 && a[i] === b[i]) i++;
+  return (a.length === i ? "./" : "../".repeat(a.length - i)) + b.slice(i).join("/");
+}
 function buildApp(exp, texts) {
   const text = new Map(texts);
   const tfiles = new Map();
@@ -141,7 +193,7 @@ function buildApp(exp, texts) {
       getAbstractFileByPath: (p) => tfiles.get(p) ?? null,
       read: async (f) => text.get(f.path),
       cachedRead: async (f) => text.get(f.path),
-      async process(f, fn) { const n = fn(text.get(f.path)); text.set(f.path, n); return n; },
+      async process(f, fn) { const n = fn(text.get(f.path)); text.set(f.path, n); f.stat = { mtime: f.stat.mtime + 1, size: Buffer.byteLength(n) }; return n; },
       async rename(f, to) {
         const from = f.path; moved = { from, to };
         const t = text.get(from); text.delete(from); tfiles.delete(from);
@@ -187,10 +239,15 @@ describe("moving real notes on a copy, under a write stream: no damage", { skip:
       const b = baseOf(target);
       sources.forEach((p, i) => {
         if (i === 0) text.set(p, `stream: a line prepended ${ti}\n` + text.get(p));
-        if (i === 1) text.set(p, text.get(p) + `\nstream: appended, and a new link [[${b}]]\n`);
+        // The forms the #440 review named: a link inside a multi-line fence (must stay) and one after it; a vault-path
+        // markdown link with %20 and raw parentheses; one in angle brackets; a relative wikilink; the other Unicode form.
+        if (i === 1) text.set(p, text.get(p) + `\nstream: appended, and a new link [[${b}]]\n\`\`\`\n[[${b}]] in a fence\n\`\`\`\nafter the fence [[${b}]]\n[pct](${target.replace(/ /g, "%20")}) [ang](<${target}>) [[${rel(p, stripMd(target))}|rel]] [[${b.normalize("NFD")}]]\n`);
         if (i === 2) text.set(p, `stream: prepended with [[${b}|a new alias]]\n` + text.get(p));
         stale(p);
       });
+      // The moved note's own relative links, markdown in angle brackets and wiki, to a note of the stream: they must still reach it.
+      const ownTo = sources[0];
+      if (ownTo) { text.set(target, text.get(target) + `\nstream: own [r](<${rel(target, ownTo)}>) and [[${rel(target, stripMd(ownTo))}]]\n`); stale(target); }
       // Independent "before" count over the current text, for every note (stream edits included).
       const reach = (p, t, dest) => linksOf(t).filter((l) => { const d = resolve(targetOf(l.text), p); return d && d.path === dest; }).length;
       const pre = new Map();
@@ -232,7 +289,12 @@ describe("moving real notes on a copy, under a write stream: no damage", { skip:
         assert.equal(newLinks.length, oldLinks.length, `${p}: number of links changed`);
         for (let i = 0; i < oldLinks.length; i++) {
           const wasTarget = (() => { const d = resolve(targetOf(oldLinks[i].text), p0 === target ? to : p0); return false || (pre.has(p0) && targetOf(oldLinks[i].text) && baseOf(targetOf(oldLinks[i].text)).toLowerCase() === b.toLowerCase()); })();
-          if (!wasTarget) assert.equal(newLinks[i].text, oldLinks[i].text, `${p}: a link that did not reach the target changed`);
+          const ownRelative = p0 === target && /^\.\.?\//.test(targetOf(oldLinks[i].text));
+          if (ownRelative) {
+            const was = resolveBefore.get(p0)?.get(oldLinks[i].text) ?? null, now = resolve(targetOf(newLinks[i].text), p);
+            assert.equal(now ? now.path : null, was, `${p}: its own relative link no longer reaches ${was}: ${newLinks[i].text}`);
+            assert.equal(shape(newLinks[i].text), shape(oldLinks[i].text), `${p}: its own relative link lost its form: ${newLinks[i].text}`);
+          } else if (!wasTarget) assert.equal(newLinks[i].text, oldLinks[i].text, `${p}: a link that did not reach the target changed`);
           else assert.equal(shape(newLinks[i].text), shape(oldLinks[i].text), `${p}: a rewritten link lost its subpath, alias or form: ${oldLinks[i].text} -> ${newLinks[i].text}`);
         }
         const after = reach(p, newText, to);
@@ -246,6 +308,26 @@ describe("moving real notes on a copy, under a write stream: no damage", { skip:
       }
     });
   }
+
+  // The parser against Obsidian's own index, link by link, on every copied note. A link only
+  // the index has is one a move could miss (the move's index cross-check reports such a note);
+  // a link only the parser has sits in markdown Obsidian reads another way (a table cell split
+  // by an alias bar, an indented code block). Both must stay rare.
+  test("the parser agrees with Obsidian's index on the copy", async () => {
+    const { parseLinks } = await import("../src/mcp/link-rewrite.ts");
+    let agree = 0, onlyIndex = 0, onlyParser = 0;
+    for (const [p, e] of Object.entries(exp.entries)) {
+      const t = texts.get(p);
+      const fm = /^---\n[\s\S]*?\n---(?:\n|$)/.exec(t);
+      const indexed = new Set([...e.links, ...e.embeds].map((l) => l.start));
+      const parsed = new Set(parseLinks(t).filter((l) => l.start >= (fm ? fm[0].length : 0)).map((l) => l.start));
+      for (const s of indexed) if (parsed.has(s)) agree++; else onlyIndex++;
+      for (const s of parsed) if (!indexed.has(s)) onlyParser++;
+    }
+    console.log(`[damage] parser vs Obsidian's index: ${agree} links agree, ${onlyIndex} only in the index, ${onlyParser} only in the parser`);
+    assert.ok(onlyIndex <= agree * 0.0005, `${onlyIndex} links only in the index`);
+    assert.ok(onlyParser <= agree * 0.002, `${onlyParser} links only in the parser`);
+  });
 
   test("summary", () => {
     const ms = summary.ms.sort((a, b) => a - b);

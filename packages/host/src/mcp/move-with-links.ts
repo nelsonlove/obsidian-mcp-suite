@@ -11,25 +11,29 @@
 //
 // What it does instead:
 //   1. FIND every note that may link the note, from its TEXT: every markdown
-//      note whose text contains the note's name is read and parsed. The text is
-//      always current, so a note written moments before (its index entry still
-//      stale — the risk the ruling named) is found like any other, and so are
-//      links Obsidian's index does not track (a link inside a frontmatter
-//      string). The index (`resolvedLinks`) is used only as a cross-check.
+//      note whose text contains the note's name (as written, `%20`-encoded, or
+//      in either Unicode normal form) is read and parsed. The text is always
+//      current, so a note written moments before (its index entry still stale —
+//      the risk the ruling named) is found like any other, and so are links
+//      Obsidian's index does not track (a link inside a frontmatter string). The
+//      index (`resolvedLinks`) is used only as a cross-check.
 //   2. RENAME at the file level (`vault.rename`), which does not wait.
 //   3. REWRITE each note inside `vault.process`, at the planned positions when
-//      its text is unchanged, and from its current text otherwise.
+//      its text is unchanged, and from its current text otherwise. The moved
+//      note's own relative links (markdown or wiki) are rewritten from its new
+//      folder.
 //   4. CHECK for damage and report it, never silently: no link may still name
 //      the old path unresolved, every note must reach the moved note as often as
-//      before, and every note the index says links it must have been found.
+//      before, the moved note must reach each of its relative targets as often
+//      as before, and every note the index says links it must have been found.
 
 import { TFile, type App } from "obsidian";
-import { parseLinks, rewriteLink, applyEdits, relativePath, folderOf, type TextLink, type Edit } from "./link-rewrite.js";
+import { parseLinks, rewriteLink, applyEdits, isRelativeLinkpath, type TextLink, type Edit } from "./link-rewrite.js";
 
 /** What the damage check found. `ok` is false whenever any list is non-empty (hidden notes included). */
 export interface LinkCheck {
   ok: boolean;
-  /** Links rewritten, and in which notes (the moved note's own relative links included). */
+  /** Links rewritten, and in which notes (the moved note's own relative links included). Visible notes only. */
   links_rewritten: number;
   files_rewritten: string[];
   /** Notes read because their text names the note, and how many of them the index had not caught up with. */
@@ -39,7 +43,9 @@ export interface LinkCheck {
   still_linking_old: Array<{ path: string; link: string }>;
   /** A note that reached the note fewer times after the move than before. */
   not_reaching_new: Array<{ path: string; before: number; after: number }>;
-  /** A note the index says links the note, where no link to it was found in its text. */
+  /** A note the moved note reached by a relative link fewer times after the move than before. */
+  own_links_broken: Array<{ target: string; before: number; after: number }>;
+  /** A note the index says links the note, where no link to it was found in its text (or, while its index entry is current, fewer links than the index counts). */
   index_only: string[];
   /** A note that could not be rewritten, and why. */
   failed: Array<{ path: string; reason: string }>;
@@ -51,7 +57,7 @@ export interface LinkCheck {
 }
 
 export interface MoveWithLinksOptions {
-  /** false: rename only, rewrite no links (the old `update_backlinks: false`, now honoured). */
+  /** false: rename only, rewrite no links, the moved note's own included (the old `update_backlinks: false`, now honoured). */
   updateBacklinks?: boolean;
   /** Which paths the caller may see named; others are counted in `hidden`. Default: all. */
   visible?: (path: string) => boolean;
@@ -59,23 +65,28 @@ export interface MoveWithLinksOptions {
    * The vault's text, read once and shared by the moves of one batch. The scan
    * reads every note (about 1 to 2 s on a 22,000-note vault), so a batch of 50
    * moves would otherwise read the vault 50 times inside one 30 s queue slot.
-   * Kept current by each move: rewritten notes and the renamed path.
    */
   texts?: TextCache;
 }
 
-/** Note text by path, read lazily and kept current by the moves that share it. */
+/**
+ * Note text by path, read lazily. An entry is used only while the file's mtime
+ * and size are what they were when it was read, so a write by anyone (another
+ * plugin, the editor, a sync) makes the next move read the note again.
+ */
 export class TextCache {
-  private readonly map = new Map<string, string>();
+  private readonly map = new Map<string, { text: string; mtime: number; size: number }>();
   constructor(private readonly app: App) {}
   async get(f: TFile): Promise<string> {
     const hit = this.map.get(f.path);
-    if (hit !== undefined) return hit;
-    const t = await this.app.vault.cachedRead(f);
-    this.map.set(f.path, t);
-    return t;
+    if (hit && hit.mtime === f.stat.mtime && hit.size === f.stat.size) return hit.text;
+    const stat = { mtime: f.stat.mtime, size: f.stat.size };
+    const text = await this.app.vault.cachedRead(f);
+    this.map.set(f.path, { text, ...stat });
+    return text;
   }
-  set(path: string, text: string): void { this.map.set(path, text); }
+  /** Drop a note this move rewrote: its next read comes from the vault. */
+  forget(path: string): void { this.map.delete(path); }
   rename(from: string, to: string): void { const t = this.map.get(from); this.map.delete(from); if (t !== undefined) this.map.set(to, t); }
 }
 
@@ -89,7 +100,17 @@ interface Plan {
 }
 
 const lower = (s: string) => s.toLowerCase();
-const stripMd = (s: string) => s.replace(/\.md$/i, "");
+
+/** The forms a link to `name` may take in a note's text: as written, `%20`-encoded, and URI-encoded, each in both Unicode normal forms. */
+function needles(name: string): string[] {
+  const out = new Set<string>();
+  for (const n of [name.normalize("NFC"), name.normalize("NFD")]) {
+    out.add(lower(n));
+    out.add(lower(n.replace(/ /g, "%20")));
+    try { out.add(lower(encodeURI(n))); } catch { /* a lone surrogate: the plain form covers it */ }
+  }
+  return [...out];
+}
 
 /** The cache entry is current when Obsidian's recorded mtime and size match the file. */
 function cacheIsFresh(app: App, f: TFile): boolean {
@@ -102,6 +123,12 @@ function resolves(app: App, linkpath: string, source: string): TFile | null {
   return app.metadataCache.getFirstLinkpathDest(linkpath, source);
 }
 
+function countBy<T>(xs: T[], key: (x: T) => string): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const x of xs) m.set(key(x), (m.get(key(x)) ?? 0) + 1);
+  return m;
+}
+
 /**
  * Move `file` to `to` and rewrite every link to it. Throws only when the rename
  * itself fails (nothing moved). Every link-level problem is reported in the
@@ -111,35 +138,44 @@ export async function moveWithLinks(app: App, file: TFile, to: string, opts: Mov
   const visible = opts.visible ?? (() => true);
   const update = opts.updateBacklinks !== false;
   const oldPath = file.path;
-  const oldName = lower(file.basename);
-  const check: LinkCheck = { ok: true, links_rewritten: 0, files_rewritten: [], candidates: 0, stale_sources: 0, still_linking_old: [], not_reaching_new: [], index_only: [], failed: [], find_ms: 0, check_ms: 0, hidden: 0 };
+  const names = needles(file.basename);
+  const check: LinkCheck = { ok: true, links_rewritten: 0, files_rewritten: [], candidates: 0, stale_sources: 0, still_linking_old: [], not_reaching_new: [], own_links_broken: [], index_only: [], failed: [], find_ms: 0, check_ms: 0, hidden: 0 };
 
   // ── 1. find ───────────────────────────────────────────────────────────────
   const t0 = Date.now();
   const texts = opts.texts ?? new TextCache(app);
   const plans = new Map<string, Plan>();
+  // The moved note's own relative links break when its folder changes: their targets, by link path as written.
+  const ownTargets = new Map<string, TFile>();
+  const ownLinks: TFile[] = [];
   if (update) {
     for (const src of app.vault.getMarkdownFiles()) {
       const text = await texts.get(src);
-      if (!lower(text).includes(oldName)) continue;
+      const t = lower(text);
+      if (!names.some((n) => t.includes(n))) continue;
       check.candidates++;
       if (!cacheIsFresh(app, src)) check.stale_sources++;
       const edits = parseLinks(text).filter((l) => resolves(app, l.linkpath, src.path) === file);
       if (edits.length === 0) continue;
       plans.set(src.path, { path: src.path, text, edits, linkpaths: new Set(edits.map((l) => l.linkpath)), before: edits.length });
     }
-    // Cross-check with the index: a note it says links the note, where the text scan found nothing.
+    // Cross-check with the index: a note it says links the note where the text scan found
+    // nothing, or (while its index entry is current) fewer links than the index counts. The
+    // parser and Obsidian's index can disagree on rare markdown; this makes a miss loud.
     for (const [src, targets] of Object.entries(app.metadataCache.resolvedLinks ?? {})) {
-      if (src === oldPath || plans.has(src) || !((targets?.[oldPath] ?? 0) > 0)) continue;
-      check.index_only.push(src);
+      const indexed = targets?.[oldPath] ?? 0;
+      if (src === oldPath || indexed === 0) continue;
+      const plan = plans.get(src);
+      const f = app.vault.getAbstractFileByPath(src);
+      if (!plan || (plan.before < indexed && f instanceof TFile && cacheIsFresh(app, f))) check.index_only.push(src);
+    }
+    for (const l of parseLinks(await texts.get(file))) {
+      if (!isRelativeLinkpath(l.linkpath)) continue;
+      const target = resolves(app, l.linkpath, oldPath);
+      if (target && target !== file) { ownTargets.set(l.linkpath, target); ownLinks.push(target); }
     }
   }
-  // The moved note's own relative markdown links break when its folder changes: plan them against their targets.
-  const ownText = await texts.get(file);
-  const ownRelative = parseLinks(ownText)
-    .filter((l) => l.kind === "markdown" && /\]\(<?\.\.?\//.test(l.original))
-    .map((l) => ({ link: l, target: resolves(app, l.linkpath, oldPath) }))
-    .filter((x): x is { link: TextLink; target: TFile } => x.target !== null && x.target !== file);
+  const ownBefore = countBy(ownLinks, (t) => t.path);
   check.find_ms = Date.now() - t0;
 
   // ── 2. rename, without waiting for the metadata cache ────────────────────
@@ -148,9 +184,9 @@ export async function moveWithLinks(app: App, file: TFile, to: string, opts: Mov
 
   // ── 3. rewrite ────────────────────────────────────────────────────────────
   const newPathOf = (p: string) => (p === oldPath ? to : p);
-  const wikiTarget = (src: string) => app.metadataCache.fileToLinktext(file, src, true);
   const sources = [...plans.values()];
-  if (ownRelative.length > 0 && !plans.has(oldPath)) sources.push({ path: oldPath, text: ownText, edits: [], linkpaths: new Set(), before: 0 });
+  if (ownTargets.size > 0 && !plans.has(oldPath)) sources.push({ path: oldPath, text: "", edits: [], linkpaths: new Set(), before: 0 });
+  const rewritten = new Map<string, number>();
 
   for (const plan of sources) {
     const srcPath = newPathOf(plan.path);
@@ -160,35 +196,31 @@ export async function moveWithLinks(app: App, file: TFile, to: string, opts: Mov
     try {
       await app.vault.process(src, (data) => {
         // Planned positions when the text is what we read; else the links, re-found, whose target reached the note.
-        const links = data === plan.text ? plan.edits : parseLinks(data).filter((l) => plan.linkpaths.has(l.linkpath));
+        const current = data === plan.text ? null : parseLinks(data);
+        const links = current === null ? plan.edits : current.filter((l) => plan.linkpaths.has(l.linkpath));
         const edits: Edit[] = [];
         for (const l of links) {
           if (resolves(app, l.linkpath, srcPath) === file) continue; // the old text still reaches it by name
-          edits.push({ start: l.start, end: l.end, expected: l.original, replacement: rewriteLink(l, to, srcPath, wikiTarget(srcPath)) });
+          edits.push({ start: l.start, end: l.end, expected: l.original, replacement: rewriteLink(l, to, srcPath, app.metadataCache.fileToLinktext(file, srcPath, true)) });
         }
         if (srcPath === to) {
-          const own = data === ownText ? ownRelative : [];
-          for (const { link, target } of own) {
-            if (resolves(app, link.linkpath, to) === target) continue;
-            const hadMd = /\.md$/i.test(link.linkpath);
-            const rel = relativePath(folderOf(to), hadMd ? target.path : stripMd(target.path));
-            const m = /^(!?\[(?:[^\]\\]|\\.)*\]\()(<?)([^)>\s]*)(>?)(\s+"[^"]*")?\)$/.exec(link.original);
-            if (!m) continue;
-            const dest = m[2] ? rel + link.subpath : encodeURI(rel).replace(/\(/g, "%28").replace(/\)/g, "%29") + link.subpath.replace(/ /g, "%20");
-            edits.push({ start: link.start, end: link.end, expected: link.original, replacement: `${m[1]}${m[2]}${dest}${m[4]}${m[5] ?? ""})` });
+          for (const l of current ?? parseLinks(data)) {
+            const target = ownTargets.get(l.linkpath);
+            if (!target || resolves(app, l.linkpath, to) === target) continue;
+            edits.push({ start: l.start, end: l.end, expected: l.original, replacement: rewriteLink(l, target.path, to, app.metadataCache.fileToLinktext(target, to, true)) });
           }
         }
         const next = applyEdits(data, edits);
         if (next === null) throw new Error("the note's links overlap or moved while it was being rewritten");
         n = edits.length;
-        texts.set(srcPath, next);
         return next;
       });
     } catch (e) {
       check.failed.push({ path: srcPath, reason: e instanceof Error ? e.message : String(e) });
       continue;
     }
-    if (n > 0) { check.links_rewritten += n; check.files_rewritten.push(srcPath); }
+    texts.forget(srcPath);
+    if (n > 0) rewritten.set(srcPath, n);
   }
 
   // ── 4. check for damage ───────────────────────────────────────────────────
@@ -207,16 +239,28 @@ export async function moveWithLinks(app: App, file: TFile, to: string, opts: Mov
       }
       if (reaching < plan.before) check.not_reaching_new.push({ path: p, before: plan.before, after: reaching });
     }
+    if (ownBefore.size > 0) {
+      const wanted = new Set([...ownTargets.values()]);
+      const after = countBy(
+        parseLinks(await app.vault.read(file)).filter((l) => isRelativeLinkpath(l.linkpath)).map((l) => resolves(app, l.linkpath, to)).filter((d): d is TFile => d !== null && wanted.has(d)),
+        (d) => d.path,
+      );
+      for (const [target, before] of ownBefore) {
+        const a = after.get(target) ?? 0;
+        if (a < before) check.own_links_broken.push({ target, before, after: a });
+      }
+    }
   }
   check.check_ms = Date.now() - t1;
 
   // Decide `ok` over everything, hidden notes included, then redact names the caller may not see.
-  check.ok = check.still_linking_old.length === 0 && check.not_reaching_new.length === 0 && check.index_only.length === 0 && check.failed.length === 0;
+  check.ok = check.still_linking_old.length === 0 && check.not_reaching_new.length === 0 && check.own_links_broken.length === 0 && check.index_only.length === 0 && check.failed.length === 0;
   const keep = (p: string) => { if (visible(p)) return true; check.hidden++; return false; };
   check.still_linking_old = check.still_linking_old.filter((x) => keep(x.path));
   check.not_reaching_new = check.not_reaching_new.filter((x) => keep(x.path));
+  check.own_links_broken = check.own_links_broken.filter((x) => keep(x.target));
   check.failed = check.failed.filter((x) => keep(x.path));
   check.index_only = check.index_only.filter(keep);
-  check.files_rewritten = check.files_rewritten.filter(keep);
+  for (const [p, n] of rewritten) if (keep(p)) { check.files_rewritten.push(p); check.links_rewritten += n; }
   return check;
 }
