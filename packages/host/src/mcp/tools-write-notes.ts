@@ -44,7 +44,10 @@ const RW = { readOnlyHint: false, destructiveHint: false, idempotentHint: false,
  * (exempt), so a note that already exists is refused here with the coded
  * message naming if_rev — never overwritten without a token. Refusing HERE,
  * not before the queue, is what keeps a retry working: a replay under the
- * same idempotency_key is answered by the kernel before this runs.
+ * same idempotency_key is answered by the kernel before this runs. The cost:
+ * this refusal is a returned envelope, so the kernel stores it under the
+ * item's key, and the overwrite that follows needs a new key (the message
+ * says so).
  */
 export function batchItemWriter(
   write: (path: string, content: string, overwrite: boolean) => unknown | Promise<unknown>,
@@ -55,7 +58,8 @@ export function batchItemWriter(
       return codedError(
         PROTECTION_REQUIRED,
         `'${path}' already exists, and this batch item carries no if_rev, so it is a create (01.33 rule 6f: an overwrite needs a token). ` +
-          "Nothing was written. To overwrite it, read the note (obsidian_read_note returns `rev`) and pass that value as the item's if_rev."
+          "Nothing was written. To overwrite it, read the note (obsidian_read_note returns `rev`) and pass that value as the item's if_rev. " +
+          "If this item carried an idempotency_key, give the overwrite a NEW one: that key now answers with this refusal."
       );
     }
     return ok(await write(path, content, create_only ? false : (overwrite ?? true)));

@@ -502,6 +502,18 @@ describe("obsidian_write_notes — per item, as write_note (01.33.5)", () => {
     assert.equal(res.count, 1);
     assert.match(vault.get("E/Old.md").content, /new/);
   });
+  test("a keyed item refused as existing keeps that refusal under its key; the overwrite goes through with if_rev and a NEW key, as the message says", async () => {
+    const { call, vault } = harness({ existing: new Map([["E/Old.md", { rev: 500, content: "old" }]]) });
+    const first = structured(await call({ notes: [{ path: "E/Old.md", body: "new", idempotency_key: "K-old" }], stamp: false }));
+    const err = first.errors.find((e) => e.path === "E/Old.md");
+    assert.match(err.error, /give the overwrite a NEW one: that key now answers with this refusal/);
+    const sameKey = structured(await call({ notes: [{ path: "E/Old.md", body: "new", if_rev: 500, idempotency_key: "K-old" }], stamp: false }));
+    assert.equal(sameKey.errors.find((e) => e.path === "E/Old.md")?.code, "idempotency_mismatch", "the old key is spent on the refusal");
+    assert.equal(vault.get("E/Old.md").content, "old");
+    const newKey = structured(await call({ notes: [{ path: "E/Old.md", body: "new", if_rev: 500, idempotency_key: "K-old-2" }], stamp: false }));
+    assert.equal(newKey.count, 1);
+    assert.match(vault.get("E/Old.md").content, /new/);
+  });
   test("a retry of a CREATE under the same key replays instead of being refused as an existing note", async () => {
     const { call, writeCalls } = harness();
     const item = { path: "E/Once.md", body: "v1", idempotency_key: "K-create" };
