@@ -300,6 +300,11 @@ export class IdempotencyStore {
     return this.entries.size;
   }
 
+  /** True when `key` is stored (inside its TTL) or reserved by a call still running. */
+  has(key: string): boolean {
+    return this.reservations.has(key) || this.get(key) !== undefined;
+  }
+
   /** Keys claimed but not yet settled. */
   /** True when `key` is stored (inside its TTL) or reserved by a call still running. */
   has(key: string): boolean {
