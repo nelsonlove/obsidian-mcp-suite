@@ -43,6 +43,11 @@ describe("rename-heading rules", () => {
     assert.equal(rewriteLinkOriginal("[t](A.md#Old%20heading%3F)", "Old heading?", "New"), null, "decodeURI keeps %3F, so Obsidian does not resolve this link either");
     assert.equal(rewriteLinkOriginal("[t](A.md#Old%20heading)", "Old heading", "Part a)"), "[t](A.md#Part%20a%29)", "a raw ) would end the destination");
     assert.equal(rewriteLinkOriginal("[t](A.md#Old%20heading)", "Old heading", "(b)"), "[t](A.md#%28b%29)");
+    const colon = rewriteLinkOriginal("[t](A.md#Old)", "Old", "Step 1: setup");
+    assert.equal(colon, "[t](A.md#Step%201:%20setup)", "encodeURI, the inverse of the cache's decodeURI");
+    assert.equal(decodeURI(/#(.*)\)$/.exec(colon)[1]), "Step 1: setup", "the written link decodes back to the new name");
+    assert.equal(rewriteLinkOriginal("[t](A.md#Old)", "Old", "50% done"), "[t](A.md#50%25%20done)");
+    assert.equal(rewriteLinkOriginal("[[A#]]", "?", "New"), null, "an empty key matches no segment");
   });
   test("newHeadingRefusal: empty, padded, link syntax, unchanged", () => {
     assert.match(newHeadingRefusal("a", " "), /empty/);
@@ -161,6 +166,9 @@ describe("obsidian_rename_heading", () => {
     assert.match((await run({ path: "D.md", heading: "Twice", new_heading: "X" })).error, /2 headings in D\.md are reached by the same links \('Twice' line 1, 'Twice' line 3\)/);
     assert.match((await run({ path: "D.md", heading: "Taken", new_heading: "twice" })).error, /already has a heading 'Twice'/);
     assert.match((await run({ path: "A.md", heading: "Old heading", new_heading: "a#b" })).error, /cannot carry/);
+    const q = fakeVault({ "Q.md": "## ?\n", "L.md": "[[Q#]]\n" });
+    assert.match((await tool(q.app)({ path: "Q.md", heading: "?", new_heading: "New" })).error, /no character a link can match/);
+    assert.equal(q.store["L.md"], "[[Q#]]\n");
     assert.deepEqual(store, { ...FILES, "D.md": "## Twice\n\n## Twice\n\n## Taken\n" }, "nothing written");
   });
 
