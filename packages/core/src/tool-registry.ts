@@ -314,7 +314,8 @@ export const FS_TOOLS: ToolDef[] = [
       "  - `block` anchor: matches the first paragraph whose final token is `^<value>` (whitespace-bounded). The anchor's 'content' is the entire paragraph (lines from prior blank line up to next blank line). `prepend`/`append` operate on the WHOLE paragraph, not just the line containing `^<value>`. `replace` swaps the entire paragraph (and the `^<value>` token with it — include it in `content` if you want the block ref preserved).\n" +
       "`content` is inserted verbatim into the line stream — newlines preserved. Callers wanting paragraph-level separation (a blank line between the inserted content and the anchor's content) should include the blank line(s) in `content` themselves. " +
       "Returns `found: false` if the anchor doesn't match; no write happens. Returns the prior content as `previous` so the caller can undo or audit. " +
-      "For frontmatter-field edits use `obsidian_manage_frontmatter` instead — patch_note doesn't shadow it.",
+      "For frontmatter-field edits use `obsidian_manage_frontmatter` instead — patch_note doesn't shadow it. " +
+      "To RENAME a heading, use `obsidian_rename_heading` (on the live Obsidian server): it rewrites every link to the heading. Changing a heading's text any other way leaves every [[Note#Heading]] link to it broken, silently.",
     inputSchema: {
       path: z.string().min(1).describe("Vault-relative path of the note, ending in .md."),
       anchor_type: z.enum(["heading", "block"]).describe("Anchor matcher: 'heading' or 'block'."),
@@ -338,7 +339,8 @@ export const FS_TOOLS: ToolDef[] = [
     name: "obsidian_write_note",
     title: "Write a note",
     description:
-      "Create a note, or overwrite an existing one when overwrite=true. Path must end in .md. Parent folders are created as needed.",
+      "Create a note, or overwrite an existing one when overwrite=true. Path must end in .md. Parent folders are created as needed. " +
+      "An overwrite that changes a heading's text breaks every [[Note#Heading]] link to it: to rename a heading, use `obsidian_rename_heading` (on the live Obsidian server), which rewrites those links.",
     inputSchema: {
       path: z.string().min(1).describe("Vault-relative path ending in .md."),
       content: z.string().describe("Full markdown content to write."),

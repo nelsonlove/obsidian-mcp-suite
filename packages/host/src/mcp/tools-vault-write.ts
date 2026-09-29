@@ -3,14 +3,16 @@
 // migrated to registerFsTools + ObsidianBackend in server.ts.
 //
 // This file retains the live-only tools that are not part of the 17
-// fs-expressible set — obsidian_move_notes (batch move/rename) and
-// obsidian_repoint_link (repoint broken wikilinks) — along with their helpers.
+// fs-expressible set — obsidian_move_notes (batch move/rename),
+// obsidian_repoint_link (repoint broken wikilinks) and obsidian_rename_heading
+// (rename a heading and heal every link to it, #424) — along with their helpers.
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { type App, TFile } from "obsidian";
 import { ok, fail, okError, validateMoves } from "./helpers.js";
 import { repointLinksInText } from "./repoint.js";
+import { applyEdits, headingKey, newHeadingRefusal, rewriteHeadingLine, rewriteLinkOriginal, type Edit } from "./rename-heading.js";
 import { visiblePaths, type GuardSettings } from "../guard.js";
 
 export const RW = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
@@ -26,6 +28,14 @@ export interface VaultWriteToolsCtx {
    * it. So the handler applies the same rule to that set itself.
    */
   getSettings?: () => GuardSettings;
+  /**
+   * Whether a note is a RECORD (the operator's record identification, #264 /
+   * #397). `obsidian_rename_heading` rewrites links in notes it discovers, so
+   * the kernel's record check — which sees only the paths an operation names —
+   * cannot reach them; the handler skips a record itself and reports it.
+   * Absent ⇒ no note is treated as a record.
+   */
+  isRecord?: (path: string) => boolean;
 }
 
 async function ensureParentFolders(app: App, filePath: string): Promise<void> {
@@ -217,6 +227,137 @@ export function registerVaultWriteTools(server: McpServer, app: App, ctx: VaultW
           // Present either way, so a caller never has to infer containment from
           // the absence of a flag: `true` means notes outside the allowlist were
           // skipped and this repair is partial.
+          scoped_to_allowlist: scoped,
+        });
+      } catch (e) { return fail(e); }
+    }
+  );
+  server.registerTool(
+    "obsidian_rename_heading",
+    {
+      title: "Rename a heading",
+      description:
+        "USE THIS TOOL TO RENAME A HEADING — not obsidian_patch_note, obsidian_write_note or any other text edit. Those change the heading text but leave every link to it ([[Note#Old heading]], ![[Note#Old heading]], [[#Old heading]]) pointing at a heading that no longer exists, and nothing reports the breakage. This tool renames one heading in a note and rewrites every link to it across the notes you can see — wikilinks, embeds and markdown links, same-note [[#Heading]] links and heading chains ([[Note#A#B]]) — the headless equivalent of Obsidian's 'Rename this heading' command, which needs an editor cursor and a dialog. `heading` is the current heading text exactly as written (no leading #); a heading that is not found, or that appears twice in the note, is refused, and so is a new name that collides with another heading in the note or contains [ ] | # ^. Each link is rewritten at the position Obsidian's metadata cache records, after checking the text there still matches; a note that changed since is reported under `skipped`, never rewritten blind. Links inside record notes are not rewritten (records are historical) and are reported under `skipped`, as are frontmatter links. While a path allowlist is configured the scan is CONTAINED BY IT — notes outside it are neither read, rewritten nor named, and `scoped_to_allowlist: true` says so. Set dry_run=true to report what would change without writing.",
+      inputSchema: {
+        path: z.string().min(1).describe("Vault-relative path of the note that holds the heading, ending in .md."),
+        heading: z.string().min(1).describe("The heading's current text, exactly as written, without the leading #s."),
+        new_heading: z.string().min(1).describe("The new heading text. Must not contain [ ] | # ^ or a line break."),
+        dry_run: z.boolean().default(false).describe("If true, report the heading line and the links that would change without modifying any file."),
+      },
+      annotations: RW,
+    },
+    async ({ path, heading, new_heading, dry_run }) => {
+      try {
+        if (!path.endsWith(".md")) return fail(new Error("path must end in .md"));
+        const file = app.vault.getAbstractFileByPath(path);
+        if (!(file instanceof TFile)) return fail(new Error(`not found: ${path}`));
+        const refusal = newHeadingRefusal(heading, new_heading);
+        if (refusal) return fail(new Error(refusal));
+
+        const own = app.metadataCache.getFileCache(file);
+        const headings = own?.headings ?? [];
+        const matches = headings.filter((h) => h.heading === heading);
+        if (matches.length === 0) {
+          const known = headings.slice(0, 20).map((h) => `'${h.heading}'`).join(", ");
+          return fail(new Error(`heading not found in ${path}: '${heading}'${known ? ` (headings: ${known}${headings.length > 20 ? ", …" : ""})` : " (the note has no headings, or the cache has not read it yet)"}`));
+        }
+        if (matches.length > 1) {
+          return fail(new Error(`heading '${heading}' appears ${matches.length} times in ${path} (lines ${matches.map((h) => h.position.start.line + 1).join(", ")}); a link cannot tell them apart, so it is not renamed`));
+        }
+        const target = matches[0];
+        const clash = headings.find((h) => h !== target && headingKey(h.heading) === headingKey(new_heading));
+        if (clash) return fail(new Error(`${path} already has a heading '${clash.heading}' (line ${clash.position.start.line + 1}); renaming to '${new_heading}' would make links to either ambiguous`));
+
+        // The notes to scan, contained by the allowlist exactly as
+        // obsidian_repoint_link is (see its comment): the set is discovered
+        // here, where no argument-level guard check can reach it.
+        const settings = ctx.getSettings?.();
+        const all = app.vault.getMarkdownFiles();
+        const scoped = Boolean(settings?.allowlist?.length);
+        const allowed = scoped ? new Set(visiblePaths(all.map((f) => f.path), settings)) : null;
+
+        const edits = new Map<string, Edit[]>();
+        const skipped: Array<{ path: string; reason: string; link?: string }> = [];
+        const add = (p: string, e: Edit) => { const list = edits.get(p) ?? []; list.push(e); edits.set(p, list); };
+
+        // The heading line itself.
+        const ownText = await app.vault.cachedRead(file);
+        const hs = target.position.start.offset, he = target.position.end.offset;
+        const newLine = rewriteHeadingLine(ownText.slice(hs, he), heading, new_heading);
+        if (newLine === null) return fail(new Error(`the heading line at line ${target.position.start.line + 1} of ${path} no longer reads '${heading}'; the note changed since the cache read it — retry`));
+        add(file.path, { start: hs, end: he, expected: ownText.slice(hs, he), replacement: newLine });
+
+        for (const src of all) {
+          if (allowed && !allowed.has(src.path)) continue;
+          const cache = app.metadataCache.getFileCache(src);
+          if (!cache) continue;
+          const found: Edit[] = [];
+          for (const l of [...(cache.links ?? []), ...(cache.embeds ?? [])]) {
+            const hash = l.link.indexOf("#");
+            if (hash < 0) continue;
+            const linkpath = l.link.slice(0, hash);
+            const dest = linkpath === "" ? src : app.metadataCache.getFirstLinkpathDest(linkpath, src.path);
+            if (!dest || dest.path !== file.path) continue;
+            if (!l.link.slice(hash + 1).split("#").some((seg) => headingKey(seg) === headingKey(heading))) continue;
+            const replacement = rewriteLinkOriginal(l.original, heading, new_heading);
+            if (replacement === null) { skipped.push({ path: src.path, reason: "link form not recognized; not rewritten", link: l.original }); continue; }
+            found.push({ start: l.position.start.offset, end: l.position.end.offset, expected: l.original, replacement });
+          }
+          for (const fl of cache.frontmatterLinks ?? []) {
+            const hash = fl.link.indexOf("#");
+            if (hash < 0) continue;
+            const linkpath = fl.link.slice(0, hash);
+            const dest = linkpath === "" ? src : app.metadataCache.getFirstLinkpathDest(linkpath, src.path);
+            if (dest?.path === file.path && fl.link.slice(hash + 1).split("#").some((seg) => headingKey(seg) === headingKey(heading))) {
+              skipped.push({ path: src.path, reason: `frontmatter link in '${fl.key}' is not rewritten; update it by hand`, link: fl.original });
+            }
+          }
+          if (found.length === 0) continue;
+          if (src.path !== file.path && ctx.isRecord?.(src.path)) {
+            skipped.push({ path: src.path, reason: `record note: ${found.length} link(s) to the heading left as they are (records are historical)` });
+            continue;
+          }
+          for (const e of found) add(src.path, e);
+        }
+
+        const files: string[] = [];
+        let linksChanged = 0;
+        // The note that holds the heading goes first: if it has changed since
+        // the cache read it, nothing anywhere is written.
+        const order = [file.path, ...[...edits.keys()].filter((p) => p !== file.path).sort()];
+        for (const p of order) {
+          const list = edits.get(p)!;
+          const links = list.length - (p === file.path ? 1 : 0);
+          if (!dry_run) {
+            const f = app.vault.getAbstractFileByPath(p);
+            let stale = !(f instanceof TFile);
+            if (!stale) {
+              await app.vault.process(f as TFile, (data) => {
+                const next = applyEdits(data, list);
+                if (next === null) { stale = true; return data; }
+                return next;
+              });
+            }
+            if (stale) {
+              if (p === file.path) return fail(new Error(`${path} changed since the cache read it; nothing was renamed or rewritten — retry`));
+              skipped.push({ path: p, reason: `changed since the cache read it; ${links} link(s) not rewritten — retry to heal them` });
+              continue;
+            }
+          }
+          files.push(p);
+          linksChanged += links;
+        }
+
+        return ok({
+          path,
+          heading,
+          new_heading,
+          dry_run,
+          heading_line: target.position.start.line + 1,
+          linksChanged,
+          filesChanged: files.length,
+          files,
+          skipped,
           scoped_to_allowlist: scoped,
         });
       } catch (e) { return fail(e); }
