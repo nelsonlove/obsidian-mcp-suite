@@ -33,7 +33,7 @@ import type { ServerIdentity } from "./install-id.js";
  * returned the original call's result without executing anything, and
  * `dedupeOf` names the `ts` of the record it replays.
  */
-export type JournalOutcome = "ok" | "error" | "late-ok" | "late-error" | "conflict" | "deduped";
+export type JournalOutcome = "ok" | "error" | "late-ok" | "late-error" | "conflict" | "deduped" | "unknown";
 
 /**
  * Who did it. Established by the transport, never claimed by the caller:

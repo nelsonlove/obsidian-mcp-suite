@@ -121,7 +121,7 @@ Every invocation has an operation id, registered action/version, surface, actor/
 
 - Check revisions at dequeue, not submission.
 - Include revision in idempotency identity.
-- Do not retain abandoned timeouts as completed keys.
+- Keep an abandoned timeout's key RESERVED until the operation settles (#436): never store it as completed, never free it while the write may still land.
 - Append late corrections rather than rewriting journal history.
 - Preserve observation and effect links across late settlement.
 - State multi-target revision behavior explicitly.

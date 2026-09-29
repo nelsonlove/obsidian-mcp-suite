@@ -44,8 +44,9 @@ export class WriteTimeoutError extends Error {
   readonly code = "write_timeout";
   constructor(readonly op: string, readonly timeoutMs: number) {
     super(
-      `'${op}' exceeded the ${timeoutMs}ms write-queue timeout and was abandoned; ` +
-        `the queue moved on to the next operation. The vault may or may not have been modified — re-read before retrying.`
+      `'${op}' did not finish within ${timeoutMs}ms. OUTCOME UNKNOWN: it is still running and may yet land, so this is not ` +
+        `a failure. Re-read before acting. A retry with the SAME idempotency_key is safe: it waits for this write and returns ` +
+        `its result instead of running it again. A retry without a key may run it twice.`
     );
     this.name = "WriteTimeoutError";
   }

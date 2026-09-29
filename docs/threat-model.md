@@ -114,7 +114,7 @@ When one of these assumptions fails, Governor may still produce useful evidence 
 
 **Controls:** bounded in-memory idempotency keys identify the logical operation, its arguments, and revision precondition; in-flight duplicates share the first result.
 
-**Residual:** Keys expire and clear on plugin restart. An abandoned timeout does not retain the key because the underlying effect is unknown.
+**Residual:** Keys expire after 10 minutes. A plugin reload keeps them; a full restart keeps only "already done" answers seeded from the journal. An abandoned timeout keeps its key reserved until the underlying write settles (or 10 minutes pass), so a same-key retry cannot repeat it; a retry under a new key can.
 
 ### 5. Timeout ambiguity
 

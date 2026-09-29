@@ -87,13 +87,13 @@ Nothing should have been written by the conflicted call.
 
 The operation may still have landed after Governor stopped waiting.
 
-1. Do not retry immediately.
+1. Do not retry blind. A retry with the SAME `idempotency_key` is safe (it waits for the real result); without a key, first do the checks below.
 2. Re-read every named target.
 3. Inspect the receipt and journal for a corrective late outcome.
 4. Compare current content with the preview and prior revision.
 5. Decide whether recovery, completion, or no action is appropriate.
 
-An idempotency key is not held for an abandoned timeout. Retrying blindly can repeat the write.
+An idempotency key stays held for an abandoned timeout until the operation settles, so a retry with the same key waits for the real result. A retry without a key can repeat the write.
 
 ## A batch partially completed
 

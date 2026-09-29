@@ -153,9 +153,9 @@ const IDEMPOTENCY_KEY = z
   .describe(
     "Retry safety for calls that RETURNED: a repeat call with the same key returns the first call's result " +
       "instead of running again, and a repeat sent while the first is still in flight waits for it and shares its " +
-      "outcome. It does NOT cover a call that failed with Error [write_timeout] — that operation was abandoned " +
-      "server-side and may still have landed, so its key is not held and a retry re-executes; re-read before " +
-      "retrying. Same key + different arguments — or a different (or dropped) if_rev — is " +
+      "outcome. A call that returned Error [write_timeout] is still running and may land: its key stays held " +
+      "until it settles, so a retry with the same key waits and returns its real result instead of running it " +
+      "again (a retry without a key may run it twice). Same key + different arguments — or a different (or dropped) if_rev — is " +
       "Error [idempotency_mismatch], never a replay. " +
       "10-minute window. A plugin reload keeps every key; after a full Obsidian restart a key that ran answers 'already done' (from the journal) without its first result. Use a fresh key per logical operation."
   );

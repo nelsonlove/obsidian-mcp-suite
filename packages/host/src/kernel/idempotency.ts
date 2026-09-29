@@ -25,7 +25,10 @@
 // nothing. Only AFTER settlement does the distinction matter: a RETURNED
 // envelope is stored (so future calls replay it), a THROWN failure stores
 // nothing and RELEASES the key (so a future call re-executes — the vault was
-// left in an unknown or unchanged state, where re-running is the right answer).
+// left unchanged, where re-running is the right answer). The one exception is
+// a timeout (#436): the operation is still running and may land, so the kernel
+// keeps the key reserved until the abandoned operation settles, and waiters get
+// the late outcome (Kernel.runMutation).
 //
 // ── key identity ─────────────────────────────────────────────────────────────
 //
