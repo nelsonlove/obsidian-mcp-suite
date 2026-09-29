@@ -394,6 +394,10 @@ export class Kernel {
     // Set only when a keyed call TIMED OUT: the key stays reserved until the
     // abandoned operation settles (#436). Read by the late handler.
     let heldKey: ((s: IdempotencySettlement) => void) | undefined;
+    // The late outcome, when it arrives BEFORE the finally below has taken the
+    // hold (the abandoned operation can settle a microtask after the queue's
+    // rejection, ahead of this function's continuation). The finally uses it.
+    let earlyLate: IdempotencySettlement | undefined;
 
     // Idempotency is settled BEFORE the queue: a retry that is going to be
     // replayed must not take a queue slot behind real work, let alone run. The
@@ -553,9 +557,12 @@ export class Kernel {
           // #436: the key was held for this moment. A late RESULT is stored
           // and handed to every waiter, exactly like an on-time one; a late
           // THROW frees the key, as a thrown failure always does.
+          const late: IdempotencySettlement = settlement.ok ? { ok: true, result: settlement.value, ts: lateTs } : { ok: false, error: settlement.error, ts: lateTs };
           if (heldKey) {
             const settle = heldKey; heldKey = undefined;
-            settle(settlement.ok ? { ok: true, result: settlement.value, ts: lateTs } : { ok: false, error: settlement.error, ts: lateTs });
+            settle(late);
+          } else {
+            earlyLate = late;
           }
           void this.journal?.append({
             ts: lateTs,
@@ -638,7 +645,10 @@ export class Kernel {
       // handler above settles it with the real outcome, and every waiter gets
       // that. A backstop frees it after the idempotency TTL in case the
       // operation never settles at all.
-      if (settleKey && thrown?.error instanceof WriteTimeoutError) {
+      if (settleKey && thrown?.error instanceof WriteTimeoutError && earlyLate) {
+        // The abandoned operation already settled: hand its outcome over now.
+        settleKey(earlyLate);
+      } else if (settleKey && thrown?.error instanceof WriteTimeoutError) {
         heldKey = settleKey;
         const timeoutError = thrown.error;
         const backstop = setTimeout(() => {

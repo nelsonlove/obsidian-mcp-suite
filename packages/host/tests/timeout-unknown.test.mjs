@@ -10,7 +10,7 @@
  */
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { WriteQueue, Kernel, WriteJournal, IdempotencyStore, LockStore } from "../src/kernel/index.ts";
+import { WriteQueue, Kernel, WriteJournal, IdempotencyStore, LockStore, WriteTimeoutError } from "../src/kernel/index.ts";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function harness() {
@@ -49,6 +49,21 @@ describe("a write that times out has an unknown outcome, and its key stays held"
     assert.equal(runs, 1);
     await sleep(10);
     assert.ok(records().some((r) => r.outcome === "deduped"));
+  });
+
+  test("a late result that arrives before the kernel takes the hold is still handed over (no 10-minute stall)", async () => {
+    // A queue that reports the late settlement BEFORE rejecting the caller: the
+    // ordering a real abandon can produce when the operation settles at once.
+    const files = new Map();
+    const adapter = { async exists(p) { return files.has(p); }, async mkdir() {}, async write(p, d) { files.set(p, d); }, async append(p, d) { files.set(p, (files.get(p) ?? "") + d); } };
+    const early = { depth: 0, running: false, nudge() {}, close() {},
+      run(op, _fn, onLate) { onLate({ ok: true, value: { content: [{ type: "text", text: "landed early" }] } }); return Promise.reject(new WriteTimeoutError(op, 30)); } };
+    const kernel = new Kernel(early, new WriteJournal(adapter, "j", () => new Date()), { uid: () => undefined, rev: () => 1 }, new IdempotencyStore(), new LockStore());
+    const first = await kernel.runMutation(mc("T4"), async () => ({ content: [] })).catch((e) => e);
+    assert.equal(first.code, "write_timeout");
+    assert.equal(kernel.idempotency.inFlight, 0, "the key is not left held");
+    const retry = await kernel.runMutation(mc("T4"), async () => { throw new Error("must not run"); });
+    assert.equal(retry.content[0].text, "landed early");
   });
 
   test("a late throw frees the key: the next same-key call runs", async () => {
