@@ -138,7 +138,7 @@ A useful preview includes collisions, partial-scope behavior, dependencies, revi
 
 Each write tool requires what its operation needs, and the host refuses a call without it (`Error [protection_required]`, which names the argument and how to get it; 01.43 rules 3–4, 01.33 rule 6f). The per-tool table, the refusal messages and what to do about each are in the [README](../README.md#write-protection-if_rev-and-idempotency_key). The tool's own schema says which: its `if_rev` or `idempotency_key` description opens with `REQUIRED`. In short:
 
-- **`if_rev`** is required on a write that changes content you read: an overwrite (`obsidian_write_note` with `overwrite: true`), a frontmatter set or delete, a patch replace, inserting fileclass fields, a survey rewrite, a heading rename. Read the note first; `obsidian_read_note` returns its `rev`.
+- **`if_rev`** is required on a write that changes content you read: an overwrite (`obsidian_write_note` with `overwrite: true`), a frontmatter set or delete, a patch replace, inserting fileclass fields, a survey rewrite. Read the note first; `obsidian_read_note` returns its `rev`.
 - **`idempotency_key`** is required on a write that is not naturally idempotent: an append (including append at heading), a patch append or prepend, a move or rename, a scheme move, running a command or the CLI, creating a base, importing notes. Use a new key for each intended write, and the same key only to retry that write.
 - **Both** are required to trash or delete a note.
 - **Neither** is required to create a note (`overwrite: false`), to open a periodic note, or for claims, plugin state and navigation, which are not vault writes. In `obsidian_write_notes`, an item without `if_rev` is a create and is refused if the note exists.

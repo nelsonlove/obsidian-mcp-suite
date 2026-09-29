@@ -88,7 +88,7 @@ Private operators may add separately installed capability packs. Those packs are
 
 ## Write protection: `if_rev` and `idempotency_key`
 
-Each of the host's own write tools declares the protection it needs, and the host refuses a call that does not carry it (01.43 rules 3–4, 01.33 rule 6f). The exceptions, the three temporary exemptions and the satellite tools, are named at the end of this section. Two arguments carry the protection. Neither reaches the tool's own code: the host takes them off the call and checks them.
+Each of the host's own write tools declares the protection it needs, and the host refuses a call that does not carry it (01.43 rules 3–4, 01.33 rule 6f). The exceptions, the three temporary exemptions, the satellite tools and the file-system fallback server, are named at the end of this section. Two arguments carry the protection. Neither reaches the tool's own code: the host takes them off the call and checks them.
 
 - **`if_rev`** is the revision of a note as you read it. Get it by reading the note: `obsidian_read_note` (and `obsidian_read_notes`) return `rev`. Pass that value unchanged. If the note changed after you read it, the write is refused with `rev_conflict` and nothing is written, so you never overwrite a change you did not see. A tool that changes content you read needs it: an overwrite, a frontmatter set or delete, a patch replace.
 - **`idempotency_key`** is any string that is new for each write you intend (a UUID is fine). If the call fails or times out and you retry, send the SAME key with the same arguments: the host then does the write once, and a retry of a finished write returns the first result. The host remembers a key for 10 minutes, and forgets it when the plugin reloads. Never reuse a key for a different write. A write that is not safe to repeat needs it: an append, a move, running a command.
@@ -106,7 +106,7 @@ Each tool's schema says it too: the argument's description opens with `REQUIRED`
 | `Error [idempotency_mismatch]: …` | A key you used before came with a different tool, different arguments or a different `if_rev`. | Use a new key for a new write. |
 | `Error [precondition_unsupported]: …` | `if_rev` was sent to a server with no kernel (tests, bare embeds), which cannot check it. | Nothing to retry there; the live plugin checks it. |
 
-The refusal comes before the write queue, so a refused call is not in the journal.
+The refusal comes before the write queue, so a refused call is not in the journal. One exception: an `obsidian_write_notes` item is checked when it reaches the front of the queue. An item with no `if_rev` for a note that already exists is refused there with `Error [protection_required]: '<path>' already exists, …`, and that refusal is in the journal. If the item carried an `idempotency_key`, the key now answers with the refusal, so send the overwrite with its `if_rev` and a NEW key.
 
 **Per-tool table.** This table is rendered from `packages/host/src/kernel/operations/inventory-mcp.ts` by `protectionTableMarkdown()` in `packages/host/src/kernel/write-protection.ts`. `packages/host/tests/write-protection.test.mjs` fails when this copy differs from the inventory; run it with `VAULT_MCP_WRITE_README=1` to rewrite the copy. Read-only tools need nothing and are not listed.
 
@@ -158,6 +158,8 @@ The refusal comes before the write queue, so a refused call is not in the journa
 **Three temporary exemptions.** `obsidian_repoint_link`, `obsidian_snippet_write` and `obsidian_conformance_debt_render` are ruled `if_rev` tools, but the host cannot check an `if_rev` for them honestly yet: it checks the revision of the first path a call names, and these name no path, or only the note links point at. Nelson ruled on 2026-09-29 that they are exempt until [#427](https://github.com/nelsonlove/obsidian-mcp-suite/issues/427) gives the host a revision it can check, a snippet revision and one per note found in a scan. Then they go back to requiring `if_rev`.
 
 **The satellite gap.** Tools published by the satellite plugins (`vaultmcp_*`) are not checked. The `vault-mcp-api` SDK has no way to declare a tool's protection until apiVersion 3. Every satellite is off today.
+
+**The file-system fallback.** The server in `packages/server` can serve the vault from disk when Obsidian is closed. It has no kernel, so it checks neither argument: with writes turned on (`VAULT_MCP_FS_ALLOW_WRITES`), an overwrite needs no `if_rev`. Its own deliberate differences are listed in `packages/server/src/fs-write-kernel.ts`.
 
 ## Installing today (pre-Community-directory)
 
