@@ -169,7 +169,7 @@ describe("guarded seam — phases follow the real control flow", () => {
     const { kernel } = fixtureKernel();
     const { guarded, operations } = seam({ kernel });
     const call = guarded({ title: "append", inputSchema: {}, annotations: RW }, async () => ({ content: [{ type: "text", text: "ok" }] }), "obsidian_append_note");
-    await call({ path: "A.md", content: "x" }, {});
+    await call({ path: "A.md", content: "x", idempotency_key: "k-append" }, {});
     const seen = operations[0].phases.map((p) => p.phase);
     assert.ok(seen.includes("queued"));
     assert.ok(seen.includes("attempted"));
