@@ -112,6 +112,36 @@ describe("01.61 rule 11 — every compiled file records each source's acceptance
   });
 });
 
+describe("01.41 rule 8 holds under the stamp: a NOT accepted line records a refusal; no unaccepted TEXT and no unaccepted FILE is ever compiled", () => {
+  const notes = [
+    { path: "In/boss.md", frontmatter: { type: "Person/Agent", name: "boss", description: "d", verified: [human("2026-09-20")] }, body: "BOSS ![[secret]]" },
+    { path: "In/ok-pol.md", frontmatter: { type: "Note/AgentPolicy", name: "okpol", parent: "[[boss]]", verified: [human("2026-09-21")] }, body: "ACCEPTED-POLICY-TEXT" },
+    { path: "In/bad-pol.md", frontmatter: { type: "Note/AgentPolicy", name: "badpol", parent: "[[boss]]" }, body: "UNACCEPTED-POLICY-TEXT" },
+    { path: "In/sk.md", frontmatter: { type: "Note/Skill", name: "sk", verified: [human("2026-09-22")] }, body: "SK ![[secret]]" },
+    { path: "In/bad-skill.md", frontmatter: { type: "Note/Skill", name: "badskill" }, body: "UNACCEPTED-SKILL-TEXT" },
+    { path: "In/bad-agent.md", frontmatter: { type: "Person/Agent", name: "badagent", description: "x" }, body: "UNACCEPTED-AGENT-TEXT" },
+    { path: "In/bad-cmd.md", frontmatter: { type: "Note/Command", description: "c" }, body: "UNACCEPTED-COMMAND-TEXT" },
+  ];
+  const embeds = { "In/secret.md": "---\ntype: Note\n---\nUNACCEPTED-EMBED-TEXT" };
+
+  test("(1) an unaccepted transcluded note or policy: its CONTENT is in no compiled file; the refused embed leaves only a marker and a NOT accepted line; the unaccepted policy is injected nowhere and not listed", async () => {
+    const { files } = await compile(notes, embeds);
+    const all = Object.values(files).join("\n");
+    for (const text of ["UNACCEPTED-EMBED-TEXT", "UNACCEPTED-POLICY-TEXT"]) assert.ok(!all.includes(text), `${text} reached a compiled file`);
+    assert.ok(files["agents/boss.md"].includes("ACCEPTED-POLICY-TEXT"), "the accepted policy is injected");
+    assert.match(header(files["skills/sk/SKILL.md"]), /In\/secret\.md \(transcluded\) — NOT accepted; its text was not inlined/);
+    assert.doesNotMatch(all, /bad-pol\.md/, "the unaccepted policy appears nowhere, not even as a line");
+  });
+
+  test("(2) a file whose OWN note is not accepted is not compiled at all: no skill, agent or command file, and none of its text anywhere", async () => {
+    const { files, summary } = await compile(notes, embeds);
+    for (const rel of ["skills/badskill/SKILL.md", "agents/badagent.md", "commands/bad-cmd.md"]) assert.equal(files[rel], undefined, `${rel} was compiled`);
+    const all = Object.values(files).join("\n");
+    for (const text of ["UNACCEPTED-SKILL-TEXT", "UNACCEPTED-AGENT-TEXT", "UNACCEPTED-COMMAND-TEXT"]) assert.ok(!all.includes(text), `${text} reached a compiled file`);
+    assert.deepEqual([...summary.excluded.paths].sort(), ["In/bad-agent.md", "In/bad-cmd.md", "In/bad-pol.md", "In/bad-skill.md"], "all four are reported as excluded");
+  });
+});
+
 describe("01.61 rule 11 — the edges the first cut left untested", () => {
   const H = (at) => [human(at)];
   test("a transclusion marker softens '--!>' like the header does", async () => {
