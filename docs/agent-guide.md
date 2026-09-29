@@ -155,7 +155,7 @@ For a change based on a prior read, pass the returned revision as `if_rev`. A co
 
 Use a unique `idempotency_key` for one logical mutation and reuse it only when retrying the exact same operation, arguments, and precondition. Use a new key when the plan changes.
 
-Keys are bounded and in-memory. They do not establish exactly-once execution across restart, and an abandoned timeout is not safe to retry merely because it carried a key.
+Keys are bounded and in memory; a plugin reload keeps them, and after a full restart a key that ran answers "already done" from the journal. They do not establish exactly-once execution forever. A timed-out call keeps its key until the abandoned write settles, so a retry with the SAME key waits for the real result; a retry without a key, or with a new one, can repeat the write.
 
 ### Intent
 

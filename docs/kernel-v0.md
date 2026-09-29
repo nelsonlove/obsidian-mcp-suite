@@ -21,7 +21,7 @@ agent. Reads never queue, so a slow write never stalls a session's reads.
 
 - **Per-operation budget: `WRITE_TIMEOUT_MS = 30_000`** (30 seconds — a constant, not a
   setting; `packages/host/src/kernel/write-queue.ts`). If an operation hasn't settled by
-  then it is **abandoned**, that one call returns `Error [write_timeout]` (outcome unknown, journaled as `unknown`), and the queue immediately moves on — a wedged operation can never take down the bridge or anyone else's session. The operation is still running and may land; re-read before acting, and retry only with the same key (#436). The deadline
+  then it is **abandoned**, that one call returns `Error [write_timeout]` (outcome unknown, journaled as `unknown`), and the queue immediately moves on, so one stuck operation does not hold up the bridge or other sessions. The operation is still running and may land; re-read before acting, and retry only with the same key (#436). The deadline
   is **wall-clock math re-evaluated on queue activity** (a new enqueue, a journal append,
   an explicit nudge), not just a timer — Chromium suspends renderer timers while the Obsidian
   window is occluded, so a timer-only deadline went unfired in exactly the unattended
