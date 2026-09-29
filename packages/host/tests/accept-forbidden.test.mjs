@@ -47,8 +47,18 @@ function fakeApp({ files = {}, cache = {} } = {}) {
       modify: async (f, c) => { store.set(f.path, c); },
       append: async (f, c) => { store.set(f.path, (store.get(f.path) ?? "") + c); },
       createFolder: async () => {},
+      // A move renames at the file level and rewrites links itself (move-with-links.ts).
+      getMarkdownFiles: () => [...store.keys()].map((p) => new TFile(p)),
+      rename: async (f, to) => {
+        store.set(to, store.get(f.path));
+        store.delete(f.path);
+      },
+      process: async (f, fn) => { const n = fn(store.get(f.path) ?? ""); store.set(f.path, n); return n; },
     },
     metadataCache: {
+      resolvedLinks: {},
+      getFirstLinkpathDest: () => null,
+      fileToLinktext: (f) => f.basename,
       getFileCache: (f) => {
         const fm = fmOf(store.get(f.path) ?? "");
         return { ...(fm ? { frontmatter: fm } : {}), ...(caches[f.path] ?? {}) };
@@ -63,10 +73,6 @@ function fakeApp({ files = {}, cache = {} } = {}) {
           "",
         );
         store.set(f.path, `---\n${renderFm(fm)}\n---\n${body}`);
-      },
-      renameFile: async (f, to) => {
-        store.set(to, store.get(f.path));
-        store.delete(f.path);
       },
     },
   };

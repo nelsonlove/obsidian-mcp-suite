@@ -55,16 +55,7 @@ so a sandboxed session doesn't learn how much lives outside its allowlist.
 
 ## Link healing — in band, a move heals its own links
 
-Every move this server performs — `obsidian_move_note`, `obsidian_move_notes` (batch), and any
-rename underneath them — goes through **`app.fileManager.renameFile`**, Obsidian's
-link-updating rename, never `vault.rename`. The host rewrites every backlink to the moved note
-canonically, exactly as it would if you had dragged the file in the sidebar. This is a
-guarantee (pinned by a regression test whose fake app throws on `vault.rename`), not a best
-effort.
-
-Because Obsidian rewrites internally and reports no count, the move response **omits**
-`backlinks_updated` rather than claiming `0` — "unknown, not zero." `update_backlinks: false`
-is advisory here (Obsidian exposes no rename-without-rewrite API, so links update regardless).
+Every move this server performs — `obsidian_move_note`, `obsidian_move_notes` (batch), and the scheme moves underneath them — goes through `moveWithLinks` (`packages/host/src/mcp/move-with-links.ts`): a file-level rename, then vault-mcp rewrites every link to the note itself and checks the result for damage. It does NOT use `app.fileManager.renameFile`, because that waits for Obsidian's metadata cache to be completely clean before it updates links, and with many sessions writing that wait lasted 1 to 25 minutes per move (Nelson's "B", 2026-09-29). Links are found from the notes' text (every note whose text contains the moved note's name is read), so a note written moments before, whose index entry is still stale, is found like any other; links in wikilinks, embeds, markdown links (relative, vault-path and bare), aliases, subpaths, `%%` comments and frontmatter strings are rewritten, links in code and math are not, and only the target part of a link changes. The response reports `backlinks_updated`, `backlinks_files_touched` and a `link_check`: `ok`, plus any link still naming the old path unresolved, any note reaching the note fewer times than before, any note the index says links it where no link was found, and any note that could not be rewritten — damage is reported, never silent. `update_backlinks: false` renames only. Tested on a copy of the real vault: 50 real notes moved under a simulated write stream, 3,593 links rewritten, no damage.
 
 ## Link health — out of band, `obsidian_check_links` reports drift and repairs nothing
 

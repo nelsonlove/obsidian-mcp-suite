@@ -279,9 +279,9 @@ export interface VaultBackend {
    * Move or rename a note. Backlinks may optionally be rewritten.
    * Returns counts of rewritten references and touched files, or null for each
    * field when the backend performed the operation but cannot determine the
-   * count (e.g. the live Obsidian backend delegates to `renameFile` which
-   * rewrites backlinks internally without exposing a count). Callers must treat
-   * null as "unknown, not zero" — the operation still succeeded.
+   * count. Callers must treat null as "unknown, not zero" — the operation still
+   * succeeded. The live Obsidian backend now rewrites backlinks itself and
+   * reports both counts, plus a `link_check`.
    */
   moveNote(
     fromRel: string,
@@ -292,6 +292,8 @@ export interface VaultBackend {
     to: string;
     backlinks_updated: number | null;
     backlinks_files_touched: number | null;
+    /** Live host only: what the damage check after its own backlink rewrite found. */
+    link_check?: unknown;
   }>;
 
   /**

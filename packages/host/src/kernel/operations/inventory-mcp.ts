@@ -302,9 +302,8 @@ const SCHEME: McpSurfaceRow[] = [
   // Owned by `scheme`, hand-registered in server.ts: the module host refuses a
   // registration whose readOnlyHint is not true.
   //
-  // All three MOVE a note through `moveOne` -> `app.fileManager.renameFile`,
-  // Obsidian's link-aware rename, which rewrites OTHER notes' bodies to heal
-  // their links. So their blast radius is not in their arguments and they take
+  // All three MOVE a note through `moveOne` -> `moveWithLinks`, which rewrites
+  // OTHER notes' bodies to heal their links. So their blast radius is not in their arguments and they take
   // the `unbounded` default, exactly like `obsidian_move_note(s)`. Marking them
   // `none` would repeat the `obsidian_repoint_link` defect this table's own
   // header cites as the reason the optimistic default is wrong. (Their result

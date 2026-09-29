@@ -380,7 +380,7 @@ export const FS_TOOLS: ToolDef[] = [
         .default(true)
         .describe(
           "Rewrite [[wikilinks]] in other notes that currently resolve to `from`. " +
-          "Advisory on the live Obsidian backend: `renameFile` always rewrites backlinks regardless of this value (Obsidian has no rename-without-rewrite API). " +
+          "Honoured by the live Obsidian backend too: false renames only. " +
           "Fully honoured by the filesystem backend."
         ),
       overwrite: z

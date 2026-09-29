@@ -505,8 +505,9 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   // surface must not cost the connection (the journal's own convention).
   for (const p of moduleRegistry.problems) console.error("[vault-mcp] module host:", p);
   // ── link drift, reported not repaired (slice 2.2) ──────────────────────────
-  // Read-only by construction: moves already heal their own links through
-  // fileManager.renameFile, so this reports the drift that came from OUTSIDE.
+  // Read-only by construction: moves already heal their own links (moveWithLinks
+  // rewrites them and checks for damage), so this reports the drift that came
+  // from OUTSIDE.
   registerLinkTools(server, obsidianLinkSource(app), ctx);
   // ── conformance debt register (issue #211, Parts A2 + B) ────────────────────
   // The READ tool reports the carried debt (baseline + sidecar + live run:
