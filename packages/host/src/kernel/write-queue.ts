@@ -217,7 +217,9 @@ export class WriteQueue {
     // Promise.resolve().then keeps a SYNCHRONOUS throw from fn() inside the
     // queue's control flow — otherwise it would escape run()'s executor.
     Promise.resolve()
-      .then(() => item.fn())
+      // #435 review: the item was dequeued, but fn has not started yet (it
+      // starts a microtask later). A close in between must refuse it too.
+      .then(() => { if (this.closed) throw new QueueClosedError(item.op); return item.fn(); })
       .then(
         (v) => { if (claim()) item.resolve(v); else late({ ok: true, value: v }); },
         (e) => { if (claim()) item.reject(e); else late({ ok: false, error: e }); }

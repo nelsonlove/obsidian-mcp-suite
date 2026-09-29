@@ -132,6 +132,8 @@ export interface JournalRecord {
    * instance rebuild the key's identity from the journal (#435).
    */
   argsHash?: string;
+  /** With `idempotencyKey`: the operation RETURNED an envelope (ok or isError) rather than throwing (#435 seeding). */
+  returned?: boolean;
   /**
    * The caller's advisory `intent` text, when one was supplied (B2): the
    * agent's own description of why it made this change, for review surfaces to
