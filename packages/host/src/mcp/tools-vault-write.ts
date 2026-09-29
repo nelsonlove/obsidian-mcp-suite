@@ -237,11 +237,11 @@ export function registerVaultWriteTools(server: McpServer, app: App, ctx: VaultW
     {
       title: "Rename a heading",
       description:
-        "USE THIS TOOL TO RENAME A HEADING — not obsidian_patch_note, obsidian_write_note or any other text edit. Those change the heading text but leave every link to it ([[Note#Old heading]], ![[Note#Old heading]], [[#Old heading]]) pointing at a heading that no longer exists, and nothing reports the breakage. This tool renames one heading in a note and rewrites every link to it across the notes you can see — wikilinks, embeds and markdown links, same-note [[#Heading]] links and heading chains ([[Note#A#B]]) — the headless equivalent of Obsidian's 'Rename this heading' command, which needs an editor cursor and a dialog. `heading` is the current heading text exactly as written (no leading #); a heading that is not found, or that appears twice in the note, is refused, and so is a new name that collides with another heading in the note or contains [ ] | # ^. Each link is rewritten at the position Obsidian's metadata cache records, after checking the text there still matches; a note that changed since is reported under `skipped`, never rewritten blind. Links inside record notes are not rewritten (records are historical) and are reported under `skipped`, as are frontmatter links. While a path allowlist is configured the scan is CONTAINED BY IT — notes outside it are neither read, rewritten nor named, and `scoped_to_allowlist: true` says so. Set dry_run=true to report what would change without writing.",
+        "USE THIS TOOL TO RENAME A HEADING — not obsidian_patch_note, obsidian_write_note or any other text edit. Those change the heading text but leave every link to it ([[Note#Old heading]], ![[Note#Old heading]], [[#Old heading]]) pointing at a heading that no longer exists, and nothing reports the breakage. This tool renames one heading in a note and rewrites every link to it across the notes you can see — wikilinks, embeds and markdown links, same-note [[#Heading]] links and heading chains ([[Note#A#B]]) — the headless equivalent of Obsidian's 'Rename this heading' command, which needs an editor cursor and a dialog. `heading` is the current heading text exactly as written (no leading #); links are matched the way Obsidian matches them, ignoring case and punctuation, so [[Note#Step 1 setup]] reaches '## Step 1: setup'. A heading that is not found is refused, and so is one that another heading in the note shares its links with, a new name that would share links with another heading, and a new name that contains [ ] | # ^ or %%. ATX (## Text) and setext (Text over ===) headings are both handled. Each link is rewritten at the position Obsidian's metadata cache records, after checking the text there still matches; a note that changed since is reported under `skipped`, never rewritten blind. Links inside record notes are not rewritten (records are historical) and are reported under `skipped`, as are frontmatter links. While a path allowlist is configured the scan is CONTAINED BY IT — notes outside it are neither read, rewritten nor named, and `scoped_to_allowlist: true` says so. Set dry_run=true to report what would change without writing.",
       inputSchema: {
         path: z.string().min(1).describe("Vault-relative path of the note that holds the heading, ending in .md."),
         heading: z.string().min(1).describe("The heading's current text, exactly as written, without the leading #s."),
-        new_heading: z.string().min(1).describe("The new heading text. Must not contain [ ] | # ^ or a line break."),
+        new_heading: z.string().min(1).describe("The new heading text. Must not contain [ ] | # ^ %% or a line break."),
         dry_run: z.boolean().default(false).describe("If true, report the heading line and the links that would change without modifying any file."),
       },
       annotations: RW,
@@ -257,12 +257,16 @@ export function registerVaultWriteTools(server: McpServer, app: App, ctx: VaultW
         const own = app.metadataCache.getFileCache(file);
         const headings = own?.headings ?? [];
         const matches = headings.filter((h) => h.heading === heading);
+        // Obsidian resolves a heading link to the FIRST heading whose key
+        // matches, so two headings that share a key (`## Notes` and `## notes`,
+        // `## Step 1: go` and `## Step 1 go`) cannot be told apart by a link.
+        const sameKey = headings.filter((h) => headingKey(h.heading) === headingKey(heading));
         if (matches.length === 0) {
           const known = headings.slice(0, 20).map((h) => `'${h.heading}'`).join(", ");
           return fail(new Error(`heading not found in ${path}: '${heading}'${known ? ` (headings: ${known}${headings.length > 20 ? ", …" : ""})` : " (the note has no headings, or the cache has not read it yet)"}`));
         }
-        if (matches.length > 1) {
-          return fail(new Error(`heading '${heading}' appears ${matches.length} times in ${path} (lines ${matches.map((h) => h.position.start.line + 1).join(", ")}); a link cannot tell them apart, so it is not renamed`));
+        if (sameKey.length > 1) {
+          return fail(new Error(`${sameKey.length} headings in ${path} are reached by the same links (${sameKey.map((h) => `'${h.heading}' line ${h.position.start.line + 1}`).join(", ")}); a link cannot tell them apart, so it is not renamed`));
         }
         const target = matches[0];
         const clash = headings.find((h) => h !== target && headingKey(h.heading) === headingKey(new_heading));
@@ -284,7 +288,7 @@ export function registerVaultWriteTools(server: McpServer, app: App, ctx: VaultW
         const ownText = await app.vault.cachedRead(file);
         const hs = target.position.start.offset, he = target.position.end.offset;
         const newLine = rewriteHeadingLine(ownText.slice(hs, he), heading, new_heading);
-        if (newLine === null) return fail(new Error(`the heading line at line ${target.position.start.line + 1} of ${path} no longer reads '${heading}'; the note changed since the cache read it — retry`));
+        if (newLine === null) return fail(new Error(`the heading at line ${target.position.start.line + 1} of ${path} does not read '${heading}' on one line: either the note changed since the cache read it (retry), or the heading's text spans more than one line (edit it by hand)`));
         add(file.path, { start: hs, end: he, expected: ownText.slice(hs, he), replacement: newLine });
 
         for (const src of all) {
@@ -332,11 +336,21 @@ export function registerVaultWriteTools(server: McpServer, app: App, ctx: VaultW
             const f = app.vault.getAbstractFileByPath(p);
             let stale = !(f instanceof TFile);
             if (!stale) {
-              await app.vault.process(f as TFile, (data) => {
-                const next = applyEdits(data, list);
-                if (next === null) { stale = true; return data; }
-                return next;
-              });
+              try {
+                await app.vault.process(f as TFile, (data) => {
+                  const next = applyEdits(data, list);
+                  if (next === null) { stale = true; return data; }
+                  return next;
+                });
+              } catch (e) {
+                // The heading's own note is written first, so a failure there
+                // has changed nothing. After it, earlier files ARE written:
+                // report this one and go on, so the result names every file
+                // that changed and every link left behind.
+                if (p === file.path) throw e;
+                skipped.push({ path: p, reason: `write failed (${e instanceof Error ? e.message : String(e)}); ${links} link(s) not rewritten — retry to heal them` });
+                continue;
+              }
             }
             if (stale) {
               if (p === file.path) return fail(new Error(`${path} changed since the cache read it; nothing was renamed or rewritten — retry`));

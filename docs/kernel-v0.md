@@ -69,7 +69,7 @@ Key fields:
   writes) — a slow operation and a queued one are distinguishable. **`revBefore`** is probed
   when the operation reaches the front of the queue, not when it was enqueued.
 - **`effects`** — where an operation discovers its own blast radius (`obsidian_repoint_link`
-  scanning notes to find the links it rewrites), `{"filesChanged": 12, "paths": [...]}` (paths
+  scanning notes to find the links it rewrites, `obsidian_rename_heading` finding the links to a heading), `{"filesChanged": 12, "paths": [...]}` (paths
   capped at 20). A dry run records none.
 - **`intent`** — the caller's advisory change-intent text, when supplied (see
   [B2 in agent-writes.md](agent-writes.md#b2--agent-change-intent)).
@@ -137,7 +137,8 @@ deliberate, and both are the flip side of "the check covers the paths an operati
   reach and stay with the client-side hooks and backups.
 - **Operations that *discover* their blast radius instead of naming it** can still rewrite a
   record note's body as a side effect, refusal-free: `obsidian_repoint_link` rewrites the body
-  of whatever notes carry the matching wikilink, a move's link-healing rename rewrites
+  of whatever notes carry the matching wikilink (`obsidian_rename_heading` does not: it skips
+  record notes and reports them), a move's link-healing rename rewrites
   backlinks wherever they live (records included, and `update_backlinks: false` is advisory —
   see [identity-and-links.md](identity-and-links.md)), and `obsidian_cli` eval / external
   tools reach the vault through their own code. Byte-exactness of a record against that class
