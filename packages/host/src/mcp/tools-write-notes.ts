@@ -148,7 +148,7 @@ export function registerWriteNotesTool(
         "Existing notes are REPLACED (this writes whole notes, like obsidian_write_note). " +
         "Set `stamp: true` to make the server the single owner of frontmatter conventions: it mints a created-seeded " +
         "UUIDv7 `uid` only when absent (an existing uid is never overwritten), sets `created` (if missing) and `modified` " +
-        "(always), enforces canonical field order, and defaults `acceptance-status: proposed` only when absent. Stamping " +
+        "(always), enforces canonical field order, and defaults `status: draft` only when absent (never the retired `acceptance-status`). Stamping " +
         "NEVER writes acceptance, and any item whose frontmatter sets accepted/accepted-by/accepted-on is REJECTED " +
         "(Error [accept_forbidden]) — acceptance is a human gesture, in no API. `stamp` is opt-in per call; leave it off " +
         "for templates/blueprints, where a uid on a merge-payload would corrupt every instance.",
@@ -180,7 +180,7 @@ export function registerWriteNotesTool(
         stamp: z
           .boolean()
           .default(false)
-          .describe("Opt-in server-side stamping: uid (v7, created-seeded, only if absent) + created/modified + canonical order + default acceptance-status:proposed. Never writes acceptance."),
+          .describe("Opt-in server-side stamping: uid (v7, created-seeded, only if absent) + created/modified + canonical order + default status:draft (only if absent). Never writes acceptance."),
         intent: z
           .string()
           .min(1)

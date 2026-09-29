@@ -276,7 +276,7 @@ describe("composeNote — stamp:false is verbatim", () => {
 });
 
 describe("composeNote — stamp mints and orders", () => {
-  test("a new note gets uid, created, modified, default acceptance-status:proposed, canonical order", () => {
+  test("a new note gets uid, created, modified, default status:draft, canonical order — and never the retired acceptance-status (#433)", () => {
     const { frontmatter, stamped } = composeNote({
       frontmatter: { name: "N" },
       body: "hi",
@@ -291,8 +291,17 @@ describe("composeNote — stamp mints and orders", () => {
     assert.equal(frontmatter.uid, "MINTED");
     assert.equal(frontmatter.created, "TS(5)");
     assert.equal(frontmatter.modified, "TS(5)");
-    assert.equal(frontmatter["acceptance-status"], "proposed");
-    assert.deepEqual(Object.keys(frontmatter), ["name", "uid", "created", "modified", "acceptance-status"]);
+    assert.equal(frontmatter.status, "draft");
+    assert.equal("acceptance-status" in frontmatter, false, "the retired key is never invented");
+    assert.deepEqual(Object.keys(frontmatter), ["name", "uid", "created", "modified", "status"]);
+  });
+
+  test("an existing status is carried forward and a payload status wins; draft only fills an absence (#433)", () => {
+    const run = (frontmatter, existing) => composeNote({ frontmatter, body: "", stamp: true, existing, now: 5, mintUid: () => "M", formatTs: (ms) => `TS(${ms})`, stringifyYaml: fakeYaml }).frontmatter.status;
+    assert.equal(run({ name: "N" }, { status: "active" }), "active", "never reset to draft");
+    assert.equal(run({ name: "N", status: "done" }, { status: "active" }), "done");
+    assert.equal(run({ name: "N" }, {}), "draft");
+    assert.equal(composeNote({ frontmatter: { name: "N" }, body: "", stamp: false, now: 5, mintUid: () => "M", formatTs: String, stringifyYaml: fakeYaml }).frontmatter.status, undefined, "stamp off: nothing is filled");
   });
 
   test("uid is seeded from the note's created timestamp", () => {

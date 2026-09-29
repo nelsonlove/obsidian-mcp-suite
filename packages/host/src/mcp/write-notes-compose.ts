@@ -9,9 +9,11 @@
 //
 // ── The invariants this file is the point of ─────────────────────────────────
 //
-//  1. `stamp` NEVER writes acceptance. It defaults `acceptance-status: proposed`
-//     ONLY when the field is absent from BOTH the payload and the existing note,
-//     and it NEVER mints or elevates to `accepted`. An existing acceptance-status
+//  1. `stamp` NEVER writes acceptance, and never invents `acceptance-status`:
+//     that key is retired (Nelson, 2026-08-27; 01.41.1 folded it into
+//     `verified`). It defaults `status: draft` — the one lifecycle value an
+//     agent may write — ONLY when `status` is absent from BOTH the payload and
+//     the existing note (#433). An existing acceptance-status
 //     on disk is PRESERVED verbatim (including a human-granted `accepted`) —
 //     changing it would destroy the human's decision, which the invariant equally
 //     forbids ("never change an existing acceptance-status value"). The only way
@@ -151,8 +153,9 @@ function seedMs(created: unknown, now: number): number {
  *
  * Under `stamp`, fills uid (uuidv7, created-seeded, only when absent — an
  * existing on-disk uid always wins so it is NEVER overwritten), `created` (when
- * missing) and `modified` (always now), defaults `acceptance-status: proposed`
- * only when absent from both payload and disk, and enforces canonical field
+ * missing) and `modified` (always now), defaults `status: draft` only when
+ * absent from both payload and disk (it never invents the retired
+ * `acceptance-status`; an existing one is carried forward), and enforces canonical field
  * order. Without `stamp`, the note is written verbatim from the payload.
  */
 export function composeNote(args: ComposeArgs): ComposeResult {
@@ -183,9 +186,10 @@ export function composeNote(args: ComposeArgs): ComposeResult {
     const payloadUid = typeof merged.uid === "string" && merged.uid ? (merged.uid as string) : undefined;
     merged.uid = existingUid ?? payloadUid ?? args.mintUid(seedMs(created, args.now));
 
-    // acceptance-status: payload's value, else preserve the existing on-disk
-    // value VERBATIM (never changed — including a human-granted `accepted`),
-    // else default `proposed`. The accept-forbidden guard below rejects an
+    // acceptance-status (a RETIRED key, #433): payload's value, else preserve
+    // an existing on-disk value VERBATIM (never changed — including a
+    // human-granted `accepted`), else NOTHING: stamp no longer invents it.
+    // The accept-forbidden guard below rejects an
     // accepted value the payload introduces; a preserved existing one is allowed.
     //
     // DEMOTION RULE — when the payload is silent (as it is on every ordinary
@@ -207,10 +211,14 @@ export function composeNote(args: ComposeArgs): ComposeResult {
     // introducing or changing INTO the accepted family); it is only stamp's own
     // SILENT default-filling, when the payload says nothing at all, that must
     // preserve rather than invent.
-    if (!("acceptance-status" in merged)) {
-      if ("acceptance-status" in existing) merged["acceptance-status"] = existing["acceptance-status"];
-      else merged["acceptance-status"] = "proposed";
+    if (!("acceptance-status" in merged) && "acceptance-status" in existing) {
+      merged["acceptance-status"] = existing["acceptance-status"];
     }
+
+    // status: payload's value, else the existing on-disk value, else `draft`
+    // (#433). Agents write only `draft`; a later lifecycle value is someone
+    // else's move, so an existing one is carried forward, never reset.
+    if (!("status" in merged)) merged.status = "status" in existing ? existing.status : "draft";
 
     // verified (#406): the payload's value, else preserve a FILLED existing
     // record VERBATIM — the shared guard refuses its removal, so a stamped
