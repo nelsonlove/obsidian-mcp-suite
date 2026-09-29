@@ -36,7 +36,7 @@ import {
   type JournalOutcome,
   type JournalTarget,
 } from "./journal.js";
-import { fingerprintArgs, IdempotencyMismatchError, IdempotencyStore, type IdempotencySettlement } from "./idempotency.js";
+import { argsHashOf, fingerprintArgs, IdempotencyMismatchError, IdempotencyStore, type IdempotencySettlement } from "./idempotency.js";
 import { holderOf, lockNoticeText, LockStore, expiresInSeconds, type Lock, type LockNotice } from "./locks.js";
 import { recordImmutableRefusal } from "./record-guard.js";
 import type { UidIndex } from "./uid-index.js";
@@ -348,7 +348,7 @@ export class Kernel {
     readonly queue: WriteQueue = new WriteQueue(),
     private readonly journal: WriteJournal | null = null,
     private readonly probe: TargetProbe | null = null,
-    /** Replay store for `idempotency_key`. In memory, cleared by a plugin reload. */
+    /** Replay store for `idempotency_key`. In memory; main.ts seeds it from the journal at load, so a key that ran survives a reload (#435). */
     readonly idempotency: IdempotencyStore = new IdempotencyStore(),
     /**
      * Advisory scope claims. Consulted (never enforced) on every mutating
@@ -632,7 +632,7 @@ export class Kernel {
   } {
     return {
       ...(mc.ifRev !== undefined ? { ifRev: mc.ifRev } : {}),
-      ...(mc.idempotencyKey !== undefined ? { idempotencyKey: mc.idempotencyKey } : {}),
+      ...(mc.idempotencyKey !== undefined ? { idempotencyKey: mc.idempotencyKey, argsHash: argsHashOf(mc.args) } : {}),
       ...(mc.intent !== undefined ? { intent: mc.intent } : {}),
       ...(mc.addressedAs !== undefined && mc.addressedAs.length > 0
         ? { addressedAs: mc.addressedAs.slice(0, MAX_JOURNALED_PATHS) }

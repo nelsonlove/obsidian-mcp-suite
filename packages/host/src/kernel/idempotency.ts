@@ -157,7 +157,61 @@ function hash32(s: string): string {
  *     hash separates them without ever storing a body.
  */
 export function fingerprintArgs(digest: Record<string, unknown>, args: Record<string, unknown>): string {
-  return `${stableStringify(digest)}#${hash32(stableStringify(args ?? {}))}`;
+  return `${stableStringify(digest)}#${argsHashOf(args)}`;
+}
+
+/** The hash half of `fingerprintArgs`, journaled on keyed records (#435). */
+export function argsHashOf(args: Record<string, unknown>): string {
+  return hash32(stableStringify(args ?? {}));
+}
+
+/** A journal record, as far as seeding needs it. */
+export interface SeedRecord {
+  ts: string;
+  op: string;
+  outcome: string;
+  argsDigest: Record<string, unknown>;
+  idempotencyKey?: string;
+  argsHash?: string;
+  ifRev?: number;
+  corrects?: string;
+}
+
+/**
+ * Rebuild the store from the journal at load (#435). The store lives in
+ * memory, so a reload used to forget every key, and a retry across a reload
+ * ran the write again. Every keyed record inside the TTL whose outcome says
+ * the write happened (`ok`, or `late-ok` for a timed-out write that landed
+ * after all) is seeded, with its op, args fingerprint and `if_rev` — so a
+ * retry with a different request is still a mismatch.
+ *
+ * The journal holds no result envelope (note bodies never enter it), so a
+ * seeded key cannot replay the first call's result byte for byte. It replays
+ * an envelope that SAYS so: the write already ran, when, and to re-read before
+ * acting. What matters is that it never runs twice.
+ */
+export function seedFromJournal(store: IdempotencyStore, records: SeedRecord[], nowMs: number, ttlMs: number = IDEMPOTENCY_TTL_MS): number {
+  let seeded = 0;
+  for (const r of records) {
+    if (r.idempotencyKey === undefined || r.argsHash === undefined) continue;
+    if (r.outcome !== "ok" && r.outcome !== "late-ok") continue;
+    const at = Date.parse(r.ts);
+    if (!Number.isFinite(at) || nowMs - at >= ttlMs) continue;
+    const first = r.corrects ?? r.ts;
+    const text =
+      `Already done: idempotency_key '${r.idempotencyKey}' ran '${r.op}' at ${first} (outcome ${r.outcome}), ` +
+      `before vault-mcp was last reloaded, so it was NOT run again. The first result is not kept across a reload; ` +
+      `re-read the note before acting on it.`;
+    store.set(r.idempotencyKey, {
+      op: r.op,
+      args: `${stableStringify(r.argsDigest ?? {})}#${r.argsHash}`,
+      ...(r.ifRev !== undefined ? { ifRev: r.ifRev } : {}),
+      result: { content: [{ type: "text", text }], structuredContent: { deduped: true, dedupeOf: first, outcome: r.outcome, acrossReload: true } },
+      ts: first,
+    }, at);
+    seeded++;
+  }
+  return seeded;
 }
 
 /** Human phrasing for an `if_rev` that may be absent on either side. */
@@ -316,9 +370,9 @@ export class IdempotencyStore {
   }
 
   /** Record a completed operation's result under `key`, evicting the LRU entry if full. */
-  set(key: string, entry: Omit<IdempotencyEntry, "storedAt">): void {
+  set(key: string, entry: Omit<IdempotencyEntry, "storedAt">, storedAt: number = this.now()): void {
     this.entries.delete(key);
-    this.entries.set(key, { ...entry, storedAt: this.now() });
+    this.entries.set(key, { ...entry, storedAt });
     while (this.entries.size > this.max) {
       const lru = this.entries.keys().next();
       if (lru.done) break;
