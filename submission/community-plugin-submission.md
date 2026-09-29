@@ -69,7 +69,7 @@ These official sources were re-opened on 2026-08-20. The maintainer must re-open
 
 ### Public repository and source
 
-Official submission guidance requires a GitHub repository accessible to the directory review process. The target submission uses the public `obsidian-governor` repository with source, lock file, build configuration, documentation, and release history.
+Official submission guidance requires a GitHub repository accessible to the directory review process. The target submission uses the public `obsidian-mcp-suite` repository (renamed from `obsidian-governor`) with source, lock file, build configuration, documentation, and release history.
 
 **Release evidence required:** repository URL resolves without authentication; default branch contains the submitted manifest; source corresponds to release bundle.
 

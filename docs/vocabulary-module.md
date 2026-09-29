@@ -72,10 +72,7 @@ Four kinds — `VocabKind = "tag" | "property" | "type" | "term"` — served by 
 
 The registry (`VocabRegistry`) skip-and-reports duplicate ids, unknown providers, and invalid
 per-provider configs into a `problems` array (it never throws), reserving an id before the
-provider check. Shipped defaults (corrected 2026-08-19): one `scope-tags` instance over the
-whole vault, one `glossary` with `termsRoot` at the framework document's live slot
-(the vault's `00.89 obsidian-governor` folder — renamed from its former `Assent`
-name on 2026-08-19, which the default was corrected to follow).
+provider check. Shipped defaults: one `scope-tags` instance over the whole vault and one `glossary` over the whole vault with no `termsRoot`. The plugin ships no vault path (the #403 ruling, applied here after the default's `termsRoot` went dead silently three times as the framework folder was renamed). Without `termsRoot` the glossary serves definition notes only; set it in the vocab satellite's settings to read a folder's `## Terms` chapters. An install upgrading from the host adopts the value it already had.
 
 ## The four tools
 
