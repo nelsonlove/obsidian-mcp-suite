@@ -56,21 +56,19 @@ export const DEFAULT_VOCABULARIES: VocabInstanceSettings[] = [
   // / drift_audit.py, both dead) has no live surface. The blueprint provider
   // itself remains available via settings for vaults still on that grammar.
   { id: "scope-tags", provider: "scope-tags", root: "" },
-  // termsRoot is read by the TOOL layer (it decides which bodies to read for
-  // `## Terms` sections); the provider itself parses whatever bodies arrive.
-  // The framework chapters live under 00.89, whose folder was renamed from
-  // `Assent` to `obsidian-governor` on 2026-08-19 (the framework's former name
-  // is legacy vocabulary). Corrected here twice now — a dead termsRoot fails
-  // silently, returning nothing rather than erroring, so the shipped default
-  // drifting is invisible until someone queries the glossary and gets zero.
-  {
-    id: "glossary",
-    provider: "glossary",
-    root: "",
-    config: {
-      termsRoot: "00-09 System/00 System management/00.89 obsidian-governor",
-    },
-  },
+  // The glossary ships with NO `termsRoot`: the plugin ships no vault layout
+  // (the #403 ruling for the conformance conventions, applied here). The
+  // default used to name one vault's framework folder and went dead three
+  // times as that folder was renamed (`Assent` → `00.89 obsidian-governor` →
+  // `00.89 obsidian-mcp-suite`), each time failing SILENTLY: a dead termsRoot
+  // returns no terms rather than an error. Without it the glossary serves
+  // definition notes (`note/definition`) everywhere under its root, and the
+  // vocab satellite reads no `## Terms` bodies; an operator who wants the
+  // `## Terms` chapters sets `termsRoot` in the satellite's settings, where an
+  // install upgrading from the host adopts the value it already had.
+  // termsRoot is read by the TOOL layer (it decides which bodies to read); the
+  // provider itself parses whatever bodies arrive.
+  { id: "glossary", provider: "glossary", root: "" },
 ];
 
 export interface VocabInstance {
