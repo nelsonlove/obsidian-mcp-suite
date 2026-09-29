@@ -87,7 +87,7 @@ Nothing should have been written by the conflicted call.
 
 The operation may still have landed after Governor stopped waiting.
 
-1. Do not retry immediately.
+1. Do not retry blind. A retry with the SAME `idempotency_key` is safe (it waits for the real result); without a key, first do the checks below.
 2. Re-read every named target.
 3. Inspect the receipt and journal for a corrective late outcome.
 4. Compare current content with the preview and prior revision.

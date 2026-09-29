@@ -64,6 +64,10 @@ describe("a write that times out has an unknown outcome, and its key stays held"
     assert.equal(kernel.idempotency.inFlight, 0, "the key is not left held");
     const retry = await kernel.runMutation(mc("T4"), async () => { throw new Error("must not run"); });
     assert.equal(retry.content[0].text, "landed early");
+    await new Promise((r) => setTimeout(r, 10));
+    const recs = [...files.values()].join("").split("\n").filter(Boolean).map((l) => JSON.parse(l)).filter((r) => r.idempotencyKey === "T4");
+    assert.deepEqual(recs.map((r) => r.outcome).slice(0, 2), ["unknown", "late-ok"], "the late record follows the unknown one");
+    assert.equal(recs[1].corrects, recs[0].ts, "and names it");
   });
 
   test("a late throw frees the key: the next same-key call runs", async () => {

@@ -398,6 +398,9 @@ export class Kernel {
     // hold (the abandoned operation can settle a microtask after the queue's
     // rejection, ahead of this function's continuation). The finally uses it.
     let earlyLate: IdempotencySettlement | undefined;
+    // With it, the late record's append, deferred until the finally has written
+    // the `unknown` record, so the late one follows it and names it in `corrects`.
+    let deferredLateAppend: (() => void) | undefined;
 
     // Idempotency is settled BEFORE the queue: a retry that is going to be
     // replayed must not take a queue slot behind real work, let alone run. The
@@ -564,7 +567,7 @@ export class Kernel {
           } else {
             earlyLate = late;
           }
-          void this.journal?.append({
+          const appendLate = () => void this.journal?.append({
             ts: lateTs,
             op: mc.op,
             target,
@@ -587,6 +590,8 @@ export class Kernel {
             })(),
             ...this.preconditionFields(mc),
           });
+          if (ts === undefined) deferredLateAppend = appendLate;
+          else appendLate();
         }
       );
       settled = { value: result };
@@ -631,6 +636,8 @@ export class Kernel {
         ...this.preconditionFields(mc),
         ...(mc.idempotencyKey !== undefined && settled !== undefined ? { returned: true } : {}),
       });
+      // #436: a late record that arrived before this record now follows it.
+      if (deferredLateAppend) { const f = deferredLateAppend; deferredLateAppend = undefined; f(); }
       // Release the key: waiters adopt this outcome verbatim, and only now does
       // the store decide the key's future. A RETURNED envelope (success or a
       // failure envelope alike) is stored for replay — one key means one logical
