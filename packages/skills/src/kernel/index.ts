@@ -22,6 +22,7 @@ export {
   excludedSummary,
   excludedWarning,
   acceptedEmbed,
+  embedAcceptance,
   agentCandidates,
   detectKind,
   fieldView,
