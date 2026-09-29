@@ -146,6 +146,28 @@ export function isHumanVerification(entry: unknown): boolean {
   return typeof by === "string" && by.startsWith("human:") && by.slice("human:".length).trim() !== "";
 }
 
+/** The human verification a note carries, for the record: the LAST entry in
+ *  the `verified` list whose actor names a human (01.41 rule 1f), as
+ *  `{by, at}` — `at` rendered as the vault wrote it (a string as-is, a parsed
+ *  YAML timestamp as ISO), null when the entry has none. Null when the note
+ *  carries no human verification: the same answer `hasHumanVerification`
+ *  gives, so a note one reads as accepted the other can always describe
+ *  (01.61 rule 11: the compiled artifact records each source's acceptance). */
+export function humanVerificationOf(fm: Record<string, unknown> | null | undefined): { by: string; at: string | null } | null {
+  if (!fm) return null;
+  const key = Object.keys(fm).find((k) => k.trim().toLowerCase() === "verified");
+  if (key === undefined) return null;
+  const v = fm[key];
+  const entries = (Array.isArray(v) ? v : [v]).filter(isHumanVerification) as Record<string, unknown>[];
+  const last = entries[entries.length - 1];
+  if (!last) return null;
+  const at = last.at;
+  return {
+    by: String(last.by),
+    at: at instanceof Date ? at.toISOString() : typeof at === "string" && at.trim() !== "" ? at.trim() : at === undefined || at === null ? null : String(at),
+  };
+}
+
 /** Whether a note's frontmatter carries at least one human verification: the
  *  `verified` key (case-insensitive, the live key alone — not the retired
  *  family), a list of entries or one entry, any of them naming a `human:`

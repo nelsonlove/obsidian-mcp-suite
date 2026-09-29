@@ -9,7 +9,7 @@ import { resolveTransclusions, stripFrontmatter } from "./transclude.js";
 import type { SkillsSource } from "./skills-source.js";
 import { STATIC_FILES } from "./static-skills.js";
 import { assetDirFor, collectAssets, copyAsset, type CollectAssetsOptions } from "./assets.js";
-import { matchesTerritoryPrefix, hasHumanVerification, parseGuardFrontmatter } from "@vault-mcp/core";
+import { matchesTerritoryPrefix, hasHumanVerification, humanVerificationOf, parseGuardFrontmatter } from "@vault-mcp/core";
 
 const MANIFEST_NAME = ".vault-skills-manifest.json";
 
@@ -238,6 +238,16 @@ export function excludedSummary(list: readonly ExcludedNote[], refusedEmbeds: It
   return { total: list.length, byKind, paths: list.map((e) => e.path), transclusions: [...refusedEmbeds] };
 }
 
+/** One source's acceptance, as the compiled artifact records it (01.61 rule 11). */
+export interface SourceAcceptance { by: string; at: string | null }
+
+/** The acceptance record of an embed target, read through the SAME frontmatter
+ *  `acceptedEmbed` judged it by. Null when not accepted. */
+export function embedAcceptance(src: { content: string; frontmatter?: Record<string, unknown> | null }): SourceAcceptance | null {
+  if (src.frontmatter !== undefined) return humanVerificationOf(src.frontmatter);
+  try { return humanVerificationOf(parseGuardFrontmatter(src.content)); } catch { return null; }
+}
+
 /** Whether an embed target is accepted: its frontmatter carries a human
  *  verification. The frontmatter is the one the lookup supplies from the
  *  vault's own cache when it can (`EmbedSource.frontmatter`; the shipped
@@ -261,13 +271,24 @@ export function excludedWarning(list: readonly ExcludedNote[], refusedEmbeds: It
   return [notes, embeds].filter(Boolean).join("; ");
 }
 
-export async function collectNotes(src: SkillsSource, fields: DetectConfig = DEFAULT_FIELDS, warnings?: string[], excluded?: ExcludedNote[], refusedEmbeds?: Set<string>): Promise<NoteInput[]> {
+export async function collectNotes(src: SkillsSource, fields: DetectConfig = DEFAULT_FIELDS, warnings?: string[], excluded?: ExcludedNote[], refusedEmbeds?: Set<string>, acceptance?: Map<string, SourceAcceptance>): Promise<NoteInput[]> {
   const notes: NoteInput[] = [];
   const excludedHere: ExcludedNote[] = excluded ?? [];
   const refusedHere: Set<string> = refusedEmbeds ?? new Set<string>();
+  // Every source that passes the gate is recorded with its human verification,
+  // so the compiled artifact can state each source's acceptance (01.61 rule 11).
+  const acceptanceHere: Map<string, SourceAcceptance> = acceptance ?? new Map();
   // Embeds are gated like notes (01.41 rule 8 is over the prompt's TEXT): an
   // embed target without a human verification is not inlined, at any depth.
-  const gate = { accept: acceptedEmbed, refused: refusedHere };
+  const gate = {
+    accept: (e: { path: string; content: string; frontmatter?: Record<string, unknown> | null }) => {
+      if (!acceptedEmbed(e)) return false;
+      const rec = embedAcceptance(e);
+      if (rec) acceptanceHere.set(e.path, rec);
+      return true;
+    },
+    refused: refusedHere,
+  };
   const resolve = warnings
     ? (body: string, from: string, sources: Set<string>) => resolveTransclusions(body, from, src.embed, warnings, sources, gate)
     : null;
@@ -305,6 +326,7 @@ export async function collectNotes(src: SkillsSource, fields: DetectConfig = DEF
       excludedHere.push({ path: note.path, kind });
       continue;
     }
+    acceptanceHere.set(note.path, humanVerificationOf(fm)!);
     let body = stripFrontmatter(note.body);
     const sources = new Set<string>();
     if (resolve) body = await resolve(body, note.path, sources);
@@ -484,9 +506,10 @@ async function collectAndTransform(src: SkillsSource, fields: DetectConfig, plug
   const collectWarnings: string[] = [];
   const excluded: ExcludedNote[] = [];
   const refusedEmbeds = new Set<string>();
-  const notes = await collectNotes(src, fields, collectWarnings, excluded, refusedEmbeds);
+  const acceptance = new Map<string, SourceAcceptance>();
+  const notes = await collectNotes(src, fields, collectWarnings, excluded, refusedEmbeds, acceptance);
   const vaultPath = src.basePath() ?? undefined;
-  const result = transformAll(notes, { pluginName, synthesizeRoot: true, vaultPath, preloadCap });
+  const result = transformAll(notes, { pluginName, synthesizeRoot: true, vaultPath, preloadCap, acceptance, refused: refusedEmbeds });
   result.warnings.unshift(...collectWarnings);
   return { notes, excluded, refusedEmbeds, vaultPath, ...result };
 }

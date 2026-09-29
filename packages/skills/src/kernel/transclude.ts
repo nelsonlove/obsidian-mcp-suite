@@ -31,9 +31,10 @@ export const MAX_EMBED_DEPTH = 5;
 
 const EMBED_RE = /!\[\[([^\[\]]+?)\]\]/g;
 
-/** HTML comments terminate at the first `-->`, so a heading/path containing one would
- *  close the marker early and leak the rest as prose; soften just that sequence. */
-const safeLabel = (s: string): string => s.replace(/-->/g, "--›");
+/** HTML comments terminate at the first `-->` (or `--!>`), so a heading/path containing
+ *  one would close the marker early and leak the rest as prose; soften just those
+ *  sequences. The same rule as transform.ts's `soft`. */
+const safeLabel = (s: string): string => s.replace(/--(!?)>/g, "--$1›");
 
 /** Provenance marker builders — single source of truth for the marker format, shared with
  *  the transform's agent-facing prose and the tests. Markers state where inlined text came
