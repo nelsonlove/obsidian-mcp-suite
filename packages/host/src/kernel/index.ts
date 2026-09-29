@@ -24,7 +24,9 @@
 // re-run the operation behind it. The free-key-on-thrown-failure rule applies
 // only AFTER settlement: a thrown failure stores nothing and releases the key,
 // so the NEXT call re-executes, while a returned envelope (ok or isError) is
-// stored and replayed.
+// stored and replayed. A TIMEOUT is not a settlement (#436): the operation is
+// still running, so its key stays reserved until the late result arrives, and
+// a same-key retry waits for that instead of running the write twice.
 
 import { collectPaths } from "../guard.js";
 import { WriteQueue, WriteTimeoutError } from "./write-queue.js";
@@ -36,7 +38,7 @@ import {
   type JournalOutcome,
   type JournalTarget,
 } from "./journal.js";
-import { argsHashOf, fingerprintArgs, IdempotencyMismatchError, IdempotencyStore, type IdempotencySettlement } from "./idempotency.js";
+import { argsHashOf, fingerprintArgs, IDEMPOTENCY_TTL_MS, IdempotencyMismatchError, IdempotencyStore, type IdempotencySettlement } from "./idempotency.js";
 import { holderOf, lockNoticeText, LockStore, expiresInSeconds, type Lock, type LockNotice } from "./locks.js";
 import { recordImmutableRefusal } from "./record-guard.js";
 import type { UidIndex } from "./uid-index.js";
@@ -389,6 +391,9 @@ export class Kernel {
     // Set when this call OWNS its idempotency key; called exactly once, from
     // the `finally` below, to release every waiter with this call's outcome.
     let settleKey: ((s: IdempotencySettlement) => void) | undefined;
+    // Set only when a keyed call TIMED OUT: the key stays reserved until the
+    // abandoned operation settles (#436). Read by the late handler.
+    let heldKey: ((s: IdempotencySettlement) => void) | undefined;
 
     // Idempotency is settled BEFORE the queue: a retry that is going to be
     // replayed must not take a queue slot behind real work, let alone run. The
@@ -544,8 +549,16 @@ export class Kernel {
               ? settlement.error.message.slice(0, MAX_JOURNALED_ERROR)
               : String(settlement.error).slice(0, MAX_JOURNALED_ERROR);
           const lateRevAfter = this.revAfterOf(target);
+          const lateTs = new Date().toISOString();
+          // #436: the key was held for this moment. A late RESULT is stored
+          // and handed to every waiter, exactly like an on-time one; a late
+          // THROW frees the key, as a thrown failure always does.
+          if (heldKey) {
+            const settle = heldKey; heldKey = undefined;
+            settle(settlement.ok ? { ok: true, result: settlement.value, ts: lateTs } : { ok: false, error: settlement.error, ts: lateTs });
+          }
           void this.journal?.append({
-            ts: new Date().toISOString(),
+            ts: lateTs,
             op: mc.op,
             target,
             actor: mc.actor,
@@ -576,7 +589,9 @@ export class Kernel {
     } catch (e) {
       // A failed precondition is its own outcome: nothing was written, and
       // `revBefore` already holds the revision actually found.
-      outcome = e instanceof RevConflictError ? "conflict" : "error";
+      // A timeout is not a failure: the operation is still running and may
+      // land (#436). Its record says "unknown"; a late record corrects it.
+      outcome = e instanceof RevConflictError ? "conflict" : e instanceof WriteTimeoutError ? "unknown" : "error";
       error = e instanceof Error ? e.message : String(e);
       thrown = { error: e };
       throw e;
@@ -615,7 +630,26 @@ export class Kernel {
       // takes a fresh key. A THROWN failure (timeout, conflict, probe error)
       // stores nothing and frees the key: it left the vault in an unknown or
       // unchanged state, where re-running is the right answer.
-      settleKey?.(settled !== undefined ? { ok: true, result: settled.value, ts } : { ok: false, error: thrown?.error, ts });
+      //
+      // EXCEPT a timeout (#436): the operation is still running and may land,
+      // so freeing its key would let a same-key retry run it a second time —
+      // the one case the key exists for. The key stays reserved; the late
+      // handler above settles it with the real outcome, and every waiter gets
+      // that. A backstop frees it after the idempotency TTL in case the
+      // operation never settles at all.
+      if (settleKey && thrown?.error instanceof WriteTimeoutError) {
+        heldKey = settleKey;
+        const timeoutError = thrown.error;
+        const backstop = setTimeout(() => {
+          if (!heldKey) return;
+          const settle = heldKey; heldKey = undefined;
+          settle({ ok: false, error: timeoutError, ts: ts ?? new Date().toISOString() });
+        }, IDEMPOTENCY_TTL_MS);
+        // Never keep a process alive for this (node tests, CLI embeds).
+        (backstop as { unref?: () => void }).unref?.();
+      } else {
+        settleKey?.(settled !== undefined ? { ok: true, result: settled.value, ts } : { ok: false, error: thrown?.error, ts });
+      }
     }
   }
 

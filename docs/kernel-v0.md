@@ -21,9 +21,7 @@ agent. Reads never queue, so a slow write never stalls a session's reads.
 
 - **Per-operation budget: `WRITE_TIMEOUT_MS = 30_000`** (30 seconds — a constant, not a
   setting; `packages/host/src/kernel/write-queue.ts`). If an operation hasn't settled by
-  then it is **abandoned**, that one call fails with `Error [write_timeout]`, and the queue
-  immediately moves on — a wedged operation can never take down the bridge or anyone else's
-  session. The vault may or may not have been modified; re-read before retrying. The deadline
+  then it is **abandoned**, that one call returns `Error [write_timeout]` (outcome unknown, journaled as `unknown`), and the queue immediately moves on — a wedged operation can never take down the bridge or anyone else's session. The operation is still running and may land; re-read before acting, and retry only with the same key (#436). The deadline
   is **wall-clock math re-evaluated on queue activity** (a new enqueue, a journal append,
   an explicit nudge), not just a timer — Chromium suspends renderer timers while the Obsidian
   window is occluded, so a timer-only deadline went unfired in exactly the unattended
@@ -159,9 +157,7 @@ simultaneous retries of one dropped request run the operation once and all four 
   (including dropping or adding one) fails with `Error [idempotency_mismatch]` and runs
   nothing — rather than replaying and silently discarding the second call's write. The error
   names which half diverged.
-- **What it does *not* cover:** a call that failed with `Error [write_timeout]` was *abandoned*
-  server-side and **may still have landed** — its key is deliberately **not held**, so a retry
-  re-executes (and the journal appends a `late-ok`/`late-error` if the original settled).
+- **A timeout holds the key (#436):** a call that returned `Error [write_timeout]` is still running and may land, so its key stays reserved until it settles; a same-key retry waits and returns the late result (and the journal appends a `late-ok`/`late-error`). A backstop frees the key after the 10-minute TTL if the operation never settles.
   Replay covers whatever the first call *returned*; a failure envelope replays as that failure,
   so use a **fresh key** to genuinely retry a failed operation.
 - **Keys live in memory, per plugin instance.** A plugin reload (or Obsidian restart) clears
