@@ -652,7 +652,8 @@ describe("makeGuarded", () => {
     const guarded = makeGuarded({ getSettings: () => OPEN_SETTINGS, kernel, actor: () => ACTOR });
     const wedged = deferred();
 
-    const stuck = guarded(RW_DEF, () => wedged.promise, "obsidian_move_note")({ path: "A.md" }, {});
+    // obsidian_move_note requires an idempotency_key (01.33 rule 6f).
+    const stuck = guarded(RW_DEF, () => wedged.promise, "obsidian_move_note")({ path: "A.md", idempotency_key: "k-wedge" }, {});
     const next = guarded(RW_DEF, async () => ({ content: [{ type: "text", text: "moved" }] }), "obsidian_write_note")(
       { path: "B.md" },
       {}
@@ -681,7 +682,7 @@ describe("makeGuarded", () => {
     const guarded = makeGuarded({ getSettings: () => OPEN_SETTINGS, kernel, actor: () => ACTOR });
     const call = (name, args) => guarded(RW_DEF, async () => ({ content: [] }), name)(args, {});
 
-    await call("obsidian_run_command", { command_id: "editor:toggle-bold" });
+    await call("obsidian_run_command", { command_id: "editor:toggle-bold", idempotency_key: "k-cmd" }); // key: 01.33 rule 6f
     await call("obsidian_plugin_toggle", { plugin_id: "dataview", enabled: true });
     await call("obsidian_open_workspace", { name: "Writing" });
     await call("obsidian_periodic_note", { kind: "daily", action: "open" });
@@ -712,7 +713,7 @@ describe("makeGuarded", () => {
     const guarded = makeGuarded({ getSettings: () => OPEN_SETTINGS, kernel, actor: () => ACTOR });
     const call = (name, args) => guarded(RW_DEF, async () => ({ content: [] }), name)(args, {});
 
-    await call("obsidian_cli", { command: "file-history", params: { file: "A.md" } });
+    await call("obsidian_cli", { command: "file-history", params: { file: "A.md" }, idempotency_key: "k-cli" }); // key: 01.33 rule 6f
     // Most-identifying-first: the id is the target, the name is decoration.
     await call("obsidian_external_tool", { id: "task-42", name: "Do the thing" });
     await tick(5);
@@ -1459,7 +1460,8 @@ describe("kernel arguments (if_rev / idempotency_key)", () => {
     assert.equal(runs, 1);
     assert.equal(second.content[0].text, "run 1");
 
-    const other = await guarded(RW_DEF, async () => assert.fail("ran"), "obsidian_delete_note")(
+    // A different op under the same key (move_note needs only the key it carries).
+    const other = await guarded(RW_DEF, async () => assert.fail("ran"), "obsidian_move_note")(
       { path: "A.md", idempotency_key: "k8" },
       {}
     );
