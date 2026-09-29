@@ -521,8 +521,8 @@ describe("Kernel.runMutation", () => {
 
     const recs = records();
     assert.equal(recs.length, 3);
-    assert.equal(recs[0].outcome, "error");
-    assert.match(recs[0].error, /write-queue timeout/);
+    assert.equal(recs[0].outcome, "unknown", "a timeout is an unknown outcome, not a failure (#436)");
+    assert.match(recs[0].error, /did not finish within \d+ms\. OUTCOME UNKNOWN/);
     const corrective = recs[2];
     assert.equal(corrective.op, "obsidian_move_note");
     assert.equal(corrective.outcome, "late-ok");
@@ -671,8 +671,8 @@ describe("makeGuarded", () => {
     const recs = records();
     assert.equal(recs.length, 2);
     assert.equal(recs[0].op, "obsidian_move_note");
-    assert.equal(recs[0].outcome, "error");
-    assert.match(recs[0].error, /write-queue timeout/);
+    assert.equal(recs[0].outcome, "unknown", "a timeout is an unknown outcome, not a failure (#436)");
+    assert.match(recs[0].error, /did not finish within \d+ms\. OUTCOME UNKNOWN/);
     assert.equal(recs[1].op, "obsidian_write_note");
     assert.equal(recs[1].outcome, "ok");
   });
@@ -1058,16 +1058,14 @@ describe("idempotency keys", () => {
     assert.equal(runs, 1);
     assert.equal(replayed, failed);
 
-    // A wedged (thrown) operation leaves the vault in an unknown state; the key
-    // must stay free so a retry can actually retry.
-    const wedged = deferred();
-    await assert.rejects(kernel.runMutation(ctx({ idempotencyKey: "k6" }), () => wedged.promise), WriteTimeoutError);
+    // A thrown failure stores nothing; the key must stay free so a retry can
+    // actually retry. (A TIMEOUT is the exception — the operation is still
+    // running — and holds its key: timeout-unknown.test.mjs, #436.)
+    await assert.rejects(kernel.runMutation(ctx({ idempotencyKey: "k6" }), async () => { throw new Error("boom"); }), /boom/);
     const retried = await kernel.runMutation(ctx({ idempotencyKey: "k6" }), async () => ({
       content: [{ type: "text", text: "retried" }],
     }));
     assert.equal(retried.content[0].text, "retried");
-    wedged.resolve({ content: [] });
-    await tick(5);
   });
 
   // ── HIGH-1: concurrent in-flight retries ───────────────────────────────────
@@ -1115,10 +1113,13 @@ describe("idempotency keys", () => {
   });
 
   test("waiters share a THROWN outcome, and only afterwards is the key free", async () => {
-    const { kernel, records } = fakeKernel({ timeoutMs: 25 });
+    // A thrown failure other than a timeout (#436 holds a timed-out key until
+    // the operation settles; see timeout-unknown.test.mjs).
+    const { kernel, records } = fakeKernel();
     const wedged = deferred();
     let runs = 0;
-    const handler = () => { runs++; return wedged.promise; };
+    const handler = () => { runs++; return wedged.promise.then(() => { throw new Error("wedged failure"); }); };
+    setTimeout(() => wedged.resolve(), 25);
 
     const calls = [0, 1, 2, 3].map(() =>
       kernel.runMutation(ctx({ idempotencyKey: "kc2" }), handler).then(
@@ -1129,17 +1130,17 @@ describe("idempotency keys", () => {
     const errors = await Promise.all(calls);
     assert.equal(runs, 1, "only the winner may execute");
     for (const e of errors) {
-      assert.ok(e instanceof WriteTimeoutError, "every waiter must get the winner's failure");
+      assert.match(e.message, /wedged failure/, "every waiter must get the winner's failure");
       assert.equal(e, errors[0], "one logical request, one outcome — the very same error object");
     }
 
     await tick(5);
     const recs = records();
     assert.deepEqual(recs.map((r) => r.outcome), ["error", "deduped", "deduped", "deduped"]);
-    assert.match(recs[0].error, /write-queue timeout/);
+    assert.match(recs[0].error, /wedged failure/);
     for (const r of recs.slice(1)) {
       assert.equal(r.dedupeOf, recs[0].ts);
-      assert.match(r.error, /write-queue timeout/, "a deduped failure must not look like a clean replay");
+      assert.match(r.error, /wedged failure/, "a deduped failure must not look like a clean replay");
     }
 
     // …and NOW the key is free: the thrown failure stored nothing, so a fresh
@@ -1150,8 +1151,6 @@ describe("idempotency keys", () => {
       content: [{ type: "text", text: "retried" }],
     }));
     assert.equal(retried.content[0].text, "retried");
-    wedged.resolve({ content: [] });
-    await tick(5);
   });
 
   // ── MEDIUM-1: key identity includes the arguments ──────────────────────────

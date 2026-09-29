@@ -242,8 +242,8 @@ describe("WriteQueue wall-clock deadline (#272 — suspended-timer world)", () =
     let records = linesOf(adapter, file);
     const timeoutRecord = records.find((r) => r.op === "obsidian_move_note");
     assert.ok(timeoutRecord, "the abandoned op must be journaled");
-    assert.equal(timeoutRecord.outcome, "error");
-    assert.match(timeoutRecord.error, /write-queue timeout/);
+    assert.equal(timeoutRecord.outcome, "unknown", "a timeout is an unknown outcome (#436)");
+    assert.match(timeoutRecord.error, /did not finish within \d+ms\. OUTCOME UNKNOWN/);
     assert.ok(records.some((r) => r.op === "obsidian_write_note" && r.outcome === "ok"));
 
     // The move settles after all: the corrective record must land, linked back.
