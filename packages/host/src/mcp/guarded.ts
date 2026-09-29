@@ -18,6 +18,7 @@
 // unit-tested headlessly — server.ts cannot, since its tool registrars pull in
 // live Obsidian classes.
 
+import { protectionRefusal, requirementNote } from "../kernel/write-protection.js";
 import { z } from "zod";
 import { guardCall, collectPaths, type GuardSettings } from "../guard.js";
 import {
@@ -184,13 +185,20 @@ export const KERNEL_ARG_KEYS = ["if_rev", "idempotency_key", "intent"] as const;
  * tools are returned untouched — neither argument means anything without a
  * write. A tool that already declares one of the names keeps its own
  * declaration (nothing here may quietly redefine a tool's contract).
+ * Given the tool's NAME, each argument's description opens with the
+ * requirement its inventory row states (01.33 rule 6f), so the schema says
+ * what the guard will enforce.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function withKernelArgs(def: any): any {
+export function withKernelArgs(def: any, name?: string): any {
   if (def?.annotations?.readOnlyHint !== false) return def;
   const inputSchema = { ...(def.inputSchema ?? {}) };
-  if (!("if_rev" in inputSchema)) inputSchema.if_rev = IF_REV;
-  if (!("idempotency_key" in inputSchema)) inputSchema.idempotency_key = IDEMPOTENCY_KEY;
+  const noted = (schema: z.ZodTypeAny, which: "if_rev" | "idempotency_key") => {
+    const note = name ? requirementNote(name, which) : null;
+    return note ? schema.describe(`${note} ${schema.description ?? ""}`) : schema;
+  };
+  if (!("if_rev" in inputSchema)) inputSchema.if_rev = noted(IF_REV, "if_rev");
+  if (!("idempotency_key" in inputSchema)) inputSchema.idempotency_key = noted(IDEMPOTENCY_KEY, "idempotency_key");
   if (!("intent" in inputSchema)) inputSchema.intent = INTENT;
   return { ...def, inputSchema };
 }
@@ -525,6 +533,14 @@ async function runGuarded(opts: GuardedOpts, def: any, handler: any, name: strin
     );
   }
   if (!isMutating || !opts.kernel) return handler(toolArgs, extra);
+  // Required write protection (01.43 rules 3–4c, 01.33 rule 6f): a call that
+  // omits the if_rev or idempotency_key its operation requires is refused
+  // here, before the queue — it never runs unprotected. Only with a kernel:
+  // without one neither argument can be honored, and the if_rev refusal above
+  // already covers that case. The requirement is the inventory row's
+  // `protection` (kernel/write-protection.ts), read over the RESOLVED args.
+  const missing = protectionRefusal(name ?? def?.title ?? "unknown", toolArgs as Record<string, unknown>, { ifRev, idempotencyKey });
+  if (missing) return codedError(missing.code, missing.message);
   // The operation reaches the write queue here. Marked rather than assumed:
   // every refusal above this line — read-only mode, the allowlist, an
   // unresolved uid or address, an unenforceable if_rev — returns without ever
