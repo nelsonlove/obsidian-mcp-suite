@@ -164,6 +164,8 @@ The refusal comes before the write queue, so a refused call is not in the journa
 
 ## Installing today (pre-Community-directory)
 
+Updating a live install while agents are writing has its own rules (a versioned build directory, no hot-reload marker, a quiet check, one reload): see [Updating a live install](docs/operator-guide.md#updating-a-live-install).
+
 Neither plugin is yet in Obsidian's Community Plugins directory (the submission is target state — see [Status and compatibility](docs/status-and-compatibility.md)). Governor ships as two plugins: install the host, and optionally install the governance provider on top of it.
 
 1. **Build** (or grab a [release](https://github.com/nelsonlove/obsidian-mcp-suite/releases) — BRAT-installable):

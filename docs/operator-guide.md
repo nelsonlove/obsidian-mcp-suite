@@ -55,6 +55,17 @@ An agent may report and perform bounded work. It does not become the operator be
 11. Configure each additional Sync replica deliberately.
 12. Add private packs last, through separate change records.
 
+## Updating a live install
+
+A reload drops the plugin's socket while agents are writing. On 2026-09-29 two reloads during live writes let a queued create run twice (#435). The host now refuses writes still waiting at unload (the refusal is in the journal; a caller over the socket sees its connection drop) and keeps its idempotency keys across a reload, including the key of a write still running, so a retry with the same key waits for it or replays it. Two limits: a retry WITHOUT a key can still repeat a write, and the first reload onto a build with this fix is unprotected, because the build it replaces has none of it. So a deploy should still disturb as little as possible:
+
+1. **Never point the vault's plugin folder into a git working tree.** `main.js` and `manifest.json` in `.obsidian/plugins/vault-mcp/` are symlinks into a versioned build directory, `~/.local/share/obsidian-plugin-builds/vault-mcp/<version>-<sha>/`, holding the built files and a `BUILD.txt` that names the commit. A build or a branch switch in a checkout then cannot change the running plugin.
+2. **No hot-reload marker** (`.hotreload`) in the host's or a satellite's plugin folder. With the Hot Reload plugin enabled, a marker makes every rebuild reload the plugin by itself, mid-write.
+3. **Quiet check before you build and before you swap:** no journal record for two minutes. Writes are journaled when they FINISH, so a quiet journal means nothing finished lately: a slow write could still be running, and writes could be waiting behind it. Two quiet minutes make a running write unlikely; they do not prove there is none.
+4. **Swap in one step:** replace each symlink with an atomic rename to the new build directory. Then reload once and probe the running plugin (loaded, version, the vault's base path).
+
+If the new build is byte-identical to the running one, the swap needs no reload.
+
 If you are upgrading an existing deployment across the host/Governor plugin split rather than deploying fresh, see [the migration plan](s3c-migration-plan.md) for the cutover procedure. The Claude Code MCP server name moves back to `vault-mcp` at the split, so tool prefixes become `mcp__vault-mcp__*`. An existing `governor` registration keeps working through the grace period (the bridge resolves the socket through discovery, never through the registration name), so the client change is not urgent — but it is the one operator action the split does not do for you, and any `mcp__governor__*` permission entry needs re-adding under the new prefix. Steps 11–12 of the migration plan are the whole procedure.
 
 ## Scope design
