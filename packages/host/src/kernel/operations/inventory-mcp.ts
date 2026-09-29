@@ -109,6 +109,12 @@ export interface McpSurfaceRow {
    * requires (`kernel/write-protection.ts`, applied in `mcp/guarded.ts`).
    */
   protection?: Protection;
+  /**
+   * Why a row's `protection` differs from the class the 01.33 table rules,
+   * when it does on purpose. Today: the three rows Nelson ruled "a" on
+   * (2026-09-29), exempt until #427 gives the kernel a revision it can check.
+   */
+  protectionNote?: string;
 }
 
 /** One class of write protection (01.33 rule 6f). */
@@ -122,9 +128,7 @@ export type ProtectionClass = "token" | "key" | "both" | "exempt";
  * `not-a-write` (rule 4c: claims, plugin state, navigation),
  * `dispatcher` (the code-mode meta-tool; the tool it calls carries its own),
  * `per-item` (a batch whose items each go through the guarded single writer,
- * which checks them one by one), and `held` (a ruled row the kernel cannot
- * yet enforce honestly — its token would bind no path or the wrong one — kept
- * visible rather than silently exempt until a ruling settles it), and
+ * which checks them one by one), and
  * `external` (the third-party publishing surface: a satellite's tools are not
  * classified until the SDK can carry a protection value, apiVersion 3 — the
  * 01.33 table's "satellite tools — known gap" row).
@@ -134,7 +138,6 @@ export type Protection =
   | "not-a-write"
   | "dispatcher"
   | "per-item"
-  | "held"
   | "external"
   | { arg: string; values: Record<string, ProtectionClass>; otherwise: ProtectionClass };
 
@@ -186,7 +189,7 @@ const CORE_DIRECT: McpSurfaceRow[] = [
   // The standing proof that an argument-derived blast radius is not enough:
   // this one names a target and then discovers, rewrites and reports notes of
   // its own. Bounded only by the allowlist, and only when one is active.
-  { tool: "obsidian_repoint_link", readOnly: false, module: "core", distribution: "public-optional", paths: ["target_path"], discovered: "unbounded", postcondition: "Rewrite dangling wikilinks matching a name to point at a target, across every visible note.", protection: "held" },
+  { tool: "obsidian_repoint_link", readOnly: false, module: "core", distribution: "public-optional", paths: ["target_path"], discovered: "unbounded", postcondition: "Rewrite dangling wikilinks matching a name to point at a target, across every visible note.", protection: "exempt", protectionNote: "Temporarily exempt (Nelson's \"a\", 2026-09-29): ruled token, but its only named path is target_path, the note links point AT, so an if_rev would check the wrong file; back to token with #427." },
   { tool: "obsidian_write_notes", readOnly: false, module: "core", distribution: "public-optional", paths: ["notes"], postcondition: "Write several notes in one call, each as its own guarded, journaled write.", unguardedRegistration: "registers through origRegister so the dispatcher takes no queue slot; each ITEM runs through a real makeGuarded wrapper", gate: "!opts.codeMode", protection: "per-item" },
   { tool: "obsidian_check_links", readOnly: true, module: "core", distribution: "public-default", paths: ["scope"], postcondition: "Report dangling wikilinks, duplicate uids and uid coverage; never repairs." },
   { tool: "obsidian_resolve_uid", readOnly: true, module: "core", distribution: "public-default", paths: ["path"], postcondition: "Resolve a uid to its visible path or a path to its uid; report duplicates without choosing." },
@@ -270,7 +273,7 @@ const SNIPPETS: McpSurfaceRow[] = [
   { tool: "obsidian_snippets_list", readOnly: true, module: "core", distribution: "public-optional", postcondition: "List CSS snippets and their enabled state." },
   { tool: "obsidian_snippet_read", readOnly: true, module: "core", distribution: "public-optional", postcondition: "Return one CSS snippet's text." },
   // Vault-global configuration, outside the note space a path scope describes.
-  { tool: "obsidian_snippet_write", readOnly: false, module: "core", distribution: "private", refusesUnderScope: true, discovered: "none", postcondition: "Create or overwrite a CSS snippet.", protection: "held" },
+  { tool: "obsidian_snippet_write", readOnly: false, module: "core", distribution: "private", refusesUnderScope: true, discovered: "none", postcondition: "Create or overwrite a CSS snippet.", protection: "exempt", protectionNote: "Temporarily exempt (Nelson's \"a\", 2026-09-29): ruled token when it overwrites, but it names no path and .obsidian/snippets has no revision the kernel can read; back to token with #427." },
   { tool: "obsidian_snippet_toggle", readOnly: false, module: "core", distribution: "private", refusesUnderScope: true, discovered: "none", postcondition: "Enable or disable a CSS snippet.", protection: "not-a-write" },
 ];
 
@@ -331,7 +334,7 @@ const CONFORMANCE: McpSurfaceRow[] = [
   // succeeds when the allowlist happens to cover that folder. `refusesUnderScope`
   // means "refuses outright whenever any scope is active", which is a stronger
   // and different claim.
-  { tool: "obsidian_conformance_debt_render", readOnly: false, module: "conformance-debt", distribution: "public-optional", discovered: "none", postcondition: "Materialize the debt report as a generated register note beside the baseline, refusing when its computed path is outside the allowlist.", protection: "held" },
+  { tool: "obsidian_conformance_debt_render", readOnly: false, module: "conformance-debt", distribution: "public-optional", discovered: "none", postcondition: "Materialize the debt report as a generated register note beside the baseline, refusing when its computed path is outside the allowlist.", protection: "exempt", protectionNote: "Temporarily exempt (Nelson's \"a\", 2026-09-29): ruled token, but it names no path (it computes where the register goes), so an if_rev would refuse every run; back to token with #427." },
 ];
 
 // The three `provenance_*` rows were HERE until the mutating-tier satellite

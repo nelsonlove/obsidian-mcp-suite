@@ -15,13 +15,13 @@
 // in code, one in the spec, and a test that holds them together. Obsidian-free,
 // so the rule is tested without an app.
 
-import { MCP_SURFACE_INVENTORY, type Protection, type ProtectionClass } from "./operations/inventory-mcp.js";
+import { MCP_SURFACE_INVENTORY, EXTERNAL_PUBLISHER_ROW, type Protection, type ProtectionClass } from "./operations/inventory-mcp.js";
 
 const BY_TOOL: ReadonlyMap<string, Protection | undefined> = new Map(MCP_SURFACE_INVENTORY.map((r) => [r.tool, r.protection]));
 
 /** The protection class a call requires, or null when the call itself need
  *  carry nothing (a read, a non-write, the dispatcher, a batch checked per
- *  item, a held row, an external tool, or a tool this inventory does not know). */
+ *  item, an external tool, or a tool this inventory does not know). */
 export function requiredProtection(tool: string, args: Record<string, unknown>): ProtectionClass | null {
   const p = BY_TOOL.get(tool);
   if (p === undefined) return null;
@@ -94,4 +94,43 @@ export function requirementNote(tool: string, which: "if_rev" | "idempotency_key
     return needs(p) ? "REQUIRED for this tool (01.33 rule 6f); a call without it is refused." : null;
   }
   return null;
+}
+
+const NEEDS: Record<ProtectionClass, string> = {
+  token: "`if_rev`",
+  key: "`idempotency_key`",
+  both: "`if_rev` and `idempotency_key`",
+  exempt: "nothing",
+};
+
+/** What a row requires, in words, for the README's table. */
+function requirementText(p: Protection): string {
+  if (typeof p === "object") {
+    const byClass = new Map<ProtectionClass, string[]>();
+    for (const [v, c] of Object.entries(p.values)) byClass.set(c, [...(byClass.get(c) ?? []), v]);
+    const parts = [...byClass].map(([c, vs]) => `${p.arg} ${vs.join(", ")}: ${NEEDS[c]}`);
+    parts.push(`any other ${p.arg}, or none: ${NEEDS[p.otherwise]}`);
+    return parts.join("; ");
+  }
+  switch (p) {
+    case "token": case "key": case "both": case "exempt": return NEEDS[p];
+    case "not-a-write": return "nothing (not a vault write)";
+    case "dispatcher": return "what the tool it calls requires";
+    case "per-item": return "per item: `if_rev` to overwrite an existing note; nothing to create one";
+    case "external": return "not enforced yet: the SDK cannot declare protection until apiVersion 3";
+  }
+}
+
+/**
+ * The README's per-tool protection table, rendered from the inventory: one
+ * row per write tool, plus the satellite row. The README carries a copy
+ * between markers, and tests/write-protection.test.mjs fails when the copy
+ * differs from this, so the two cannot drift.
+ */
+export function protectionTableMarkdown(): string {
+  const rows = MCP_SURFACE_INVENTORY.filter((r) => !r.readOnly && r.protection !== undefined)
+    .sort((a, b) => a.tool.localeCompare(b.tool))
+    .map((r) => `| \`${r.tool}\` | ${requirementText(r.protection!)} | ${(r.protectionNote ?? "").replace(/\|/g, "\\|")} |`);
+  rows.push(`| satellite tools (\`vaultmcp_*\`) | ${requirementText(EXTERNAL_PUBLISHER_ROW.protection!)} | The known gap: every satellite is off today. |`);
+  return ["| Tool | Requires | Note |", "| --- | --- | --- |", ...rows].join("\n");
 }

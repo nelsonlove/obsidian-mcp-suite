@@ -15,11 +15,11 @@ NEEDS_IDEMPOTENCY = {"obsidian_append_note", "obsidian_append_at_heading", "obsi
        "obsidian_import_apple_notes", "obsidian_create_note_from_template", "crosssession_post", "vaultmcp_crosssession_post"}
 NEEDS_REVISION = {"obsidian_fileclass_insert_fields", "obsidian_survey_slot", "obsidian_rename_heading"}
 BOTH = {"obsidian_trash", "obsidian_delete_note"}
-EXEMPT = {"obsidian_periodic_note", "obsidian_quickadd_compile"}
-HELD = {"obsidian_repoint_link", "obsidian_snippet_write", "obsidian_conformance_debt_render"}
+# The three temporary exemptions (Nelson's "a", 2026-09-29; back to token with #427).
+EXEMPT = {"obsidian_periodic_note", "obsidian_quickadd_compile", "obsidian_repoint_link", "obsidian_snippet_write", "obsidian_conformance_debt_render"}
 
 def need(r):
-    """The class this call's operation requires, or 'held' / None (not a vault write, or not a host write)."""
+    """The class this call's operation requires, or None (not a vault write, or not a host write)."""
     op, a = r["op"], r.get("argsDigest")
     a = a if isinstance(a, dict) else {}
     if op == "obsidian_write_note": return "token" if a.get("overwrite") is True else "exempt"
@@ -31,7 +31,6 @@ def need(r):
     if op in NEEDS_REVISION: return "token"
     if op in BOTH: return "both"
     if op in EXEMPT: return "exempt"
-    if op in HELD: return "held"
     return None
 
 def who(r):
@@ -40,12 +39,11 @@ def who(r):
 
 for label, sel in (("LAST 7 DAYS", [r for r in calls if ts(r) > now - datetime.timedelta(days=7)]), ("WHOLE JOURNAL", calls)):
     print(f"\n==== {label}: {len(sel)} calls ({sel[0]['ts'][:10] if sel else '-'} .. {sel[-1]['ts'][:10] if sel else '-'})")
-    refused, by_who, held, missing = collections.Counter(), collections.Counter(), collections.Counter(), collections.Counter()
+    refused, by_who, missing = collections.Counter(), collections.Counter(), collections.Counter()
     governed = 0
     for r in sel:
         n = need(r)
         if n is None: continue
-        if n == "held": held[r["op"]] += 1; continue
         governed += 1
         miss = []
         if n in ("token", "both") and r.get("ifRev") is None: miss.append("if_rev")
@@ -57,4 +55,3 @@ for label, sel in (("LAST 7 DAYS", [r for r in calls if ts(r) > now - datetime.t
     print(" by missing argument:", dict(missing))
     print(f" by caller ({len(by_who)} distinct; top 8):")
     for w, c in by_who.most_common(8): print(f"   {c:5}  {w}")
-    print(" held rows (not enforced yet):", dict(held))

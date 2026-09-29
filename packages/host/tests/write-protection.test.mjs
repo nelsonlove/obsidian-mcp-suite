@@ -21,14 +21,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { MCP_SURFACE_INVENTORY, EXTERNAL_PUBLISHER_ROW } from "../src/kernel/operations/inventory-mcp.ts";
-import { requiredProtection, protectionRefusal, requirementNote, PROTECTION_REQUIRED } from "../src/kernel/write-protection.ts";
+import { requiredProtection, protectionRefusal, requirementNote, protectionTableMarkdown, PROTECTION_REQUIRED } from "../src/kernel/write-protection.ts";
 import { Kernel, WriteQueue, WriteJournal, IdempotencyStore, LockStore } from "../src/kernel/index.ts";
 import { makeGuarded, withKernelArgs } from "../src/mcp/guarded.ts";
 
 // ── the pinned copy of the 01.33 Step 5 table ─────────────────────────────────
 // `class` is the ruled value; `calls` are the host calls the row names
 // ([tool, args]); `code` is what the inventory says when it differs from the
-// ruled class ON PURPOSE (a held row), with the reason.
+// ruled class ON PURPOSE (a temporary exemption, #427), with the reason.
 const NOT = "not a vault write";
 const TABLE = [
   { op: "overwrite an existing note", class: "token", calls: [["obsidian_write_note", { overwrite: true }]] },
@@ -43,7 +43,7 @@ const TABLE = [
   { op: "move, rename", class: "key", calls: [["obsidian_move_note", {}], ["obsidian_move_notes", {}]] },
   { op: "rename a heading", class: "token", calls: [["obsidian_rename_heading", {}]], note: "the tool lands with #425; this row is checked once both are on main" },
   { op: "scheme move", class: "key", calls: [["obsidian_assign_address", {}], ["obsidian_refile_address", {}], ["obsidian_renumber_address", {}]] },
-  { op: "repoint a link", class: "token", calls: [["obsidian_repoint_link", {}]], code: "held", why: "its only named path is target_path, the note links point AT, not the notes it rewrites; a token would check the wrong file" },
+  { op: "repoint a link", class: "exempt (temporary)", calls: [["obsidian_repoint_link", {}]], code: "exempt", why: "its only named path is target_path, the note links point AT, not the notes it rewrites; a token would check the wrong file" },
   { op: "trash", class: "both", calls: [["obsidian_trash", {}]] },
   { op: "delete", class: "both", calls: [["obsidian_delete_note", {}]] },
   { op: "run code in the application", class: "key", calls: [["obsidian_cli", {}]] },
@@ -53,7 +53,7 @@ const TABLE = [
   { op: "snippet toggle", class: NOT, calls: [["obsidian_snippet_toggle", {}]] },
   { op: "open in editor, jump to, toggle view mode, open workspace, open bookmark", class: NOT, calls: [["obsidian_open_in_editor", {}], ["obsidian_jump_to", {}], ["obsidian_toggle_view_mode", {}], ["obsidian_open_workspace", {}], ["obsidian_open_bookmark", {}]] },
   { op: "save workspace", class: NOT, calls: [["obsidian_save_workspace", {}]] },
-  { op: "snippet write", class: "exempt|token", calls: [["obsidian_snippet_write", {}]], code: "held", why: "it names no path and its file is under .obsidian/snippets, which has no revision the kernel can read; a required if_rev would refuse every overwrite" },
+  { op: "snippet write", class: "exempt (temporary)", calls: [["obsidian_snippet_write", {}]], code: "exempt", why: "it names no path and its file is under .obsidian/snippets, which has no revision the kernel can read; a required if_rev would refuse every overwrite" },
   { op: "periodic note", class: "exempt", calls: [["obsidian_periodic_note", {}]] },
   { op: "create note from template", class: "key", calls: [["obsidian_create_note_from_template", {}]] },
   { op: "base create", class: "key", calls: [["obsidian_base_create", {}]] },
@@ -61,7 +61,7 @@ const TABLE = [
   { op: "Obsidian CLI (run code in the application)", class: "key", calls: [["obsidian_cli", {}]] },
   { op: "fileclass insert fields", class: "token", calls: [["obsidian_fileclass_insert_fields", {}]] },
   { op: "survey slot", class: "token", calls: [["obsidian_survey_slot", {}]] },
-  { op: "conformance debt render", class: "token", calls: [["obsidian_conformance_debt_render", {}]], code: "held", why: "it names no path (it computes where the register goes), so a required if_rev would refuse every run" },
+  { op: "conformance debt render", class: "exempt (temporary)", calls: [["obsidian_conformance_debt_render", {}]], code: "exempt", why: "it names no path (it computes where the register goes), so a required if_rev would refuse every run" },
   { op: "call tool", class: "dispatcher", calls: [["obsidian_call_tool", {}]] },
   { op: "write note", class: "arg", calls: [], note: "covered by 'overwrite an existing note' and 'create if absent'" },
   { op: "write notes (batch)", class: "per-item", calls: [["obsidian_write_notes", {}]] },
@@ -106,10 +106,15 @@ describe("agreement — the code matches the pinned 01.33 table", () => {
       });
     }
   }
-  test("the held rows are exactly the three the kernel cannot enforce honestly, and each says why", () => {
-    const held = MCP_SURFACE_INVENTORY.filter((r) => r.protection === "held").map((r) => r.tool).sort();
-    assert.deepEqual(held, ["obsidian_conformance_debt_render", "obsidian_repoint_link", "obsidian_snippet_write"]);
-    for (const row of TABLE.filter((r) => r.code === "held")) assert.ok(row.why && row.why.length > 40, row.op);
+  test("the temporary exemptions are exactly Nelson's three, each exempt with a one-line reason naming #427", () => {
+    const noted = MCP_SURFACE_INVENTORY.filter((r) => r.protectionNote !== undefined);
+    assert.deepEqual(noted.map((r) => r.tool).sort(), ["obsidian_conformance_debt_render", "obsidian_repoint_link", "obsidian_snippet_write"]);
+    for (const r of noted) {
+      assert.equal(r.protection, "exempt", r.tool);
+      assert.match(r.protectionNote, /^Temporarily exempt \(Nelson's "a", 2026-09-29\): .*back to token with #427\.$/, r.tool);
+      assert.doesNotMatch(r.protectionNote, /\n/, `${r.tool}: one line`);
+    }
+    for (const row of TABLE.filter((r) => r.code)) assert.ok(row.why && row.why.length > 40, row.op);
   });
 });
 
@@ -127,7 +132,6 @@ describe("the pinned table agrees with the 01.33 note (skipped where the vault i
     const noteClass = (c) => {
       const n = norm(c);
       if (/^not a vault write/.test(n)) return NOT;
-      if (/^exempt when it creates.*token when it overwrites/.test(n)) return "exempt|token";
       if (/^exempt with overwrite off; token with overwrite on/.test(n)) return "arg";
       if (/^token for replace, set, delete; key for append, prepend/.test(n)) return "arg";
       if (/^per item/.test(n)) return "per-item";
@@ -169,8 +173,8 @@ describe("protectionRefusal — which argument, and how to get it", () => {
     assert.match(protectionRefusal("obsidian_trash", {}, { idempotencyKey: "k" }).message, /requires if_rev \(/);
     assert.equal(protectionRefusal("obsidian_trash", {}, { ifRev: 1, idempotencyKey: "k" }), null);
   });
-  test("exempt, not-a-write, dispatcher, per-item, held, external and unknown tools require nothing", () => {
-    for (const [t, a] of [["obsidian_write_note", { overwrite: false }], ["obsidian_write_note", {}], ["obsidian_periodic_note", {}], ["obsidian_claim_scope", {}], ["obsidian_call_tool", {}], ["obsidian_write_notes", {}], ["obsidian_repoint_link", {}], ["vaultmcp_skills_export", {}], ["no_such_tool", {}]]) {
+  test("exempt, not-a-write, dispatcher, per-item, the temporary exemptions, external and unknown tools require nothing", () => {
+    for (const [t, a] of [["obsidian_write_note", { overwrite: false }], ["obsidian_write_note", {}], ["obsidian_periodic_note", {}], ["obsidian_claim_scope", {}], ["obsidian_call_tool", {}], ["obsidian_write_notes", {}], ["obsidian_repoint_link", {}], ["obsidian_snippet_write", {}], ["obsidian_conformance_debt_render", {}], ["vaultmcp_skills_export", {}], ["no_such_tool", {}]]) {
       assert.equal(protectionRefusal(t, a, {}), null, `${t} ${JSON.stringify(a)}`);
     }
   });
@@ -238,12 +242,40 @@ describe("the schema tells the agent before the guard does", () => {
     assert.match(d("obsidian_patch_note", "if_rev"), /^REQUIRED when op is replace or op is anything else or omitted/);
     assert.match(d("obsidian_patch_note", "idempotency_key"), /^REQUIRED when op is append or op is prepend/);
     assert.doesNotMatch(d("obsidian_claim_scope", "if_rev"), /REQUIRED/);
-    assert.doesNotMatch(d("obsidian_repoint_link", "if_rev"), /REQUIRED/, "a held row requires nothing yet");
+    assert.doesNotMatch(d("obsidian_repoint_link", "if_rev"), /REQUIRED/, "a temporary exemption requires nothing until #427");
     assert.doesNotMatch(withKernelArgs({ annotations: { readOnlyHint: false }, inputSchema: {} }).inputSchema.if_rev.description, /REQUIRED/, "no name, no claim");
     assert.equal(requirementNote("no_such_tool", "if_rev"), null);
   });
   test("server.ts passes the tool's name to withKernelArgs (source pin)", () => {
     const src = fs.readFileSync(new URL("../src/mcp/server.ts", import.meta.url), "utf8");
     assert.match(src, /register\(name, withKernelArgs\(def, name\), handler\)/);
+  });
+});
+
+// ── the README's copy of the table ────────────────────────────────────────────
+describe("the README's per-tool table is the inventory's (Nelson: 'core host is fine as long as it's all documented in the readme')", () => {
+  const README = new URL("../../../README.md", import.meta.url);
+  const START = "<!-- protection-table:start -->\n", END = "\n<!-- protection-table:end -->";
+  test("the copy between the markers equals protectionTableMarkdown(); VAULT_MCP_WRITE_README=1 rewrites it", () => {
+    const text = fs.readFileSync(README, "utf8");
+    const a = text.indexOf(START), b = text.indexOf(END);
+    assert.ok(a >= 0 && b > a, "README.md has the protection-table markers");
+    const want = protectionTableMarkdown();
+    if (process.env.VAULT_MCP_WRITE_README === "1") fs.writeFileSync(README, text.slice(0, a + START.length) + want + text.slice(b));
+    else assert.equal(text.slice(a + START.length, b), want, "README.md's protection table is stale: run this test with VAULT_MCP_WRITE_README=1");
+  });
+  test("the table names every write tool once, the three exemptions with their notes, and the satellite gap", () => {
+    const t = protectionTableMarkdown();
+    for (const r of MCP_SURFACE_INVENTORY.filter((r) => !r.readOnly)) assert.equal(t.split(`| \`${r.tool}\` |`).length - 1, 1, r.tool);
+    assert.match(t, /\| `obsidian_repoint_link` \| nothing \| Temporarily exempt .*#427\. \|/);
+    assert.match(t, /\| `obsidian_write_note` \| overwrite true: `if_rev`; any other overwrite, or none: nothing \|/);
+    assert.match(t, /\| satellite tools \(`vaultmcp_\*`\) \| not enforced yet: the SDK cannot declare protection until apiVersion 3 \|/);
+    assert.doesNotMatch(t, /obsidian_read_note`/, "read-only tools are not listed");
+  });
+  test("the README explains both arguments, every refusal a caller can see, the exemptions and the gap", () => {
+    const text = fs.readFileSync(README, "utf8");
+    for (const s of ["## Write protection: `if_rev` and `idempotency_key`", "`Error [protection_required]", "`Error [rev_conflict]", "`Error [idempotency_mismatch]", "`Error [precondition_unsupported]", "issues/427", "apiVersion 3", "obsidian_read_note` (and `obsidian_read_notes`) return `rev`"]) {
+      assert.ok(text.includes(s), s);
+    }
   });
 });
