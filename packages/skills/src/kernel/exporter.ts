@@ -238,14 +238,6 @@ export function excludedSummary(list: readonly ExcludedNote[], refusedEmbeds: It
   return { total: list.length, byKind, paths: list.map((e) => e.path), transclusions: [...refusedEmbeds] };
 }
 
-/** Whether an embed target is accepted: its frontmatter carries a human
- *  verification. The frontmatter is the one the lookup supplies from the
- *  vault's own cache when it can (`EmbedSource.frontmatter`; the shipped
- *  backend always does), so the embed gate and the note gate read the SAME
- *  parse of the same note — a note the cache holds no frontmatter for is not
- *  accepted either way. A lookup with no cache (tests, other backends) falls
- *  back to core's guard parser over the raw text, failing closed on what it
- *  cannot read: a note the perimeter cannot read is not one it can vouch for. */
 /** One source's acceptance, as the compiled artifact records it (01.61 rule 11). */
 export interface SourceAcceptance { by: string; at: string | null }
 
@@ -256,6 +248,14 @@ export function embedAcceptance(src: { content: string; frontmatter?: Record<str
   try { return humanVerificationOf(parseGuardFrontmatter(src.content)); } catch { return null; }
 }
 
+/** Whether an embed target is accepted: its frontmatter carries a human
+ *  verification. The frontmatter is the one the lookup supplies from the
+ *  vault's own cache when it can (`EmbedSource.frontmatter`; the shipped
+ *  backend always does), so the embed gate and the note gate read the SAME
+ *  parse of the same note — a note the cache holds no frontmatter for is not
+ *  accepted either way. A lookup with no cache (tests, other backends) falls
+ *  back to core's guard parser over the raw text, failing closed on what it
+ *  cannot read: a note the perimeter cannot read is not one it can vouch for. */
 export function acceptedEmbed(src: { content: string; frontmatter?: Record<string, unknown> | null }): boolean {
   if (src.frontmatter !== undefined) return hasHumanVerification(src.frontmatter);
   try { return hasHumanVerification(parseGuardFrontmatter(src.content)); } catch { return false; }
@@ -509,7 +509,7 @@ async function collectAndTransform(src: SkillsSource, fields: DetectConfig, plug
   const acceptance = new Map<string, SourceAcceptance>();
   const notes = await collectNotes(src, fields, collectWarnings, excluded, refusedEmbeds, acceptance);
   const vaultPath = src.basePath() ?? undefined;
-  const result = transformAll(notes, { pluginName, synthesizeRoot: true, vaultPath, preloadCap, acceptance });
+  const result = transformAll(notes, { pluginName, synthesizeRoot: true, vaultPath, preloadCap, acceptance, refused: refusedEmbeds });
   result.warnings.unshift(...collectWarnings);
   return { notes, excluded, refusedEmbeds, vaultPath, ...result };
 }
