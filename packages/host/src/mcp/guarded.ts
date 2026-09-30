@@ -553,12 +553,20 @@ async function runGuarded(opts: GuardedOpts, def: any, handler: any, name: strin
   if (isMutating) {
     const cut = cutReadError(toolArgs as Record<string, unknown>);
     if (cut) return codedError(cut.code, cut.message);
-    if (opts.noteLength) {
-      const long = await wholeNoteOverwriteRefusal(toolArgs as Record<string, unknown>, opts.noteLength, CHARACTER_LIMIT);
-      if (long) return codedError(long.code, long.message);
-    }
   }
-  if (!isMutating || !opts.kernel) return handler(toolArgs, extra);
+  // The whole-note-overwrite rule reads the note's length, so it runs after
+  // the cheaper refusals: after the protection check with a kernel (a call
+  // without its if_rev is protection_required, as the inventory promises),
+  // right here without one.
+  const longNoteRefusal = async () =>
+    isMutating && opts.noteLength
+      ? wholeNoteOverwriteRefusal(toolArgs as Record<string, unknown>, opts.noteLength, CHARACTER_LIMIT)
+      : null;
+  if (!isMutating || !opts.kernel) {
+    const long = await longNoteRefusal();
+    if (long) return codedError(long.code, long.message);
+    return handler(toolArgs, extra);
+  }
   // Required write protection (01.43 rules 3–4c, 01.33 rule 6f): a call that
   // omits the if_rev or idempotency_key its operation requires is refused
   // here, before the queue — it never runs unprotected. Only with a kernel:
@@ -567,6 +575,8 @@ async function runGuarded(opts: GuardedOpts, def: any, handler: any, name: strin
   // `protection` (kernel/write-protection.ts), read over the RESOLVED args.
   const missing = protectionRefusal(name ?? def?.title ?? "unknown", toolArgs as Record<string, unknown>, { ifRev, idempotencyKey });
   if (missing) return codedError(missing.code, missing.message);
+  const long = await longNoteRefusal();
+  if (long) return codedError(long.code, long.message);
   // The operation reaches the write queue here. Marked rather than assumed:
   // every refusal above this line — read-only mode, the allowlist, an
   // unresolved uid or address, an unenforceable if_rev — returns without ever

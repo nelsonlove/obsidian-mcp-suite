@@ -30,7 +30,7 @@ import { registerFsTools } from "../src/register-fs-tools.ts";
 import { CHARACTER_LIMIT } from "../src/fs-backend/vault.ts";
 import { isCutRead } from "../src/truncation.ts";
 const isCutReadOf = (content) => isCutRead(content, CHARACTER_LIMIT);
-import { TRUNCATION_TRAILER_RE, cutReadError, wholeNoteOverwriteRefusal, truncationTrailer, truncateForRead, noteLengthFrom } from "../src/truncation.ts";
+import { TRUNCATION_TRAILER_RE, cutReadError, wholeNoteOverwriteRefusal, truncationTrailer, truncateForRead, noteLengthFrom, preQueueTruncationRefusal } from "../src/truncation.ts";
 
 const LONG = 150_000;
 const BODY = "# Big\n\n" + "x".repeat(LONG - 7 - 10) + "\n\n## Tail\n"; // > CHARACTER_LIMIT
@@ -178,6 +178,23 @@ describe("a 150k note survives a read → write round trip", () => {
     const disk = await readFile(join(vaultRoot, "Early.md"), "utf8");
     assert.match(disk, /replaced/);
     assert.ok(disk.endsWith("y".repeat(20) + "\n"), "the tail past the limit is intact");
+  });
+
+  test("a section that ends before the limit but whose trailing blank lines cross it is not refused", async () => {
+    const { backend, vaultRoot } = await fixture();
+    const section = "# First\n\n" + "s".repeat(CHARACTER_LIMIT - 20) + "\n" + "\n".repeat(40) + "# Next\n\n" + "y".repeat(1000) + "\n";
+    await (await import("node:fs/promises")).writeFile(join(vaultRoot, "Blank.md"), section);
+    assert.equal((await backend.patchNote("Blank.md", { type: "heading", value: "First" }, "replace", "replaced")).found, true);
+    assert.match(await readFile(join(vaultRoot, "Blank.md"), "utf8"), /replaced[\s\S]*# Next/);
+  });
+
+  test("preQueueTruncationRefusal is the pair in order, and stands aside for a transport with no noteLength", async () => {
+    const { backend } = await fixture();
+    const cut = await backend.readNote("Big.md");
+    const noteLength = async (p) => (p === "Big.md" ? LONG : undefined);
+    assert.match((await preQueueTruncationRefusal({ path: "Big.md", content: cut, overwrite: true }, noteLength, CHARACTER_LIMIT)).message, /carries the read trailer/);
+    assert.match((await preQueueTruncationRefusal({ path: "Big.md", content: "# x", overwrite: true }, noteLength, CHARACTER_LIMIT)).message, /never overwritten whole/);
+    assert.equal(await preQueueTruncationRefusal({ path: "Big.md", content: "# x", overwrite: true }, undefined, CHARACTER_LIMIT), null);
   });
 
   test("noteLengthFrom reads only a file whose bytes exceed the limit", async () => {

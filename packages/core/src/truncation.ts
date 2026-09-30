@@ -177,6 +177,17 @@ export async function noteLengthFrom(size: number, read: () => Promise<string>, 
   return size <= limit ? size : (await read()).length;
 }
 
+/** The pre-queue pair, in order, for a transport's interception: the cut
+ *  read handed back as `content`, then the whole-note overwrite of a long
+ *  note. One implementation for both transports. */
+export async function preQueueTruncationRefusal(
+  args: Record<string, unknown> | undefined,
+  noteLength: ((path: string) => Promise<number | undefined>) | undefined,
+  limit: number,
+): Promise<TruncatedReadError | null> {
+  return cutReadError(args) ?? (noteLength ? wholeNoteOverwriteRefusal(args, noteLength, limit) : null);
+}
+
 /** The interception-point check, for a transport's mutate step: the call's
  *  `content` argument (the one name under which every tool takes note text
  *  from the caller, at the top level of the call's arguments; an

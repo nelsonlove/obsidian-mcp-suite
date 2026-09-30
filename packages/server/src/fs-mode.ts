@@ -42,8 +42,7 @@ import {
   searchByFrontmatter,
   startVaultWatcher,
   registerFsTools,
-  cutReadError,
-  wholeNoteOverwriteRefusal,
+  preQueueTruncationRefusal,
   noteLengthFrom,
   CHARACTER_LIMIT,
   resolveInVault,
@@ -248,7 +247,7 @@ export function makeBackend(
     // note longer than the read limit (never done whole over MCP), is refused
     // before the queue, as the host's guard does (#441): unjournaled, like
     // every argument refusal.
-    const cut = cutReadError(args) ?? (await wholeNoteOverwriteRefusal(args, noteLength, CHARACTER_LIMIT));
+    const cut = await preQueueTruncationRefusal(args, noteLength, CHARACTER_LIMIT);
     if (cut) throw cut;
     const kernel = opts.kernel ?? getFsWriteKernel();
     return kernel.runMutation(op, target, args, fn);

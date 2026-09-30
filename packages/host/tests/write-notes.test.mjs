@@ -202,6 +202,16 @@ describe("obsidian_write_notes — a whole-note overwrite of a long note is one 
     assert.equal(records().some((r) => r.target.path === "Inbox/Long.md"), false, "a pre-queue refusal is not journaled");
   });
 
+  test("an overwrite item with if_rev on a long note is refused by the rule, but without if_rev the protection refusal comes first", async () => {
+    const long = "# Long\n" + "x".repeat(CHARACTER_LIMIT + 5000);
+    const { call } = harness({ existing: new Map([["Inbox/Long.md", { rev: 500, content: long }]]) });
+    // obsidian_write_notes marks an item without if_rev create-only; the
+    // single-writer shape (overwrite without if_rev) is pinned through the
+    // guarded writer directly, below, in truncated-read.test.mjs's host fixture.
+    const res = await call({ notes: [{ path: "Inbox/Long.md", body: "# x", if_rev: 500 }], stamp: false });
+    assert.equal(structured(res).errors[0].code, "truncated_read");
+  });
+
   test("a create-only item (no if_rev) on an existing long note is the protection refusal, not this rule", async () => {
     const long = "# Long\n" + "x".repeat(CHARACTER_LIMIT + 5000);
     const { call, vault } = harness({ existing: new Map([["Inbox/Long.md", { rev: 500, content: long }]]) });

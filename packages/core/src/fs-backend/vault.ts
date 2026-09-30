@@ -745,9 +745,14 @@ class VaultImpl {
     // A replace whose section runs past the read limit on a long note would
     // replace text no cut read showed (#441).
     if (op === "replace") {
+      // Measured at the section's last non-blank line, as the Obsidian
+      // backend's heading offsets measure it: trailing blank lines carry
+      // nothing a cut read could have hidden.
+      let last = range.end;
+      while (last > range.start && bodyLines[last - 1].trim() === "") last--;
       let rangeEnd = fmText.length;
-      for (let i = 0; i < range.end; i++) rangeEnd += bodyLines[i].length + 1;
-      assertPatchRangeRead(relPath, text.length, range.end > 0 ? rangeEnd - 1 : rangeEnd, CHARACTER_LIMIT);
+      for (let i = 0; i < last; i++) rangeEnd += bodyLines[i].length + 1;
+      assertPatchRangeRead(relPath, text.length, last > 0 ? rangeEnd - 1 : rangeEnd, CHARACTER_LIMIT);
     }
 
     let newBodyLines: string[];

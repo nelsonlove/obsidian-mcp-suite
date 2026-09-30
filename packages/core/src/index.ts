@@ -49,6 +49,7 @@ export {
   TruncatedReadError,
   assertNotTruncatedRead,
   wholeNoteOverwriteRefusal,
+  preQueueTruncationRefusal,
   assertPatchRangeRead,
   noteLengthFrom,
   cutReadError,
