@@ -13,6 +13,7 @@ import type { VaultBackend, FrontmatterEditValue } from "./vault-backend.js";
 import { FS_TOOLS } from "./tool-registry.js";
 import { ok, fail } from "./responses.js";
 import { CHARACTER_LIMIT, decodeHtmlEntities } from "./fs-backend/vault.js";
+import { isCutRead } from "./truncation.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -151,7 +152,10 @@ function makeHandler(
           // then conflicts. Sampling after would hand back a rev newer than the
           // content returned, and that write would silently clobber the racer.
           const revd = revField(decoded);
-          return ok(status({ path: decoded, content: await backend.readNote(decoded), ...revd }));
+          const content = await backend.readNote(decoded);
+          // `truncated` flags a cut read (truncation.ts) and is always
+          // present, as on obsidian_read_notes; a cut read keeps its rev (#441).
+          return ok(status({ path: decoded, content, ...revd, truncated: isCutRead(content, CHARACTER_LIMIT) }));
         } catch (e) {
           return fail(e);
         }
@@ -172,13 +176,12 @@ function makeHandler(
               // Sampled before the read, for the same reason as obsidian_read_note.
               const revd = revField(p);
               const content = await backend.readNote(p);
-              // readNote truncates and appends a trailer when len > CHARACTER_LIMIT,
-              // so the returned content is CHARACTER_LIMIT + len(trailer) chars.
-              // content.length > CHARACTER_LIMIT thus correctly flags truncation.
+              // The cut is flagged as in obsidian_read_note (truncation.ts).
+              const truncated = isCutRead(content, CHARACTER_LIMIT);
               return {
                 idx,
                 kind: "ok",
-                value: { path: p, content, truncated: content.length > CHARACTER_LIMIT, ...revd },
+                value: { path: p, content, truncated, ...revd },
               };
             } catch (e) {
               return { idx, kind: "err", value: { path: p, error: e instanceof Error ? e.message : String(e) } };

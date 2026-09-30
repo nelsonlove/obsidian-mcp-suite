@@ -34,6 +34,9 @@ import { moveWithLinks, type LinkCheck } from "./move-with-links.js";
 import { TFile, TFolder, getAllTags, type App } from "obsidian";
 import {
   CHARACTER_LIMIT,
+  assertNotTruncatedRead,
+  assertPatchRangeRead,
+  truncateForRead,
   acceptTransitionNeedsBefore,
   deriveJdIdFromPath,
   parseGuardFrontmatter,
@@ -247,13 +250,7 @@ export class ObsidianBackend implements VaultBackend {
     const f = this.app.vault.getAbstractFileByPath(relPath);
     if (!(f instanceof TFile)) throw new Error(`not found: ${relPath}`);
     const content = await this.app.vault.read(f);
-    if (content.length > CHARACTER_LIMIT) {
-      return (
-        content.slice(0, CHARACTER_LIMIT) +
-        `\n\n[truncated: note is ${content.length} chars, showing first ${CHARACTER_LIMIT}]`
-      );
-    }
-    return content;
+    return truncateForRead(content, CHARACTER_LIMIT);
   }
 
   // ── search ──────────────────────────────────────────────────────────────────
@@ -498,6 +495,8 @@ export class ObsidianBackend implements VaultBackend {
     content: string,
   ): Promise<{ found: boolean; anchor: PatchAnchor; op: PatchOp; previous?: string }> {
     if (!relPath.endsWith(".md")) throw new Error("path must end in .md");
+    // A cut read handed back as the fragment is refused first (#441).
+    assertNotTruncatedRead(relPath, content);
     const file = this.app.vault.getAbstractFileByPath(relPath);
     if (!(file instanceof TFile)) throw new Error(`not found: ${relPath}`);
     const cache = this.app.metadataCache.getFileCache(file);
@@ -524,6 +523,9 @@ export class ObsidianBackend implements VaultBackend {
     }
 
     const previous = text.slice(start, end);
+    // A replace whose section runs past the read limit on a long note would
+    // replace text no cut read showed (#441).
+    if (op === "replace") assertPatchRangeRead(relPath, text.length, end, CHARACTER_LIMIT);
     let next: string;
     if (op === "replace") {
       const body = anchor.type === "heading" ? `\n\n${content}\n` : content;
@@ -556,6 +558,8 @@ export class ObsidianBackend implements VaultBackend {
     overwrite: boolean,
   ): Promise<{ path: string; created: boolean }> {
     if (!relPath.endsWith(".md")) throw new Error("path must end in .md");
+    // A cut read handed back as the content is refused first (#441).
+    assertNotTruncatedRead(relPath, content);
     // Accept-forbidden guard over the whole note being written (S1/S2): a body
     // that embeds `---\nacceptance-status: accepted\n---` lands verbatim, so the
     // guard parses the FINAL content, not a structured argument.
@@ -596,6 +600,8 @@ export class ObsidianBackend implements VaultBackend {
     content: string,
   ): Promise<{ path: string; created: boolean }> {
     if (!relPath.endsWith(".md")) throw new Error("path must end in .md");
+    // A cut read handed back as the fragment is refused first (#441).
+    assertNotTruncatedRead(relPath, content);
     const existing = this.app.vault.getAbstractFileByPath(relPath);
     if (existing instanceof TFile) {
       // Appended text lands at the END, so it normally cannot touch frontmatter

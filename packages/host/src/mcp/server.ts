@@ -1,6 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { TFile, stringifyYaml, parseYaml, type App } from "obsidian";
-import { registerFsTools, ok } from "@vault-mcp/core";
+import { registerFsTools, ok,
+  CHARACTER_LIMIT,
+  noteLengthFrom,
+} from "@vault-mcp/core";
 import { serverInfo, codedError } from "./helpers.js";
 import { registerCoreTools, type ServerCtx } from "./tools-core.js";
 import { registerVaultWriteTools } from "./tools-vault-write.js";
@@ -344,6 +347,14 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
     // config edit lands live), and the same notes() source it uses.
     schemes: () => makeRegistry(ctx.getSettings().schemes ?? DEFAULT_SCHEMES),
     schemeNotes: () => app.vault.getMarkdownFiles().map((f) => f.path),
+    // The whole-note-overwrite rule (#441): the note's length as core's
+    // noteLengthFrom computes it (the byte size when that cannot exceed the
+    // limit, else the character count from the cache).
+    noteLength: async (p: string) => {
+      const f = app.vault.getAbstractFileByPath(p);
+      if (!(f instanceof TFile)) return undefined;
+      return noteLengthFrom(f.stat.size, () => app.vault.cachedRead(f), CHARACTER_LIMIT);
+    },
   };
   const guarded = makeGuarded(guardedOpts);
   const registry: CapturedRegistry = new Map();

@@ -115,7 +115,8 @@ export const FS_TOOLS: ToolDef[] = [
     title: "Read a note",
     description:
       "Read the full markdown content of a note by its vault-relative path. " +
-      "Where the host tracks revisions, the response also carries the note's current `rev` — pass it back as `if_rev` on a following write to make that write conditional (it fails instead of clobbering a change you didn't see). Read-only.",
+      "Where the host tracks revisions, the response also carries the note's current `rev` — pass it back as `if_rev` on a following write to make that write conditional (it fails instead of clobbering a change you didn't see). " +
+      "`truncated` says whether the note came back whole. A note longer than the read limit comes back cut at the limit, with `truncated: true` and a trailing `[truncated: note is N chars, showing first M]` line (M is the number shown): never write that content back (every write refuses it with Error [truncated_read]); its `rev` is good for an anchored edit (obsidian_patch_note, obsidian_append_note, obsidian_manage_frontmatter), which is how a long note is edited. Read-only.",
     inputSchema: {
       path: z
         .string()
@@ -130,7 +131,7 @@ export const FS_TOOLS: ToolDef[] = [
     name: "obsidian_read_notes",
     title: "Read multiple notes",
     description:
-      "Read several notes in one call. Returns `notes` for successful reads and `errors` for paths that failed (missing, ignored folders, etc.) — one bad path doesn't fail the whole call. Each note is truncated independently at the per-note character limit, and carries its current `rev` where the host tracks revisions (pass it back as `if_rev` on a write). Read-only.",
+      "Read several notes in one call. Returns `notes` for successful reads and `errors` for paths that failed (missing, ignored folders, etc.) — one bad path doesn't fail the whole call. Each note is truncated independently at the per-note character limit, and carries its current `rev` where the host tracks revisions (pass it back as `if_rev` on a write). A note over the limit comes back cut, with `truncated: true` and a trailing `[truncated: …]` line: never write that content back (every write refuses it with Error [truncated_read]); its `rev` is good for an anchored edit, which is how a long note is edited. Read-only.",
     inputSchema: {
       paths: z
         .array(z.string().min(1))
@@ -340,7 +341,8 @@ export const FS_TOOLS: ToolDef[] = [
     title: "Write a note",
     description:
       "Create a note, or overwrite an existing one when overwrite=true. Path must end in .md. Parent folders are created as needed. " +
-      "An overwrite that changes a heading's text breaks every [[Note#Heading]] link to it: to rename a heading, use `obsidian_rename_heading` (on the live Obsidian server), which rewrites those links.",
+      "An overwrite that changes a heading's text breaks every [[Note#Heading]] link to it: to rename a heading, use `obsidian_rename_heading` (on the live Obsidian server), which rewrites those links. " +
+      "Never write back a cut read (a note over the read limit comes back with a `[truncated: …]` line and `truncated: true`): content carrying that line, or any whole-note overwrite of a note longer than the limit (never done whole over MCP), is refused with Error [truncated_read]; edit such a note by anchor.",
     inputSchema: {
       path: z.string().min(1).describe("Vault-relative path ending in .md."),
       content: z.string().describe("Full markdown content to write."),

@@ -42,9 +42,14 @@ import {
   searchByFrontmatter,
   startVaultWatcher,
   registerFsTools,
+  preQueueTruncationRefusal,
+  noteLengthFrom,
+  CHARACTER_LIMIT,
+  resolveInVault,
 } from "@vault-mcp/core";
 import type { VaultBackend, VaultWatcherHandle } from "@vault-mcp/core";
 import path from "node:path";
+import { promises as fsp } from "node:fs";
 import { FsWriteKernel, defaultJournalDir } from "./fs-write-kernel.js";
 
 /** This server's version, as asserted in MCP serverInfo and journal identity. */
@@ -203,13 +208,47 @@ export function makeBackend(
    * process-wide singleton, which is what serializes writes ACROSS the
    * stateless per-request servers this factory builds.
    */
-  const mutate = <T>(
+  // A note's length in characters for the whole-note-overwrite rule (#441);
+  // a file of at most CHARACTER_LIMIT bytes cannot exceed it, so only a
+  // larger file is read (the rare case, and only on an overwrite of it). The
+  // check runs before the queue, so a queued write that carries the note
+  // over the limit between this check and the dequeue is not seen by it;
+  // that race is if_rev's, as for every other argument refusal.
+  const noteLength = async (rel: string): Promise<number | undefined> => {
+    // Through the vault's own resolver, so a path that escapes the vault (or
+    // names an ignored folder) is never stat'ed or read here: it throws and
+    // the rule stands aside for the backend's own refusal.
+    let abs: string;
+    try {
+      abs = resolveInVault(rel);
+    } catch {
+      return undefined;
+    }
+    // A note that does not exist is not bound; any other failure to learn
+    // the length fails CLOSED — the rule protects a tail, and an unreadable
+    // note must not switch it off.
+    let size: number;
+    try {
+      size = (await fsp.stat(abs)).size;
+    } catch (e) {
+      if ((e as { code?: string }).code === "ENOENT") return undefined;
+      throw e;
+    }
+    return noteLengthFrom(size, () => fsp.readFile(abs, "utf8"), CHARACTER_LIMIT);
+  };
+  const mutate = async <T>(
     op: string,
     target: { path?: string; paths?: string[] },
     args: Record<string, unknown>,
     fn: () => Promise<T>,
   ): Promise<T> => {
     requireWrites();
+    // A cut read handed back as `content`, or a whole-note overwrite of a
+    // note longer than the read limit (never done whole over MCP), is refused
+    // before the queue, as the host's guard does (#441): unjournaled, like
+    // every argument refusal.
+    const cut = await preQueueTruncationRefusal(args, noteLength, CHARACTER_LIMIT);
+    if (cut) throw cut;
     const kernel = opts.kernel ?? getFsWriteKernel();
     return kernel.runMutation(op, target, args, fn);
   };
