@@ -49,6 +49,8 @@ export {
   TruncatedReadError,
   assertNotTruncatedRead,
   wholeNoteOverwriteRefusal,
+  assertPatchRangeRead,
+  noteLengthFrom,
   cutReadError,
 } from "./truncation.js";
 export {

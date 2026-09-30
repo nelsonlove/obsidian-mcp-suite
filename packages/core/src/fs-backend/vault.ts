@@ -19,7 +19,7 @@ import {
   LEADING_FRONTMATTER_RE,
   leadingFrontmatterBlock,
 } from "../accept-guard.js";
-import { assertNotTruncatedRead, truncateForRead } from "../truncation.js";
+import { assertNotTruncatedRead, assertPatchRangeRead, truncateForRead } from "../truncation.js";
 
 /**
  * All filesystem access for the vault goes through this module so that
@@ -741,6 +741,12 @@ class VaultImpl {
 
     const previous = bodyLines.slice(range.start, range.end).join("\n");
     const insert = content.split("\n");
+
+    // A replace whose section runs past the read limit on a long note would
+    // replace text no cut read showed (#441).
+    if (op === "replace") {
+      assertPatchRangeRead(relPath, text.length, fmText.length + bodyLines.slice(0, range.end).join("\n").length, CHARACTER_LIMIT);
+    }
 
     let newBodyLines: string[];
     if (op === "replace") {

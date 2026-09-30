@@ -30,7 +30,7 @@ import { registerFsTools } from "../src/register-fs-tools.ts";
 import { CHARACTER_LIMIT } from "../src/fs-backend/vault.ts";
 import { isCutRead } from "../src/truncation.ts";
 const isCutReadOf = (content) => isCutRead(content, CHARACTER_LIMIT);
-import { TRUNCATION_TRAILER_RE, cutReadError, wholeNoteOverwriteRefusal, truncationTrailer, truncateForRead } from "../src/truncation.ts";
+import { TRUNCATION_TRAILER_RE, cutReadError, wholeNoteOverwriteRefusal, truncationTrailer, truncateForRead, noteLengthFrom } from "../src/truncation.ts";
 
 const LONG = 150_000;
 const BODY = "# Big\n\n" + "x".repeat(LONG - 7 - 10) + "\n\n## Tail\n"; // > CHARACTER_LIMIT
@@ -154,6 +154,39 @@ describe("a 150k note survives a read → write round trip", () => {
     await assert.rejects(backend.writeNote("Pad.md", cut + "  ", false), { code: "truncated_read" });
     await assert.rejects(backend.writeNote("Crlf.md", cut.replace(/\n/g, "\r\n"), false), { code: "truncated_read" });
     await assert.rejects(backend.writeNote("Below.md", cut + "\n\n## History\n\n- appended below the cut\n", false), { code: "truncated_read" });
+    // Re-quoted line by line (blockquote, list, indent), it is still a cut read.
+    for (const prefix of ["> ", "- ", "    ", "* "]) {
+      const quoted = cut.split("\n").map((l) => prefix + l).join("\n");
+      await assert.rejects(backend.writeNote(`Quoted.md`, quoted, false), { code: "truncated_read" }, `prefix ${JSON.stringify(prefix)}`);
+    }
+  });
+
+  test("a replace whose section runs past the limit on a long note is refused; one within it, and append or prepend, land", async () => {
+    const { backend, vaultRoot } = await fixture();
+    // Big.md: `# Big` at the top, its section runs to the end, past the cut.
+    await assert.rejects(
+      backend.patchNote("Big.md", { type: "heading", value: "Big" }, "replace", "# Big (stripped cut read)\n"),
+      (e) => { assert.equal(e.code, "truncated_read"); assert.match(e.message, /past what any read here showed/); return true; },
+    );
+    assert.equal(await readFile(join(vaultRoot, "Big.md"), "utf8"), BODY);
+    await backend.appendNote("Big.md", "\nmore\n");
+    assert.equal((await backend.patchNote("Big.md", { type: "heading", value: "Big" }, "prepend", "first")).found, true);
+    // A long note whose early section ends before the limit: replace lands.
+    const early = "# Early\n\nshort section\n\n# Rest\n\n" + "y".repeat(LONG) + "\n";
+    await (await import("node:fs/promises")).writeFile(join(vaultRoot, "Early.md"), early);
+    assert.equal((await backend.patchNote("Early.md", { type: "heading", value: "Early" }, "replace", "replaced")).found, true);
+    const disk = await readFile(join(vaultRoot, "Early.md"), "utf8");
+    assert.match(disk, /replaced/);
+    assert.ok(disk.endsWith("y".repeat(20) + "\n"), "the tail past the limit is intact");
+  });
+
+  test("noteLengthFrom reads only a file whose bytes exceed the limit", async () => {
+    let reads = 0;
+    const read = async () => { reads++; return "é".repeat(50); };
+    assert.equal(await noteLengthFrom(100, read, 100), 100);
+    assert.equal(reads, 0);
+    assert.equal(await noteLengthFrom(101, read, 100), 50);
+    assert.equal(reads, 1);
   });
 
   test("a note carrying a trailer-shaped line reads as NOT cut, stays editable, and heals as a backlink source", async () => {
@@ -201,8 +234,8 @@ describe("a 150k note survives a read → write round trip", () => {
     assert.equal(top?.code, "truncated_read");
     assert.match(top.message, /'Big.md'/);
     assert.match(top.message, /letters \(N, M\)/, "the message tells a deliberate quoter the way out");
-    assert.match(top.message, /fresh path/, "and the whole-note road: a fresh path, then a move");
-    assert.doesNotMatch(top.message, /read outside/, "it never points at a write the overwrite rule refuses");
+    assert.match(top.message, /#443/, "and that a whole rewrite of a long note waits for #443");
+    assert.doesNotMatch(top.message, /read outside|fresh path|append_at_heading/, "it never points at a write a rule refuses, a move whose if_rev binds the wrong note, or a host-only tool");
     const noPath = cutReadError({ content: cut });
     assert.match(noPath.message, /'the target'/);
     // Text under another key is not the caller's note text.
@@ -218,6 +251,8 @@ describe("a 150k note survives a read → write round trip", () => {
     assert.equal(kept.at(-1), "x");
     assert.equal(kept.isWellFormed(), true);
     assert.match(cut, TRUNCATION_TRAILER_RE);
+    assert.ok(cut.endsWith(`showing first ${CHARACTER_LIMIT - 1}]`), "the trailer says how many were shown");
+    assert.equal(isCutReadOf(cut), true);
   });
 
   test("wholeNoteOverwriteRefusal refuses a whole-note overwrite of a long note, whatever the content, and nothing else", async () => {
@@ -228,7 +263,7 @@ describe("a 150k note survives a read → write round trip", () => {
     const long = await wholeNoteOverwriteRefusal({ path: "Big.md", content: stripped, overwrite: true }, noteLength, CHARACTER_LIMIT);
     assert.equal(long?.code, "truncated_read");
     assert.match(long.message, /never overwritten whole over MCP/);
-    assert.match(long.message, /fresh path/, "the message says how to shrink on purpose");
+    assert.match(long.message, /#443/);
     // Even the whole note back: over this transport it could not have been read whole.
     assert.equal((await wholeNoteOverwriteRefusal({ path: "Big.md", content: BODY, overwrite: true }, noteLength, CHARACTER_LIMIT))?.code, "truncated_read");
     // Not bound: a short note, a create, a call without content, a missing note.

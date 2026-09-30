@@ -35,6 +35,7 @@ import { TFile, TFolder, getAllTags, type App } from "obsidian";
 import {
   CHARACTER_LIMIT,
   assertNotTruncatedRead,
+  assertPatchRangeRead,
   truncateForRead,
   acceptTransitionNeedsBefore,
   deriveJdIdFromPath,
@@ -522,6 +523,9 @@ export class ObsidianBackend implements VaultBackend {
     }
 
     const previous = text.slice(start, end);
+    // A replace whose section runs past the read limit on a long note would
+    // replace text no cut read showed (#441).
+    if (op === "replace") assertPatchRangeRead(relPath, text.length, end, CHARACTER_LIMIT);
     let next: string;
     if (op === "replace") {
       const body = anchor.type === "heading" ? `\n\n${content}\n` : content;

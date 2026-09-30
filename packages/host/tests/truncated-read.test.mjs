@@ -171,6 +171,18 @@ describe("a 150k note survives a read → write round trip", () => {
     assert.ok(text.length > LONG, "nothing was cut");
   });
 
+  test("a replace whose section runs past the limit on the long note is refused; append and prepend land", async () => {
+    const { backend, store } = fixture();
+    await assert.rejects(
+      backend.patchNote("Big.md", { type: "heading", value: "Big" }, "replace", "# Big (stripped cut read)\n"),
+      { code: "truncated_read" },
+    );
+    assert.equal(store.get("Big.md"), BODY);
+    assert.equal((await backend.patchNote("Big.md", { type: "heading", value: "Big" }, "prepend", "first")).found, true);
+    assert.equal((await backend.patchNote("Big.md", { type: "heading", value: "Tail" }, "append", "last")).found, true);
+    assert.match(store.get("Big.md"), /first[\s\S]*## Tail[\s\S]*last/);
+  });
+
   test("a note already carrying a trailer-shaped line stays editable by append and patch", async () => {
     const { backend, store } = fixture();
     const quoted = "# Doc\n\n```\n[truncated: note is 123456 chars, showing first 100000]\n```\n";

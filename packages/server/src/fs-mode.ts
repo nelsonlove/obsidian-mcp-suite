@@ -44,6 +44,7 @@ import {
   registerFsTools,
   cutReadError,
   wholeNoteOverwriteRefusal,
+  noteLengthFrom,
   CHARACTER_LIMIT,
   resolveInVault,
 } from "@vault-mcp/core";
@@ -215,17 +216,26 @@ export function makeBackend(
   // over the limit between this check and the dequeue is not seen by it;
   // that race is if_rev's, as for every other argument refusal.
   const noteLength = async (rel: string): Promise<number | undefined> => {
+    // Through the vault's own resolver, so a path that escapes the vault (or
+    // names an ignored folder) is never stat'ed or read here: it throws and
+    // the rule stands aside for the backend's own refusal.
+    let abs: string;
     try {
-      // Through the vault's own resolver, so a path that escapes the vault
-      // (or names an ignored folder) is never stat'ed or read here: it throws
-      // and the rule stands aside for the backend's own refusal.
-      const abs = resolveInVault(rel);
-      const st = await fsp.stat(abs);
-      if (st.size <= CHARACTER_LIMIT) return st.size;
-      return (await fsp.readFile(abs, "utf8")).length;
+      abs = resolveInVault(rel);
     } catch {
       return undefined;
     }
+    // A note that does not exist is not bound; any other failure to learn
+    // the length fails CLOSED — the rule protects a tail, and an unreadable
+    // note must not switch it off.
+    let size: number;
+    try {
+      size = (await fsp.stat(abs)).size;
+    } catch (e) {
+      if ((e as { code?: string }).code === "ENOENT") return undefined;
+      throw e;
+    }
+    return noteLengthFrom(size, () => fsp.readFile(abs, "utf8"), CHARACTER_LIMIT);
   };
   const mutate = async <T>(
     op: string,

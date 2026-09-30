@@ -38,9 +38,16 @@
  *     whole, and are bound by the same policy until #443 gives a whole read
  *     its own road). A `content` + `overwrite: true` call on such a note is
  *     refused at each transport's interception, before the queue, from the
- *     note's length on disk. A long note is edited by anchor; a new whole
- *     note goes to a fresh path, then a move over the old one. A caller that
- *     reaches a backend directly is not bound (it is not over MCP).
+ *     note's length on disk. A long note is edited by anchor; a whole
+ *     rewrite of it waits for #443. A caller that reaches a backend directly
+ *     is not bound by that rule (it is not over MCP) — but by the next one.
+ *   - `assertPatchRangeRead`, the same mechanism through the anchored road:
+ *     a `replace` whose section runs past the read limit (the top heading of
+ *     a long note runs to its end) replaces text no cut read showed. So
+ *     `patchNote` on both backends refuses a replace whose range reaches
+ *     past the limit on a note longer than it. This one needs the computed
+ *     range, so it runs at the write (journaled); append and prepend delete
+ *     nothing and are not bound.
  *
  * The read tools report a cut read as `truncated: true` (`isCutRead`). They
  * still return its `rev`: the rev is not what lost the tail, the content was,
@@ -60,13 +67,15 @@ const TRAILER_SRC = trailerLine(NUM, NUM)
   .join("\\d+");
 
 /** Matches the trailer as a whole line, anywhere in the text, with any
- *  surrounding whitespace or a CR (an editor that pads or re-terminates the
- *  line must not slip the guard). Text that merely MENTIONS the trailer inside
- *  a sentence or a code span, or with letters for the numbers, never matches;
- *  a line that IS the trailer, wherever it stands, does — that is the price of
- *  catching a cut read that a caller appended below, or closed a fence after
- *  (matching only at the end, or outside fences, would miss it). */
-export const TRUNCATION_TRAILER_RE = new RegExp(`^[ \\t]*${TRAILER_SRC}[ \\t\\r]*$`, "m");
+ *  surrounding whitespace or a CR, and behind a blockquote, list or indent
+ *  prefix (a cut read re-quoted line by line is still a cut read; an editor
+ *  that pads, prefixes or re-terminates the line must not slip the guard).
+ *  Text that merely MENTIONS the trailer inside a sentence or a code span, or
+ *  with letters for the numbers, never matches; a line that IS the trailer,
+ *  wherever it stands, does — that is the price of catching a cut read that
+ *  a caller appended below, or closed a fence after (matching only at the
+ *  end, or outside fences, would miss it). */
+export const TRUNCATION_TRAILER_RE = new RegExp(`^[ \\t>*+-]*${TRAILER_SRC}[ \\t\\r]*$`, "m");
 
 /** The trailer at the very end of a read, exactly as `truncateForRead` writes it. */
 const TRAILER_AT_END_RE = new RegExp(`\\n\\n${TRAILER_SRC}$`);
@@ -83,7 +92,8 @@ export function truncateForRead(content: string, limit: number): string {
   if (content.length <= limit) return content;
   const code = content.charCodeAt(limit - 1);
   const at = code >= 0xd800 && code <= 0xdbff ? limit - 1 : limit;
-  return content.slice(0, at) + truncationTrailer(content.length, limit);
+  // The trailer says how many characters were shown, which is `at`.
+  return content.slice(0, at) + truncationTrailer(content.length, at);
 }
 
 /** True when `content`, as a backend's `readNote` returned it, is a cut read:
@@ -101,7 +111,7 @@ export function carriesTruncationTrailer(text: string): boolean {
 }
 
 const WAY_OUT =
-  "Edit the note by anchor instead (obsidian_patch_note, obsidian_append_note, obsidian_append_at_heading, obsidian_manage_frontmatter; the read's rev is good for those), or write the new whole note to a fresh path and move it over this one.";
+  "Edit the note by anchor instead (obsidian_patch_note on a section that ends before the limit, obsidian_append_note, obsidian_manage_frontmatter; the read's rev is good for those). A whole rewrite of a note longer than the read limit waits for a read that returns it whole (#443).";
 
 /** Typed refusal — rendered as `Error [truncated_read]`. Built by the two
  *  guards below; `new TruncatedReadError(path)` is the trailer refusal. */
@@ -146,6 +156,26 @@ export async function wholeNoteOverwriteRefusal(
     args.path,
     `'${args.path}' is ${onDisk} chars on disk, longer than the read limit of ${limit}. A note longer than the limit is never overwritten whole over MCP: the read tools cut it there, so a whole-note write of it is a write of a cut read, whatever was edited in. Nothing was written. ${WAY_OUT}`,
   );
+}
+
+/** The anchored road's rule, for `patchNote` on both backends: a `replace`
+ *  whose range ends past the read limit, on a note longer than it, replaces
+ *  text no cut read showed (the top heading's section runs to the end of the
+ *  note). `rangeEnd` is the character offset where the replaced range ends. */
+export function assertPatchRangeRead(path: string, noteLength: number, rangeEnd: number, limit: number): void {
+  if (noteLength <= limit || rangeEnd <= limit) return;
+  throw new TruncatedReadError(
+    path,
+    `'${path}' is ${noteLength} chars, longer than the read limit of ${limit}, and this replace reaches to character ${rangeEnd}, past what any read here showed: it would replace text no cut read returned. Nothing was written. Replace a section that ends before the limit, or append or prepend instead.`,
+  );
+}
+
+/** A transport's `noteLength` from the file's byte size and a reader: a file
+ *  of at most `limit` bytes cannot exceed `limit` characters (UTF-8 bytes are
+ *  never fewer than code units), so its size stands for the comparison; only
+ *  a larger file is read for its character count. */
+export async function noteLengthFrom(size: number, read: () => Promise<string>, limit: number): Promise<number> {
+  return size <= limit ? size : (await read()).length;
 }
 
 /** The interception-point check, for a transport's mutate step: the call's
