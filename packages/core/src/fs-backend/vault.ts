@@ -19,7 +19,7 @@ import {
   LEADING_FRONTMATTER_RE,
   leadingFrontmatterBlock,
 } from "../accept-guard.js";
-import { assertNotTruncatedRead, truncateForRead } from "../truncation.js";
+import { assertNotTruncatedRead, assertWholeNoteOverwrite, truncateForRead } from "../truncation.js";
 
 /**
  * All filesystem access for the vault goes through this module so that
@@ -502,6 +502,11 @@ class VaultImpl {
     }
     if (existed && !overwrite) {
       throw new Error(`Note already exists: '${relPath}'. Set overwrite=true to replace it.`);
+    }
+    if (existed) {
+      // A whole-note write this short over a note longer than the read limit
+      // could only have come from a cut read (#441).
+      assertWholeNoteOverwrite(relPath, (await fs.readFile(abs, "utf8")).length, content, CHARACTER_LIMIT);
     }
     await fs.mkdir(path.dirname(abs), { recursive: true });
     await fs.writeFile(abs, content, "utf8");

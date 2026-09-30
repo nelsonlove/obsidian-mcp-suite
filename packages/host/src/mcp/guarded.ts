@@ -599,8 +599,11 @@ async function runGuarded(opts: GuardedOpts, def: any, handler: any, name: strin
     if (e instanceof RevConflictError) return codedError(e.code, e.message);
     if (e instanceof RecordImmutableError) return codedError(e.code, e.message);
     if (e instanceof IdempotencyMismatchError) return codedError(e.code, e.message);
-    // A cut read refused inside the queued closure (#441) is a typed tool
-    // error too, so obsidian_write_notes reports the item as truncated_read.
+    // The short-overwrite refusal (#441, assertWholeNoteOverwrite) is raised
+    // by the backend write itself, inside the queued closure — it needs the
+    // note's length on disk — so it is rendered here like the kernel errors,
+    // and an obsidian_write_notes item reports it as truncated_read. (The
+    // trailer refusal never reaches here: cutReadRefusal above the queue.)
     if (e instanceof TruncatedReadError) return codedError(e.code, e.message);
     throw e;
   }

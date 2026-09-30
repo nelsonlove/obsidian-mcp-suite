@@ -188,19 +188,46 @@ describe("a 150k note survives a read → write round trip", () => {
     await assert.rejects(backend.writeNote("Block.md", cutInFence + "\n\n```\nexample\n```\n", false), { code: "truncated_read" });
   });
 
-  test("cutReadRefusal finds a cut read in content or body at any depth, and names the path", async () => {
+  test("cutReadRefusal finds a cut read under content or body, names the path, and says the way out", async () => {
     const { backend } = await fixture();
     const cut = await backend.readNote("Big.md");
     assert.equal(cutReadRefusal({ path: "A.md", content: "fine" }), null);
-    assert.equal(cutReadRefusal({ notes: [{ path: "A.md", body: "fine" }] }), null);
+    assert.equal(cutReadRefusal({ path: "A.md", body: "fine" }), null);
     const top = cutReadRefusal({ path: "Big.md", content: cut, overwrite: true });
     assert.equal(top?.code, "truncated_read");
     assert.match(top.message, /'Big.md'/);
-    const nested = cutReadRefusal({ notes: [{ path: "A.md", body: "fine" }, { path: "B.md", body: cut }] });
-    assert.equal(nested?.code, "truncated_read");
-    assert.match(nested.message, /'the target'/);
+    assert.match(top.message, /letters \(N, M\)/, "the message tells a deliberate quoter the way out");
+    const body = cutReadRefusal({ body: cut });
+    assert.equal(body?.code, "truncated_read");
+    assert.match(body.message, /'the target'/);
     // Text under another key is not the caller's note text.
     assert.equal(cutReadRefusal({ path: "A.md", intent: cut }), null);
+  });
+
+  test("deleting the trailer line before writing back is refused too — the note on disk is longer than any read of it", async () => {
+    const { server, backend, vaultRoot } = await fixture();
+    const read = (await server.call("obsidian_read_note", { path: "Big.md" })).structuredContent;
+    assert.equal(read.truncated, true);
+    const stripped = read.content.replace(/\n\n\[truncated:[^\n]*$/, "").replace("# Big", "# Big (edited)");
+    assert.equal(stripped.includes("[truncated:"), false);
+    const res = await server.call("obsidian_write_note", { path: "Big.md", content: stripped, overwrite: true });
+    assert.equal(res.isError, true);
+    assert.match(res.content[0].text, /^Error \[truncated_read\]:/);
+    assert.match(res.content[0].text, /no read returned that note whole/);
+    assert.equal(await readFile(join(vaultRoot, "Big.md"), "utf8"), BODY);
+    // Same guard, direct: a deliberate short overwrite of a long note.
+    await assert.rejects(backend.writeNote("Big.md", "# Replaced\n", true), { code: "truncated_read" });
+    assert.equal(await readFile(join(vaultRoot, "Big.md"), "utf8"), BODY);
+  });
+
+  test("a rewrite from the whole note lands, and a short note is overwritten freely", async () => {
+    const { backend, vaultRoot } = await fixture();
+    const whole = (await readFile(join(vaultRoot, "Big.md"), "utf8")).replace("# Big", "# Big (edited)");
+    await backend.writeNote("Big.md", whole, true);
+    assert.equal(await readFile(join(vaultRoot, "Big.md"), "utf8"), whole);
+    await backend.writeNote("Small.md", "# Small", false);
+    await backend.writeNote("Small.md", "# S", true);
+    assert.equal(await readFile(join(vaultRoot, "Small.md"), "utf8"), "# S");
   });
 
   test("a note that merely mentions the trailer inline is still writable", async () => {

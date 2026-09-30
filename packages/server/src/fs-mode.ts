@@ -42,6 +42,7 @@ import {
   searchByFrontmatter,
   startVaultWatcher,
   registerFsTools,
+  cutReadError,
 } from "@vault-mcp/core";
 import type { VaultBackend, VaultWatcherHandle } from "@vault-mcp/core";
 import path from "node:path";
@@ -210,6 +211,10 @@ export function makeBackend(
     fn: () => Promise<T>,
   ): Promise<T> => {
     requireWrites();
+    // A cut read handed back as `content` is refused before the queue, as
+    // the host's guard does (#441): unjournaled, like every argument refusal.
+    const cut = cutReadError(args);
+    if (cut) return Promise.reject(cut);
     const kernel = opts.kernel ?? getFsWriteKernel();
     return kernel.runMutation(op, target, args, fn);
   };

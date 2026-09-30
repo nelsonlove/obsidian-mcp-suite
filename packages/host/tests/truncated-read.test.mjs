@@ -102,6 +102,20 @@ describe("a 150k note survives a read → write round trip", () => {
     assert.equal(store.get("Big.md"), BODY);
   });
 
+  test("deleting the trailer line before writing back is refused too; a rewrite from the whole note lands", async () => {
+    const { server, backend, store } = fixture();
+    const read = (await server.call("obsidian_read_note", { path: "Big.md" })).structuredContent;
+    const stripped = read.content.replace(/\n\n\[truncated:[^\n]*$/, "").replace("# Big", "# Big (edited)");
+    const res = await server.call("obsidian_write_note", { path: "Big.md", content: stripped, overwrite: true });
+    assert.equal(res.isError, true);
+    assert.match(res.content[0].text, /^Error \[truncated_read\]:[\s\S]*no read returned that note whole/);
+    assert.equal(store.get("Big.md"), BODY);
+    await assert.rejects(backend.writeNote("Big.md", "# Replaced\n", true), { code: "truncated_read" });
+    const whole = BODY.replace("# Big", "# Big (edited)");
+    await backend.writeNote("Big.md", whole, true);
+    assert.equal(store.get("Big.md"), whole);
+  });
+
   test("backend.writeNote, patchNote and appendNote refuse the trailer line", async () => {
     const { backend, store } = fixture();
     const cut = await backend.readNote("Big.md");

@@ -35,6 +35,7 @@ import { TFile, TFolder, getAllTags, type App } from "obsidian";
 import {
   CHARACTER_LIMIT,
   assertNotTruncatedRead,
+  assertWholeNoteOverwrite,
   truncateForRead,
   acceptTransitionNeedsBefore,
   deriveJdIdFromPath,
@@ -564,10 +565,13 @@ export class ObsidianBackend implements VaultBackend {
     if (existing instanceof TFile) {
       if (!overwrite) throw new Error(`exists (set overwrite=true to replace): ${relPath}`);
       // Base bytes are read BEFORE the modify — after it they are gone, and a
-      // proposal's base digest must cover what was actually replaced.
-      const baseText = this.onWriteNote ? await this.app.vault.read(existing) : null;
+      // proposal's base digest must cover what was actually replaced — and a
+      // whole-note write this short over a note longer than the read limit
+      // could only have come from a cut read (#441).
+      const baseText = await this.app.vault.read(existing);
+      assertWholeNoteOverwrite(relPath, baseText.length, content, CHARACTER_LIMIT);
       await this.app.vault.modify(existing, content);
-      this.reportWrite(relPath, baseText, content, false);
+      this.reportWrite(relPath, this.onWriteNote ? baseText : null, content, false);
       return { path: relPath, created: false };
     }
     await ensureParentFolders(this.app, relPath);

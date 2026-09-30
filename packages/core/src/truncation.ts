@@ -13,19 +13,29 @@
  * that knows the trailer's shape, so the reads that write it, the read tools
  * that report it, and the writes that refuse it cannot drift apart.
  *
- * The guard is `assertNotTruncatedRead`, over text the CALLER supplies — the
- * content of a write, the fragment of a patch or an append — never over the
- * note that would result, so a note that already carries such a line stays
- * editable and a rewrite the caller did not author (a move healing its
- * backlinks) is not bound. It runs twice: once at the host's tool
- * interception (`cutReadRefusal`, over every string argument named `content`
- * or `body` of a mutating call, before the queue, so every tool that takes
- * text is covered without knowing it), and once inside each backend write
- * that takes text, as the last line for callers that reach a backend
- * directly. No code fence is exempt: a cut can land inside a fence, and a
- * caller that closes it would otherwise hide the trailer. A note that must
- * show the trailer on a line of its own writes it with letters (`N chars`,
- * `showing first M`), which the digit match never takes for a cut.
+ * Two guards, both rendered as `Error [truncated_read]`:
+ *
+ *   - `assertNotTruncatedRead`, over text the CALLER supplies — the content
+ *     of a write, the fragment of a patch or an append — never over the note
+ *     that would result, so a note that already carries such a line stays
+ *     editable and a rewrite the caller did not author (a move healing its
+ *     backlinks) is not bound. It runs before the queue at each transport's
+ *     interception (`cutReadRefusal`: the host's guarded.ts over `content` /
+ *     `body`, the FS server's mutate over the same), so every tool that takes
+ *     text is covered without knowing it, and again inside each backend write
+ *     that takes text, as the last line for direct callers. No code fence is
+ *     exempt: a cut can land inside a fence, and a caller that closes it would
+ *     otherwise hide the trailer. A note that must show the trailer on a line
+ *     of its own writes it with letters (`N chars`, `showing first M`), which
+ *     the digit match never takes for a cut.
+ *   - `assertWholeNoteOverwrite`, the mechanism behind the marker: a caller
+ *     that deletes the "junk" trailer line and writes back still loses the
+ *     tail. So a whole-note overwrite of a note LONGER than the read limit
+ *     with content no longer than a cut read could be is refused by
+ *     `writeNote` on both backends, at the write (it needs the note's length
+ *     on disk, so unlike the first guard it is journaled as an error). A
+ *     rewrite from the whole note is longer than that and lands; a deliberate
+ *     shrink below the limit goes by anchor, or through a fresh note.
  *
  * The read tools report a cut read as `truncated: true` (`isCutRead`). They
  * still return its `rev`: the rev is not what lost the tail, the content was,
@@ -70,13 +80,18 @@ export function carriesTruncationTrailer(text: string): boolean {
   return TRUNCATION_TRAILER_RE.test(text);
 }
 
-/** Typed refusal for a write of a cut read — rendered as `Error [truncated_read]`. */
+const WAY_OUT =
+  "Edit the note by anchor instead (obsidian_patch_note, obsidian_append_note, obsidian_append_at_heading, obsidian_manage_frontmatter; a cut read's rev is good for those), or rewrite it from the whole note read outside this limit.";
+
+/** Typed refusal — rendered as `Error [truncated_read]`. Built by the two
+ *  guards below; `new TruncatedReadError(path)` is the trailer refusal. */
 export class TruncatedReadError extends Error {
   readonly code = "truncated_read";
-  constructor(path: string) {
+  constructor(path: string, message?: string) {
     super(
-      `the content for '${path}' carries the read trailer '[truncated: note is N chars, showing first M]', so it is a cut read of a note longer than the read limit, and writing it would delete everything after the cut. Nothing was written. ` +
-        "Edit the note by anchor instead (obsidian_patch_note, obsidian_append_note, obsidian_append_at_heading, obsidian_manage_frontmatter; a cut read's rev is good for those), or rewrite it from the whole file outside this read.",
+      message ??
+        `the content for '${path}' carries the read trailer '[truncated: note is N chars, showing first M]' on a line of its own, so it is a cut read (or text copied from one), and writing it would delete everything after the cut. Nothing was written. ${WAY_OUT} ` +
+          "If that line is quoted on purpose, write its numbers as letters (N, M).",
     );
     this.name = "TruncatedReadError";
   }
@@ -89,26 +104,39 @@ export function assertNotTruncatedRead(path: string, text: string): void {
   if (carriesTruncationTrailer(text)) throw new TruncatedReadError(path);
 }
 
-/** The argument names under which a tool takes text from the caller. */
-const TEXT_ARG_KEYS = new Set(["content", "body"]);
-
-function argsCarryCutRead(value: unknown, depth = 0): boolean {
-  if (depth > 6 || value === null || typeof value !== "object") return false;
-  if (Array.isArray(value)) return value.some((v) => argsCarryCutRead(v, depth + 1));
-  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-    if (TEXT_ARG_KEYS.has(k) && typeof v === "string" && carriesTruncationTrailer(v)) return true;
-    if (argsCarryCutRead(v, depth + 1)) return true;
-  }
-  return false;
+/** Refuse a whole-note overwrite that could only have come from a cut read:
+ *  the note on disk is longer than the read limit, and the content is no
+ *  longer than a cut read of it could be (the limit plus the trailer), so no
+ *  read of this note returned what the caller is replacing. Called by
+ *  `writeNote` on both backends when the note exists, BEFORE the write. */
+export function assertWholeNoteOverwrite(path: string, onDiskLength: number, content: string, limit: number): void {
+  if (onDiskLength <= limit) return;
+  const cutReadMax = limit + truncationTrailer(onDiskLength, limit).length;
+  if (content.length > cutReadMax) return;
+  throw new TruncatedReadError(
+    path,
+    `'${path}' is ${onDiskLength} chars on disk, longer than the read limit of ${limit}, and this content is ${content.length} chars: no read returned that note whole, so a whole-note write this short would delete its tail. Nothing was written. ${WAY_OUT} ` +
+      "To shrink the note below the limit on purpose, cut it by anchor, or write the shorter note to a fresh path and move it over this one.",
+  );
 }
 
-/** The interception-point check: a mutating call whose `content` or `body`
- *  argument (at any depth — a batch item counts) is a cut read is refused
- *  before the queue, whatever the tool. Null when the call carries none. */
+/** The interception-point check, for a transport's mutate step: the call's
+ *  `content` or `body` argument (the names under which every tool takes text
+ *  from the caller, always at the top level) is a cut read. Returns the
+ *  refusal, or null when the call carries none. */
+export function cutReadError(args: Record<string, unknown> | undefined): TruncatedReadError | null {
+  if (!args) return null;
+  for (const key of ["content", "body"]) {
+    const v = args[key];
+    if (typeof v === "string" && carriesTruncationTrailer(v)) {
+      return new TruncatedReadError(typeof args.path === "string" ? args.path : "the target");
+    }
+  }
+  return null;
+}
+
+/** `cutReadError` as a coded refusal, for the host's guard. */
 export function cutReadRefusal(args: unknown): { code: "truncated_read"; message: string } | null {
-  if (!argsCarryCutRead(args)) return null;
-  const path = args && typeof args === "object" && typeof (args as { path?: unknown }).path === "string"
-    ? (args as { path: string }).path
-    : "the target";
-  return { code: "truncated_read", message: new TruncatedReadError(path).message };
+  const e = cutReadError(args && typeof args === "object" ? (args as Record<string, unknown>) : undefined);
+  return e ? { code: e.code, message: e.message } : null;
 }

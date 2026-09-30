@@ -21,7 +21,9 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import {
   FS_TOOLS,
   registerFsTools,
-  CHARACTER_LIMIT, truncateForRead } from "@vault-mcp/core";
+  CHARACTER_LIMIT,
+  truncateForRead,
+} from "@vault-mcp/core";
 import type {
   VaultBackend,
   NoteRef,
@@ -266,9 +268,9 @@ describe("registerFsTools", () => {
   test("obsidian_read_notes returns truncated field per note", async () => {
     const backend = new FakeVaultBackend();
     await backend.writeNote("Short.md", "short content", true);
-    // Create a note whose content is already marked as truncated by the server
-    // (content.length > CHARACTER_LIMIT after readNote's trailer). For this fake
-    // backend, just verify the `truncated` key is present in the result.
+    // The handler flags a cut read by truncateForRead's trailer (isCutRead in
+    // core's truncation.ts). For this fake backend, which never cuts, just
+    // verify the `truncated` key is present in the result.
     const { client, teardown } = await makeClientServer(backend);
     try {
       const result = await client.callTool({
@@ -427,10 +429,9 @@ describe("registerFsTools", () => {
 
   // (a) readNote truncation at CHARACTER_LIMIT is truthful
   test("obsidian_read_notes: truncated:true is accurate — content is capped at CHARACTER_LIMIT with trailer", async () => {
-    // Simulates what ObsidianBackend.readNote now does: truncate large notes and
-    // append the same trailer as the FS backend. Verifies that the handler's
-    // `content.length > CHARACTER_LIMIT` check fires truthfully — i.e., the
-    // content returned is actually capped, not full.
+    // Simulates what both backends' readNote does: cut a large note through
+    // truncateForRead. Verifies that the handler's isCutRead flag fires
+    // truthfully — i.e., the content returned is actually capped, not full.
     const rawContent = "x".repeat(CHARACTER_LIMIT + 500); // oversized
 
     class TruncatingBackend extends FakeVaultBackend {
