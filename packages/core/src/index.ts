@@ -48,7 +48,7 @@ export {
   carriesTruncationTrailer,
   TruncatedReadError,
   assertNotTruncatedRead,
-  assertWholeNoteOverwrite,
+  wholeNoteOverwriteRefusal,
   cutReadError,
   cutReadRefusal,
 } from "./truncation.js";

@@ -43,9 +43,12 @@ import {
   startVaultWatcher,
   registerFsTools,
   cutReadError,
+  wholeNoteOverwriteRefusal,
+  CHARACTER_LIMIT,
 } from "@vault-mcp/core";
 import type { VaultBackend, VaultWatcherHandle } from "@vault-mcp/core";
 import path from "node:path";
+import { promises as fsp } from "node:fs";
 import { FsWriteKernel, defaultJournalDir } from "./fs-write-kernel.js";
 
 /** This server's version, as asserted in MCP serverInfo and journal identity. */
@@ -204,17 +207,31 @@ export function makeBackend(
    * process-wide singleton, which is what serializes writes ACROSS the
    * stateless per-request servers this factory builds.
    */
-  const mutate = <T>(
+  // A note's length in characters for the whole-note-overwrite rule (#441);
+  // a file of at most CHARACTER_LIMIT bytes cannot exceed it, so only a
+  // larger file is read.
+  const noteLength = async (rel: string): Promise<number | undefined> => {
+    try {
+      const abs = path.join(vaultRoot(), rel);
+      const st = await fsp.stat(abs);
+      if (st.size <= CHARACTER_LIMIT) return st.size;
+      return (await fsp.readFile(abs, "utf8")).length;
+    } catch {
+      return undefined;
+    }
+  };
+  const mutate = async <T>(
     op: string,
     target: { path?: string; paths?: string[] },
     args: Record<string, unknown>,
     fn: () => Promise<T>,
   ): Promise<T> => {
     requireWrites();
-    // A cut read handed back as `content` is refused before the queue, as
-    // the host's guard does (#441): unjournaled, like every argument refusal.
-    const cut = cutReadError(args);
-    if (cut) return Promise.reject(cut);
+    // A cut read handed back as `content`, or a whole-note overwrite of a
+    // note longer than the read limit, is refused before the queue, as the
+    // host's guard does (#441): unjournaled, like every argument refusal.
+    const cut = cutReadError(args) ?? (await wholeNoteOverwriteRefusal(args, noteLength, CHARACTER_LIMIT));
+    if (cut) throw cut;
     const kernel = opts.kernel ?? getFsWriteKernel();
     return kernel.runMutation(op, target, args, fn);
   };

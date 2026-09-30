@@ -13,8 +13,10 @@
  *      `Error [truncated_read]`, and the note on disk is untouched;
  *   2. a cut read carries `truncated: true` beside its `rev` (an anchored edit
  *      of a long note needs the rev; the content is what is refused);
- *   3. the host's interception check, `cutReadRefusal`, finds a cut read in
- *      any `content`/`body` argument, at any depth, before the queue.
+ *   3. the transports' interception checks: `cutReadRefusal` finds a cut
+ *      read under `content`/`body`, and `wholeNoteOverwriteRefusal` refuses
+ *      a whole-note overwrite of a note longer than the limit, whatever the
+ *      caller edited in — no read returns such a note whole.
  */
 
 import { test, describe } from "node:test";
@@ -26,7 +28,9 @@ import { join } from "node:path";
 import { FilesystemBackend } from "../src/fs-backend/filesystem-backend.ts";
 import { registerFsTools } from "../src/register-fs-tools.ts";
 import { CHARACTER_LIMIT } from "../src/fs-backend/vault.ts";
-import { TRUNCATION_TRAILER_RE, cutReadRefusal } from "../src/truncation.ts";
+import { isCutRead } from "../src/truncation.ts";
+const isCutReadOf = (content) => isCutRead(content, CHARACTER_LIMIT);
+import { TRUNCATION_TRAILER_RE, cutReadRefusal, wholeNoteOverwriteRefusal, truncationTrailer } from "../src/truncation.ts";
 
 const LONG = 150_000;
 const BODY = "# Big\n\n" + "x".repeat(LONG - 7 - 10) + "\n\n## Tail\n"; // > CHARACTER_LIMIT
@@ -204,30 +208,37 @@ describe("a 150k note survives a read → write round trip", () => {
     assert.equal(cutReadRefusal({ path: "A.md", intent: cut }), null);
   });
 
-  test("deleting the trailer line before writing back is refused too — the note on disk is longer than any read of it", async () => {
-    const { server, backend, vaultRoot } = await fixture();
-    const read = (await server.call("obsidian_read_note", { path: "Big.md" })).structuredContent;
-    assert.equal(read.truncated, true);
-    const stripped = read.content.replace(/\n\n\[truncated:[^\n]*$/, "").replace("# Big", "# Big (edited)");
-    assert.equal(stripped.includes("[truncated:"), false);
-    const res = await server.call("obsidian_write_note", { path: "Big.md", content: stripped, overwrite: true });
-    assert.equal(res.isError, true);
-    assert.match(res.content[0].text, /^Error \[truncated_read\]:/);
-    assert.match(res.content[0].text, /no read returned that note whole/);
-    assert.equal(await readFile(join(vaultRoot, "Big.md"), "utf8"), BODY);
-    // Same guard, direct: a deliberate short overwrite of a long note.
-    await assert.rejects(backend.writeNote("Big.md", "# Replaced\n", true), { code: "truncated_read" });
-    assert.equal(await readFile(join(vaultRoot, "Big.md"), "utf8"), BODY);
+  test("wholeNoteOverwriteRefusal refuses a whole-note overwrite of a long note, whatever the content, and nothing else", async () => {
+    const lengths = new Map([["Big.md", LONG], ["Small.md", 7]]);
+    const noteLength = async (p) => lengths.get(p);
+    const cut = (await (await fixture()).backend.readNote("Big.md"));
+    const stripped = cut.replace(/\n\n\[truncated:[^\n]*$/, "") + "\n\nA new paragraph of more than fifty-seven characters, added after the cut.\n";
+    const long = await wholeNoteOverwriteRefusal({ path: "Big.md", content: stripped, overwrite: true }, noteLength, CHARACTER_LIMIT);
+    assert.equal(long?.code, "truncated_read");
+    assert.match(long.message, /no read here returned that note whole/);
+    assert.match(long.message, /fresh path/, "the message says how to shrink on purpose");
+    // Even the whole note back: over this transport it could not have been read whole.
+    assert.equal((await wholeNoteOverwriteRefusal({ path: "Big.md", content: BODY, overwrite: true }, noteLength, CHARACTER_LIMIT))?.code, "truncated_read");
+    // Not bound: a short note, a create, a call without content, a missing note.
+    assert.equal(await wholeNoteOverwriteRefusal({ path: "Small.md", content: "# S", overwrite: true }, noteLength, CHARACTER_LIMIT), null);
+    assert.equal(await wholeNoteOverwriteRefusal({ path: "Big.md", content: "# New", overwrite: false }, noteLength, CHARACTER_LIMIT), null);
+    assert.equal(await wholeNoteOverwriteRefusal({ path: "Big.md", overwrite: true }, noteLength, CHARACTER_LIMIT), null);
+    assert.equal(await wholeNoteOverwriteRefusal({ path: "Nope.md", content: "x", overwrite: true }, noteLength, CHARACTER_LIMIT), null);
   });
 
-  test("a rewrite from the whole note lands, and a short note is overwritten freely", async () => {
+  test("a direct backend caller is bound only by the trailer check: a rewrite from the whole note lands", async () => {
     const { backend, vaultRoot } = await fixture();
     const whole = (await readFile(join(vaultRoot, "Big.md"), "utf8")).replace("# Big", "# Big (edited)");
     await backend.writeNote("Big.md", whole, true);
     assert.equal(await readFile(join(vaultRoot, "Big.md"), "utf8"), whole);
-    await backend.writeNote("Small.md", "# Small", false);
-    await backend.writeNote("Small.md", "# S", true);
-    assert.equal(await readFile(join(vaultRoot, "Small.md"), "utf8"), "# S");
+  });
+
+  test("the trailer has one source: what a read appends is what both matches recognise", () => {
+    const trailer = truncationTrailer(150000, 100000);
+    assert.equal(trailer, "\n\n[truncated: note is 150000 chars, showing first 100000]");
+    assert.match(trailer, TRUNCATION_TRAILER_RE);
+    assert.equal(isCutReadOf("x".repeat(CHARACTER_LIMIT) + trailer), true);
+    assert.equal(isCutReadOf("x".repeat(CHARACTER_LIMIT) + trailer.replace("chars", "characters")), false);
   });
 
   test("a note that merely mentions the trailer inline is still writable", async () => {

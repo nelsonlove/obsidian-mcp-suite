@@ -62,9 +62,14 @@ function fakeApp(files) {
 
 /** Registrations pass through the real guard, as server.ts's monkeypatch
  *  does; with no kernel the guard still runs its argument checks. */
-function fakeServer() {
+function fakeServer(store) {
   const handlers = new Map();
-  const guarded = makeGuarded({ getSettings: () => OPEN_SETTINGS, kernel: null, actor: () => ACTOR });
+  const guarded = makeGuarded({
+    getSettings: () => OPEN_SETTINGS,
+    kernel: null,
+    actor: () => ACTOR,
+    noteLength: async (p) => store.get(p)?.length,
+  });
   return {
     registerTool(name, meta, handler) { handlers.set(name, guarded(meta, handler, name)); return { name, meta }; },
     call(name, args) { return handlers.get(name)(args, {}); },
@@ -74,14 +79,14 @@ function fakeServer() {
 function fixture() {
   const { app, store } = fakeApp({ "Big.md": BODY, "Small.md": "# Small" });
   const backend = new ObsidianBackend(app, () => null);
-  const server = fakeServer();
+  const server = fakeServer(store);
   registerFsTools(server, backend, { rev: (p) => (store.has(p) ? 1700 : undefined) });
   registerComplementaryTools(server, app, { getSettings: () => ({ allowlist: [] }) });
   return { backend, server, store };
 }
 
 describe("obsidian_read_note over the Obsidian backend", () => {
-  test("a cut read carries truncated: true beside its rev; an uncut one keeps its exact old shape", async () => {
+  test("a cut read carries truncated: true beside its rev; every read carries truncated", async () => {
     const { server } = fixture();
     const big = (await server.call("obsidian_read_note", { path: "Big.md" })).structuredContent;
     assert.equal(big.truncated, true);
@@ -102,18 +107,24 @@ describe("a 150k note survives a read → write round trip", () => {
     assert.equal(store.get("Big.md"), BODY);
   });
 
-  test("deleting the trailer line before writing back is refused too; a rewrite from the whole note lands", async () => {
+  test("deleting the trailer line and adding text before writing back is refused by the guard; a whole-note overwrite of a long note never lands over MCP", async () => {
     const { server, backend, store } = fixture();
     const read = (await server.call("obsidian_read_note", { path: "Big.md" })).structuredContent;
-    const stripped = read.content.replace(/\n\n\[truncated:[^\n]*$/, "").replace("# Big", "# Big (edited)");
+    const stripped = read.content.replace(/\n\n\[truncated:[^\n]*$/, "") + "\n\nA new paragraph of more than fifty-seven characters, added after the cut.\n";
     const res = await server.call("obsidian_write_note", { path: "Big.md", content: stripped, overwrite: true });
     assert.equal(res.isError, true);
-    assert.match(res.content[0].text, /^Error \[truncated_read\]:[\s\S]*no read returned that note whole/);
+    assert.match(res.content[0].text, /^Error \[truncated_read\]:[\s\S]*no read here returned that note whole/);
     assert.equal(store.get("Big.md"), BODY);
-    await assert.rejects(backend.writeNote("Big.md", "# Replaced\n", true), { code: "truncated_read" });
     const whole = BODY.replace("# Big", "# Big (edited)");
+    const again = await server.call("obsidian_write_note", { path: "Big.md", content: whole, overwrite: true });
+    assert.equal(again.isError, true, "over MCP, even the whole note back is refused: no read returned it whole");
+    assert.equal(store.get("Big.md"), BODY);
+    // A direct backend caller is bound only by the trailer check.
     await backend.writeNote("Big.md", whole, true);
     assert.equal(store.get("Big.md"), whole);
+    // A short note is overwritten freely.
+    const small = await server.call("obsidian_write_note", { path: "Small.md", content: "# S", overwrite: true });
+    assert.equal(small.isError, undefined);
   });
 
   test("backend.writeNote, patchNote and appendNote refuse the trailer line", async () => {

@@ -342,7 +342,7 @@ export const FS_TOOLS: ToolDef[] = [
     description:
       "Create a note, or overwrite an existing one when overwrite=true. Path must end in .md. Parent folders are created as needed. " +
       "An overwrite that changes a heading's text breaks every [[Note#Heading]] link to it: to rename a heading, use `obsidian_rename_heading` (on the live Obsidian server), which rewrites those links. " +
-      "Never write back a cut read (a note over the read limit comes back with a `[truncated: …]` line and `truncated: true`): content carrying that line, or a whole-note overwrite of a note longer than the limit with content no longer than a cut read, is refused with Error [truncated_read]; edit such a note by anchor.",
+      "Never write back a cut read (a note over the read limit comes back with a `[truncated: …]` line and `truncated: true`): content carrying that line, or any whole-note overwrite of a note longer than the limit (no read returns it whole), is refused with Error [truncated_read]; edit such a note by anchor.",
     inputSchema: {
       path: z.string().min(1).describe("Vault-relative path ending in .md."),
       content: z.string().describe("Full markdown content to write."),

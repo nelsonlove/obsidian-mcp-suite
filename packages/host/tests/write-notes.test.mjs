@@ -19,7 +19,7 @@ import { Kernel, WriteQueue, WriteJournal, IdempotencyStore, LockStore, UidIndex
 import { makeRegistry, DEFAULT_SCHEMES } from "../src/kernel/scheme/registry.ts";
 import { registerWriteNotesTool, batchItemWriter } from "../src/mcp/tools-write-notes.ts";
 import { parseYaml } from "./obsidian-stub.mjs";
-import { assertWholeNoteOverwrite, CHARACTER_LIMIT } from "@vault-mcp/core";
+import { CHARACTER_LIMIT } from "@vault-mcp/core";
 
 const ACTOR = { transport: "mcp", client: "claude-code/1.0.0", connection: "conn-1" };
 const OPEN_SETTINGS = { readOnly: false, allowlist: [] };
@@ -66,8 +66,6 @@ function harness({ existing = new Map(), settings = OPEN_SETTINGS, uidSource, sc
     writeCalls.push(path);
     const existed = vault.has(path);
     if (existed && !overwrite) throw new Error(`exists: ${path}`);
-    // The real backend's overwrite check (#441), the shared helper itself.
-    if (existed) assertWholeNoteOverwrite(path, vault.get(path).content.length, content, CHARACTER_LIMIT);
     clock += 1;
     vault.set(path, { content, rev: clock });
     return { path, created: !existed };
@@ -92,6 +90,8 @@ function harness({ existing = new Map(), settings = OPEN_SETTINGS, uidSource, sc
     getSettings: () => settings,
     kernel,
     actor: () => ACTOR,
+    // The whole-note-overwrite rule (#441) reads the note's length here.
+    noteLength: async (path) => vault.get(path)?.content.length,
     ...(uids ? { uids } : {}),
     ...(schemes ? { schemes: () => schemes, schemeNotes: () => schemeNotes ?? [] } : {}),
   };
@@ -180,8 +180,8 @@ describe("obsidian_write_notes — a cut read is one item's refusal, by its own 
   });
 });
 
-describe("obsidian_write_notes — a short overwrite of a long note is one item's refusal, inside the queue (#441)", () => {
-  test("the item reports truncated_read from the queued closure; the other item writes; the refusal is journaled", async () => {
+describe("obsidian_write_notes — a whole-note overwrite of a long note is one item's refusal, before the queue (#441)", () => {
+  test("the item reports truncated_read from the interception; the writer is never reached; the other item writes", async () => {
     const long = "# Long\n" + "x".repeat(CHARACTER_LIMIT + 5000);
     const { call, vault, records } = harness({ existing: new Map([["Inbox/Long.md", { rev: 500, content: long }]]) });
     const res = await call({
@@ -195,12 +195,11 @@ describe("obsidian_write_notes — a short overwrite of a long note is one item'
     assert.equal(body.error_count, 1);
     assert.equal(body.errors[0].path, "Inbox/Long.md");
     assert.equal(body.errors[0].code, "truncated_read");
-    assert.match(body.errors[0].error, /no read returned that note whole/);
+    assert.match(body.errors[0].error, /no read here returned that note whole/);
     assert.equal(vault.get("Inbox/Long.md").content, long, "the long note is untouched");
     assert.equal(vault.get("Inbox/OK.md").content, "ok");
     await tick();
-    const rec = records().find((r) => r.target.path === "Inbox/Long.md");
-    assert.equal(rec?.outcome, "error", "decided at the write, so journaled");
+    assert.equal(records().some((r) => r.target.path === "Inbox/Long.md"), false, "a pre-queue refusal is not journaled");
   });
 });
 

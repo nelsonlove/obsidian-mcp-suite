@@ -43,7 +43,7 @@ import {
   type SchemeRegistry,
 } from "../kernel/scheme/registry.js";
 import { OperationRefusedError, type OperationExecutor } from "../kernel/operations/executor.js";
-import { TruncatedReadError, cutReadRefusal } from "@vault-mcp/core";
+import { CHARACTER_LIMIT, cutReadRefusal, wholeNoteOverwriteRefusal } from "@vault-mcp/core";
 
 /** Guard/queue-level failure envelope: matches the `Error [code]: message` shape guardCall already emits. */
 function codedError(code: string, message: string) {
@@ -236,6 +236,14 @@ export interface GuardedOpts {
    * tested against an index without a kernel.
    */
   uids?: UidIndex | null;
+  /**
+   * A note's length on disk in characters (undefined when it does not
+   * exist), for the whole-note-overwrite rule (#441): no read over MCP
+   * returns a note longer than CHARACTER_LIMIT whole, so overwriting one
+   * whole is refused before the queue. Absent ⇒ the rule is skipped (tests,
+   * bare embeds).
+   */
+  noteLength?: (path: string) => Promise<number | undefined>;
   /**
    * The scope-provider registry backing `jd:<address>` (and other configured
    * scheme ids) addressing. Resolved PER CALL, like `getSettings`, so a
@@ -533,13 +541,19 @@ async function runGuarded(opts: GuardedOpts, def: any, handler: any, name: strin
         `target's revision cannot be checked. Nothing was written — retry without if_rev to write unconditionally.`
     );
   }
-  // A cut read handed back as `content` or `body` (at any depth) is refused
-  // here, before the queue, whatever the tool (#441): the one check that
-  // covers every tool that takes text, including a satellite's. The backends
-  // carry the same check as the last line for direct callers.
+  // A cut read handed back as `content` or `body` is refused here, before the
+  // queue, whatever the tool (#441): the one check that covers every tool
+  // that takes text, including a satellite's (the backends carry the same
+  // check as the last line for direct callers). And a whole-note overwrite of
+  // a note longer than the read limit is refused the same way: no read over
+  // MCP returned it whole, whatever the caller did to the cut read.
   if (isMutating) {
     const cut = cutReadRefusal(toolArgs);
     if (cut) return codedError(cut.code, cut.message);
+    if (opts.noteLength) {
+      const long = await wholeNoteOverwriteRefusal(toolArgs as Record<string, unknown>, opts.noteLength, CHARACTER_LIMIT);
+      if (long) return codedError(long.code, long.message);
+    }
   }
   if (!isMutating || !opts.kernel) return handler(toolArgs, extra);
   // Required write protection (01.43 rules 3–4c, 01.33 rule 6f): a call that
@@ -599,12 +613,6 @@ async function runGuarded(opts: GuardedOpts, def: any, handler: any, name: strin
     if (e instanceof RevConflictError) return codedError(e.code, e.message);
     if (e instanceof RecordImmutableError) return codedError(e.code, e.message);
     if (e instanceof IdempotencyMismatchError) return codedError(e.code, e.message);
-    // The short-overwrite refusal (#441, assertWholeNoteOverwrite) is raised
-    // by the backend write itself, inside the queued closure — it needs the
-    // note's length on disk — so it is rendered here like the kernel errors,
-    // and an obsidian_write_notes item reports it as truncated_read. (The
-    // trailer refusal never reaches here: cutReadRefusal above the queue.)
-    if (e instanceof TruncatedReadError) return codedError(e.code, e.message);
     throw e;
   }
 }

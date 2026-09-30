@@ -28,20 +28,32 @@
  *     otherwise hide the trailer. A note that must show the trailer on a line
  *     of its own writes it with letters (`N chars`, `showing first M`), which
  *     the digit match never takes for a cut.
- *   - `assertWholeNoteOverwrite`, the mechanism behind the marker: a caller
+ *   - `wholeNoteOverwriteRefusal`, the mechanism behind the marker: a caller
  *     that deletes the "junk" trailer line and writes back still loses the
- *     tail. So a whole-note overwrite of a note LONGER than the read limit
- *     with content no longer than a cut read could be is refused by
- *     `writeNote` on both backends, at the write (it needs the note's length
- *     on disk, so unlike the first guard it is journaled as an error). A
- *     rewrite from the whole note is longer than that and lands; a deliberate
- *     shrink below the limit goes by anchor, or through a fresh note.
+ *     tail, whatever it adds. No read over this transport returns a note
+ *     longer than the limit whole, so a whole-note overwrite of such a note
+ *     (`content` with `overwrite: true`) is refused at each transport's
+ *     interception, before the queue, from the note's length on disk. A long
+ *     note is edited by anchor; a deliberate shrink below the limit goes by
+ *     anchor or through a fresh path. A caller that reaches a backend
+ *     directly is not bound by this rule (it did not read over the limit).
  *
  * The read tools report a cut read as `truncated: true` (`isCutRead`). They
  * still return its `rev`: the rev is not what lost the tail, the content was,
  * and an anchored edit of a long note (`obsidian_patch_note`,
  * `obsidian_manage_frontmatter`) needs it.
  */
+
+/** The trailer's one spelling. Every other form here — the trailer a read
+ *  appends, the whole-line match, the end-of-read match — is built from it. */
+function trailerLine(n: string, m: string): string {
+  return `[truncated: note is ${n} chars, showing first ${m}]`;
+}
+const NUM = "\u0000";
+const TRAILER_SRC = trailerLine(NUM, NUM)
+  .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  .split(NUM)
+  .join("\\d+");
 
 /** Matches the trailer as a whole line, anywhere in the text, with any
  *  surrounding whitespace or a CR (an editor that pads or re-terminates the
@@ -50,14 +62,14 @@
  *  a line that IS the trailer, wherever it stands, does — that is the price of
  *  catching a cut read that a caller appended below, or closed a fence after
  *  (matching only at the end, or outside fences, would miss it). */
-export const TRUNCATION_TRAILER_RE = /^[ \t]*\[truncated: note is \d+ chars, showing first \d+\][ \t\r]*$/m;
+export const TRUNCATION_TRAILER_RE = new RegExp(`^[ \\t]*${TRAILER_SRC}[ \\t\\r]*$`, "m");
 
 /** The trailer at the very end of a read, exactly as `truncateForRead` writes it. */
-const TRAILER_AT_END_RE = /\n\n\[truncated: note is \d+ chars, showing first \d+\]$/;
+const TRAILER_AT_END_RE = new RegExp(`\\n\\n${TRAILER_SRC}$`);
 
 /** The trailer `readNote` appends after the cut content. */
 export function truncationTrailer(length: number, limit: number): string {
-  return `\n\n[truncated: note is ${length} chars, showing first ${limit}]`;
+  return `\n\n${trailerLine(String(length), String(limit))}`;
 }
 
 /** Cut `content` to `limit` characters and append the trailer, or return it whole. */
@@ -104,26 +116,33 @@ export function assertNotTruncatedRead(path: string, text: string): void {
   if (carriesTruncationTrailer(text)) throw new TruncatedReadError(path);
 }
 
-/** Refuse a whole-note overwrite that could only have come from a cut read:
- *  the note on disk is longer than the read limit, and the content is no
- *  longer than a cut read of it could be (the limit plus the trailer), so no
- *  read of this note returned what the caller is replacing. Called by
- *  `writeNote` on both backends when the note exists, BEFORE the write. */
-export function assertWholeNoteOverwrite(path: string, onDiskLength: number, content: string, limit: number): void {
-  if (onDiskLength <= limit) return;
-  const cutReadMax = limit + truncationTrailer(onDiskLength, limit).length;
-  if (content.length > cutReadMax) return;
-  throw new TruncatedReadError(
-    path,
-    `'${path}' is ${onDiskLength} chars on disk, longer than the read limit of ${limit}, and this content is ${content.length} chars: no read returned that note whole, so a whole-note write this short would delete its tail. Nothing was written. ${WAY_OUT} ` +
+/** The interception-point rule for a whole-note overwrite: a call that
+ *  carries `content` with `overwrite: true` for a note whose length on disk
+ *  (`noteLength`, in characters; undefined when the note does not exist)
+ *  exceeds the read limit is refused, because no read over the transport
+ *  returned that note whole — whatever the caller did to the cut read. Run
+ *  BEFORE the queue, like `cutReadError`. */
+export async function wholeNoteOverwriteRefusal(
+  args: Record<string, unknown> | undefined,
+  noteLength: (path: string) => Promise<number | undefined>,
+  limit: number,
+): Promise<TruncatedReadError | null> {
+  if (!args || typeof args.content !== "string" || args.overwrite !== true || typeof args.path !== "string") return null;
+  const onDisk = await noteLength(args.path);
+  if (onDisk === undefined || onDisk <= limit) return null;
+  return new TruncatedReadError(
+    args.path,
+    `'${args.path}' is ${onDisk} chars on disk, longer than the read limit of ${limit}: no read here returned that note whole, so a whole-note overwrite of it would write back a cut read, whatever was edited in. Nothing was written. ${WAY_OUT} ` +
       "To shrink the note below the limit on purpose, cut it by anchor, or write the shorter note to a fresh path and move it over this one.",
   );
 }
 
 /** The interception-point check, for a transport's mutate step: the call's
  *  `content` or `body` argument (the names under which every tool takes text
- *  from the caller, always at the top level) is a cut read. Returns the
- *  refusal, or null when the call carries none. */
+ *  from the caller; read at the top level of the call's arguments, which is
+ *  where every tool declares them — a batch item is dispatched as its own
+ *  call) is a cut read. Returns the refusal, or null when the call carries
+ *  none. */
 export function cutReadError(args: Record<string, unknown> | undefined): TruncatedReadError | null {
   if (!args) return null;
   for (const key of ["content", "body"]) {
