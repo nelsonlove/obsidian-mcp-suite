@@ -205,6 +205,7 @@ errors:
   - idempotency_mismatch
   - accept_forbidden
   - protected_property
+  - truncated_read
   - write_timeout
 recovery:
   primary: review-center-revert

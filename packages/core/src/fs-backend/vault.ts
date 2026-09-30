@@ -19,6 +19,7 @@ import {
   LEADING_FRONTMATTER_RE,
   leadingFrontmatterBlock,
 } from "../accept-guard.js";
+import { assertNotTruncatedRead, assertPatchRangeRead, truncateForRead } from "../truncation.js";
 
 /**
  * All filesystem access for the vault goes through this module so that
@@ -474,13 +475,7 @@ class VaultImpl {
   async readNote(relPath: string): Promise<string> {
     const abs = this.resolveInVault(relPath);
     const content = await fs.readFile(abs, "utf8");
-    if (content.length > CHARACTER_LIMIT) {
-      return (
-        content.slice(0, CHARACTER_LIMIT) +
-        `\n\n[truncated: note is ${content.length} chars, showing first ${CHARACTER_LIMIT}]`
-      );
-    }
-    return content;
+    return truncateForRead(content, CHARACTER_LIMIT);
   }
 
   async writeNote(
@@ -488,6 +483,8 @@ class VaultImpl {
     content: string,
     overwrite: boolean
   ): Promise<{ path: string; created: boolean }> {
+    // A cut read handed back as the content is refused first (#441).
+    assertNotTruncatedRead(relPath, content);
     const abs = this.resolveInVault(relPath);
     if (!relPath.toLowerCase().endsWith(".md")) {
       throw new Error("Note path must end in .md");
@@ -515,6 +512,8 @@ class VaultImpl {
     relPath: string,
     content: string
   ): Promise<{ path: string; created: boolean }> {
+    // A cut read handed back as the fragment is refused first (#441).
+    assertNotTruncatedRead(relPath, content);
     const abs = this.resolveInVault(relPath);
     if (!relPath.toLowerCase().endsWith(".md")) {
       throw new Error("Note path must end in .md");
@@ -712,6 +711,8 @@ class VaultImpl {
     op: PatchOp,
     content: string
   ): Promise<{ found: boolean; anchor: PatchAnchor; op: PatchOp; previous?: string }> {
+    // A cut read handed back as the fragment is refused first (#441).
+    assertNotTruncatedRead(relPath, content);
     const abs = this.resolveInVault(relPath);
     if (!relPath.toLowerCase().endsWith(".md")) {
       throw new Error("Note path must end in .md");
@@ -740,6 +741,19 @@ class VaultImpl {
 
     const previous = bodyLines.slice(range.start, range.end).join("\n");
     const insert = content.split("\n");
+
+    // A replace whose section runs past the read limit on a long note would
+    // replace text no cut read showed (#441).
+    if (op === "replace") {
+      // Measured at the section's last non-blank line, as the Obsidian
+      // backend's heading offsets measure it: trailing blank lines carry
+      // nothing a cut read could have hidden.
+      let last = range.end;
+      while (last > range.start && bodyLines[last - 1].trim() === "") last--;
+      let rangeEnd = fmText.length;
+      for (let i = 0; i < last; i++) rangeEnd += bodyLines[i].length + 1;
+      assertPatchRangeRead(relPath, text.length, last > 0 ? rangeEnd - 1 : rangeEnd, CHARACTER_LIMIT);
+    }
 
     let newBodyLines: string[];
     if (op === "replace") {

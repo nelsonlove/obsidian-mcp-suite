@@ -151,6 +151,9 @@ export function registerComplementaryTools(server: McpServer, app: App, ctx: Ser
     async ({ path: p, heading, content, create_if_missing }) => {
       try {
         if (!p.endsWith(".md")) return fail(new Error("path must end in .md"));
+        // A cut read handed back as `content` is refused before this handler
+        // runs, by the guard's cutReadError (#441); the tool has no direct
+        // caller, so no second check here.
         const file = app.vault.getAbstractFileByPath(p);
 
         if (!(file instanceof TFile)) {

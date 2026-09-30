@@ -19,6 +19,7 @@ import { Kernel, WriteQueue, WriteJournal, IdempotencyStore, LockStore, UidIndex
 import { makeRegistry, DEFAULT_SCHEMES } from "../src/kernel/scheme/registry.ts";
 import { registerWriteNotesTool, batchItemWriter } from "../src/mcp/tools-write-notes.ts";
 import { parseYaml } from "./obsidian-stub.mjs";
+import { CHARACTER_LIMIT } from "@vault-mcp/core";
 
 const ACTOR = { transport: "mcp", client: "claude-code/1.0.0", connection: "conn-1" };
 const OPEN_SETTINGS = { readOnly: false, allowlist: [] };
@@ -89,6 +90,8 @@ function harness({ existing = new Map(), settings = OPEN_SETTINGS, uidSource, sc
     getSettings: () => settings,
     kernel,
     actor: () => ACTOR,
+    // The whole-note-overwrite rule (#441) reads the note's length here.
+    noteLength: async (path) => vault.get(path)?.content.length,
     ...(uids ? { uids } : {}),
     ...(schemes ? { schemes: () => schemes, schemeNotes: () => schemeNotes ?? [] } : {}),
   };
@@ -147,6 +150,75 @@ describe("obsidian_write_notes — batch happy path", () => {
     assert.ok(recs.every((r) => r.op === "obsidian_write_notes"));
     assert.deepEqual(recs.map((r) => r.target.path).sort(), ["Inbox/A.md", "Inbox/B.md", "Inbox/C.md"]);
     assert.ok(recs.every((r) => r.outcome === "ok"));
+  });
+});
+
+describe("obsidian_write_notes — a cut read is one item's refusal, by its own code (#441)", () => {
+  test("the item is refused at the interception, before the queue; the other item writes", async () => {
+    // The refusal is makeGuarded's own (cutReadError over the item's
+    // `content`), not the writer's: the fake writer carries no guard.
+    const { call, vault, records, writeCalls } = harness();
+    const cut = "# Big\n\nxxx\n\n[truncated: note is 150000 chars, showing first 100000]";
+    const res = await call({
+      notes: [
+        { path: "Inbox/Cut.md", body: cut },
+        { path: "Inbox/OK.md", body: "ok" },
+      ],
+      stamp: false,
+    });
+    const body = structured(res);
+    assert.equal(body.count, 1);
+    assert.equal(body.error_count, 1);
+    assert.equal(body.errors[0].path, "Inbox/Cut.md");
+    assert.equal(body.errors[0].code, "truncated_read");
+    assert.match(body.errors[0].error, /cut read/);
+    assert.equal(vault.has("Inbox/Cut.md"), false, "nothing landed for the cut item");
+    assert.equal(writeCalls.includes("Inbox/Cut.md"), false, "the writer was never reached for the cut item");
+    assert.equal(vault.get("Inbox/OK.md").content, "ok");
+    await tick();
+    assert.equal(records().some((r) => r.target.path === "Inbox/Cut.md"), false, "a pre-queue refusal is not journaled");
+  });
+});
+
+describe("obsidian_write_notes — a whole-note overwrite of a long note is one item's refusal, before the queue (#441)", () => {
+  test("the item reports truncated_read from the interception; the writer is never reached; the other item writes", async () => {
+    const long = "# Long\n" + "x".repeat(CHARACTER_LIMIT + 5000);
+    const { call, vault, records } = harness({ existing: new Map([["Inbox/Long.md", { rev: 500, content: long }]]) });
+    const res = await call({
+      notes: [
+        { path: "Inbox/Long.md", body: "# Long (stripped)\n" + "x".repeat(1000), if_rev: 500 },
+        { path: "Inbox/OK.md", body: "ok" },
+      ],
+      stamp: false,
+    });
+    const body = structured(res);
+    assert.equal(body.error_count, 1);
+    assert.equal(body.errors[0].path, "Inbox/Long.md");
+    assert.equal(body.errors[0].code, "truncated_read");
+    assert.match(body.errors[0].error, /never overwritten whole over MCP/);
+    assert.equal(vault.get("Inbox/Long.md").content, long, "the long note is untouched");
+    assert.equal(vault.get("Inbox/OK.md").content, "ok");
+    await tick();
+    assert.equal(records().some((r) => r.target.path === "Inbox/Long.md"), false, "a pre-queue refusal is not journaled");
+  });
+
+  test("an overwrite item with if_rev on a long note is refused by the rule, but without if_rev the protection refusal comes first", async () => {
+    const long = "# Long\n" + "x".repeat(CHARACTER_LIMIT + 5000);
+    const { call } = harness({ existing: new Map([["Inbox/Long.md", { rev: 500, content: long }]]) });
+    // obsidian_write_notes marks an item without if_rev create-only; the
+    // single-writer shape (overwrite without if_rev) is pinned through the
+    // guarded writer directly, below, in truncated-read.test.mjs's host fixture.
+    const res = await call({ notes: [{ path: "Inbox/Long.md", body: "# x", if_rev: 500 }], stamp: false });
+    assert.equal(structured(res).errors[0].code, "truncated_read");
+  });
+
+  test("a create-only item (no if_rev) on an existing long note is the protection refusal, not this rule", async () => {
+    const long = "# Long\n" + "x".repeat(CHARACTER_LIMIT + 5000);
+    const { call, vault } = harness({ existing: new Map([["Inbox/Long.md", { rev: 500, content: long }]]) });
+    const res = await call({ notes: [{ path: "Inbox/Long.md", body: "# New" }], stamp: false });
+    const body = structured(res);
+    assert.equal(body.errors[0].code, "protection_required");
+    assert.equal(vault.get("Inbox/Long.md").content, long);
   });
 });
 

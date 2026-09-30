@@ -50,18 +50,18 @@ describe("registerFsTools rev exposure", () => {
     registerFsTools(server, fakeBackend(NOTES), { rev: (p) => (p === "A.md" ? 1700 : undefined) });
 
     const res = await server.call("obsidian_read_note", { path: "A.md" });
-    assert.deepEqual(res.structuredContent, { path: "A.md", content: "# A", rev: 1700 });
+    assert.deepEqual(res.structuredContent, { path: "A.md", content: "# A", rev: 1700, truncated: false });
 
     // A path the host has no revision for simply carries no rev field.
     const other = await server.call("obsidian_read_note", { path: "B.md" });
-    assert.deepEqual(other.structuredContent, { path: "B.md", content: "# B" });
+    assert.deepEqual(other.structuredContent, { path: "B.md", content: "# B", truncated: false });
   });
 
-  test("without a rev source the response is exactly what it always was", async () => {
+  test("without a rev source the response carries no rev (and the truncated flag, as every read does)", async () => {
     const server = fakeServer();
     registerFsTools(server, fakeBackend(NOTES), {});
     const res = await server.call("obsidian_read_note", { path: "A.md" });
-    assert.deepEqual(res.structuredContent, { path: "A.md", content: "# A" });
+    assert.deepEqual(res.structuredContent, { path: "A.md", content: "# A", truncated: false });
     assert.equal("rev" in res.structuredContent, false);
   });
 

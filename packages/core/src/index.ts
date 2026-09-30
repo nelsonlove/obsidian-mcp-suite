@@ -41,6 +41,20 @@ export {
 } from "./accept-guard.js";
 export type { ProtectedProperty, ProtectedPropertyGrade } from "./accept-guard.js";
 export {
+  TRUNCATION_TRAILER_RE,
+  truncationTrailer,
+  truncateForRead,
+  isCutRead,
+  carriesTruncationTrailer,
+  TruncatedReadError,
+  assertNotTruncatedRead,
+  wholeNoteOverwriteRefusal,
+  preQueueTruncationRefusal,
+  assertPatchRangeRead,
+  noteLengthFrom,
+  cutReadError,
+} from "./truncation.js";
+export {
   SHARED_ANNOTATIONS,
   FS_TOOLS,
   PROP_RE,

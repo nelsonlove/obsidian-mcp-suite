@@ -168,7 +168,10 @@ export interface VaultBackend {
 
   /**
    * Read the full markdown content of a single note.
-   * Large notes may be truncated with a `[truncated: …]` trailer.
+   * A backend that cuts a long note MUST cut it through `truncateForRead`
+   * (`truncation.ts`), so the trailer is the one the read tools report
+   * (`isCutRead`) and the write guard refuses (#441); a backend that does not
+   * cut returns the note whole.
    */
   readNote(relPath: string): Promise<string>;
 
