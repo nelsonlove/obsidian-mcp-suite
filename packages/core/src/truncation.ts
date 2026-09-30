@@ -66,16 +66,15 @@ const TRAILER_SRC = trailerLine(NUM, NUM)
   .split(NUM)
   .join("\\d+");
 
-/** Matches the trailer as a whole line, anywhere in the text, with any
- *  surrounding whitespace or a CR, and behind a blockquote, list or indent
- *  prefix (a cut read re-quoted line by line is still a cut read; an editor
- *  that pads, prefixes or re-terminates the line must not slip the guard).
- *  Text that merely MENTIONS the trailer inside a sentence or a code span, or
- *  with letters for the numbers, never matches; a line that IS the trailer,
- *  wherever it stands, does — that is the price of catching a cut read that
- *  a caller appended below, or closed a fence after (matching only at the
- *  end, or outside fences, would miss it). */
-export const TRUNCATION_TRAILER_RE = new RegExp(`^[ \\t>*+-]*${TRAILER_SRC}[ \\t\\r]*$`, "m");
+/** Matches the trailer with digits, anywhere in the text: on its own line,
+ *  padded, CR-terminated, behind any prefix (a cut read re-quoted line by
+ *  line as a blockquote, a list, a table row or an indent is still a cut
+ *  read), inside a fence a caller closed, or below text a caller appended.
+ *  Nothing about its position is trusted, because every position is one an
+ *  editor can produce. The one escape is the wording: a mention with letters
+ *  for the numbers (`N chars`, `showing first M`) never matches, and that is
+ *  how a doc quotes it. */
+export const TRUNCATION_TRAILER_RE = new RegExp(TRAILER_SRC);
 
 /** The trailer at the very end of a read, exactly as `truncateForRead` writes it. */
 const TRAILER_AT_END_RE = new RegExp(`\\n\\n${TRAILER_SRC}$`);

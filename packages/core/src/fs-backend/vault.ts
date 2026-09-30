@@ -745,7 +745,9 @@ class VaultImpl {
     // A replace whose section runs past the read limit on a long note would
     // replace text no cut read showed (#441).
     if (op === "replace") {
-      assertPatchRangeRead(relPath, text.length, fmText.length + bodyLines.slice(0, range.end).join("\n").length, CHARACTER_LIMIT);
+      let rangeEnd = fmText.length;
+      for (let i = 0; i < range.end; i++) rangeEnd += bodyLines[i].length + 1;
+      assertPatchRangeRead(relPath, text.length, range.end > 0 ? rangeEnd - 1 : rangeEnd, CHARACTER_LIMIT);
     }
 
     let newBodyLines: string[];

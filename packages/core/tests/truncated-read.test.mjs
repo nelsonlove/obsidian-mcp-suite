@@ -154,8 +154,8 @@ describe("a 150k note survives a read → write round trip", () => {
     await assert.rejects(backend.writeNote("Pad.md", cut + "  ", false), { code: "truncated_read" });
     await assert.rejects(backend.writeNote("Crlf.md", cut.replace(/\n/g, "\r\n"), false), { code: "truncated_read" });
     await assert.rejects(backend.writeNote("Below.md", cut + "\n\n## History\n\n- appended below the cut\n", false), { code: "truncated_read" });
-    // Re-quoted line by line (blockquote, list, indent), it is still a cut read.
-    for (const prefix of ["> ", "- ", "    ", "* "]) {
+    // Re-quoted line by line (blockquote, list, numbered, table, heading, indent), it is still a cut read.
+    for (const prefix of ["> ", "- ", "    ", "* ", "1. ", "| ", "# "]) {
       const quoted = cut.split("\n").map((l) => prefix + l).join("\n");
       await assert.rejects(backend.writeNote(`Quoted.md`, quoted, false), { code: "truncated_read" }, `prefix ${JSON.stringify(prefix)}`);
     }
@@ -291,10 +291,12 @@ describe("a 150k note survives a read → write round trip", () => {
     assert.equal(isCutReadOf("x".repeat(CHARACTER_LIMIT) + trailer.replace("chars", "characters")), false);
   });
 
-  test("a note that merely mentions the trailer inline is still writable", async () => {
+  test("a note that mentions the trailer with letters for the numbers is writable; with digits, wherever it stands, it is not", async () => {
     const { backend } = await fixture();
-    const prose = "# Note\n\nThe read tool appends `[truncated: note is N chars, showing first 100000]` to a long note.\n";
+    const prose = "# Note\n\nThe read tool appends `[truncated: note is N chars, showing first M]` to a long note.\n";
     await backend.writeNote("Prose.md", prose, false);
     assert.equal(await backend.readNote("Prose.md"), prose);
+    const digits = "# Note\n\nThe read tool appends `[truncated: note is 150000 chars, showing first 100000]` to a long note.\n";
+    await assert.rejects(backend.writeNote("Digits.md", digits, false), { code: "truncated_read" });
   });
 });

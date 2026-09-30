@@ -195,7 +195,7 @@ describe("a 150k note survives a read → write round trip", () => {
 
   test("a note that merely mentions the trailer inline is still writable", async () => {
     const { backend, store } = fixture();
-    const prose = "# Note\n\nThe read tool appends `[truncated: note is N chars, showing first 100000]` to a long note.\n";
+    const prose = "# Note\n\nThe read tool appends `[truncated: note is N chars, showing first M]` to a long note.\n";
     await backend.writeNote("Prose.md", prose, false);
     assert.equal(store.get("Prose.md"), prose);
   });
