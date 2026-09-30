@@ -38,8 +38,11 @@
  *     whole, and are bound by the same policy until #443 gives a whole read
  *     its own road). A `content` + `overwrite: true` call on such a note is
  *     refused at each transport's interception, before the queue, from the
- *     note's length on disk. A long note is edited by anchor; a whole
- *     rewrite of it waits for #443. A caller that reaches a backend directly
+ *     note's length on disk. A long note is edited by anchor, or read whole
+ *     first: `obsidian_read_note` with `full: true` returns it whole with
+ *     its rev, the transport remembers that whole read (`whole-reads.ts`),
+ *     and this rule stands aside for a call whose if_rev is that rev and the
+ *     note's current rev (#443). A caller that reaches a backend directly
  *     is not bound by that rule (it is not over MCP) — but by the next one.
  *   - `assertPatchRangeRead`, the same mechanism through the anchored road:
  *     a `replace` whose section runs past the read limit (the top heading of
@@ -47,7 +50,8 @@
  *     `patchNote` on both backends refuses a replace whose range reaches
  *     past the limit on a note longer than it. This one needs the computed
  *     range, so it runs at the write (journaled); append and prepend delete
- *     nothing and are not bound.
+ *     nothing and are not bound, and it stands aside the same way for a
+ *     proven whole read (#443).
  *
  * The read tools report a cut read as `truncated: true` (`isCutRead`). They
  * still return its `rev`: the rev is not what lost the tail, the content was,
@@ -110,7 +114,7 @@ export function carriesTruncationTrailer(text: string): boolean {
 }
 
 const WAY_OUT =
-  "Edit the note by anchor instead (obsidian_patch_note on a section that ends before the limit, obsidian_append_note, obsidian_manage_frontmatter; the read's rev is good for those). A whole rewrite of a note longer than the read limit waits for a read that returns it whole (#443).";
+  "Edit the note by anchor instead (obsidian_patch_note on a section that ends before the limit, obsidian_append_note, obsidian_manage_frontmatter; the read's rev is good for those). For a whole rewrite, read the note whole first — obsidian_read_note with full: true — and write with the rev that read returned.";
 
 /** Typed refusal — rendered as `Error [truncated_read]`. Built by the two
  *  guards below; `new TruncatedReadError(path)` is the trailer refusal. */
@@ -143,6 +147,9 @@ export async function wholeNoteOverwriteRefusal(
   args: Record<string, unknown> | undefined,
   noteLength: (path: string) => Promise<number | undefined>,
   limit: number,
+  /** True when the transport served this note whole at the rev the call is
+   *  conditioned on, and the note is still at that rev (#443). */
+  provenWhole?: (path: string) => Promise<boolean>,
 ): Promise<TruncatedReadError | null> {
   if (!args || typeof args.content !== "string" || args.overwrite !== true || typeof args.path !== "string") return null;
   // A create-only item of obsidian_write_notes is dispatched with
@@ -151,6 +158,7 @@ export async function wholeNoteOverwriteRefusal(
   if (args.create_only === true) return null;
   const onDisk = await noteLength(args.path);
   if (onDisk === undefined || onDisk <= limit) return null;
+  if (provenWhole && (await provenWhole(args.path))) return null;
   return new TruncatedReadError(
     args.path,
     `'${args.path}' is ${onDisk} chars on disk, longer than the read limit of ${limit}. A note longer than the limit is never overwritten whole over MCP: the read tools cut it there, so a whole-note write of it is a write of a cut read, whatever was edited in. Nothing was written. ${WAY_OUT}`,
@@ -184,8 +192,9 @@ export async function preQueueTruncationRefusal(
   args: Record<string, unknown> | undefined,
   noteLength: ((path: string) => Promise<number | undefined>) | undefined,
   limit: number,
+  provenWhole?: (path: string) => Promise<boolean>,
 ): Promise<TruncatedReadError | null> {
-  return cutReadError(args) ?? (noteLength ? wholeNoteOverwriteRefusal(args, noteLength, limit) : null);
+  return cutReadError(args) ?? (noteLength ? wholeNoteOverwriteRefusal(args, noteLength, limit, provenWhole) : null);
 }
 
 /** The interception-point check, for a transport's mutate step: the call's

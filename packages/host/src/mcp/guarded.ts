@@ -248,6 +248,14 @@ export interface GuardedOpts {
    */
   noteLength?: (path: string) => Promise<number | undefined>;
   /**
+   * This connection's memory of whole reads and the note's current rev
+   * (#443): the whole-note-overwrite rule stands aside for a call whose
+   * if_rev is a remembered whole read's rev for that path AND the note's
+   * current rev. Absent ⇒ no whole read is ever proven.
+   */
+  wholeReads?: { has(path: string, rev: number | undefined): boolean };
+  noteRev?: (path: string) => number | undefined;
+  /**
    * The scope-provider registry backing `jd:<address>` (and other configured
    * scheme ids) addressing. Resolved PER CALL, like `getSettings`, so a
    * scheme config edit lands live — mirrors `registerSchemeTools`'s own
@@ -558,9 +566,11 @@ async function runGuarded(opts: GuardedOpts, def: any, handler: any, name: strin
   // the cheaper refusals: after the protection check with a kernel (a call
   // without its if_rev is protection_required, as the inventory promises),
   // right here without one.
+  const provenWhole = async (path: string) =>
+    ifRev !== undefined && !!opts.wholeReads?.has(path, ifRev) && opts.noteRev?.(path) === ifRev;
   const longNoteRefusal = async () =>
     isMutating && opts.noteLength
-      ? wholeNoteOverwriteRefusal(toolArgs as Record<string, unknown>, opts.noteLength, CHARACTER_LIMIT)
+      ? wholeNoteOverwriteRefusal(toolArgs as Record<string, unknown>, opts.noteLength, CHARACTER_LIMIT, provenWhole)
       : null;
   if (!isMutating || !opts.kernel) {
     const long = await longNoteRefusal();

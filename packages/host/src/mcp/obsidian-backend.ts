@@ -98,6 +98,15 @@ export class ObsidianBackend implements VaultBackend {
      * is logged and never fails the write, the same rule capture follows.
      */
     private readonly onWriteNote?: (facts: { path: string; baseBytes: Uint8Array | null; proposedBytes: Uint8Array; created: boolean }) => void,
+    /**
+     * This connection's memory of whole reads (#443). `patchNote`'s
+     * replace-past-the-limit rule stands aside when the note's CURRENT rev is
+     * a remembered whole read: the kernel has already matched the call's
+     * if_rev to that rev at dequeue (obsidian_patch_note requires the token),
+     * so the caller conditioned the replace on the rev this connection
+     * served whole, and the note has not moved since.
+     */
+    private readonly wholeReads?: { has(path: string, rev: number | undefined): boolean },
   ) {}
 
   /**
@@ -251,6 +260,13 @@ export class ObsidianBackend implements VaultBackend {
     if (!(f instanceof TFile)) throw new Error(`not found: ${relPath}`);
     const content = await this.app.vault.read(f);
     return truncateForRead(content, CHARACTER_LIMIT);
+  }
+
+  /** The whole note, never cut (#443). */
+  async readNoteWhole(relPath: string): Promise<string> {
+    const f = this.app.vault.getAbstractFileByPath(relPath);
+    if (!(f instanceof TFile)) throw new Error(`not found: ${relPath}`);
+    return this.app.vault.read(f);
   }
 
   // ── search ──────────────────────────────────────────────────────────────────
@@ -525,7 +541,9 @@ export class ObsidianBackend implements VaultBackend {
     const previous = text.slice(start, end);
     // A replace whose section runs past the read limit on a long note would
     // replace text no cut read showed (#441).
-    if (op === "replace") assertPatchRangeRead(relPath, text.length, end, CHARACTER_LIMIT);
+    if (op === "replace" && !this.wholeReads?.has(relPath, file.stat.mtime)) {
+      assertPatchRangeRead(relPath, text.length, end, CHARACTER_LIMIT);
+    }
     let next: string;
     if (op === "replace") {
       const body = anchor.type === "heading" ? `\n\n${content}\n` : content;

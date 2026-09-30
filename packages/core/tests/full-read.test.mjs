@@ -1,0 +1,139 @@
+/**
+ * full-read.test.mjs — the road through the whole-note policy (#443).
+ *
+ * #442 made a note longer than the read limit unwritable whole over MCP. This
+ * is the proof that lets one through, and it is mechanism: `obsidian_read_note`
+ * with `full: true` serves the whole note with its rev, the transport
+ * remembers (path, rev) for the idempotency window (`WholeReads`), and the two
+ * whole-note rules stand aside for a call conditioned on that rev while the
+ * note is still at it. Pinned here over the real FilesystemBackend:
+ *   - the memory: same path and rev only, and only within the window;
+ *   - the full read: whole content, `whole: true`, the rev, the memory told,
+ *     and a backend without a whole read says so;
+ *   - the rules: they stand aside on a proven whole read and nowhere else,
+ *     and the trailer check never stands aside.
+ */
+
+import { test, describe } from "node:test";
+import assert from "node:assert/strict";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { FilesystemBackend } from "../src/fs-backend/filesystem-backend.ts";
+import { registerFsTools } from "../src/register-fs-tools.ts";
+import { CHARACTER_LIMIT } from "../src/fs-backend/vault.ts";
+import { WholeReads, WHOLE_READ_TTL_MS } from "../src/whole-reads.ts";
+import { wholeNoteOverwriteRefusal, preQueueTruncationRefusal } from "../src/truncation.ts";
+
+const LONG = 150_000;
+const BODY = "# Big\n\n" + "x".repeat(LONG - 7 - 10) + "\n\n## Tail\n";
+
+function fakeServer() {
+  const handlers = new Map();
+  return {
+    registerTool(name, meta, handler) { handlers.set(name, handler); return { name, meta }; },
+    call(name, args) { return handlers.get(name)(args); },
+  };
+}
+
+async function fixture({ rev = () => 1700, onWholeRead } = {}) {
+  const vaultRoot = await mkdtemp(join(tmpdir(), "vault-443-"));
+  const backend = new FilesystemBackend(vaultRoot);
+  await backend.writeNote("Big.md", BODY, false);
+  const server = fakeServer();
+  registerFsTools(server, backend, { rev, onWholeRead });
+  return { vaultRoot, backend, server };
+}
+
+describe("WholeReads — the memory", () => {
+  test("remembers the path at its rev, for the window, and nothing else", () => {
+    let now = 1_000_000;
+    const m = new WholeReads(WHOLE_READ_TTL_MS, () => now);
+    m.remember("A.md", 10);
+    assert.equal(m.has("A.md", 10), true);
+    assert.equal(m.has("A.md", 11), false, "another rev of the same path proves nothing");
+    assert.equal(m.has("B.md", 10), false, "a remembered rev never carries to another path");
+    assert.equal(m.has("A.md", undefined), false);
+    m.remember("A.md", 12);
+    assert.equal(m.has("A.md", 10), false, "a newer whole read replaces the older");
+    assert.equal(m.has("A.md", 12), true);
+    now += WHOLE_READ_TTL_MS + 1;
+    assert.equal(m.has("A.md", 12), false, "the window is the idempotency window");
+  });
+});
+
+describe("obsidian_read_note full: true", () => {
+  test("serves the whole note with whole: true and its rev, and tells the memory", async () => {
+    const told = [];
+    const { server } = await fixture({ onWholeRead: (p, r) => told.push([p, r]) });
+    const res = await server.call("obsidian_read_note", { path: "Big.md", full: true });
+    const sc = res.structuredContent;
+    assert.equal(sc.content, BODY);
+    assert.equal(sc.whole, true);
+    assert.equal(sc.truncated, false);
+    assert.equal(sc.rev, 1700);
+    assert.deepEqual(told, [["Big.md", 1700]]);
+  });
+
+  test("without full the read is cut as before, and the memory is not told", async () => {
+    const told = [];
+    const { server } = await fixture({ onWholeRead: (p, r) => told.push([p, r]) });
+    const sc = (await server.call("obsidian_read_note", { path: "Big.md" })).structuredContent;
+    assert.equal(sc.truncated, true);
+    assert.equal("whole" in sc, false);
+    assert.deepEqual(told, []);
+  });
+
+  test("a backend with no whole read says so", async () => {
+    const server = fakeServer();
+    registerFsTools(server, { async readNote() { return "# A"; } }, {});
+    const res = await server.call("obsidian_read_note", { path: "A.md", full: true });
+    assert.equal(res.isError, true);
+    assert.match(res.content[0].text, /cannot read a note whole/);
+  });
+
+  test("with no rev source the whole read is served but nothing is remembered", async () => {
+    const told = [];
+    const { server } = await fixture({ rev: () => undefined, onWholeRead: (p, r) => told.push([p, r]) });
+    const sc = (await server.call("obsidian_read_note", { path: "Big.md", full: true })).structuredContent;
+    assert.equal(sc.whole, true);
+    assert.equal("rev" in sc, false);
+    assert.deepEqual(told, []);
+  });
+});
+
+describe("the whole-note rules stand aside on a proven whole read only", () => {
+  const noteLength = async (p) => (p === "Big.md" || p === "Other.md" ? LONG : undefined);
+  test("the overwrite rule: proven → stands aside; not proven → refuses; the trailer check never stands aside", async () => {
+    const { backend } = await fixture();
+    const cut = await backend.readNote("Big.md");
+    const yes = async () => true;
+    const no = async () => false;
+    assert.equal(await wholeNoteOverwriteRefusal({ path: "Big.md", content: BODY, overwrite: true }, noteLength, CHARACTER_LIMIT, yes), null);
+    assert.equal((await wholeNoteOverwriteRefusal({ path: "Big.md", content: BODY, overwrite: true }, noteLength, CHARACTER_LIMIT, no))?.code, "truncated_read");
+    assert.equal((await wholeNoteOverwriteRefusal({ path: "Big.md", content: BODY, overwrite: true }, noteLength, CHARACTER_LIMIT))?.code, "truncated_read");
+    assert.match((await preQueueTruncationRefusal({ path: "Big.md", content: cut, overwrite: true }, noteLength, CHARACTER_LIMIT, yes)).message, /carries the read trailer/);
+    assert.equal(await preQueueTruncationRefusal({ path: "Big.md", content: BODY, overwrite: true }, noteLength, CHARACTER_LIMIT, yes), null);
+  });
+
+  test("the replace rule: patchNote with rangeRuleStandsAside lands a replace past the limit; without, refuses", async () => {
+    const { backend, vaultRoot } = await fixture();
+    await assert.rejects(backend.patchNote("Big.md", { type: "heading", value: "Big" }, "replace", "whole rewrite"), { code: "truncated_read" });
+    const r = await backend.patchNote("Big.md", { type: "heading", value: "Big" }, "replace", "whole rewrite", { rangeRuleStandsAside: true });
+    assert.equal(r.found, true);
+    const disk = await readFile(join(vaultRoot, "Big.md"), "utf8");
+    assert.match(disk, /^# Big\n[\s\S]*whole rewrite/);
+    assert.equal(disk.includes("## Tail"), false, "the section past the limit was replaced, as the proven whole read allows");
+    assert.ok(disk.length < 100, "the note is the rewrite, not the old body");
+  });
+
+  test("readNoteWhole is the whole note, and a rewrite from it lands through the backend", async () => {
+    const { backend, vaultRoot } = await fixture();
+    const whole = await backend.readNoteWhole("Big.md");
+    assert.equal(whole, BODY);
+    await writeFile(join(vaultRoot, "Big.md"), BODY);
+    await backend.writeNote("Big.md", whole.replace("# Big", "# Big (rewritten)"), true);
+    assert.match(await readFile(join(vaultRoot, "Big.md"), "utf8"), /^# Big \(rewritten\)/);
+  });
+});

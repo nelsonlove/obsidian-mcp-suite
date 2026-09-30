@@ -251,7 +251,7 @@ describe("a 150k note survives a read → write round trip", () => {
     assert.equal(top?.code, "truncated_read");
     assert.match(top.message, /'Big.md'/);
     assert.match(top.message, /letters \(N, M\)/, "the message tells a deliberate quoter the way out");
-    assert.match(top.message, /#443/, "and that a whole rewrite of a long note waits for #443");
+    assert.match(top.message, /full: true/, "and the road to a whole rewrite: a whole read first");
     assert.doesNotMatch(top.message, /read outside|fresh path|append_at_heading/, "it never points at a write a rule refuses, a move whose if_rev binds the wrong note, or a host-only tool");
     const noPath = cutReadError({ content: cut });
     assert.match(noPath.message, /'the target'/);
@@ -280,7 +280,7 @@ describe("a 150k note survives a read → write round trip", () => {
     const long = await wholeNoteOverwriteRefusal({ path: "Big.md", content: stripped, overwrite: true }, noteLength, CHARACTER_LIMIT);
     assert.equal(long?.code, "truncated_read");
     assert.match(long.message, /never overwritten whole over MCP/);
-    assert.match(long.message, /#443/);
+    assert.match(long.message, /full: true/);
     // Even the whole note back: over this transport it could not have been read whole.
     assert.equal((await wholeNoteOverwriteRefusal({ path: "Big.md", content: BODY, overwrite: true }, noteLength, CHARACTER_LIMIT))?.code, "truncated_read");
     // Not bound: a short note, a create, a call without content, a missing note.
