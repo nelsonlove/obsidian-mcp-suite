@@ -155,7 +155,7 @@ describe("obsidian_write_notes — batch happy path", () => {
 
 describe("obsidian_write_notes — a cut read is one item's refusal, by its own code (#441)", () => {
   test("the item is refused at the interception, before the queue; the other item writes", async () => {
-    // The refusal is makeGuarded's own (cutReadRefusal over the item's
+    // The refusal is makeGuarded's own (cutReadError over the item's
     // `content`), not the writer's: the fake writer carries no guard.
     const { call, vault, records, writeCalls } = harness();
     const cut = "# Big\n\nxxx\n\n[truncated: note is 150000 chars, showing first 100000]";
@@ -195,7 +195,7 @@ describe("obsidian_write_notes — a whole-note overwrite of a long note is one 
     assert.equal(body.error_count, 1);
     assert.equal(body.errors[0].path, "Inbox/Long.md");
     assert.equal(body.errors[0].code, "truncated_read");
-    assert.match(body.errors[0].error, /no read here returned that note whole/);
+    assert.match(body.errors[0].error, /never overwritten whole over MCP/);
     assert.equal(vault.get("Inbox/Long.md").content, long, "the long note is untouched");
     assert.equal(vault.get("Inbox/OK.md").content, "ok");
     await tick();

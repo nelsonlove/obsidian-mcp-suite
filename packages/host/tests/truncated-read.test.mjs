@@ -7,7 +7,7 @@
  * file pins that the Obsidian backend's own write, patch and append paths
  * carry the same guard as the last line, that the read tool flags a cut
  * read, and — through the REAL makeGuarded, the way server.ts registers
- * every tool — that the guard's cutReadRefusal refuses a cut read handed to
+ * every tool — that the guard's cutReadError refuses a cut read handed to
  * a tool with no check of its own (obsidian_append_at_heading) before its
  * handler runs.
  */
@@ -113,11 +113,11 @@ describe("a 150k note survives a read → write round trip", () => {
     const stripped = read.content.replace(/\n\n\[truncated:[^\n]*$/, "") + "\n\nA new paragraph of more than fifty-seven characters, added after the cut.\n";
     const res = await server.call("obsidian_write_note", { path: "Big.md", content: stripped, overwrite: true });
     assert.equal(res.isError, true);
-    assert.match(res.content[0].text, /^Error \[truncated_read\]:[\s\S]*no read here returned that note whole/);
+    assert.match(res.content[0].text, /^Error \[truncated_read\]:[\s\S]*never overwritten whole over MCP/);
     assert.equal(store.get("Big.md"), BODY);
     const whole = BODY.replace("# Big", "# Big (edited)");
     const again = await server.call("obsidian_write_note", { path: "Big.md", content: whole, overwrite: true });
-    assert.equal(again.isError, true, "over MCP, even the whole note back is refused: no read returned it whole");
+    assert.equal(again.isError, true, "over MCP, even the whole note back is refused: never overwritten whole");
     assert.equal(store.get("Big.md"), BODY);
     // A direct backend caller is bound only by the trailer check.
     await backend.writeNote("Big.md", whole, true);

@@ -20,8 +20,8 @@
  *     that would result, so a note that already carries such a line stays
  *     editable and a rewrite the caller did not author (a move healing its
  *     backlinks) is not bound. It runs before the queue at each transport's
- *     interception (`cutReadError`: the host's guarded.ts over `content` /
- *     `body`, the FS server's mutate over the same), so every tool that takes
+ *     interception (`cutReadError`: the host's guarded.ts over `content`,
+ *     the FS server's mutate over the same), so every tool that takes
  *     text is covered without knowing it, and again inside each backend write
  *     that takes text, as the last line for direct callers. No code fence is
  *     exempt: a cut can land inside a fence, and a caller that closes it would
@@ -30,13 +30,17 @@
  *     the digit match never takes for a cut.
  *   - `wholeNoteOverwriteRefusal`, the mechanism behind the marker: a caller
  *     that deletes the "junk" trailer line and writes back still loses the
- *     tail, whatever it adds. No read over this transport returns a note
- *     longer than the limit whole, so a whole-note overwrite of such a note
- *     (`content` with `overwrite: true`) is refused at each transport's
- *     interception, before the queue, from the note's length on disk. A long
- *     note is edited by anchor; a deliberate shrink below the limit goes by
- *     anchor or through a fresh path. A caller that reaches a backend
- *     directly is not bound by this rule (it did not read over the limit).
+ *     tail, whatever it adds. So the rule is a policy, stated as one: a note
+ *     longer than the read limit is never overwritten whole over MCP. The
+ *     read tools cut at the limit, so a whole-note write of such a note is a
+ *     write of a cut read wherever its text came from (a few reads —
+ *     obsidian_read_note_parsed, obsidian_get_active_note — do return it
+ *     whole, and are bound by the same policy until #443 gives a whole read
+ *     its own road). A `content` + `overwrite: true` call on such a note is
+ *     refused at each transport's interception, before the queue, from the
+ *     note's length on disk. A long note is edited by anchor; a new whole
+ *     note goes to a fresh path, then a move over the old one. A caller that
+ *     reaches a backend directly is not bound (it is not over MCP).
  *
  * The read tools report a cut read as `truncated: true` (`isCutRead`). They
  * still return its `rev`: the rev is not what lost the tail, the content was,
@@ -72,10 +76,14 @@ export function truncationTrailer(length: number, limit: number): string {
   return `\n\n${trailerLine(String(length), String(limit))}`;
 }
 
-/** Cut `content` to `limit` characters and append the trailer, or return it whole. */
+/** Cut `content` to `limit` characters and append the trailer, or return it
+ *  whole. A cut never splits a surrogate pair: when the last kept code unit
+ *  is a high surrogate, the cut moves one back, so the read is valid text. */
 export function truncateForRead(content: string, limit: number): string {
   if (content.length <= limit) return content;
-  return content.slice(0, limit) + truncationTrailer(content.length, limit);
+  const code = content.charCodeAt(limit - 1);
+  const at = code >= 0xd800 && code <= 0xdbff ? limit - 1 : limit;
+  return content.slice(0, at) + truncationTrailer(content.length, limit);
 }
 
 /** True when `content`, as a backend's `readNote` returned it, is a cut read:
@@ -93,7 +101,7 @@ export function carriesTruncationTrailer(text: string): boolean {
 }
 
 const WAY_OUT =
-  "Edit the note by anchor instead (obsidian_patch_note, obsidian_append_note, obsidian_append_at_heading, obsidian_manage_frontmatter; a cut read's rev is good for those), or rewrite it from the whole note read outside this limit.";
+  "Edit the note by anchor instead (obsidian_patch_note, obsidian_append_note, obsidian_append_at_heading, obsidian_manage_frontmatter; the read's rev is good for those), or write the new whole note to a fresh path and move it over this one.";
 
 /** Typed refusal — rendered as `Error [truncated_read]`. Built by the two
  *  guards below; `new TruncatedReadError(path)` is the trailer refusal. */
@@ -119,9 +127,9 @@ export function assertNotTruncatedRead(path: string, text: string): void {
 /** The interception-point rule for a whole-note overwrite: a call that
  *  carries `content` with `overwrite: true` for a note whose length on disk
  *  (`noteLength`, in characters; undefined when the note does not exist)
- *  exceeds the read limit is refused, because no read over the transport
- *  returned that note whole — whatever the caller did to the cut read. Run
- *  BEFORE the queue, like `cutReadError`. */
+ *  exceeds the read limit is refused: such a note is never overwritten whole
+ *  over MCP (the module doc says why). Run BEFORE the queue, like
+ *  `cutReadError`. */
 export async function wholeNoteOverwriteRefusal(
   args: Record<string, unknown> | undefined,
   noteLength: (path: string) => Promise<number | undefined>,
@@ -136,25 +144,19 @@ export async function wholeNoteOverwriteRefusal(
   if (onDisk === undefined || onDisk <= limit) return null;
   return new TruncatedReadError(
     args.path,
-    `'${args.path}' is ${onDisk} chars on disk, longer than the read limit of ${limit}: no read here returned that note whole, so a whole-note overwrite of it would write back a cut read, whatever was edited in. Nothing was written. ${WAY_OUT} ` +
-      "To shrink the note below the limit on purpose, cut it by anchor, or write the shorter note to a fresh path and move it over this one.",
+    `'${args.path}' is ${onDisk} chars on disk, longer than the read limit of ${limit}. A note longer than the limit is never overwritten whole over MCP: the read tools cut it there, so a whole-note write of it is a write of a cut read, whatever was edited in. Nothing was written. ${WAY_OUT}`,
   );
 }
 
 /** The interception-point check, for a transport's mutate step: the call's
- *  `content` or `body` argument (the names under which every tool takes text
- *  from the caller; read at the top level of the call's arguments, which is
- *  where every tool declares them — a batch item is dispatched as its own
- *  call) is a cut read. Returns the refusal, or null when the call carries
- *  none. */
+ *  `content` argument (the one name under which every tool takes note text
+ *  from the caller, at the top level of the call's arguments; an
+ *  obsidian_write_notes item's `body` is composed into `content` and
+ *  dispatched as its own call) is a cut read. Returns the refusal, or null
+ *  when the call carries none. */
 export function cutReadError(args: Record<string, unknown> | undefined): TruncatedReadError | null {
-  if (!args) return null;
-  for (const key of ["content", "body"]) {
-    const v = args[key];
-    if (typeof v === "string" && carriesTruncationTrailer(v)) {
-      return new TruncatedReadError(typeof args.path === "string" ? args.path : "the target");
-    }
-  }
-  return null;
+  const v = args?.content;
+  if (typeof v !== "string" || !carriesTruncationTrailer(v)) return null;
+  return new TruncatedReadError(typeof args?.path === "string" ? args.path : "the target");
 }
 

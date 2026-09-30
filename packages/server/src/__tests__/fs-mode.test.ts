@@ -349,7 +349,7 @@ describe("obsidian_write_note — accept-forbidden guard reaches the real fs-fai
       const stripped = cut.content.replace(/\n\n\[truncated:[^\n]*$/, "") + "\n\nA new paragraph, added after the cut, longer than any trailer could be.\n";
       const grown = await client.callTool({ name: "obsidian_write_note", arguments: { path: notePath, content: stripped, overwrite: true } });
       assert.ok(grown.isError);
-      assert.match(text(grown), /^Error \[truncated_read\]:[\s\S]*no read here returned that note whole/);
+      assert.match(text(grown), /^Error \[truncated_read\]:[\s\S]*never overwritten whole over MCP/);
       assert.equal(await readFile(path.join(tmpVault, notePath), "utf8"), body, "the note on disk is intact");
       // Only the create reached the kernel: one journal record for the path.
       const files = await readdir(tmpJournalDir);

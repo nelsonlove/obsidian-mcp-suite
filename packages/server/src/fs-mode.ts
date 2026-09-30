@@ -210,7 +210,10 @@ export function makeBackend(
    */
   // A note's length in characters for the whole-note-overwrite rule (#441);
   // a file of at most CHARACTER_LIMIT bytes cannot exceed it, so only a
-  // larger file is read.
+  // larger file is read (the rare case, and only on an overwrite of it). The
+  // check runs before the queue, so a queued write that carries the note
+  // over the limit between this check and the dequeue is not seen by it;
+  // that race is if_rev's, as for every other argument refusal.
   const noteLength = async (rel: string): Promise<number | undefined> => {
     try {
       // Through the vault's own resolver, so a path that escapes the vault
@@ -232,8 +235,9 @@ export function makeBackend(
   ): Promise<T> => {
     requireWrites();
     // A cut read handed back as `content`, or a whole-note overwrite of a
-    // note longer than the read limit, is refused before the queue, as the
-    // host's guard does (#441): unjournaled, like every argument refusal.
+    // note longer than the read limit (never done whole over MCP), is refused
+    // before the queue, as the host's guard does (#441): unjournaled, like
+    // every argument refusal.
     const cut = cutReadError(args) ?? (await wholeNoteOverwriteRefusal(args, noteLength, CHARACTER_LIMIT));
     if (cut) throw cut;
     const kernel = opts.kernel ?? getFsWriteKernel();

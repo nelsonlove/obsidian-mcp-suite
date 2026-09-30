@@ -544,12 +544,12 @@ async function runGuarded(opts: GuardedOpts, def: any, handler: any, name: strin
         `target's revision cannot be checked. Nothing was written — retry without if_rev to write unconditionally.`
     );
   }
-  // A cut read handed back as `content` or `body` is refused here, before the
-  // queue, whatever the tool (#441): the one check that covers every tool
-  // that takes text, including a satellite's (the backends carry the same
-  // check as the last line for direct callers). And a whole-note overwrite of
-  // a note longer than the read limit is refused the same way: no read over
-  // MCP returned it whole, whatever the caller did to the cut read.
+  // A cut read handed back as `content` is refused here, before the queue,
+  // whatever the tool (#441): the one check that covers every tool that
+  // takes text, including a satellite's (the backends carry the same check
+  // as the last line for direct callers). And a whole-note overwrite of a
+  // note longer than the read limit is refused the same way: such a note is
+  // never overwritten whole over MCP (core's truncation.ts says why).
   if (isMutating) {
     const cut = cutReadError(toolArgs as Record<string, unknown>);
     if (cut) return codedError(cut.code, cut.message);

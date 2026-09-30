@@ -14,9 +14,9 @@
  *   2. a cut read carries `truncated: true` beside its `rev` (an anchored edit
  *      of a long note needs the rev; the content is what is refused);
  *   3. the transports' interception checks: `cutReadError` finds a cut
- *      read under `content`/`body`, and `wholeNoteOverwriteRefusal` refuses
- *      a whole-note overwrite of a note longer than the limit, whatever the
- *      caller edited in — no read returns such a note whole.
+ *      read under `content`, and `wholeNoteOverwriteRefusal` refuses a
+ *      whole-note overwrite of a note longer than the limit, whatever the
+ *      caller edited in — such a note is never overwritten whole over MCP.
  */
 
 import { test, describe } from "node:test";
@@ -30,8 +30,7 @@ import { registerFsTools } from "../src/register-fs-tools.ts";
 import { CHARACTER_LIMIT } from "../src/fs-backend/vault.ts";
 import { isCutRead } from "../src/truncation.ts";
 const isCutReadOf = (content) => isCutRead(content, CHARACTER_LIMIT);
-import { TRUNCATION_TRAILER_RE, cutReadError, wholeNoteOverwriteRefusal, truncationTrailer } from "../src/truncation.ts";
-const cutReadRefusal = (args) => cutReadError(args);
+import { TRUNCATION_TRAILER_RE, cutReadError, wholeNoteOverwriteRefusal, truncationTrailer, truncateForRead } from "../src/truncation.ts";
 
 const LONG = 150_000;
 const BODY = "# Big\n\n" + "x".repeat(LONG - 7 - 10) + "\n\n## Tail\n"; // > CHARACTER_LIMIT
@@ -193,20 +192,32 @@ describe("a 150k note survives a read → write round trip", () => {
     await assert.rejects(backend.writeNote("Block.md", cutInFence + "\n\n```\nexample\n```\n", false), { code: "truncated_read" });
   });
 
-  test("cutReadError finds a cut read under content or body, names the path, and says the way out", async () => {
+  test("cutReadError finds a cut read under content, names the path, and says the way out", async () => {
     const { backend } = await fixture();
     const cut = await backend.readNote("Big.md");
-    assert.equal(cutReadRefusal({ path: "A.md", content: "fine" }), null);
-    assert.equal(cutReadRefusal({ path: "A.md", body: "fine" }), null);
-    const top = cutReadRefusal({ path: "Big.md", content: cut, overwrite: true });
+    assert.equal(cutReadError({ path: "A.md", content: "fine" }), null);
+    assert.equal(cutReadError(undefined), null);
+    const top = cutReadError({ path: "Big.md", content: cut, overwrite: true });
     assert.equal(top?.code, "truncated_read");
     assert.match(top.message, /'Big.md'/);
     assert.match(top.message, /letters \(N, M\)/, "the message tells a deliberate quoter the way out");
-    const body = cutReadRefusal({ body: cut });
-    assert.equal(body?.code, "truncated_read");
-    assert.match(body.message, /'the target'/);
+    assert.match(top.message, /fresh path/, "and the whole-note road: a fresh path, then a move");
+    assert.doesNotMatch(top.message, /read outside/, "it never points at a write the overwrite rule refuses");
+    const noPath = cutReadError({ content: cut });
+    assert.match(noPath.message, /'the target'/);
     // Text under another key is not the caller's note text.
-    assert.equal(cutReadRefusal({ path: "A.md", intent: cut }), null);
+    assert.equal(cutReadError({ path: "A.md", intent: cut, body: cut }), null);
+  });
+
+  test("a cut never splits a surrogate pair", () => {
+    const emoji = "😀"; // two code units
+    const text = "x".repeat(CHARACTER_LIMIT - 1) + emoji + "y".repeat(10);
+    const cut = truncateForRead(text, CHARACTER_LIMIT);
+    const kept = cut.replace(/\n\n\[truncated:[^\n]*$/, "");
+    assert.equal(kept.length, CHARACTER_LIMIT - 1, "the high surrogate at the limit is not kept alone");
+    assert.equal(kept.at(-1), "x");
+    assert.equal(kept.isWellFormed(), true);
+    assert.match(cut, TRUNCATION_TRAILER_RE);
   });
 
   test("wholeNoteOverwriteRefusal refuses a whole-note overwrite of a long note, whatever the content, and nothing else", async () => {
@@ -216,7 +227,7 @@ describe("a 150k note survives a read → write round trip", () => {
     const stripped = cut.replace(/\n\n\[truncated:[^\n]*$/, "") + "\n\nA new paragraph of more than fifty-seven characters, added after the cut.\n";
     const long = await wholeNoteOverwriteRefusal({ path: "Big.md", content: stripped, overwrite: true }, noteLength, CHARACTER_LIMIT);
     assert.equal(long?.code, "truncated_read");
-    assert.match(long.message, /no read here returned that note whole/);
+    assert.match(long.message, /never overwritten whole over MCP/);
     assert.match(long.message, /fresh path/, "the message says how to shrink on purpose");
     // Even the whole note back: over this transport it could not have been read whole.
     assert.equal((await wholeNoteOverwriteRefusal({ path: "Big.md", content: BODY, overwrite: true }, noteLength, CHARACTER_LIMIT))?.code, "truncated_read");

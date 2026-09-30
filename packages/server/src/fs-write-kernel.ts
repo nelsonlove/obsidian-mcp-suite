@@ -25,10 +25,10 @@
  *   no if_rev and no idempotency keys to produce them).
  *
  * - **Two argument refusals run BEFORE this kernel, in fs-mode.ts's `mutate`
- *   (#441), as the plugin's guard does before its queue:** a `content`/`body`
+ *   (#441), as the plugin's guard does before its queue:** a `content`
  *   that carries the read trailer (a cut read handed back), and a whole-note
  *   overwrite (`content` + `overwrite: true`) of a note longer than the read
- *   limit, which no read here returns whole. Both are `Error [truncated_read]`,
+ *   limit, which is never overwritten whole over MCP. Both are `Error [truncated_read]`,
  *   thrown before `runMutation`, so they take no queue slot and leave no
  *   journal record — like every other argument refusal, and unlike the
  *   backend's own trailer check, which is the last line for direct callers.
