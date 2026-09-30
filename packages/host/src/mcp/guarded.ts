@@ -43,7 +43,7 @@ import {
   type SchemeRegistry,
 } from "../kernel/scheme/registry.js";
 import { OperationRefusedError, type OperationExecutor } from "../kernel/operations/executor.js";
-import { TruncatedReadError } from "@vault-mcp/core";
+import { TruncatedReadError, cutReadRefusal } from "@vault-mcp/core";
 
 /** Guard/queue-level failure envelope: matches the `Error [code]: message` shape guardCall already emits. */
 function codedError(code: string, message: string) {
@@ -532,6 +532,14 @@ async function runGuarded(opts: GuardedOpts, def: any, handler: any, name: strin
       `'${name ?? def?.title ?? "this tool"}' cannot enforce if_rev: no kernel is active in this build, so the ` +
         `target's revision cannot be checked. Nothing was written — retry without if_rev to write unconditionally.`
     );
+  }
+  // A cut read handed back as `content` or `body` (at any depth) is refused
+  // here, before the queue, whatever the tool (#441): the one check that
+  // covers every tool that takes text, including a satellite's. The backends
+  // carry the same check as the last line for direct callers.
+  if (isMutating) {
+    const cut = cutReadRefusal(toolArgs);
+    if (cut) return codedError(cut.code, cut.message);
   }
   if (!isMutating || !opts.kernel) return handler(toolArgs, extra);
   // Required write protection (01.43 rules 3–4c, 01.33 rule 6f): a call that

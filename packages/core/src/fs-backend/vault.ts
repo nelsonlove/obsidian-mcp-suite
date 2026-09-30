@@ -483,12 +483,12 @@ class VaultImpl {
     content: string,
     overwrite: boolean
   ): Promise<{ path: string; created: boolean }> {
+    // A cut read handed back as the content is refused first (#441).
+    assertNotTruncatedRead(relPath, content);
     const abs = this.resolveInVault(relPath);
     if (!relPath.toLowerCase().endsWith(".md")) {
       throw new Error("Note path must end in .md");
     }
-    // A cut read handed back as the content is refused first (#441).
-    assertNotTruncatedRead(relPath, content);
     // Accept-forbidden guard over the whole note being written (issue #104):
     // a body that embeds `---\nacceptance-status: accepted\n---` lands
     // verbatim, so the guard parses the FINAL content, not a structured

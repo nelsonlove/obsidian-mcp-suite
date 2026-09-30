@@ -70,11 +70,11 @@ function fixture() {
 }
 
 describe("obsidian_read_note over the Obsidian backend", () => {
-  test("a cut read carries truncated: true and no rev; an uncut one keeps its rev", async () => {
+  test("a cut read carries truncated: true beside its rev; an uncut one keeps its exact old shape", async () => {
     const { server } = fixture();
     const big = (await server.call("obsidian_read_note", { path: "Big.md" })).structuredContent;
     assert.equal(big.truncated, true);
-    assert.equal("rev" in big, false);
+    assert.equal(big.rev, 1700);
     assert.ok(big.content.length > CHARACTER_LIMIT && big.content.length < LONG);
     const small = (await server.call("obsidian_read_note", { path: "Small.md" })).structuredContent;
     assert.deepEqual(small, { path: "Small.md", content: "# Small", rev: 1700 });

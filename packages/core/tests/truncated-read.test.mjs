@@ -11,8 +11,10 @@
  *   1. every whole-note write path (write, patch, append, and the batch that
  *      drives them) refuses content carrying the trailer line, with
  *      `Error [truncated_read]`, and the note on disk is untouched;
- *   2. a cut read carries `truncated: true` and NO `rev`, so the write that
- *      would follow it fails loudly even if the caller strips the trailer.
+ *   2. a cut read carries `truncated: true` beside its `rev` (an anchored edit
+ *      of a long note needs the rev; the content is what is refused);
+ *   3. the host's interception check, `cutReadRefusal`, finds a cut read in
+ *      any `content`/`body` argument, at any depth, before the queue.
  */
 
 import { test, describe } from "node:test";
@@ -24,7 +26,7 @@ import { join } from "node:path";
 import { FilesystemBackend } from "../src/fs-backend/filesystem-backend.ts";
 import { registerFsTools } from "../src/register-fs-tools.ts";
 import { CHARACTER_LIMIT } from "../src/fs-backend/vault.ts";
-import { TRUNCATION_TRAILER_RE } from "../src/truncation.ts";
+import { TRUNCATION_TRAILER_RE, cutReadRefusal } from "../src/truncation.ts";
 
 const LONG = 150_000;
 const BODY = "# Big\n\n" + "x".repeat(LONG - 7 - 10) + "\n\n## Tail\n"; // > CHARACTER_LIMIT
@@ -48,13 +50,13 @@ async function fixture() {
 
 const errorText = (res) => (res.isError ? res.content[0].text : "");
 
-describe("a cut read carries truncated: true and no rev", () => {
+describe("a cut read carries truncated: true beside its rev", () => {
   test("obsidian_read_note", async () => {
     const { server } = await fixture();
     const res = await server.call("obsidian_read_note", { path: "Big.md" });
     const sc = res.structuredContent;
     assert.equal(sc.truncated, true);
-    assert.equal("rev" in sc, false, "a cut read must not hand out a writable rev");
+    assert.equal(sc.rev, 1700, "the rev is good for an anchored edit of the long note");
     assert.match(sc.content, TRUNCATION_TRAILER_RE);
     assert.ok(sc.content.length > CHARACTER_LIMIT && sc.content.length < LONG);
   });
@@ -65,7 +67,7 @@ describe("a cut read carries truncated: true and no rev", () => {
     const res = await server.call("obsidian_read_notes", { paths: ["Big.md", "Small.md"] });
     const [big, small] = res.structuredContent.notes;
     assert.equal(big.truncated, true);
-    assert.equal("rev" in big, false);
+    assert.equal(big.rev, 1700);
     assert.equal(small.truncated, false);
     assert.equal(small.rev, 1700, "an uncut note in the same batch keeps its rev");
   });
@@ -142,16 +144,14 @@ describe("a 150k note survives a read → write round trip", () => {
     await assert.rejects(backend.writeNote("Below.md", cut + "\n\n## History\n\n- appended below the cut\n", false), { code: "truncated_read" });
   });
 
-  test("a note carrying a trailer-shaped line reads as NOT cut, stays editable, and heals as a backlink source", async () => {
+  test("a note documenting the trailer in a closed code fence is written, reads as NOT cut, stays editable, and heals as a backlink source", async () => {
     // The guard runs over the text the CALLER supplies, never over the note
-    // that would result. Creating this note through the backend is refused
-    // (its content IS a trailer line, on its own); on disk it is an ordinary
-    // note: it reads uncut with its rev, an append and a patch land, and a
-    // move of the note it links to rewrites the link in it.
+    // that would result, and skips a CLOSED code fence: this note is created
+    // through the backend, reads uncut with its rev, takes an append and a
+    // patch, and a move of the note it links to rewrites the link in it.
     const { server, backend, vaultRoot } = await fixture();
     const quoted = "# Doc\n\n```\n[truncated: note is 123456 chars, showing first 100000]\n```\n\nSee [[Target]].\n";
-    await assert.rejects(backend.writeNote("Doc.md", quoted, false), { code: "truncated_read" });
-    await (await import("node:fs/promises")).writeFile(join(vaultRoot, "Doc.md"), quoted);
+    await backend.writeNote("Doc.md", quoted, false);
     const res = await server.call("obsidian_read_note", { path: "Doc.md" });
     assert.deepEqual(res.structuredContent, { path: "Doc.md", content: quoted, rev: 1700 });
     await backend.appendNote("Doc.md", "\nmore\n");
@@ -165,6 +165,29 @@ describe("a 150k note survives a read → write round trip", () => {
     assert.match(disk, /\[\[Moved\]\]/, "the backlink in the note was healed");
     assert.match(disk, /more/);
     assert.match(disk, /first/);
+  });
+
+  test("a cut that leaves a code fence open is still refused", async () => {
+    const { backend } = await fixture();
+    const openFence = "# Note\n\n```\ncode that was cut here\n\n[truncated: note is 150000 chars, showing first 100000]";
+    await assert.rejects(backend.writeNote("Open.md", openFence, false), { code: "truncated_read" });
+    const closedThenTrailer = "# Note\n\n```\nquoted\n```\n\n[truncated: note is 150000 chars, showing first 100000]";
+    await assert.rejects(backend.writeNote("Closed.md", closedThenTrailer, false), { code: "truncated_read" });
+  });
+
+  test("cutReadRefusal finds a cut read in content or body at any depth, and names the path", async () => {
+    const { backend } = await fixture();
+    const cut = await backend.readNote("Big.md");
+    assert.equal(cutReadRefusal({ path: "A.md", content: "fine" }), null);
+    assert.equal(cutReadRefusal({ notes: [{ path: "A.md", body: "fine" }] }), null);
+    const top = cutReadRefusal({ path: "Big.md", content: cut, overwrite: true });
+    assert.equal(top?.code, "truncated_read");
+    assert.match(top.message, /'Big.md'/);
+    const nested = cutReadRefusal({ notes: [{ path: "A.md", body: "fine" }, { path: "B.md", body: cut }] });
+    assert.equal(nested?.code, "truncated_read");
+    assert.match(nested.message, /'the target'/);
+    // Text under another key is not the caller's note text.
+    assert.equal(cutReadRefusal({ path: "A.md", intent: cut }), null);
   });
 
   test("a note that merely mentions the trailer inline is still writable", async () => {

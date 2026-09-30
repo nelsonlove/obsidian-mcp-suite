@@ -153,18 +153,10 @@ function makeHandler(
           // content returned, and that write would silently clobber the racer.
           const revd = revField(decoded);
           const content = await backend.readNote(decoded);
-          // A cut read carries NO rev (#441): the content ends where the read
-          // limit cut it, and a write conditioned on this rev would land the
-          // cut text over the whole note. Without the rev, the overwrite that
-          // would follow is refused for its missing precondition instead.
-          // An uncut read keeps its exact old shape; `truncated: true` appears
-          // only on a cut, beside the missing rev. A cut read is longer than
-          // CHARACTER_LIMIT (uncut content never is) AND ends in the trailer
-          // (a backend that does not cut returns a long note whole), so
-          // neither a short note quoting a trailer-shaped line nor a whole
-          // long note is misread as cut.
+          // A cut read is flagged (`truncated: true`, see truncation.ts) and
+          // keeps its rev; an uncut read keeps its exact old shape (#441).
           const truncated = isCutRead(content, CHARACTER_LIMIT);
-          return ok(status({ path: decoded, content, ...(truncated ? { truncated } : revd) }));
+          return ok(status({ path: decoded, content, ...revd, ...(truncated ? { truncated } : {}) }));
         } catch (e) {
           return fail(e);
         }
@@ -185,12 +177,12 @@ function makeHandler(
               // Sampled before the read, for the same reason as obsidian_read_note.
               const revd = revField(p);
               const content = await backend.readNote(p);
-              // A cut read carries no rev, as in obsidian_read_note (#441).
+              // The cut is flagged as in obsidian_read_note (truncation.ts).
               const truncated = isCutRead(content, CHARACTER_LIMIT);
               return {
                 idx,
                 kind: "ok",
-                value: { path: p, content, truncated, ...(truncated ? {} : revd) },
+                value: { path: p, content, truncated, ...revd },
               };
             } catch (e) {
               return { idx, kind: "err", value: { path: p, error: e instanceof Error ? e.message : String(e) } };

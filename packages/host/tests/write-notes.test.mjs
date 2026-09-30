@@ -19,7 +19,6 @@ import { Kernel, WriteQueue, WriteJournal, IdempotencyStore, LockStore, UidIndex
 import { makeRegistry, DEFAULT_SCHEMES } from "../src/kernel/scheme/registry.ts";
 import { registerWriteNotesTool, batchItemWriter } from "../src/mcp/tools-write-notes.ts";
 import { parseYaml } from "./obsidian-stub.mjs";
-import { assertNotTruncatedRead } from "@vault-mcp/core";
 
 const ACTOR = { transport: "mcp", client: "claude-code/1.0.0", connection: "conn-1" };
 const OPEN_SETTINGS = { readOnly: false, allowlist: [] };
@@ -64,9 +63,6 @@ function harness({ existing = new Map(), settings = OPEN_SETTINGS, uidSource, sc
   const writeCalls = [];
   function writeNote(path, content, overwrite) {
     writeCalls.push(path);
-    // The real backend's first check (#441): a cut read is refused before
-    // anything else, and the batch must report it by its own code.
-    assertNotTruncatedRead(path, content);
     const existed = vault.has(path);
     if (existed && !overwrite) throw new Error(`exists: ${path}`);
     clock += 1;
@@ -155,8 +151,10 @@ describe("obsidian_write_notes — batch happy path", () => {
 });
 
 describe("obsidian_write_notes — a cut read is one item's refusal, by its own code (#441)", () => {
-  test("the item reports truncated_read; the other item writes; the journal records the error", async () => {
-    const { call, vault, records } = harness();
+  test("the item is refused at the interception, before the queue; the other item writes", async () => {
+    // The refusal is makeGuarded's own (cutReadRefusal over the item's
+    // `content`), not the writer's: the fake writer carries no guard.
+    const { call, vault, records, writeCalls } = harness();
     const cut = "# Big\n\nxxx\n\n[truncated: note is 150000 chars, showing first 100000]";
     const res = await call({
       notes: [
@@ -172,10 +170,10 @@ describe("obsidian_write_notes — a cut read is one item's refusal, by its own 
     assert.equal(body.errors[0].code, "truncated_read");
     assert.match(body.errors[0].error, /cut read/);
     assert.equal(vault.has("Inbox/Cut.md"), false, "nothing landed for the cut item");
+    assert.equal(writeCalls.includes("Inbox/Cut.md"), false, "the writer was never reached for the cut item");
     assert.equal(vault.get("Inbox/OK.md").content, "ok");
     await tick();
-    const rec = records().find((r) => r.target.path === "Inbox/Cut.md");
-    assert.equal(rec?.outcome, "error");
+    assert.equal(records().some((r) => r.target.path === "Inbox/Cut.md"), false, "a pre-queue refusal is not journaled");
   });
 });
 

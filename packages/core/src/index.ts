@@ -48,6 +48,7 @@ export {
   carriesTruncationTrailer,
   TruncatedReadError,
   assertNotTruncatedRead,
+  cutReadRefusal,
 } from "./truncation.js";
 export {
   SHARED_ANNOTATIONS,
