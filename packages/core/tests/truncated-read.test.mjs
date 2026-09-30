@@ -114,6 +114,34 @@ describe("a 150k note survives a read → write round trip", () => {
     });
   });
 
+  test("a small append and a small patch to the long note still land, tail intact", async () => {
+    const { backend, vaultRoot } = await fixture();
+    await backend.appendNote("Big.md", "\nmore\n");
+    const patched = await backend.patchNote("Big.md", { type: "heading", value: "Tail" }, "append", "under the tail");
+    assert.equal(patched.found, true);
+    const disk = await readFile(join(vaultRoot, "Big.md"), "utf8");
+    assert.ok(disk.startsWith(BODY.slice(0, LONG - 20)), "the head is untouched");
+    assert.match(disk, /## Tail\n[\s\S]*more[\s\S]*under the tail/);
+    assert.ok(disk.length > LONG, "nothing was cut");
+  });
+
+  test("a padded or CR-terminated trailer line is still refused", async () => {
+    const { backend } = await fixture();
+    const cut = await backend.readNote("Big.md");
+    await assert.rejects(backend.writeNote("Pad.md", cut + "  ", false), { code: "truncated_read" });
+    await assert.rejects(backend.writeNote("Crlf.md", cut.replace(/\n/g, "\r\n"), false), { code: "truncated_read" });
+    await assert.rejects(backend.writeNote("Below.md", cut + "\n\n## History\n\n- appended below the cut\n", false), { code: "truncated_read" });
+  });
+
+  test("a short note carrying a trailer-shaped line reads as NOT cut, with its rev", async () => {
+    // The cut is read from readNote's contract (length), never from the text.
+    const { server, vaultRoot } = await fixture();
+    const quoted = "# Doc\n\n```\n[truncated: note is 123456 chars, showing first 100000]\n```\n";
+    await (await import("node:fs/promises")).writeFile(join(vaultRoot, "Doc.md"), quoted);
+    const res = await server.call("obsidian_read_note", { path: "Doc.md" });
+    assert.deepEqual(res.structuredContent, { path: "Doc.md", content: quoted, rev: 1700 });
+  });
+
   test("a note that merely mentions the trailer inline is still writable", async () => {
     const { backend } = await fixture();
     const prose = "# Note\n\nThe read tool appends `[truncated: note is N chars, showing first 100000]` to a long note.\n";

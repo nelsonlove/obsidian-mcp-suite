@@ -131,7 +131,7 @@ export const FS_TOOLS: ToolDef[] = [
     name: "obsidian_read_notes",
     title: "Read multiple notes",
     description:
-      "Read several notes in one call. Returns `notes` for successful reads and `errors` for paths that failed (missing, ignored folders, etc.) — one bad path doesn't fail the whole call. Each note is truncated independently at the per-note character limit, and carries its current `rev` where the host tracks revisions (pass it back as `if_rev` on a write). Read-only.",
+      "Read several notes in one call. Returns `notes` for successful reads and `errors` for paths that failed (missing, ignored folders, etc.) — one bad path doesn't fail the whole call. Each note is truncated independently at the per-note character limit, and carries its current `rev` where the host tracks revisions (pass it back as `if_rev` on a write). A note over the limit comes back cut, with `truncated: true`, a trailing `[truncated: …]` line and NO `rev`: never write that content back (every write refuses it with Error [truncated_read]); edit such a note by anchor instead. Read-only.",
     inputSchema: {
       paths: z
         .array(z.string().min(1))

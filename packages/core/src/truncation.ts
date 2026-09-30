@@ -23,9 +23,13 @@
  *     tries anyway is refused for the missing precondition.
  */
 
-/** Matches the trailer as a whole line, anywhere in the content. A note that
- *  merely MENTIONS the trailer inside a sentence or a code span never matches. */
-export const TRUNCATION_TRAILER_RE = /^\[truncated: note is \d+ chars, showing first \d+\]$/m;
+/** Matches the trailer as a whole line, anywhere in the content, with any
+ *  surrounding whitespace or a CR (an editor that pads or re-terminates the
+ *  line must not slip the guard). A note that merely MENTIONS the trailer
+ *  inside a sentence or a code span never matches; a line that IS the trailer,
+ *  wherever it stands, does — that is the price of catching a cut read that a
+ *  caller appended below (matching only at the end would miss it). */
+export const TRUNCATION_TRAILER_RE = /^[ \t]*\[truncated: note is \d+ chars, showing first \d+\][ \t\r]*$/m;
 
 /** The trailer `readNote` appends after the cut content. */
 export function truncationTrailer(length: number, limit: number): string {

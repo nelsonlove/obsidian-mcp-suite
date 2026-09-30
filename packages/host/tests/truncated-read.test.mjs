@@ -15,6 +15,7 @@ import { installObsidianStub, TFile } from "./obsidian-stub.mjs";
 
 installObsidianStub();
 const { ObsidianBackend } = await import("../src/mcp/obsidian-backend.ts");
+const { registerComplementaryTools } = await import("../src/mcp/tools-complementary.ts");
 const { registerFsTools, CHARACTER_LIMIT } = await import("@vault-mcp/core");
 
 const LONG = 150_000;
@@ -35,7 +36,16 @@ function fakeApp(files) {
     },
     metadataCache: {
       resolvedLinks: {},
-      getFileCache: (f) => ({ headings: [{ heading: "Big", level: 1, position: { start: { offset: 20 }, end: { offset: 25 } } }] }),
+      getFileCache: (f) => {
+        const text = store.get(f.path) ?? "";
+        const headings = [];
+        const re = /^(#+) (.+)$/gm;
+        let m;
+        while ((m = re.exec(text))) {
+          headings.push({ heading: m[2], level: m[1].length, position: { start: { offset: m.index }, end: { offset: m.index + m[0].length } } });
+        }
+        return { headings };
+      },
     },
     fileManager: { processFrontMatter: async () => {} },
   };
@@ -55,6 +65,7 @@ function fixture() {
   const backend = new ObsidianBackend(app, () => null);
   const server = fakeServer();
   registerFsTools(server, backend, { rev: (p) => (store.has(p) ? 1700 : undefined) });
+  registerComplementaryTools(server, app, { getSettings: () => ({ allowlist: [] }) });
   return { backend, server, store };
 }
 
@@ -94,6 +105,34 @@ describe("a 150k note survives a read → write round trip", () => {
     assert.equal(store.get("Big.md"), BODY);
     assert.equal(store.has("Copy.md"), false);
     assert.equal(store.has("New.md"), false);
+  });
+
+  test("obsidian_append_at_heading refuses a cut read on all three of its paths", async () => {
+    const { server, store } = fixture();
+    const cut = await (await server.call("obsidian_read_note", { path: "Big.md" })).structuredContent.content;
+    const refused = (res) => res.isError === true && /^Error \[truncated_read\]/.test(res.content[0].text);
+    // existing section
+    assert.ok(refused(await server.call("obsidian_append_at_heading", { path: "Big.md", heading: "Tail", content: cut, create_if_missing: false })));
+    // new heading on an existing note
+    assert.ok(refused(await server.call("obsidian_append_at_heading", { path: "Small.md", heading: "Pasted", content: cut, create_if_missing: true })));
+    // new note
+    assert.ok(refused(await server.call("obsidian_append_at_heading", { path: "New.md", heading: "Pasted", content: cut, create_if_missing: true })));
+    assert.equal(store.get("Big.md"), BODY);
+    assert.equal(store.get("Small.md"), "# Small");
+    assert.equal(store.has("New.md"), false);
+  });
+
+  test("a small append, patch and append_at_heading on the long note still land, tail intact", async () => {
+    const { backend, server, store } = fixture();
+    await backend.appendNote("Big.md", "\nmore\n");
+    const patched = await backend.patchNote("Big.md", { type: "heading", value: "Tail" }, "append", "under the tail");
+    assert.equal(patched.found, true);
+    const res = await server.call("obsidian_append_at_heading", { path: "Big.md", heading: "Tail", content: "at the heading", create_if_missing: false });
+    assert.equal(res.isError, undefined);
+    const text = store.get("Big.md");
+    assert.ok(text.startsWith(BODY.slice(0, LONG - 40)), "the head is untouched");
+    assert.match(text, /## Tail\n[\s\S]*(more|under the tail|at the heading)/);
+    assert.ok(text.length > LONG, "nothing was cut");
   });
 
   test("a note that merely mentions the trailer inline is still writable", async () => {

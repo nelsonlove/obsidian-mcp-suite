@@ -3,6 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { type App, TFile, getAllTags } from "obsidian";
 import {
   AcceptForbiddenError,
+  assertNotTruncatedRead,
   acceptTransitionReason,
   acceptTransitionNeedsBefore,
   executeQuickAddChoice,
@@ -30,7 +31,9 @@ import { runCommandRefusal } from "./cli-policy.js";
 // AcceptForbiddenError → the write refuses), and only when the result asserts
 // acceptance at all read the BEFORE frontmatter so a legitimate edit carrying
 // an existing human-granted accepted value forward UNCHANGED is allowed.
-export function guardAppendResult(beforeText: string | null, resultingContent: string): void {
+export function guardAppendResult(path: string, beforeText: string | null, resultingContent: string): void {
+  // A cut read pasted in is refused first (#441), as guardWrittenContent does.
+  assertNotTruncatedRead(path, resultingContent);
   const after = parseGuardFrontmatter(resultingContent);
   // Result-only shortcut delegated to the shared helper (#224): an absent
   // declared protected property can be a removal, decidable only against the
@@ -159,7 +162,7 @@ export function registerComplementaryTools(server: McpServer, app: App, ctx: Ser
           }
           // Create note with the heading + content
           const newContent = `# ${heading}\n\n${content}\n`;
-          guardAppendResult(null, newContent);
+          guardAppendResult(p, null, newContent);
           await app.vault.create(p, newContent);
           return ok({ path: p, found: false, inserted: true, created_note: true });
         }
@@ -175,7 +178,7 @@ export function registerComplementaryTools(server: McpServer, app: App, ctx: Ser
           // Append heading + content to file
           const before = await app.vault.read(file);
           const appended = `\n## ${heading}\n\n${content}\n`;
-          guardAppendResult(before, before + appended);
+          guardAppendResult(p, before, before + appended);
           await app.vault.append(file, appended);
           return ok({ path: p, found: false, inserted: true, created_heading: true });
         }
@@ -196,7 +199,7 @@ export function registerComplementaryTools(server: McpServer, app: App, ctx: Ser
         const sep = tail.length === 0 || tail.startsWith("\n") ? "\n" : "\n\n";
         const next = head + content + sep + tail;
 
-        guardAppendResult(text, next);
+        guardAppendResult(p, text, next);
         await app.vault.modify(file, next);
         return ok({ path: p, found: true, inserted: true });
       } catch (e) { return fail(e); }

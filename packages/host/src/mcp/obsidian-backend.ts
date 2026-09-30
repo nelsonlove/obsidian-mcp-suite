@@ -543,10 +543,12 @@ export class ObsidianBackend implements VaultBackend {
     // normally touch the leading frontmatter, but the invariant is enforced over
     // the note that would land regardless — so the resulting frontmatter is
     // checked against the current one, and a preserved value passes untouched.
-    this.guardResultingFrontmatter(this.fmOf(text), this.fmOf(next) ?? {});
-    // A patch that pastes a cut read in is refused like a whole-note write
-    // (#441): the guard runs over the note that would land, not the argument.
+    // The same two checks guardWrittenContent runs, in the same order, over
+    // the note that would land: a cut read pasted in is refused first (#441),
+    // then the frontmatter transition — here against the text already in hand
+    // rather than a second disk read.
     assertNotTruncatedRead(relPath, next);
+    this.guardResultingFrontmatter(this.fmOf(text), this.fmOf(next) ?? {});
     await this.app.vault.modify(file, next);
     return { found: true, anchor, op, previous };
   }
