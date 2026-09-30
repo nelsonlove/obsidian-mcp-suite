@@ -4,9 +4,9 @@
 // deliberate asymmetry:
 //
 //   • IN BAND, a move heals its own links. Every move path in this plugin goes
-//     through `app.fileManager.renameFile`, Obsidian's link-updating rename, so
-//     references to a note that MOVED THROUGH US are rewritten canonically by
-//     the host at move time. There is nothing to heal afterwards.
+//     through `moveWithLinks` (move-with-links.ts): a file-level rename, then
+//     vault-mcp rewrites every link to the note and reports any damage. There is
+//     nothing to heal afterwards.
 //   • OUT OF BAND, links rot anyway: a note deleted in Finder, a rename done by
 //     another tool, a wikilink typed against a note that was never created, a
 //     uid pasted into two notes. Nothing the transport did caused it, and

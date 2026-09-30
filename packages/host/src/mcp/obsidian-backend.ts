@@ -30,6 +30,7 @@
  * are unchanged down to the object.
  */
 
+import { moveWithLinks, type LinkCheck } from "./move-with-links.js";
 import { TFile, TFolder, getAllTags, type App } from "obsidian";
 import {
   CHARACTER_LIMIT,
@@ -625,6 +626,7 @@ export class ObsidianBackend implements VaultBackend {
     to: string;
     backlinks_updated: number | null;
     backlinks_files_touched: number | null;
+    link_check?: LinkCheck;
   }> {
     if (!fromRel.endsWith(".md")) throw new Error("source must end in .md");
     if (!toRel.endsWith(".md")) throw new Error("destination must end in .md");
@@ -645,11 +647,16 @@ export class ObsidianBackend implements VaultBackend {
     }
 
     await ensureParentFolders(this.app, toRel);
+    let check: LinkCheck;
     try {
-      // renameFile always rewrites backlinks regardless of update_backlinks.
-      // When update_backlinks=false we still call renameFile (Obsidian has no
-      // rename-without-backlink-rewrite API), so the param is best-effort.
-      await this.app.fileManager.renameFile(file, toRel);
+      // A file-level rename plus our own backlink rewrite and damage check
+      // (move-with-links.ts): renameFile waits for a clean metadata cache,
+      // which under the fleet's write load took minutes per move.
+      // update_backlinks: false is now honoured (rename only).
+      check = await moveWithLinks(this.app, file, toRel, {
+        updateBacklinks: options.update_backlinks,
+        visible: (p) => this.visible([p]).length === 1,
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (trashedDest) {
@@ -660,10 +667,13 @@ export class ObsidianBackend implements VaultBackend {
       throw e;
     }
 
-    // Obsidian's renameFile rewrites backlinks internally but exposes no count.
-    // Return null to signal "unknown, not zero" — the response layer omits these
-    // fields rather than emitting a misleading 0.
-    return { from: fromRel, to: toRel, backlinks_updated: null, backlinks_files_touched: null };
+    return {
+      from: fromRel,
+      to: toRel,
+      backlinks_updated: check.links_rewritten,
+      backlinks_files_touched: check.files_rewritten.length,
+      link_check: check,
+    };
   }
 
   async deleteNote(relPath: string, confirm: true): Promise<{ path: string; deleted: true }> {

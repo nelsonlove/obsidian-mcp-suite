@@ -60,9 +60,9 @@ const TARGET_CONTENT = `---\nuid: ${UID}\ntitle: New thing\n---\n# New thing\n\n
 
 /**
  * A vault that records how it was moved (link-healing.test.mjs's three
- * spies: renameFile — link-aware, the only path moveOne should ever take;
- * vaultRename — throws, so "never reached" is a real assertion about a real
- * method; createFolder — harmless bookkeeping) PLUS a `body` map carrying
+ * spies: vaultRename — the file-level rename moveOne now takes (move-with-links.ts);
+ * renameFile — throws, so "never reached" is a real assertion about a real
+ * method (it waits for a clean metadata cache); createFolder — harmless bookkeeping) PLUS a `body` map carrying
  * each note's raw text across a rename, the way a real vault's bytes do.
  */
 function fakeApp({ files = NOTES, folders = FOLDERS, contents = {} } = {}) {
@@ -80,22 +80,28 @@ function fakeApp({ files = NOTES, folders = FOLDERS, contents = {} } = {}) {
         tree.delete(file.path);
         body.delete(file.path);
       },
+      // moveOne renames at the file level (move-with-links.ts): the bytes move
+      // with the path and are never opened for rewriting unless a link to the
+      // note must change — which no note here has.
       async rename(file, to) {
         calls.vaultRename.push([file.path, to]);
-        throw new Error("vault.rename is not link-aware — moves must go through fileManager.renameFile");
-      },
-      getMarkdownFiles: () => [...tree.values()],
-    },
-    fileManager: {
-      async renameFile(file, to) {
-        calls.renameFile.push([file.path, to]);
         const text = body.get(file.path);
         tree.delete(file.path);
         body.delete(file.path);
-        tree.set(to, new TFile(to));
-        // The real API renames bytes in place — it never opens or rewrites
-        // them, so the content simply follows the path.
+        file.path = to;
+        tree.set(to, file);
         if (text !== undefined) body.set(to, text);
+      },
+      getMarkdownFiles: () => [...tree.values()],
+      read: async (f) => body.get(f.path) ?? "",
+      cachedRead: async (f) => body.get(f.path) ?? "",
+      async process(f, fn) { const n = fn(body.get(f.path) ?? ""); body.set(f.path, n); return n; },
+    },
+    metadataCache: { resolvedLinks: {}, getFileCache: () => ({ links: [], embeds: [] }), getFirstLinkpathDest: () => null, fileToLinktext: (f) => f.basename },
+    fileManager: {
+      async renameFile(file, to) {
+        calls.renameFile.push([file.path, to]);
+        throw new Error("renameFile waits for a clean metadata cache — moves go through moveWithLinks");
       },
     },
   };
@@ -150,8 +156,8 @@ test("obsidian_assign_address moves the note through fileManager.renameFile and 
   assert.equal(res.structuredContent.address, "06.10");
 
   // It went through the link-aware rename, never the non-link-aware one.
-  assert.deepEqual(calls.renameFile, [[FROM, TO]]);
-  assert.deepEqual(calls.vaultRename, []);
+  assert.deepEqual(calls.vaultRename, [[FROM, TO]]);
+  assert.deepEqual(calls.renameFile, []);
 
   // The whole point: read the note's frontmatter back at its NEW path and
   // confirm the uid is byte-identical to what it was before the move.
