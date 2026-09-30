@@ -420,12 +420,6 @@ class VaultImpl {
    * instance it's given.
    */
   async guardWrittenContent(relPath: string, resultingContent: string): Promise<void> {
-    // A cut read is refused before anything else (#441): the trailer line
-    // means the content ends where the read limit cut it, not where the note
-    // does, and writing it would delete the tail. Checked over the content
-    // that would LAND, so a patch or an append that pastes a cut read in is
-    // caught the same way as a whole-note write.
-    assertNotTruncatedRead(relPath, resultingContent);
     const after = parseGuardFrontmatter(resultingContent);
     // The result-only shortcut is delegated to the shared helper: with declared
     // protected properties (#224) an ABSENT key can be a removal, so the before
@@ -481,7 +475,7 @@ class VaultImpl {
   async readNote(relPath: string): Promise<string> {
     const abs = this.resolveInVault(relPath);
     const content = await fs.readFile(abs, "utf8");
-    return truncateForRead(content, CHARACTER_LIMIT).content;
+    return truncateForRead(content, CHARACTER_LIMIT);
   }
 
   async writeNote(
@@ -493,6 +487,8 @@ class VaultImpl {
     if (!relPath.toLowerCase().endsWith(".md")) {
       throw new Error("Note path must end in .md");
     }
+    // A cut read handed back as the content is refused first (#441).
+    assertNotTruncatedRead(relPath, content);
     // Accept-forbidden guard over the whole note being written (issue #104):
     // a body that embeds `---\nacceptance-status: accepted\n---` lands
     // verbatim, so the guard parses the FINAL content, not a structured
@@ -516,6 +512,8 @@ class VaultImpl {
     relPath: string,
     content: string
   ): Promise<{ path: string; created: boolean }> {
+    // A cut read handed back as the fragment is refused first (#441).
+    assertNotTruncatedRead(relPath, content);
     const abs = this.resolveInVault(relPath);
     if (!relPath.toLowerCase().endsWith(".md")) {
       throw new Error("Note path must end in .md");
@@ -713,6 +711,8 @@ class VaultImpl {
     op: PatchOp,
     content: string
   ): Promise<{ found: boolean; anchor: PatchAnchor; op: PatchOp; previous?: string }> {
+    // A cut read handed back as the fragment is refused first (#441).
+    assertNotTruncatedRead(relPath, content);
     const abs = this.resolveInVault(relPath);
     if (!relPath.toLowerCase().endsWith(".md")) {
       throw new Error("Note path must end in .md");

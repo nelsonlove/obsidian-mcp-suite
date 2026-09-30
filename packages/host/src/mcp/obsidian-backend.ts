@@ -186,10 +186,6 @@ export class ObsidianBackend implements VaultBackend {
    * forward is allowed.
    */
   private async guardWrittenContent(path: string, resultingContent: string): Promise<void> {
-    // A cut read is refused before anything else (#441): the trailer line
-    // means the content ends where the read limit cut it, and writing it would
-    // delete the tail. Checked over the content that would LAND.
-    assertNotTruncatedRead(path, resultingContent);
     const after = this.fmOf(resultingContent);
     // Result-only shortcut delegated to the shared helper: with declared
     // protected properties (#224) an ABSENT key can be a removal, decidable
@@ -253,7 +249,7 @@ export class ObsidianBackend implements VaultBackend {
     const f = this.app.vault.getAbstractFileByPath(relPath);
     if (!(f instanceof TFile)) throw new Error(`not found: ${relPath}`);
     const content = await this.app.vault.read(f);
-    return truncateForRead(content, CHARACTER_LIMIT).content;
+    return truncateForRead(content, CHARACTER_LIMIT);
   }
 
   // ── search ──────────────────────────────────────────────────────────────────
@@ -498,6 +494,8 @@ export class ObsidianBackend implements VaultBackend {
     content: string,
   ): Promise<{ found: boolean; anchor: PatchAnchor; op: PatchOp; previous?: string }> {
     if (!relPath.endsWith(".md")) throw new Error("path must end in .md");
+    // A cut read handed back as the fragment is refused first (#441).
+    assertNotTruncatedRead(relPath, content);
     const file = this.app.vault.getAbstractFileByPath(relPath);
     if (!(file instanceof TFile)) throw new Error(`not found: ${relPath}`);
     const cache = this.app.metadataCache.getFileCache(file);
@@ -543,11 +541,6 @@ export class ObsidianBackend implements VaultBackend {
     // normally touch the leading frontmatter, but the invariant is enforced over
     // the note that would land regardless — so the resulting frontmatter is
     // checked against the current one, and a preserved value passes untouched.
-    // The same two checks guardWrittenContent runs, in the same order, over
-    // the note that would land: a cut read pasted in is refused first (#441),
-    // then the frontmatter transition — here against the text already in hand
-    // rather than a second disk read.
-    assertNotTruncatedRead(relPath, next);
     this.guardResultingFrontmatter(this.fmOf(text), this.fmOf(next) ?? {});
     await this.app.vault.modify(file, next);
     return { found: true, anchor, op, previous };
@@ -561,6 +554,8 @@ export class ObsidianBackend implements VaultBackend {
     overwrite: boolean,
   ): Promise<{ path: string; created: boolean }> {
     if (!relPath.endsWith(".md")) throw new Error("path must end in .md");
+    // A cut read handed back as the content is refused first (#441).
+    assertNotTruncatedRead(relPath, content);
     // Accept-forbidden guard over the whole note being written (S1/S2): a body
     // that embeds `---\nacceptance-status: accepted\n---` lands verbatim, so the
     // guard parses the FINAL content, not a structured argument.
@@ -601,6 +596,8 @@ export class ObsidianBackend implements VaultBackend {
     content: string,
   ): Promise<{ path: string; created: boolean }> {
     if (!relPath.endsWith(".md")) throw new Error("path must end in .md");
+    // A cut read handed back as the fragment is refused first (#441).
+    assertNotTruncatedRead(relPath, content);
     const existing = this.app.vault.getAbstractFileByPath(relPath);
     if (existing instanceof TFile) {
       // Appended text lands at the END, so it normally cannot touch frontmatter

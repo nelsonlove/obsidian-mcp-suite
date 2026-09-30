@@ -13,6 +13,7 @@ import type { VaultBackend, FrontmatterEditValue } from "./vault-backend.js";
 import { FS_TOOLS } from "./tool-registry.js";
 import { ok, fail } from "./responses.js";
 import { CHARACTER_LIMIT, decodeHtmlEntities } from "./fs-backend/vault.js";
+import { isCutRead } from "./truncation.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -157,12 +158,12 @@ function makeHandler(
           // cut text over the whole note. Without the rev, the overwrite that
           // would follow is refused for its missing precondition instead.
           // An uncut read keeps its exact old shape; `truncated: true` appears
-          // only on a cut, beside the missing rev. The cut is read from
-          // readNote's CONTRACT — uncut content is at most CHARACTER_LIMIT
-          // long, cut content is CHARACTER_LIMIT plus the trailer — never from
-          // the text, so a note that itself carries a trailer-shaped line is
-          // not misread as cut.
-          const truncated = content.length > CHARACTER_LIMIT;
+          // only on a cut, beside the missing rev. A cut read is longer than
+          // CHARACTER_LIMIT (uncut content never is) AND ends in the trailer
+          // (a backend that does not cut returns a long note whole), so
+          // neither a short note quoting a trailer-shaped line nor a whole
+          // long note is misread as cut.
+          const truncated = isCutRead(content, CHARACTER_LIMIT);
           return ok(status({ path: decoded, content, ...(truncated ? { truncated } : revd) }));
         } catch (e) {
           return fail(e);
@@ -184,9 +185,8 @@ function makeHandler(
               // Sampled before the read, for the same reason as obsidian_read_note.
               const revd = revField(p);
               const content = await backend.readNote(p);
-              // A cut read carries no rev, as in obsidian_read_note (#441), and
-              // the cut is read from readNote's contract (length), as there.
-              const truncated = content.length > CHARACTER_LIMIT;
+              // A cut read carries no rev, as in obsidian_read_note (#441).
+              const truncated = isCutRead(content, CHARACTER_LIMIT);
               return {
                 idx,
                 kind: "ok",

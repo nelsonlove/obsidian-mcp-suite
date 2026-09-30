@@ -135,6 +135,16 @@ describe("a 150k note survives a read → write round trip", () => {
     assert.ok(text.length > LONG, "nothing was cut");
   });
 
+  test("a note already carrying a trailer-shaped line stays editable by append and patch", async () => {
+    const { backend, store } = fixture();
+    const quoted = "# Doc\n\n```\n[truncated: note is 123456 chars, showing first 100000]\n```\n";
+    store.set("Doc.md", quoted);
+    await backend.appendNote("Doc.md", "\nmore\n");
+    const patched = await backend.patchNote("Doc.md", { type: "heading", value: "Doc" }, "prepend", "first");
+    assert.equal(patched.found, true);
+    assert.match(store.get("Doc.md"), /first[\s\S]*more/);
+  });
+
   test("a note that merely mentions the trailer inline is still writable", async () => {
     const { backend, store } = fixture();
     const prose = "# Note\n\nThe read tool appends `[truncated: note is N chars, showing first 100000]` to a long note.\n";

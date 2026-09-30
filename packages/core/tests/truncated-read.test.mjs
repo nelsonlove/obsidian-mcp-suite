@@ -24,10 +24,10 @@ import { join } from "node:path";
 import { FilesystemBackend } from "../src/fs-backend/filesystem-backend.ts";
 import { registerFsTools } from "../src/register-fs-tools.ts";
 import { CHARACTER_LIMIT } from "../src/fs-backend/vault.ts";
+import { TRUNCATION_TRAILER_RE } from "../src/truncation.ts";
 
 const LONG = 150_000;
 const BODY = "# Big\n\n" + "x".repeat(LONG - 7 - 10) + "\n\n## Tail\n"; // > CHARACTER_LIMIT
-const TRAILER_RE = /^\[truncated: note is \d+ chars, showing first \d+\]$/m;
 
 function fakeServer() {
   const handlers = new Map();
@@ -55,7 +55,7 @@ describe("a cut read carries truncated: true and no rev", () => {
     const sc = res.structuredContent;
     assert.equal(sc.truncated, true);
     assert.equal("rev" in sc, false, "a cut read must not hand out a writable rev");
-    assert.match(sc.content, TRAILER_RE);
+    assert.match(sc.content, TRUNCATION_TRAILER_RE);
     assert.ok(sc.content.length > CHARACTER_LIMIT && sc.content.length < LONG);
   });
 
@@ -75,6 +75,15 @@ describe("a cut read carries truncated: true and no rev", () => {
     await backend.writeNote("Small.md", "# Small", false);
     const res = await server.call("obsidian_read_note", { path: "Small.md" });
     assert.deepEqual(res.structuredContent, { path: "Small.md", content: "# Small", rev: 1700 });
+  });
+});
+
+describe("a backend that does not cut", () => {
+  test("a long note returned whole reads as NOT cut and keeps its rev", async () => {
+    const server = fakeServer();
+    registerFsTools(server, { async readNote() { return BODY; } }, { rev: () => 1700 });
+    const res = await server.call("obsidian_read_note", { path: "Big.md" });
+    assert.deepEqual(res.structuredContent, { path: "Big.md", content: BODY, rev: 1700 });
   });
 });
 
@@ -133,13 +142,29 @@ describe("a 150k note survives a read → write round trip", () => {
     await assert.rejects(backend.writeNote("Below.md", cut + "\n\n## History\n\n- appended below the cut\n", false), { code: "truncated_read" });
   });
 
-  test("a short note carrying a trailer-shaped line reads as NOT cut, with its rev", async () => {
-    // The cut is read from readNote's contract (length), never from the text.
-    const { server, vaultRoot } = await fixture();
-    const quoted = "# Doc\n\n```\n[truncated: note is 123456 chars, showing first 100000]\n```\n";
+  test("a note carrying a trailer-shaped line reads as NOT cut, stays editable, and heals as a backlink source", async () => {
+    // The guard runs over the text the CALLER supplies, never over the note
+    // that would result. Creating this note through the backend is refused
+    // (its content IS a trailer line, on its own); on disk it is an ordinary
+    // note: it reads uncut with its rev, an append and a patch land, and a
+    // move of the note it links to rewrites the link in it.
+    const { server, backend, vaultRoot } = await fixture();
+    const quoted = "# Doc\n\n```\n[truncated: note is 123456 chars, showing first 100000]\n```\n\nSee [[Target]].\n";
+    await assert.rejects(backend.writeNote("Doc.md", quoted, false), { code: "truncated_read" });
     await (await import("node:fs/promises")).writeFile(join(vaultRoot, "Doc.md"), quoted);
     const res = await server.call("obsidian_read_note", { path: "Doc.md" });
     assert.deepEqual(res.structuredContent, { path: "Doc.md", content: quoted, rev: 1700 });
+    await backend.appendNote("Doc.md", "\nmore\n");
+    const patched = await backend.patchNote("Doc.md", { type: "heading", value: "Doc" }, "prepend", "first");
+    assert.equal(patched.found, true);
+    await backend.writeNote("Target.md", "# Target", false);
+    await backend.forceReindex();
+    const moved = await backend.moveNote("Target.md", "Moved.md", { update_backlinks: true, overwrite: false });
+    assert.equal(moved.backlinks_files_touched, 1);
+    const disk = await readFile(join(vaultRoot, "Doc.md"), "utf8");
+    assert.match(disk, /\[\[Moved\]\]/, "the backlink in the note was healed");
+    assert.match(disk, /more/);
+    assert.match(disk, /first/);
   });
 
   test("a note that merely mentions the trailer inline is still writable", async () => {

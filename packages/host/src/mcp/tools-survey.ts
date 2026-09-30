@@ -217,7 +217,7 @@ export function registerSurveyTools(server: McpServer, app: App, ctx: SurveyTool
         // range), so plan.newBody IS the resulting full content — checked
         // exactly, not a reconstruction that could drift from what's written.
         try {
-          guardAppendResult(path, currentBody, plan.newBody as string);
+          guardAppendResult(currentBody, plan.newBody as string);
         } catch (e) {
           if (e instanceof AcceptForbiddenError) return codedError("accept_forbidden", e.message);
           throw e;

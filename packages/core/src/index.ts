@@ -44,6 +44,7 @@ export {
   TRUNCATION_TRAILER_RE,
   truncationTrailer,
   truncateForRead,
+  isCutRead,
   carriesTruncationTrailer,
   TruncatedReadError,
   assertNotTruncatedRead,

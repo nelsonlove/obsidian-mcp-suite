@@ -43,6 +43,7 @@ import {
   type SchemeRegistry,
 } from "../kernel/scheme/registry.js";
 import { OperationRefusedError, type OperationExecutor } from "../kernel/operations/executor.js";
+import { TruncatedReadError } from "@vault-mcp/core";
 
 /** Guard/queue-level failure envelope: matches the `Error [code]: message` shape guardCall already emits. */
 function codedError(code: string, message: string) {
@@ -590,6 +591,9 @@ async function runGuarded(opts: GuardedOpts, def: any, handler: any, name: strin
     if (e instanceof RevConflictError) return codedError(e.code, e.message);
     if (e instanceof RecordImmutableError) return codedError(e.code, e.message);
     if (e instanceof IdempotencyMismatchError) return codedError(e.code, e.message);
+    // A cut read refused inside the queued closure (#441) is a typed tool
+    // error too, so obsidian_write_notes reports the item as truncated_read.
+    if (e instanceof TruncatedReadError) return codedError(e.code, e.message);
     throw e;
   }
 }

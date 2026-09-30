@@ -31,9 +31,7 @@ import { runCommandRefusal } from "./cli-policy.js";
 // AcceptForbiddenError → the write refuses), and only when the result asserts
 // acceptance at all read the BEFORE frontmatter so a legitimate edit carrying
 // an existing human-granted accepted value forward UNCHANGED is allowed.
-export function guardAppendResult(path: string, beforeText: string | null, resultingContent: string): void {
-  // A cut read pasted in is refused first (#441), as guardWrittenContent does.
-  assertNotTruncatedRead(path, resultingContent);
+export function guardAppendResult(beforeText: string | null, resultingContent: string): void {
   const after = parseGuardFrontmatter(resultingContent);
   // Result-only shortcut delegated to the shared helper (#224): an absent
   // declared protected property can be a removal, decidable only against the
@@ -154,6 +152,9 @@ export function registerComplementaryTools(server: McpServer, app: App, ctx: Ser
     async ({ path: p, heading, content, create_if_missing }) => {
       try {
         if (!p.endsWith(".md")) return fail(new Error("path must end in .md"));
+        // A cut read handed back as the fragment is refused first (#441), on
+        // all three of the paths below.
+        assertNotTruncatedRead(p, content);
         const file = app.vault.getAbstractFileByPath(p);
 
         if (!(file instanceof TFile)) {
@@ -162,7 +163,7 @@ export function registerComplementaryTools(server: McpServer, app: App, ctx: Ser
           }
           // Create note with the heading + content
           const newContent = `# ${heading}\n\n${content}\n`;
-          guardAppendResult(p, null, newContent);
+          guardAppendResult(null, newContent);
           await app.vault.create(p, newContent);
           return ok({ path: p, found: false, inserted: true, created_note: true });
         }
@@ -178,7 +179,7 @@ export function registerComplementaryTools(server: McpServer, app: App, ctx: Ser
           // Append heading + content to file
           const before = await app.vault.read(file);
           const appended = `\n## ${heading}\n\n${content}\n`;
-          guardAppendResult(p, before, before + appended);
+          guardAppendResult(before, before + appended);
           await app.vault.append(file, appended);
           return ok({ path: p, found: false, inserted: true, created_heading: true });
         }
@@ -199,7 +200,7 @@ export function registerComplementaryTools(server: McpServer, app: App, ctx: Ser
         const sep = tail.length === 0 || tail.startsWith("\n") ? "\n" : "\n\n";
         const next = head + content + sep + tail;
 
-        guardAppendResult(p, text, next);
+        guardAppendResult(text, next);
         await app.vault.modify(file, next);
         return ok({ path: p, found: true, inserted: true });
       } catch (e) { return fail(e); }
