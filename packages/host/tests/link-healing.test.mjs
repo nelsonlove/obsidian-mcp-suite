@@ -4,12 +4,16 @@
  *
  * Healing has two halves, and this file pins both:
  *
- *   • IN BAND — a move through this server heals its own links, because every
- *     move path renames through `app.fileManager.renameFile`, Obsidian's
- *     link-updating API. `vault.rename` moves the bytes and leaves every
- *     backlink pointing at a note that is no longer there, so calling it is the
- *     regression this file exists to catch. The fake app's `vault.rename`
- *     THROWS: a future refactor that reaches for it fails loudly here.
+ *   • IN BAND — a move through this server heals its own links. Since Nelson's
+ *     "B" (2026-09-29) it does so WITHOUT `app.fileManager.renameFile`, whose
+ *     link update waits for a clean metadata cache (minutes per move under the
+ *     fleet's write load): every move path goes through `moveWithLinks`
+ *     (move-with-links.ts), which renames at the file level and rewrites the
+ *     backlinks itself, then checks for damage. This file pins that every move
+ *     path uses it, that `renameFile` is reached nowhere, and that
+ *     `vault.rename` is called from move-with-links.ts ONLY (a bare vault.rename
+ *     anywhere else would move the bytes and orphan every backlink). The
+ *     rewrite itself is pinned in move-with-links.test.mjs.
  *   • OUT OF BAND — drift that no move of ours caused is REPORTED, never
  *     repaired (Assent ch6: the rail detects, the human fixes).
  *     `obsidian_check_links` is read-only, takes no queue slot, and discloses
@@ -45,14 +49,16 @@ const ACTOR = { transport: "mcp", client: "claude-code/1.0.0", connection: "abc-
 // ── a vault that records how it was moved ─────────────────────────────────────
 
 /**
- * The three surfaces a move touches, each a spy. `vault.rename` exists and
- * throws — present so "it was never called" is a real assertion about a real
- * method rather than about a typo.
+ * The surfaces a move touches, each a spy. `fileManager.renameFile` exists and
+ * THROWS — present so "it was never called" is a real assertion about a real
+ * method: reaching it again would bring back the wait for a clean cache.
  */
-function fakeVault({ files = ["Notes/A.md"], folders = ["Notes"] } = {}) {
-  const tree = new Map(files.map((p) => [p, new TFile(p)]));
+function fakeVault({ files = ["Notes/A.md"], folders = ["Notes"], texts = {} } = {}) {
+  const tree = new Map(files.map((p) => { const f = new TFile(p); f.stat = { mtime: 1, size: (texts[p] ?? "").length }; return [p, f]; }));
+  const text = new Map(files.map((p) => [p, texts[p] ?? ""]));
   const dirs = new Set(folders);
   const calls = { renameFile: [], vaultRename: [], trash: [], createFolder: [] };
+  const fileCache = Object.fromEntries(files.map((p) => [p, { mtime: 1, size: (texts[p] ?? "").length }]));
   const app = {
     vault: {
       getAbstractFileByPath: (p) => tree.get(p) ?? (dirs.has(p) ? new TFolder(p) : null),
@@ -66,20 +72,32 @@ function fakeVault({ files = ["Notes/A.md"], folders = ["Notes"] } = {}) {
       },
       async rename(file, to) {
         calls.vaultRename.push([file.path, to]);
-        throw new Error("vault.rename is not link-aware — moves must go through fileManager.renameFile");
+        const t = text.get(file.path); text.delete(file.path); tree.delete(file.path);
+        fileCache[to] = fileCache[file.path]; delete fileCache[file.path];
+        file.path = to; file.basename = to.split("/").pop().replace(/\.md$/, ""); file.name = to.split("/").pop();
+        tree.set(to, file); text.set(to, t);
       },
       getMarkdownFiles: () => [...tree.values()],
+      read: async (f) => text.get(f.path),
+      cachedRead: async (f) => text.get(f.path),
+      async process(f, fn) { const n = fn(text.get(f.path)); text.set(f.path, n); return n; },
     },
     fileManager: {
       async renameFile(file, to) {
         calls.renameFile.push([file.path, to]);
-        tree.delete(file.path);
-        tree.set(to, new TFile(to));
+        throw new Error("renameFile waits for a clean metadata cache — moves go through moveWithLinks");
       },
     },
-    metadataCache: { unresolvedLinks: {} },
+    metadataCache: {
+      unresolvedLinks: {},
+      resolvedLinks: {},
+      fileCache,
+      getFileCache: () => ({ links: [], embeds: [], frontmatterLinks: [] }),
+      getFirstLinkpathDest: (lp) => [...tree.values()].find((f) => f.basename === lp || f.path === lp || f.path === `${lp}.md`) ?? null,
+      fileToLinktext: (f) => f.basename,
+    },
   };
-  return { app, calls, tree };
+  return { app, calls, tree, text };
 }
 
 function fakeServer() {
@@ -92,48 +110,40 @@ function fakeServer() {
   };
 }
 
-// ── A. moves are link-aware ───────────────────────────────────────────────────
+// ── A. moves are link-aware, without waiting for a clean cache ─────────────────
 
-describe("moves rename through Obsidian's link-updating API", () => {
-  test("obsidian_move_note (fs tool → ObsidianBackend) calls fileManager.renameFile, never vault.rename", async () => {
-    const { app, calls, tree } = fakeVault();
+describe("moves rewrite their own links and never wait on renameFile", () => {
+  test("obsidian_move_note (fs tool → ObsidianBackend) renames through moveWithLinks, never renameFile, and reports counts and a clean link check", async () => {
+    const { app, calls, tree } = fakeVault({ files: ["Notes/A.md", "Notes/S.md"], texts: { "Notes/S.md": "see [[A]]\n" } });
+    app.metadataCache.resolvedLinks = { "Notes/S.md": { "Notes/A.md": 1 } };
+    app.metadataCache.getFileCache = (f) => (f.path === "Notes/S.md" ? { links: [{ link: "A", original: "[[A]]", position: { start: { offset: 4 }, end: { offset: 9 } } }], embeds: [] } : { links: [], embeds: [] });
     const s = fakeServer();
     registerFsTools(s.server, new ObsidianBackend(app), { decodeHtml: false });
 
-    const res = await s.call("obsidian_move_note", {
-      from: "Notes/A.md",
-      to: "Archive/2026/A.md",
-      update_backlinks: true,
-      overwrite: false,
-    });
+    const res = await s.call("obsidian_move_note", { from: "Notes/A.md", to: "Archive/2026/A2.md", update_backlinks: true, overwrite: false });
 
     assert.equal(res.isError, undefined, res.content?.[0]?.text);
-    assert.deepEqual(calls.renameFile, [["Notes/A.md", "Archive/2026/A.md"]]);
-    assert.deepEqual(calls.vaultRename, [], "vault.rename would move the bytes and orphan every backlink");
-    assert.equal(tree.has("Archive/2026/A.md"), true);
-    // Obsidian rewrites backlinks internally and reports no count, so the
-    // response omits the fields rather than claiming zero.
+    assert.deepEqual(calls.renameFile, [], "renameFile waits for a clean metadata cache");
+    assert.deepEqual(calls.vaultRename, [["Notes/A.md", "Archive/2026/A2.md"]]);
+    assert.equal(tree.has("Archive/2026/A2.md"), true);
     assert.equal(res.structuredContent.moved, true);
-    assert.equal("backlinks_updated" in res.structuredContent, false);
+    assert.equal(res.structuredContent.backlinks_updated, 1, "the count is known now");
+    assert.equal(res.structuredContent.backlinks_files_touched, 1);
+    assert.equal(res.structuredContent.link_check.ok, true, JSON.stringify(res.structuredContent.link_check));
   });
 
-  test("update_backlinks:false still renames through fileManager — there is no non-rewriting rename", async () => {
-    const { app, calls } = fakeVault();
+  test("update_backlinks:false now renames only: no link is rewritten", async () => {
+    const { app, calls, text } = fakeVault({ files: ["Notes/A.md", "Notes/S.md"], texts: { "Notes/S.md": "see [[A]]\n" } });
     const s = fakeServer();
     registerFsTools(s.server, new ObsidianBackend(app), { decodeHtml: false });
-
-    await s.call("obsidian_move_note", {
-      from: "Notes/A.md",
-      to: "Notes/B.md",
-      update_backlinks: false,
-      overwrite: false,
-    });
-
-    assert.deepEqual(calls.renameFile, [["Notes/A.md", "Notes/B.md"]]);
-    assert.deepEqual(calls.vaultRename, []);
+    const res = await s.call("obsidian_move_note", { from: "Notes/A.md", to: "Notes/B.md", update_backlinks: false, overwrite: false });
+    assert.equal(res.isError, undefined, res.content?.[0]?.text);
+    assert.deepEqual(calls.vaultRename, [["Notes/A.md", "Notes/B.md"]]);
+    assert.equal(text.get("Notes/S.md"), "see [[A]]\n");
+    assert.equal(res.structuredContent.backlinks_updated, 0);
   });
 
-  test("obsidian_move_notes (batch) routes every item through fileManager.renameFile", async () => {
+  test("obsidian_move_notes (batch) routes every item through moveWithLinks and reports each item's link check", async () => {
     const { app, calls } = fakeVault({ files: ["Notes/A.md", "Notes/B.md"], folders: ["Notes"] });
     const s = fakeServer();
     registerVaultWriteTools(s.server, app);
@@ -148,14 +158,16 @@ describe("moves rename through Obsidian's link-updating API", () => {
 
     assert.equal(res.isError, undefined);
     assert.equal(res.structuredContent.count, 2);
-    assert.deepEqual(calls.renameFile, [
+    assert.equal(res.structuredContent.links_ok, true);
+    assert.ok(res.structuredContent.moved.every((m) => m.link_check.ok === true));
+    assert.deepEqual(calls.vaultRename, [
       ["Notes/A.md", "Archive/A.md"],
       ["Notes/B.md", "Archive/B.md"],
     ]);
-    assert.deepEqual(calls.vaultRename, []);
+    assert.deepEqual(calls.renameFile, []);
   });
 
-  test("an overwriting move trashes the destination recoverably, then renames link-aware", async () => {
+  test("an overwriting move trashes the destination recoverably, then moves", async () => {
     const { app, calls } = fakeVault({ files: ["Notes/A.md", "Notes/B.md"] });
     const s = fakeServer();
     registerVaultWriteTools(s.server, app);
@@ -163,31 +175,31 @@ describe("moves rename through Obsidian's link-updating API", () => {
     await s.call("obsidian_move_notes", { moves: [{ from: "Notes/A.md", to: "Notes/B.md" }], overwrite: true });
 
     assert.deepEqual(calls.trash, [["Notes/B.md", true]], "system trash, so the overwritten note is recoverable");
-    assert.deepEqual(calls.renameFile, [["Notes/A.md", "Notes/B.md"]]);
-    assert.deepEqual(calls.vaultRename, []);
+    assert.deepEqual(calls.vaultRename, [["Notes/A.md", "Notes/B.md"]]);
+    assert.deepEqual(calls.renameFile, []);
   });
 
-  // The scan globs `src/**/*.ts` rather than a hand-kept list of four files
-  // (D4): the invariant is "NOWHERE in the plugin source", and a list only
-  // covers the files somebody remembered — a new tools-*.ts, or a helper moved
-  // out of one of the four, would leave the guarantee unenforced while the test
-  // kept passing. The scan is proven live below, against a planted violation.
-  async function vaultRenameOffenders() {
+  // The scan globs `src/**/*.ts` rather than a hand-kept list of files (D4):
+  // the invariant is "NOWHERE in the plugin source, except the one module that
+  // owns the move", and a list only covers the files somebody remembered. It is
+  // proven live below, against a planted violation.
+  const ALLOWED = "mcp/move-with-links.ts";
+  async function moveOffenders() {
     const offenders = [];
     for await (const rel of glob("**/*.ts", { cwd: SRC })) {
       const text = await readFile(resolvePath(SRC, rel), "utf8");
       for (const line of text.split("\n")) {
         const trimmed = line.trimStart();
-        if (/\bvault\s*\.\s*rename\s*\(/.test(line) && !trimmed.startsWith("*") && !trimmed.startsWith("//")) {
-          offenders.push(`${rel}: ${trimmed}`);
-        }
+        if (trimmed.startsWith("*") || trimmed.startsWith("//")) continue;
+        if (/\bfileManager\s*\.\s*renameFile\s*\(/.test(line)) offenders.push(`${rel}: ${trimmed}`);
+        if (/\bvault\s*\.\s*rename\s*\(/.test(line) && rel !== ALLOWED) offenders.push(`${rel}: ${trimmed}`);
       }
     }
     return offenders;
   }
 
-  test("no move path anywhere in the plugin source reaches for vault.rename", async () => {
-    assert.deepEqual(await vaultRenameOffenders(), [], "use app.fileManager.renameFile — vault.rename orphans backlinks");
+  test("no path in the plugin source calls renameFile, and only move-with-links.ts calls vault.rename", async () => {
+    assert.deepEqual(await moveOffenders(), [], "move through moveWithLinks: renameFile waits for a clean cache, and a bare vault.rename orphans backlinks");
   });
 
   test("the scan actually catches one: a planted vault.rename in a scratch module fails it", async () => {
@@ -199,18 +211,19 @@ describe("moves rename through Obsidian's link-updating API", () => {
           "// Scratch module planted by link-healing.test.mjs, removed in the same test.",
           "export async function move(app: any, file: any, to: string) {",
           "  await app.vault.rename(file, to);",
+          "  await app.fileManager.renameFile(file, to);",
           "}",
           "",
         ].join("\n")
       );
-      const offenders = await vaultRenameOffenders();
-      assert.equal(offenders.length, 1, `the glob missed a planted violation: ${JSON.stringify(offenders)}`);
-      assert.match(offenders[0], /__vault-rename-scratch\.ts: await app\.vault\.rename\(file, to\);/);
+      const offenders = await moveOffenders();
+      assert.equal(offenders.length, 2, `the glob missed a planted violation: ${JSON.stringify(offenders)}`);
+      assert.match(offenders.join("\n"), /__vault-rename-scratch\.ts: await app\.vault\.rename\(file, to\);/);
     } finally {
       await rm(planted, { force: true });
     }
     // And the tree is clean again, so the real assertion above still means what it says.
-    assert.deepEqual(await vaultRenameOffenders(), []);
+    assert.deepEqual(await moveOffenders(), []);
   });
 });
 

@@ -425,11 +425,13 @@ function makeHandler(
           const r = await backend.moveNote(decodedFrom, decodedTo, { update_backlinks, overwrite });
           // Backlink count fields are number|null. null means "backend performed the
           // operation but cannot determine the count" (e.g. the live Obsidian backend
-          // uses renameFile which rewrites backlinks internally). Omit null fields
+          // once used renameFile, which rewrote backlinks without a count). Omit null fields
           // rather than emitting a misleading 0.
           const resp: Record<string, unknown> = { from: r.from, to: r.to, moved: true };
           if (r.backlinks_updated !== null) resp.backlinks_updated = r.backlinks_updated;
           if (r.backlinks_files_touched !== null) resp.backlinks_files_touched = r.backlinks_files_touched;
+          // The live host checks its own backlink rewrite for damage and says what it found.
+          if (r.link_check !== undefined) resp.link_check = r.link_check;
           return ok(status(resp));
         } catch (e) {
           return fail(e);

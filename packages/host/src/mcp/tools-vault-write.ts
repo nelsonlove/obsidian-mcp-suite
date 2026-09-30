@@ -7,13 +7,14 @@
 // obsidian_repoint_link (repoint broken wikilinks) and obsidian_rename_heading
 // (rename a heading and heal every link to it, #424) — along with their helpers.
 
+import { moveWithLinks, TextCache, type LinkCheck, type MoveWithLinksOptions } from "./move-with-links.js";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { type App, TFile } from "obsidian";
 import { ok, fail, okError, validateMoves } from "./helpers.js";
 import { repointLinksInText } from "./repoint.js";
 import { applyEdits, headingKey, newHeadingRefusal, rewriteHeadingLine, rewriteLinkOriginal, type Edit } from "./rename-heading.js";
-import { visiblePaths, type GuardSettings } from "../guard.js";
+import { isVisible, visiblePaths, type GuardSettings } from "../guard.js";
 
 export const RW = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
 
@@ -50,7 +51,13 @@ async function ensureParentFolders(app: App, filePath: string): Promise<void> {
   }
 }
 
-export async function moveOne(app: App, from: string, to: string, overwrite: boolean): Promise<void> {
+/**
+ * Move one note and rewrite its backlinks ourselves (move-with-links.ts): a
+ * file-level rename that does not wait for Obsidian's metadata cache to go
+ * clean, followed by the rewrite and a damage check whose findings are
+ * returned, never swallowed.
+ */
+export async function moveOne(app: App, from: string, to: string, overwrite: boolean, opts: MoveWithLinksOptions = {}): Promise<LinkCheck> {
   if (!from.endsWith(".md")) throw new Error("source must end in .md");
   if (!to.endsWith(".md")) throw new Error("destination must end in .md");
   if (from === to) throw new Error("from and to are the same path");
@@ -68,7 +75,7 @@ export async function moveOne(app: App, from: string, to: string, overwrite: boo
   }
   await ensureParentFolders(app, to);
   try {
-    await app.fileManager.renameFile(file, to);
+    return await moveWithLinks(app, file, to, opts);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     if (trashedDest)
@@ -83,7 +90,7 @@ export function registerVaultWriteTools(server: McpServer, app: App, ctx: VaultW
     {
       title: "Move/rename multiple notes",
       description:
-        "Move or rename several notes in one call. Items are processed sequentially; backlinks are rewritten canonically by Obsidian's fileManager.renameFile. A runtime-failed item (missing source, existing destination) is reported in `errors` and does not fail the call, but if every item fails the call is flagged as an error. Statically invalid batches are rejected up front with no moves performed: a non-.md path, an item whose from and to are identical, or a path appearing twice as a source, twice as a destination, or as both (swaps/chains) — compared after normalization.",
+        "Move or rename several notes in one call. Items are processed sequentially. Each note is renamed at the file level (no wait for Obsidian's index) and vault-mcp rewrites every link to it itself, then checks for damage: each item's `link_check` reports any link still naming the old path, any note reaching the note fewer times than before, any note it could not rewrite, and `ok`; `links_ok` is false if any item found damage. A runtime-failed item (missing source, existing destination) is reported in `errors` and does not fail the call, but if every item fails the call is flagged as an error. Statically invalid batches are rejected up front with no moves performed: a non-.md path, an item whose from and to are identical, or a path appearing twice as a source, twice as a destination, or as both (swaps/chains) — compared after normalization.",
       inputSchema: {
         moves: z
           .array(
@@ -105,17 +112,22 @@ export function registerVaultWriteTools(server: McpServer, app: App, ctx: VaultW
     async ({ moves, overwrite }) => {
       const invalid = validateMoves(moves);
       if (invalid) return fail(new Error(`invalid batch, no moves performed — ${invalid}`));
-      const moved: Array<{ from: string; to: string }> = [];
+      const moved: Array<{ from: string; to: string; link_check: LinkCheck }> = [];
       const errors: Array<{ from: string; to: string; error: string }> = [];
+      // One read of the vault's text for the whole batch (see TextCache).
+      const texts = new TextCache(app);
       for (const { from, to } of moves) {
         try {
-          await moveOne(app, from, to, overwrite);
-          moved.push({ from, to });
+          const settings = ctx.getSettings?.();
+          const link_check = await moveOne(app, from, to, overwrite, { visible: (p) => (settings ? isVisible(p, settings) : true), texts });
+          moved.push({ from, to, link_check });
         } catch (e) {
           errors.push({ from, to, error: e instanceof Error ? e.message : String(e) });
         }
       }
-      const payload = { count: moved.length, error_count: errors.length, moved, errors };
+      const links_ok = moved.every((m) => m.link_check.ok);
+      const files = [...new Set(moved.flatMap((m) => [m.to, ...m.link_check.files_rewritten]))];
+      const payload = { count: moved.length, error_count: errors.length, links_ok, moved, errors, filesChanged: files.length, files };
       // Partial failure is tolerated, but total failure must carry the standard MCP error flag.
       return moved.length === 0 ? okError(payload) : ok(payload);
     }

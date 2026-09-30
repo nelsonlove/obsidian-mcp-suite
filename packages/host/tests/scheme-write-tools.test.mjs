@@ -44,10 +44,10 @@ const FOLDERS = [
   "Random",
 ];
 
-/** A vault that records how it was moved — same three spies as
- * link-healing.test.mjs's fakeVault: renameFile (link-aware, the only one
- * moveOne should ever call), vaultRename (throws — proves it's never
- * reached), and createFolder (harmless no-op bookkeeping). */
+/** A vault that records how it was moved — same spies as
+ * link-healing.test.mjs's fakeVault: vaultRename (the file-level rename
+ * moveOne takes through move-with-links.ts), renameFile (throws — proves it's
+ * never reached: it waits for a clean metadata cache), and createFolder. */
 function fakeApp({ files = NOTES, folders = FOLDERS } = {}) {
   const tree = new Map(files.map((p) => [p, new TFile(p)]));
   const dirs = new Set(folders);
@@ -65,15 +65,20 @@ function fakeApp({ files = NOTES, folders = FOLDERS } = {}) {
       },
       async rename(file, to) {
         calls.vaultRename.push([file.path, to]);
-        throw new Error("vault.rename is not link-aware — moves must go through fileManager.renameFile");
+        tree.delete(file.path);
+        file.path = to;
+        tree.set(to, file);
       },
       getMarkdownFiles: () => [...tree.values()],
+      read: async (f) => "",
+      cachedRead: async (f) => "",
+      async process(f, fn) { const n = fn(""); BODY.set(f.path, n); return n; },
     },
+    metadataCache: { resolvedLinks: {}, getFileCache: () => ({ links: [], embeds: [] }), getFirstLinkpathDest: () => null, fileToLinktext: (f) => f.basename },
     fileManager: {
       async renameFile(file, to) {
         calls.renameFile.push([file.path, to]);
-        tree.delete(file.path);
-        tree.set(to, new TFile(to));
+        throw new Error("renameFile waits for a clean metadata cache — moves go through moveWithLinks");
       },
     },
   };
@@ -129,10 +134,10 @@ describe("obsidian_assign_address", () => {
       address: "06.10",
       moves: [{ from: "Unfiled/New thing.md", to: "00-09 System/06 Agent tooling/06.10 New thing.md" }],
     });
-    assert.deepEqual(calls.renameFile, [], "a dry run must not move anything");
+    assert.deepEqual(calls.vaultRename, [], "a dry run must not move anything");
   });
 
-  test("dry_run: false performs the move via fileManager.renameFile, never vault.rename", async () => {
+  test("dry_run: false performs the move via the file-level rename (moveWithLinks), never fileManager.renameFile", async () => {
     const { call, calls, tree } = toolServer();
     const res = await call("obsidian_assign_address", { path: "Unfiled/New thing.md", scope: "06", dry_run: false });
     assert.equal(res.isError, undefined, res.content?.[0]?.text);
@@ -143,8 +148,8 @@ describe("obsidian_assign_address", () => {
       filesChanged: 1,
       files: ["00-09 System/06 Agent tooling/06.10 New thing.md"],
     });
-    assert.deepEqual(calls.renameFile, [["Unfiled/New thing.md", "00-09 System/06 Agent tooling/06.10 New thing.md"]]);
-    assert.deepEqual(calls.vaultRename, []);
+    assert.deepEqual(calls.vaultRename, [["Unfiled/New thing.md", "00-09 System/06 Agent tooling/06.10 New thing.md"]]);
+    assert.deepEqual(calls.renameFile, []);
     assert.equal(tree.has("00-09 System/06 Agent tooling/06.10 New thing.md"), true);
   });
 
@@ -153,7 +158,7 @@ describe("obsidian_assign_address", () => {
     const res = await call("obsidian_assign_address", { path: "Unfiled/New thing.md", scope: "not a scope!", dry_run: true });
     assert.equal(res.isError, true);
     assert.match(res.content[0].text, /Error \[invalid_scope\]/);
-    assert.deepEqual(calls.renameFile, []);
+    assert.deepEqual(calls.vaultRename, []);
   });
 
   test("an unknown scheme id is a plain refusal (an argument problem, not a scope problem)", async () => {
@@ -168,7 +173,7 @@ describe("obsidian_assign_address", () => {
     const res = await call("obsidian_assign_address", { path: "Unfiled/New thing.md", scope: "06", dry_run: true });
     assert.equal(res.isError, true);
     assert.match(res.content[0].text, /Error \[out_of_allowlist\]/);
-    assert.deepEqual(calls.renameFile, []);
+    assert.deepEqual(calls.vaultRename, []);
   });
 
   test("an exhausted scope surfaces planAssign's own error verbatim via fail()", async () => {
@@ -194,15 +199,15 @@ describe("obsidian_refile_address", () => {
       address: "06.13",
       moves: [{ from: "Random/06.13 Oops.md", to: "00-09 System/06 Agent tooling/06.13 Oops.md" }],
     });
-    assert.deepEqual(calls.renameFile, []);
+    assert.deepEqual(calls.vaultRename, []);
   });
 
   test("dry_run: false performs the move via fileManager.renameFile", async () => {
     const { call, calls, tree } = toolServer();
     const res = await call("obsidian_refile_address", { path: "Random/06.13 Oops.md", dry_run: false });
     assert.equal(res.isError, undefined, res.content?.[0]?.text);
-    assert.deepEqual(calls.renameFile, [["Random/06.13 Oops.md", "00-09 System/06 Agent tooling/06.13 Oops.md"]]);
-    assert.deepEqual(calls.vaultRename, []);
+    assert.deepEqual(calls.vaultRename, [["Random/06.13 Oops.md", "00-09 System/06 Agent tooling/06.13 Oops.md"]]);
+    assert.deepEqual(calls.renameFile, []);
     assert.equal(tree.has("00-09 System/06 Agent tooling/06.13 Oops.md"), true);
     assert.equal(res.structuredContent.address, "06.13");
     assert.equal(res.structuredContent.filesChanged, 1);
@@ -216,7 +221,7 @@ describe("obsidian_refile_address", () => {
       assert.equal(res.isError, undefined, res.content?.[0]?.text);
       assert.deepEqual(res.structuredContent, { dry_run, address: "06.11", moves: [], already_correct: true });
     }
-    assert.deepEqual(calls.renameFile, []);
+    assert.deepEqual(calls.vaultRename, []);
   });
 
   test("a note with no address in any configured scheme is refused", async () => {
@@ -231,7 +236,7 @@ describe("obsidian_refile_address", () => {
     const res = await call("obsidian_refile_address", { path: "Random/06.13 Oops.md", dry_run: true });
     assert.equal(res.isError, true);
     assert.match(res.content[0].text, /Error \[out_of_allowlist\]/);
-    assert.deepEqual(calls.renameFile, []);
+    assert.deepEqual(calls.vaultRename, []);
   });
 });
 
@@ -253,7 +258,7 @@ describe("obsidian_renumber_address", () => {
       moves: [{ from: "Unfiled/New thing.md", to: "00-09 System/06 Agent tooling/06.20 New thing.md" }],
       displaced: null,
     });
-    assert.deepEqual(calls.renameFile, []);
+    assert.deepEqual(calls.vaultRename, []);
   });
 
   test("dry_run: false performs the single move when the target is free", async () => {
@@ -265,7 +270,7 @@ describe("obsidian_renumber_address", () => {
       on_occupied: "fail",
     });
     assert.equal(res.isError, undefined, res.content?.[0]?.text);
-    assert.deepEqual(calls.renameFile, [["Unfiled/New thing.md", "00-09 System/06 Agent tooling/06.20 New thing.md"]]);
+    assert.deepEqual(calls.vaultRename, [["Unfiled/New thing.md", "00-09 System/06 Agent tooling/06.20 New thing.md"]]);
     assert.equal(res.structuredContent.address, "06.20");
     assert.equal(res.structuredContent.filesChanged, 1);
     assert.deepEqual(res.structuredContent.files, ["00-09 System/06 Agent tooling/06.20 New thing.md"]);
@@ -281,7 +286,7 @@ describe("obsidian_renumber_address", () => {
     });
     assert.equal(res.isError, true);
     assert.match(res.content[0].text, /occupied/);
-    assert.deepEqual(calls.renameFile, []);
+    assert.deepEqual(calls.vaultRename, []);
   });
 
   // The fake harness (like scheme-tools.test.mjs's and link-healing.test.mjs's)
@@ -308,7 +313,7 @@ describe("obsidian_renumber_address", () => {
       { from: "Unfiled/New thing.md", to: "00-09 System/06 Agent tooling/06.11 New thing.md" },
     ]);
     assert.equal(res.structuredContent.displaced, "00-09 System/06 Agent tooling/06.10 Vault MCP.md");
-    assert.deepEqual(calls.renameFile, []);
+    assert.deepEqual(calls.vaultRename, []);
   });
 
   test("on_occupied 'auto' — apply performs BOTH moves, occupant strictly before source (call-log order)", async () => {
@@ -320,11 +325,11 @@ describe("obsidian_renumber_address", () => {
       on_occupied: "auto",
     });
     assert.equal(res.isError, undefined, res.content?.[0]?.text);
-    assert.deepEqual(calls.renameFile, [
+    assert.deepEqual(calls.vaultRename, [
       ["00-09 System/06 Agent tooling/06.11 Vault MCP.md", "00-09 System/06 Agent tooling/06.10 Vault MCP.md"],
       ["Unfiled/New thing.md", "00-09 System/06 Agent tooling/06.11 New thing.md"],
     ]);
-    assert.deepEqual(calls.vaultRename, []);
+    assert.deepEqual(calls.renameFile, []);
     assert.equal(tree.has("00-09 System/06 Agent tooling/06.10 Vault MCP.md"), true);
     assert.equal(tree.has("00-09 System/06 Agent tooling/06.11 New thing.md"), true);
     assert.equal(res.structuredContent.displaced, "00-09 System/06 Agent tooling/06.10 Vault MCP.md");
@@ -345,7 +350,7 @@ describe("obsidian_renumber_address", () => {
       displace_to_address: "06.50",
     });
     assert.equal(res.isError, undefined, res.content?.[0]?.text);
-    assert.deepEqual(calls.renameFile, [
+    assert.deepEqual(calls.vaultRename, [
       ["00-09 System/06 Agent tooling/06.11 Vault MCP.md", "00-09 System/06 Agent tooling/06.50 Vault MCP.md"],
       ["Unfiled/New thing.md", "00-09 System/06 Agent tooling/06.11 New thing.md"],
     ]);
@@ -361,14 +366,14 @@ describe("obsidian_renumber_address", () => {
     });
     assert.equal(res.isError, true);
     assert.match(res.content[0].text, /displace_to/);
-    assert.deepEqual(calls.renameFile, []);
+    assert.deepEqual(calls.vaultRename, []);
   });
 
   test("an unparseable `to_address` is refused before any planning runs", async () => {
     const { call, calls } = toolServer();
     const res = await call("obsidian_renumber_address", { path: "Unfiled/New thing.md", to_address: "not an address!", dry_run: true });
     assert.equal(res.isError, true);
-    assert.deepEqual(calls.renameFile, []);
+    assert.deepEqual(calls.vaultRename, []);
   });
 
   test("an unparseable displace_to_address (on_occupied manual) is refused before any planning runs", async () => {
@@ -381,7 +386,7 @@ describe("obsidian_renumber_address", () => {
       displace_to_address: "not an address!",
     });
     assert.equal(res.isError, true);
-    assert.deepEqual(calls.renameFile, []);
+    assert.deepEqual(calls.vaultRename, []);
   });
 
   test("a path outside the allowlist is a coded out_of_allowlist refusal", async () => {
@@ -389,18 +394,18 @@ describe("obsidian_renumber_address", () => {
     const res = await call("obsidian_renumber_address", { path: "Unfiled/New thing.md", to_address: "06.20", dry_run: true });
     assert.equal(res.isError, true);
     assert.match(res.content[0].text, /Error \[out_of_allowlist\]/);
-    assert.deepEqual(calls.renameFile, []);
+    assert.deepEqual(calls.vaultRename, []);
   });
 
   test("a partial failure mid-execution reports which step landed and which failed, naming both paths", async () => {
     const { app, calls, tree } = fakeApp();
-    // Make the SECOND move (the source note into 06.11) fail by having
-    // fileManager.renameFile throw only for that specific destination —
-    // the occupant's own displacement (the first step) must still succeed.
-    const originalRename = app.fileManager.renameFile.bind(app.fileManager);
-    app.fileManager.renameFile = async (file, to) => {
+    // Make the SECOND move (the source note into 06.11) fail by having the
+    // file-level rename throw only for that specific destination — the
+    // occupant's own displacement (the first step) must still succeed.
+    const originalRename = app.vault.rename.bind(app.vault);
+    app.vault.rename = async (file, to) => {
       if (to === "00-09 System/06 Agent tooling/06.11 New thing.md") {
-        calls.renameFile.push([file.path, to]);
+        calls.vaultRename.push([file.path, to]);
         throw new Error("simulated failure");
       }
       return originalRename(file, to);
@@ -465,7 +470,7 @@ describe("computed destination containment (finding #3)", () => {
       assert.equal(res.isError, true, res.content?.[0]?.text);
       assert.match(res.content[0].text, /Error \[out_of_allowlist\]/);
       assert.match(res.content[0].text, /computed destination/);
-      assert.deepEqual(calls.renameFile, [], `dry_run=${dry_run}: no move must be attempted once the destination check refuses it`);
+      assert.deepEqual(calls.vaultRename, [], `dry_run=${dry_run}: no move must be attempted once the destination check refuses it`);
     }
   });
 });
@@ -482,7 +487,7 @@ describe("excludedRoots discipline (finding #4)", () => {
     const res = await call("obsidian_assign_address", { path: "Vault archaeology/loose.md", scope: "06", dry_run: true });
     assert.equal(res.isError, true);
     assert.match(res.content[0].text, /excluded/);
-    assert.deepEqual(calls.renameFile, []);
+    assert.deepEqual(calls.vaultRename, []);
   });
 
   test("obsidian_renumber_address refuses when `path` itself is under an excluded root", async () => {
@@ -496,7 +501,7 @@ describe("excludedRoots discipline (finding #4)", () => {
     });
     assert.equal(res.isError, true);
     assert.match(res.content[0].text, /excluded/);
-    assert.deepEqual(calls.renameFile, []);
+    assert.deepEqual(calls.vaultRename, []);
   });
 
   test("obsidian_refile_address refuses when the note's only recognizing instance excludes it", async () => {
@@ -506,7 +511,7 @@ describe("excludedRoots discipline (finding #4)", () => {
     const res = await call("obsidian_refile_address", { path: "Vault archaeology/06.13 Archived.md", dry_run: true });
     assert.equal(res.isError, true);
     assert.match(res.content[0].text, /excludedRoots/);
-    assert.deepEqual(calls.renameFile, []);
+    assert.deepEqual(calls.vaultRename, []);
   });
 
   test("a note under an excluded root is not counted as an occupant — the address it duplicates reads as free", async () => {
@@ -529,7 +534,7 @@ describe("excludedRoots discipline (finding #4)", () => {
       on_occupied: "fail",
     });
     assert.equal(res.isError, undefined, res.content?.[0]?.text);
-    assert.deepEqual(calls.renameFile, [["Unfiled/New thing.md", "00-09 System/06 Agent tooling/06.11 New thing.md"]]);
+    assert.deepEqual(calls.vaultRename, [["Unfiled/New thing.md", "00-09 System/06 Agent tooling/06.11 New thing.md"]]);
   });
 });
 
@@ -586,7 +591,7 @@ describe("obsidian_renumber_address through the real guard wrapper (finding #2)"
     assert.equal(res.isError, undefined, res.content?.[0]?.text);
     assert.doesNotMatch(res.content?.[0]?.text ?? "", /out_of_allowlist/);
     assert.equal(res.structuredContent.address, "06.20");
-    assert.deepEqual(calls.renameFile, [], "dry_run must not move anything");
+    assert.deepEqual(calls.vaultRename, [], "dry_run must not move anything");
   });
 });
 
@@ -610,7 +615,7 @@ describe("obsidian_refile_address instance-selection ambiguity (PR #214 finding 
     assert.match(res.content[0].text, /Error \[scheme_ambiguous\]/);
     assert.match(res.content[0].text, /jd1/);
     assert.match(res.content[0].text, /jd2/);
-    assert.deepEqual(calls.renameFile, []);
+    assert.deepEqual(calls.vaultRename, []);
   });
 
   test("a single configured instance is unaffected — still refiles normally", async () => {
@@ -633,7 +638,7 @@ describe("path must end in .md, checked upfront (PR #214 finding #3)", () => {
     assert.equal(res.isError, true);
     assert.match(res.content[0].text, /must end in \.md/);
     assert.equal(res.structuredContent, undefined, "dry_run: true must never return a plan for a rejected path");
-    assert.deepEqual(calls.renameFile, []);
+    assert.deepEqual(calls.vaultRename, []);
   });
 
   test("obsidian_refile_address rejects a non-.md path immediately", async () => {
@@ -642,7 +647,7 @@ describe("path must end in .md, checked upfront (PR #214 finding #3)", () => {
     assert.equal(res.isError, true);
     assert.match(res.content[0].text, /must end in \.md/);
     assert.equal(res.structuredContent, undefined);
-    assert.deepEqual(calls.renameFile, []);
+    assert.deepEqual(calls.vaultRename, []);
   });
 
   test("obsidian_renumber_address rejects a non-.md path immediately", async () => {
@@ -651,7 +656,7 @@ describe("path must end in .md, checked upfront (PR #214 finding #3)", () => {
     assert.equal(res.isError, true);
     assert.match(res.content[0].text, /must end in \.md/);
     assert.equal(res.structuredContent, undefined);
-    assert.deepEqual(calls.renameFile, []);
+    assert.deepEqual(calls.vaultRename, []);
   });
 });
 
