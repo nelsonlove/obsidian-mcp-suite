@@ -44,12 +44,14 @@ import {
   registerFsTools,
   preQueueTruncationRefusal,
   noteLengthFrom,
+  WholeReads,
+  readNoteWhole,
   CHARACTER_LIMIT,
   resolveInVault,
 } from "@vault-mcp/core";
 import type { VaultBackend, VaultWatcherHandle } from "@vault-mcp/core";
 import path from "node:path";
-import { promises as fsp } from "node:fs";
+import { promises as fsp, statSync } from "node:fs";
 import { FsWriteKernel, defaultJournalDir } from "./fs-write-kernel.js";
 
 /** This server's version, as asserted in MCP serverInfo and journal identity. */
@@ -192,6 +194,24 @@ export class FsWritesDisabledError extends Error {
 // singletons are pinned to VAULT_PATH at process start, which is the same
 // root the vault watcher uses — keeping the index consistent.
 
+/**
+ * The FS server's memory of whole reads (#443), one per process: its servers
+ * are stateless per request and its writes carry no if_rev, so a whole-note
+ * rule stands aside when the note's CURRENT mtime is a remembered whole
+ * read's rev — the note is unchanged since some whole read this process
+ * served. A read's `rev` on this transport is the file's mtime in ms.
+ */
+const fsWholeReads = new WholeReads();
+
+/** The FS transport's rev for a note: its mtime in ms; undefined when it cannot be read. */
+export function fsNoteRev(rel: string): number | undefined {
+  try {
+    return statSync(resolveInVault(rel)).mtimeMs;
+  } catch {
+    return undefined;
+  }
+}
+
 export function makeBackend(
   opts: { allowWrites?: boolean; kernel?: FsWriteKernel } = {},
 ): VaultBackend {
@@ -236,6 +256,9 @@ export function makeBackend(
     }
     return noteLengthFrom(size, () => fsp.readFile(abs, "utf8"), CHARACTER_LIMIT);
   };
+  // A whole-note rule stands aside when the note is unchanged since a whole
+  // read this process served (#443).
+  const provenWhole = async (rel: string): Promise<boolean> => fsWholeReads.has(rel, fsNoteRev(rel));
   const mutate = async <T>(
     op: string,
     target: { path?: string; paths?: string[] },
@@ -247,7 +270,7 @@ export function makeBackend(
     // note longer than the read limit (never done whole over MCP), is refused
     // before the queue, as the host's guard does (#441): unjournaled, like
     // every argument refusal.
-    const cut = await preQueueTruncationRefusal(args, noteLength, CHARACTER_LIMIT);
+    const cut = await preQueueTruncationRefusal(args, noteLength, CHARACTER_LIMIT, provenWhole);
     if (cut) throw cut;
     const kernel = opts.kernel ?? getFsWriteKernel();
     return kernel.runMutation(op, target, args, fn);
@@ -259,6 +282,8 @@ export function makeBackend(
     listFolders: (subdir) => listFolders(subdir),
 
     readNote: (relPath) => readNote(relPath),
+
+    readNoteWhole: (relPath) => readNoteWhole(relPath),
 
     searchNotes: (query, limit, mode) => searchNotes(query, limit, mode),
 
@@ -301,13 +326,15 @@ export function makeBackend(
       );
     },
 
-    patchNote: async (relPath, anchor, op, content) =>
-      mutate(
+    patchNote: async (relPath, anchor, op, content) => {
+      const rangeRuleStandsAside = await provenWhole(relPath);
+      return mutate(
         "obsidian_patch_note",
         { path: relPath },
         { path: relPath, anchor, op, content },
-        () => patchNote(relPath, anchor, op, content),
-      ),
+        () => patchNote(relPath, anchor, op, content, { rangeRuleStandsAside }),
+      );
+    },
 
     writeNote: async (relPath, content, overwrite) =>
       mutate(
@@ -370,6 +397,11 @@ export function buildFsServer(opts?: FsHandlerOpts): McpServer {
   registerFsTools(server, makeBackend({ allowWrites: opts?.allowWrites, kernel: opts?.kernel }), {
     decodeHtml: true,
     includeIndexStatus: (opts?.indexStatus ?? true) ? indexStatus : undefined,
+    // A read's rev on this transport is the file's mtime (#443); FS writes
+    // carry no if_rev, so it conditions nothing here — it names the whole
+    // read the process remembers.
+    rev: (p) => fsNoteRev(p),
+    onWholeRead: (p, rev) => fsWholeReads.remember(p, rev),
   });
 
   return server;

@@ -54,6 +54,7 @@ export {
   noteLengthFrom,
   cutReadError,
 } from "./truncation.js";
+export { WholeReads, WHOLE_READ_TTL_MS } from "./whole-reads.js";
 export {
   SHARED_ANNOTATIONS,
   FS_TOOLS,
@@ -94,6 +95,7 @@ export {
   resolveInVault,
   listNotes,
   readNote,
+  readNoteWhole,
   writeNote,
   appendNote,
   searchNotes,

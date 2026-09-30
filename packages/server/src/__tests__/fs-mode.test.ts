@@ -18,7 +18,7 @@
 
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile, mkdir, readdir, readFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, mkdir, readdir, readFile, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -355,6 +355,46 @@ describe("obsidian_write_note — accept-forbidden guard reaches the real fs-fai
       const files = await readdir(tmpJournalDir);
       const lines = (await Promise.all(files.map((f) => readFile(path.join(tmpJournalDir, f), "utf8")))).join("\n").split("\n").filter(Boolean);
       assert.equal(lines.filter((l) => l.includes(notePath)).length, 1, "the two refusals left no journal record");
+    } finally {
+      await teardown();
+    }
+  });
+
+  test("full: true is the road through the whole-note policy on the FS server, while the note is unchanged (#443)", async () => {
+    const { client, teardown } = await makeClientFromFsServer();
+    const notePath = "fs-mode-443/Big.md";
+    const body = "# Big\n\n" + "x".repeat(150_000) + "\n\n## Tail\n";
+    const text = (r: Awaited<ReturnType<typeof client.callTool>>) => (r.content as Array<{ type: string; text: string }>)[0].text;
+    const parsed = (r: Awaited<ReturnType<typeof client.callTool>>) => JSON.parse(text(r)) as { content: string; rev?: number; whole?: boolean; truncated: boolean };
+    try {
+      const created = await client.callTool({ name: "obsidian_write_note", arguments: { path: notePath, content: body, overwrite: false } });
+      assert.ok(!created.isError, `unexpected error: ${text(created)}`);
+      // Not proven: an overwrite after a cut read is refused.
+      const cut = parsed(await client.callTool({ name: "obsidian_read_note", arguments: { path: notePath } }));
+      assert.equal(cut.truncated, true);
+      const refused = await client.callTool({ name: "obsidian_write_note", arguments: { path: notePath, content: body.replace("# Big", "# Big (from a cut read)"), overwrite: true } });
+      assert.ok(refused.isError);
+      assert.match(text(refused), /^Error \[truncated_read\]/);
+      // Proven: a whole read, then the overwrite lands.
+      const whole = parsed(await client.callTool({ name: "obsidian_read_note", arguments: { path: notePath, full: true } }));
+      assert.equal(whole.whole, true);
+      assert.equal(whole.content, body);
+      assert.equal(typeof whole.rev, "number", "an FS read carries the mtime as its rev");
+      const landed = await client.callTool({ name: "obsidian_write_note", arguments: { path: notePath, content: body.replace("# Big", "# Big (rewritten)"), overwrite: true } });
+      assert.ok(!landed.isError, `unexpected error: ${text(landed)}`);
+      assert.match(await readFile(path.join(tmpVault, notePath), "utf8"), /^# Big \(rewritten\)/);
+      // Spent: the note moved with that write; the next overwrite needs a new whole read.
+      const again = await client.callTool({ name: "obsidian_write_note", arguments: { path: notePath, content: body.replace("# Big", "# Big (again)"), overwrite: true } });
+      assert.ok(again.isError);
+      assert.match(text(again), /^Error \[truncated_read\]/);
+      // A whole read, then a change from outside (the file touched on disk): refused, the rev moved.
+      parsed(await client.callTool({ name: "obsidian_read_note", arguments: { path: notePath, full: true } }));
+      const later = new Date(Date.now() + 5_000);
+      await utimes(path.join(tmpVault, notePath), later, later);
+      const stale = await client.callTool({ name: "obsidian_write_note", arguments: { path: notePath, content: body.replace("# Big", "# Big (stale)"), overwrite: true } });
+      assert.ok(stale.isError);
+      assert.match(text(stale), /^Error \[truncated_read\]/);
+      assert.match(await readFile(path.join(tmpVault, notePath), "utf8"), /^# Big \(rewritten\)/, "the note on disk is the one rewrite that was proven");
     } finally {
       await teardown();
     }

@@ -36,6 +36,13 @@ export interface RegisterFsToolsOpts {
    */
   decodeHtml?: boolean;
   /**
+   * Called when `obsidian_read_note` served a note WHOLE with `full: true`
+   * and a rev (#443): the transport remembers (path, rev) so a whole-note
+   * overwrite conditioned on that rev can pass. Sampled before the content is
+   * read, like the rev itself.
+   */
+  onWholeRead?: (path: string, rev: number) => void;
+  /**
    * When provided, the return value is merged into every read-tool response as
    * `index_status`. Also read before/after for obsidian_force_reindex timing.
    */
@@ -69,12 +76,12 @@ type ToolRegistrar = { registerTool(name: string, meta: any, handler: (args: any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function registerFsTools(server: any, backend: VaultBackend, opts: RegisterFsToolsOpts = {}): void {
   const reg = server as ToolRegistrar;
-  const { decodeHtml = false, includeIndexStatus, rev } = opts;
+  const { decodeHtml = false, includeIndexStatus, rev, onWholeRead } = opts;
 
   const dec = (s: string): string => (decodeHtml ? decodeHtmlEntities(s) : s);
 
   for (const tool of FS_TOOLS) {
-    const handler = makeHandler(tool.name, backend, dec, includeIndexStatus, rev);
+    const handler = makeHandler(tool.name, backend, dec, includeIndexStatus, rev, onWholeRead);
     reg.registerTool(
       tool.name,
       {
@@ -96,6 +103,7 @@ function makeHandler(
   dec: (s: string) => string,
   includeIndexStatus: (() => IndexStatusSnapshot) | undefined,
   revOf?: (path: string) => number | undefined,
+  onWholeRead?: (path: string, rev: number) => void,
 ) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const status = (extra: Record<string, unknown> = {}): Record<string, unknown> =>
@@ -144,7 +152,7 @@ function makeHandler(
 
     // ── obsidian_read_note ─────────────────────────────────────────────────
     case "obsidian_read_note":
-      return async ({ path: p }: { path: string }) => {
+      return async ({ path: p, full }: { path: string; full?: boolean }) => {
         try {
           const decoded = dec(p);
           // rev is sampled BEFORE the content, so a write racing this read can
@@ -152,6 +160,15 @@ function makeHandler(
           // then conflicts. Sampling after would hand back a rev newer than the
           // content returned, and that write would silently clobber the racer.
           const revd = revField(decoded);
+          if (full) {
+            // The whole note, never cut (#443). The whole read is remembered
+            // at the rev sampled above, for the same reason: a racing write
+            // makes the remembered rev too old, never too new.
+            if (!backend.readNoteWhole) return fail(new Error("this server cannot read a note whole (full: true): the backend has no whole read"));
+            const whole = await backend.readNoteWhole(decoded);
+            if (revd.rev !== undefined) onWholeRead?.(decoded, revd.rev);
+            return ok(status({ path: decoded, content: whole, ...revd, truncated: false, whole: true }));
+          }
           const content = await backend.readNote(decoded);
           // `truncated` flags a cut read (truncation.ts) and is always
           // present, as on obsidian_read_notes; a cut read keeps its rev (#441).

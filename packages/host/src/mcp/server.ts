@@ -3,6 +3,7 @@ import { TFile, stringifyYaml, parseYaml, type App } from "obsidian";
 import { registerFsTools, ok,
   CHARACTER_LIMIT,
   noteLengthFrom,
+  WholeReads,
 } from "@vault-mcp/core";
 import { serverInfo, codedError } from "./helpers.js";
 import { registerCoreTools, type ServerCtx } from "./tools-core.js";
@@ -336,10 +337,15 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
     sourcesOf: (req) => collectPaths((req.inputs ?? {}) as Record<string, unknown>),
   });
 
+  // This connection's memory of whole reads (#443): what obsidian_read_note
+  // served whole, and the proof the whole-note rules accept.
+  const wholeReads = new WholeReads();
   const guardedOpts = {
     getSettings: () => ctx.getSettings(),
     kernel: ctx.kernel,
     actor,
+    wholeReads,
+    noteRev: (p: string) => probe.rev(p),
     executor,
     sessionRefusal,
     // `jd:<address>` addressing at the interception point: same per-call
@@ -397,10 +403,11 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   // its own per-item guarded dispatch (see the write-notes block below).
   const backend = new ObsidianBackend(app, visible, (facts) => {
     writeFacts = facts;
-  });
+  }, wholeReads);
   registerFsTools(server, backend, {
     decodeHtml: false,
     rev: (p) => probe.rev(p),
+    onWholeRead: (p, rev) => wholeReads.remember(p, rev),
   });
 
   // ── remaining tools — live-only, complementary, nav, integrations ────────────

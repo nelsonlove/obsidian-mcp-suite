@@ -175,6 +175,13 @@ export interface VaultBackend {
    */
   readNote(relPath: string): Promise<string>;
 
+  /**
+   * Read a note WHOLE, never cut (#443): the road `obsidian_read_note` takes
+   * with `full: true`. Optional; a backend without it cannot serve a full
+   * read, and the tool says so.
+   */
+  readNoteWhole?(relPath: string): Promise<string>;
+
   // ── Read: search ───────────────────────────────────────────────────────────
 
   /**
