@@ -34,6 +34,8 @@ import { moveWithLinks, type LinkCheck } from "./move-with-links.js";
 import { TFile, TFolder, getAllTags, type App } from "obsidian";
 import {
   CHARACTER_LIMIT,
+  assertNotTruncatedRead,
+  truncateForRead,
   acceptTransitionNeedsBefore,
   deriveJdIdFromPath,
   parseGuardFrontmatter,
@@ -184,6 +186,10 @@ export class ObsidianBackend implements VaultBackend {
    * forward is allowed.
    */
   private async guardWrittenContent(path: string, resultingContent: string): Promise<void> {
+    // A cut read is refused before anything else (#441): the trailer line
+    // means the content ends where the read limit cut it, and writing it would
+    // delete the tail. Checked over the content that would LAND.
+    assertNotTruncatedRead(path, resultingContent);
     const after = this.fmOf(resultingContent);
     // Result-only shortcut delegated to the shared helper: with declared
     // protected properties (#224) an ABSENT key can be a removal, decidable
@@ -247,13 +253,7 @@ export class ObsidianBackend implements VaultBackend {
     const f = this.app.vault.getAbstractFileByPath(relPath);
     if (!(f instanceof TFile)) throw new Error(`not found: ${relPath}`);
     const content = await this.app.vault.read(f);
-    if (content.length > CHARACTER_LIMIT) {
-      return (
-        content.slice(0, CHARACTER_LIMIT) +
-        `\n\n[truncated: note is ${content.length} chars, showing first ${CHARACTER_LIMIT}]`
-      );
-    }
-    return content;
+    return truncateForRead(content, CHARACTER_LIMIT).content;
   }
 
   // ── search ──────────────────────────────────────────────────────────────────
@@ -544,6 +544,9 @@ export class ObsidianBackend implements VaultBackend {
     // the note that would land regardless — so the resulting frontmatter is
     // checked against the current one, and a preserved value passes untouched.
     this.guardResultingFrontmatter(this.fmOf(text), this.fmOf(next) ?? {});
+    // A patch that pastes a cut read in is refused like a whole-note write
+    // (#441): the guard runs over the note that would land, not the argument.
+    assertNotTruncatedRead(relPath, next);
     await this.app.vault.modify(file, next);
     return { found: true, anchor, op, previous };
   }

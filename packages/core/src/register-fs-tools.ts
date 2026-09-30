@@ -12,7 +12,8 @@
 import type { VaultBackend, FrontmatterEditValue } from "./vault-backend.js";
 import { FS_TOOLS } from "./tool-registry.js";
 import { ok, fail } from "./responses.js";
-import { CHARACTER_LIMIT, decodeHtmlEntities } from "./fs-backend/vault.js";
+import { decodeHtmlEntities } from "./fs-backend/vault.js";
+import { carriesTruncationTrailer } from "./truncation.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -151,7 +152,15 @@ function makeHandler(
           // then conflicts. Sampling after would hand back a rev newer than the
           // content returned, and that write would silently clobber the racer.
           const revd = revField(decoded);
-          return ok(status({ path: decoded, content: await backend.readNote(decoded), ...revd }));
+          const content = await backend.readNote(decoded);
+          // A cut read carries NO rev (#441): the content ends where the read
+          // limit cut it, and a write conditioned on this rev would land the
+          // cut text over the whole note. Without the rev, the overwrite that
+          // would follow is refused for its missing precondition instead.
+          // An uncut read keeps its exact old shape; `truncated: true` appears
+          // only on a cut, beside the missing rev.
+          const truncated = carriesTruncationTrailer(content);
+          return ok(status({ path: decoded, content, ...(truncated ? { truncated } : revd) }));
         } catch (e) {
           return fail(e);
         }
@@ -172,13 +181,12 @@ function makeHandler(
               // Sampled before the read, for the same reason as obsidian_read_note.
               const revd = revField(p);
               const content = await backend.readNote(p);
-              // readNote truncates and appends a trailer when len > CHARACTER_LIMIT,
-              // so the returned content is CHARACTER_LIMIT + len(trailer) chars.
-              // content.length > CHARACTER_LIMIT thus correctly flags truncation.
+              // A cut read carries no rev, as in obsidian_read_note (#441).
+              const truncated = carriesTruncationTrailer(content);
               return {
                 idx,
                 kind: "ok",
-                value: { path: p, content, truncated: content.length > CHARACTER_LIMIT, ...revd },
+                value: { path: p, content, truncated, ...(truncated ? {} : revd) },
               };
             } catch (e) {
               return { idx, kind: "err", value: { path: p, error: e instanceof Error ? e.message : String(e) } };

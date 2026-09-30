@@ -115,7 +115,8 @@ export const FS_TOOLS: ToolDef[] = [
     title: "Read a note",
     description:
       "Read the full markdown content of a note by its vault-relative path. " +
-      "Where the host tracks revisions, the response also carries the note's current `rev` — pass it back as `if_rev` on a following write to make that write conditional (it fails instead of clobbering a change you didn't see). Read-only.",
+      "Where the host tracks revisions, the response also carries the note's current `rev` — pass it back as `if_rev` on a following write to make that write conditional (it fails instead of clobbering a change you didn't see). " +
+      "A note longer than the read limit comes back cut, with `truncated: true`, a trailing `[truncated: …]` line and NO `rev`: never write that content back (every write refuses it with Error [truncated_read]); edit such a note by anchor (obsidian_patch_note, obsidian_append_note, obsidian_manage_frontmatter) instead. Read-only.",
     inputSchema: {
       path: z
         .string()
