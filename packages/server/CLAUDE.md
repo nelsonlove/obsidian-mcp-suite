@@ -39,7 +39,7 @@ is in-process only — nothing serializes against a concurrently running Obsidia
 or a second server process. A deployment opts in explicitly via
 `VAULT_MCP_FS_ALLOW_WRITES=true` (`src/fs-mode.ts`'s
 `isFsWritesEnabled`/`FsWritesDisabledError`), and `GET /health` reports the
-current setting as `fsWritesEnabled`. Reads are never gated, never queued, and
+current setting as `fsWritesEnabled`. Two argument refusals run before the FS kernel, in `mutate` (#441, `Error [truncated_read]`, unjournaled): a `content`/`body` carrying the read trailer (a cut read handed back), and a whole-note overwrite of a note longer than the read limit, which no read returns whole; `noteLength` resolves the path through `resolveInVault`, so a path outside the vault is never stat'ed for it. Reads are never gated, never queued, and
 never journaled.
 
 ## Auth (dual + per-user allowlist)

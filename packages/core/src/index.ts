@@ -50,7 +50,6 @@ export {
   assertNotTruncatedRead,
   wholeNoteOverwriteRefusal,
   cutReadError,
-  cutReadRefusal,
 } from "./truncation.js";
 export {
   SHARED_ANNOTATIONS,

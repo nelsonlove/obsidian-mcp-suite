@@ -329,6 +329,37 @@ describe("obsidian_write_note — accept-forbidden guard reaches the real fs-fai
     }
   });
 
+  test("a cut read is never written back through the FS server: both refusals run before its kernel, unjournaled (#441)", async () => {
+    const { client, teardown } = await makeClientFromFsServer();
+    const notePath = "fs-mode-441/Big.md";
+    const body = "# Big\n\n" + "x".repeat(150_000) + "\n\n## Tail\n";
+    const text = (r: Awaited<ReturnType<typeof client.callTool>>) => (r.content as Array<{ type: string; text: string }>)[0].text;
+    try {
+      const created = await client.callTool({ name: "obsidian_write_note", arguments: { path: notePath, content: body, overwrite: false } });
+      assert.ok(!created.isError, `unexpected error: ${text(created)}`);
+      const read = await client.callTool({ name: "obsidian_read_note", arguments: { path: notePath } });
+      const cut = JSON.parse(text(read)) as { content: string; truncated: boolean };
+      assert.equal(cut.truncated, true);
+
+      // The trailer refusal: the cut read handed back.
+      const back = await client.callTool({ name: "obsidian_write_note", arguments: { path: notePath, content: cut.content, overwrite: true } });
+      assert.ok(back.isError);
+      assert.match(text(back), /^Error \[truncated_read\]:/);
+      // The overwrite refusal: the trailer deleted and a paragraph added.
+      const stripped = cut.content.replace(/\n\n\[truncated:[^\n]*$/, "") + "\n\nA new paragraph, added after the cut, longer than any trailer could be.\n";
+      const grown = await client.callTool({ name: "obsidian_write_note", arguments: { path: notePath, content: stripped, overwrite: true } });
+      assert.ok(grown.isError);
+      assert.match(text(grown), /^Error \[truncated_read\]:[\s\S]*no read here returned that note whole/);
+      assert.equal(await readFile(path.join(tmpVault, notePath), "utf8"), body, "the note on disk is intact");
+      // Only the create reached the kernel: one journal record for the path.
+      const files = await readdir(tmpJournalDir);
+      const lines = (await Promise.all(files.map((f) => readFile(path.join(tmpJournalDir, f), "utf8")))).join("\n").split("\n").filter(Boolean);
+      assert.equal(lines.filter((l) => l.includes(notePath)).length, 1, "the two refusals left no journal record");
+    } finally {
+      await teardown();
+    }
+  });
+
   test("a write carrying an accepted-family value behind a leading BOM is REFUSED (recognition parity)", async () => {
     const { client, teardown } = await makeClientFromFsServer();
     try {

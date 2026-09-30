@@ -201,6 +201,15 @@ describe("obsidian_write_notes — a whole-note overwrite of a long note is one 
     await tick();
     assert.equal(records().some((r) => r.target.path === "Inbox/Long.md"), false, "a pre-queue refusal is not journaled");
   });
+
+  test("a create-only item (no if_rev) on an existing long note is the protection refusal, not this rule", async () => {
+    const long = "# Long\n" + "x".repeat(CHARACTER_LIMIT + 5000);
+    const { call, vault } = harness({ existing: new Map([["Inbox/Long.md", { rev: 500, content: long }]]) });
+    const res = await call({ notes: [{ path: "Inbox/Long.md", body: "# New" }], stamp: false });
+    const body = structured(res);
+    assert.equal(body.errors[0].code, "protection_required");
+    assert.equal(vault.get("Inbox/Long.md").content, long);
+  });
 });
 
 describe("obsidian_write_notes — if_rev conflict isolates to one item", () => {

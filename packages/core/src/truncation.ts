@@ -20,7 +20,7 @@
  *     that would result, so a note that already carries such a line stays
  *     editable and a rewrite the caller did not author (a move healing its
  *     backlinks) is not bound. It runs before the queue at each transport's
- *     interception (`cutReadRefusal`: the host's guarded.ts over `content` /
+ *     interception (`cutReadError`: the host's guarded.ts over `content` /
  *     `body`, the FS server's mutate over the same), so every tool that takes
  *     text is covered without knowing it, and again inside each backend write
  *     that takes text, as the last line for direct callers. No code fence is
@@ -128,6 +128,10 @@ export async function wholeNoteOverwriteRefusal(
   limit: number,
 ): Promise<TruncatedReadError | null> {
   if (!args || typeof args.content !== "string" || args.overwrite !== true || typeof args.path !== "string") return null;
+  // A create-only item of obsidian_write_notes is dispatched with
+  // `overwrite: true` and `create_only: true` (the item carried no if_rev):
+  // if the note exists, that is the protection refusal's case, not this one.
+  if (args.create_only === true) return null;
   const onDisk = await noteLength(args.path);
   if (onDisk === undefined || onDisk <= limit) return null;
   return new TruncatedReadError(
@@ -154,8 +158,3 @@ export function cutReadError(args: Record<string, unknown> | undefined): Truncat
   return null;
 }
 
-/** `cutReadError` as a coded refusal, for the host's guard. */
-export function cutReadRefusal(args: unknown): { code: "truncated_read"; message: string } | null {
-  const e = cutReadError(args && typeof args === "object" ? (args as Record<string, unknown>) : undefined);
-  return e ? { code: e.code, message: e.message } : null;
-}

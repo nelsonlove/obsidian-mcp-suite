@@ -13,7 +13,7 @@
  *      `Error [truncated_read]`, and the note on disk is untouched;
  *   2. a cut read carries `truncated: true` beside its `rev` (an anchored edit
  *      of a long note needs the rev; the content is what is refused);
- *   3. the transports' interception checks: `cutReadRefusal` finds a cut
+ *   3. the transports' interception checks: `cutReadError` finds a cut
  *      read under `content`/`body`, and `wholeNoteOverwriteRefusal` refuses
  *      a whole-note overwrite of a note longer than the limit, whatever the
  *      caller edited in — no read returns such a note whole.
@@ -30,7 +30,8 @@ import { registerFsTools } from "../src/register-fs-tools.ts";
 import { CHARACTER_LIMIT } from "../src/fs-backend/vault.ts";
 import { isCutRead } from "../src/truncation.ts";
 const isCutReadOf = (content) => isCutRead(content, CHARACTER_LIMIT);
-import { TRUNCATION_TRAILER_RE, cutReadRefusal, wholeNoteOverwriteRefusal, truncationTrailer } from "../src/truncation.ts";
+import { TRUNCATION_TRAILER_RE, cutReadError, wholeNoteOverwriteRefusal, truncationTrailer } from "../src/truncation.ts";
+const cutReadRefusal = (args) => cutReadError(args);
 
 const LONG = 150_000;
 const BODY = "# Big\n\n" + "x".repeat(LONG - 7 - 10) + "\n\n## Tail\n"; // > CHARACTER_LIMIT
@@ -192,7 +193,7 @@ describe("a 150k note survives a read → write round trip", () => {
     await assert.rejects(backend.writeNote("Block.md", cutInFence + "\n\n```\nexample\n```\n", false), { code: "truncated_read" });
   });
 
-  test("cutReadRefusal finds a cut read under content or body, names the path, and says the way out", async () => {
+  test("cutReadError finds a cut read under content or body, names the path, and says the way out", async () => {
     const { backend } = await fixture();
     const cut = await backend.readNote("Big.md");
     assert.equal(cutReadRefusal({ path: "A.md", content: "fine" }), null);
@@ -224,6 +225,9 @@ describe("a 150k note survives a read → write round trip", () => {
     assert.equal(await wholeNoteOverwriteRefusal({ path: "Big.md", content: "# New", overwrite: false }, noteLength, CHARACTER_LIMIT), null);
     assert.equal(await wholeNoteOverwriteRefusal({ path: "Big.md", overwrite: true }, noteLength, CHARACTER_LIMIT), null);
     assert.equal(await wholeNoteOverwriteRefusal({ path: "Nope.md", content: "x", overwrite: true }, noteLength, CHARACTER_LIMIT), null);
+    // A create-only batch item (no if_rev) on an existing long note is the
+    // protection refusal's case, not this rule's.
+    assert.equal(await wholeNoteOverwriteRefusal({ path: "Big.md", content: "x", overwrite: true, create_only: true }, noteLength, CHARACTER_LIMIT), null);
   });
 
   test("a direct backend caller is bound only by the trailer check: a rewrite from the whole note lands", async () => {

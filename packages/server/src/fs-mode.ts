@@ -45,6 +45,7 @@ import {
   cutReadError,
   wholeNoteOverwriteRefusal,
   CHARACTER_LIMIT,
+  resolveInVault,
 } from "@vault-mcp/core";
 import type { VaultBackend, VaultWatcherHandle } from "@vault-mcp/core";
 import path from "node:path";
@@ -212,7 +213,10 @@ export function makeBackend(
   // larger file is read.
   const noteLength = async (rel: string): Promise<number | undefined> => {
     try {
-      const abs = path.join(vaultRoot(), rel);
+      // Through the vault's own resolver, so a path that escapes the vault
+      // (or names an ignored folder) is never stat'ed or read here: it throws
+      // and the rule stands aside for the backend's own refusal.
+      const abs = resolveInVault(rel);
       const st = await fsp.stat(abs);
       if (st.size <= CHARACTER_LIMIT) return st.size;
       return (await fsp.readFile(abs, "utf8")).length;

@@ -43,7 +43,7 @@ import {
   type SchemeRegistry,
 } from "../kernel/scheme/registry.js";
 import { OperationRefusedError, type OperationExecutor } from "../kernel/operations/executor.js";
-import { CHARACTER_LIMIT, cutReadRefusal, wholeNoteOverwriteRefusal } from "@vault-mcp/core";
+import { CHARACTER_LIMIT, cutReadError, wholeNoteOverwriteRefusal } from "@vault-mcp/core";
 
 /** Guard/queue-level failure envelope: matches the `Error [code]: message` shape guardCall already emits. */
 function codedError(code: string, message: string) {
@@ -237,11 +237,14 @@ export interface GuardedOpts {
    */
   uids?: UidIndex | null;
   /**
-   * A note's length on disk in characters (undefined when it does not
-   * exist), for the whole-note-overwrite rule (#441): no read over MCP
-   * returns a note longer than CHARACTER_LIMIT whole, so overwriting one
-   * whole is refused before the queue. Absent ⇒ the rule is skipped (tests,
-   * bare embeds).
+   * For the whole-note-overwrite rule (#441): no read over MCP returns a
+   * note longer than CHARACTER_LIMIT whole, so overwriting one whole is
+   * refused before the queue. Returns the note's length in characters when
+   * it exceeds CHARACTER_LIMIT, any number not above CHARACTER_LIMIT when it
+   * cannot exceed it (server.ts returns the byte size then, which is never
+   * fewer than the characters), and undefined when the note does not exist.
+   * Only the comparison with the limit is meaningful. Absent ⇒ the rule is
+   * skipped (tests, bare embeds).
    */
   noteLength?: (path: string) => Promise<number | undefined>;
   /**
@@ -548,7 +551,7 @@ async function runGuarded(opts: GuardedOpts, def: any, handler: any, name: strin
   // a note longer than the read limit is refused the same way: no read over
   // MCP returned it whole, whatever the caller did to the cut read.
   if (isMutating) {
-    const cut = cutReadRefusal(toolArgs);
+    const cut = cutReadError(toolArgs as Record<string, unknown>);
     if (cut) return codedError(cut.code, cut.message);
     if (opts.noteLength) {
       const long = await wholeNoteOverwriteRefusal(toolArgs as Record<string, unknown>, opts.noteLength, CHARACTER_LIMIT);

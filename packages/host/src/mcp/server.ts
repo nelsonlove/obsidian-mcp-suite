@@ -346,10 +346,11 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
     // config edit lands live), and the same notes() source it uses.
     schemes: () => makeRegistry(ctx.getSettings().schemes ?? DEFAULT_SCHEMES),
     schemeNotes: () => app.vault.getMarkdownFiles().map((f) => f.path),
-    // The whole-note-overwrite rule (#441) needs the note's length in
-    // characters. A file of at most CHARACTER_LIMIT bytes cannot exceed it
-    // (UTF-8 bytes are never fewer than code units), so only a larger file is
-    // read, from the cache.
+    // The whole-note-overwrite rule (#441) compares the note's length with
+    // CHARACTER_LIMIT. A file of at most CHARACTER_LIMIT bytes cannot exceed
+    // it in characters (UTF-8 bytes are never fewer than code units), so the
+    // byte size stands for it then, and only a larger file is read, from the
+    // cache, for its exact character count.
     noteLength: async (p: string) => {
       const f = app.vault.getAbstractFileByPath(p);
       if (!(f instanceof TFile)) return undefined;
