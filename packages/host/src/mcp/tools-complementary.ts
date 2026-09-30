@@ -3,7 +3,6 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { type App, TFile, getAllTags } from "obsidian";
 import {
   AcceptForbiddenError,
-  assertNotTruncatedRead,
   acceptTransitionReason,
   acceptTransitionNeedsBefore,
   executeQuickAddChoice,
@@ -152,9 +151,9 @@ export function registerComplementaryTools(server: McpServer, app: App, ctx: Ser
     async ({ path: p, heading, content, create_if_missing }) => {
       try {
         if (!p.endsWith(".md")) return fail(new Error("path must end in .md"));
-        // A cut read handed back as the fragment is refused first (#441), on
-        // all three of the paths below.
-        assertNotTruncatedRead(p, content);
+        // A cut read handed back as `content` is refused before this handler
+        // runs, by the guard's cutReadRefusal (#441); the tool has no direct
+        // caller, so no second check here.
         const file = app.vault.getAbstractFileByPath(p);
 
         if (!(file instanceof TFile)) {

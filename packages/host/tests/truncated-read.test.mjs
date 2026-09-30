@@ -5,7 +5,11 @@
  *
  * The filesystem half is packages/core/tests/truncated-read.test.mjs; this
  * file pins that the Obsidian backend's own write, patch and append paths
- * carry the same guard, and that the read tool withholds the rev on a cut.
+ * carry the same guard as the last line, that the read tool flags a cut
+ * read, and — through the REAL makeGuarded, the way server.ts registers
+ * every tool — that the guard's cutReadRefusal refuses a cut read handed to
+ * a tool with no check of its own (obsidian_append_at_heading) before its
+ * handler runs.
  */
 
 import { test, describe } from "node:test";
@@ -16,6 +20,10 @@ import { installObsidianStub, TFile } from "./obsidian-stub.mjs";
 installObsidianStub();
 const { ObsidianBackend } = await import("../src/mcp/obsidian-backend.ts");
 const { registerComplementaryTools } = await import("../src/mcp/tools-complementary.ts");
+const { makeGuarded } = await import("../src/mcp/guarded.ts");
+
+const ACTOR = { transport: "mcp", client: "claude-code/1.0.0", connection: "conn-1" };
+const OPEN_SETTINGS = { readOnly: false, allowlist: [] };
 const { registerFsTools, CHARACTER_LIMIT } = await import("@vault-mcp/core");
 
 const LONG = 150_000;
@@ -52,11 +60,14 @@ function fakeApp(files) {
   return { app, store };
 }
 
+/** Registrations pass through the real guard, as server.ts's monkeypatch
+ *  does; with no kernel the guard still runs its argument checks. */
 function fakeServer() {
   const handlers = new Map();
+  const guarded = makeGuarded({ getSettings: () => OPEN_SETTINGS, kernel: null, actor: () => ACTOR });
   return {
-    registerTool(name, meta, handler) { handlers.set(name, handler); return { name, meta }; },
-    call(name, args) { return handlers.get(name)(args); },
+    registerTool(name, meta, handler) { handlers.set(name, guarded(meta, handler, name)); return { name, meta }; },
+    call(name, args) { return handlers.get(name)(args, {}); },
   };
 }
 
@@ -77,7 +88,7 @@ describe("obsidian_read_note over the Obsidian backend", () => {
     assert.equal(big.rev, 1700);
     assert.ok(big.content.length > CHARACTER_LIMIT && big.content.length < LONG);
     const small = (await server.call("obsidian_read_note", { path: "Small.md" })).structuredContent;
-    assert.deepEqual(small, { path: "Small.md", content: "# Small", rev: 1700 });
+    assert.deepEqual(small, { path: "Small.md", content: "# Small", rev: 1700, truncated: false });
   });
 });
 
@@ -107,7 +118,7 @@ describe("a 150k note survives a read → write round trip", () => {
     assert.equal(store.has("New.md"), false);
   });
 
-  test("obsidian_append_at_heading refuses a cut read on all three of its paths", async () => {
+  test("obsidian_append_at_heading refuses a cut read on all three of its paths — by the guard, before the handler", async () => {
     const { server, store } = fixture();
     const cut = await (await server.call("obsidian_read_note", { path: "Big.md" })).structuredContent.content;
     const refused = (res) => res.isError === true && /^Error \[truncated_read\]/.test(res.content[0].text);

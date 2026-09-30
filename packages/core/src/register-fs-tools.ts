@@ -153,10 +153,9 @@ function makeHandler(
           // content returned, and that write would silently clobber the racer.
           const revd = revField(decoded);
           const content = await backend.readNote(decoded);
-          // A cut read is flagged (`truncated: true`, see truncation.ts) and
-          // keeps its rev; an uncut read keeps its exact old shape (#441).
-          const truncated = isCutRead(content, CHARACTER_LIMIT);
-          return ok(status({ path: decoded, content, ...revd, ...(truncated ? { truncated } : {}) }));
+          // `truncated` flags a cut read (truncation.ts) and is always
+          // present, as on obsidian_read_notes; a cut read keeps its rev (#441).
+          return ok(status({ path: decoded, content, ...revd, truncated: isCutRead(content, CHARACTER_LIMIT) }));
         } catch (e) {
           return fail(e);
         }

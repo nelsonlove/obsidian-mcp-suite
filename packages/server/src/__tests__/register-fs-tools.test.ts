@@ -21,8 +21,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import {
   FS_TOOLS,
   registerFsTools,
-  CHARACTER_LIMIT,
-} from "@vault-mcp/core";
+  CHARACTER_LIMIT, truncateForRead } from "@vault-mcp/core";
 import type {
   VaultBackend,
   NoteRef,
@@ -436,14 +435,9 @@ describe("registerFsTools", () => {
 
     class TruncatingBackend extends FakeVaultBackend {
       override async readNote(relPath: string): Promise<string> {
-        const content = await super.readNote(relPath);
-        if (content.length > CHARACTER_LIMIT) {
-          return (
-            content.slice(0, CHARACTER_LIMIT) +
-            `\n\n[truncated: note is ${content.length} chars, showing first ${CHARACTER_LIMIT}]`
-          );
-        }
-        return content;
+        // A backend that cuts MUST cut through truncateForRead (the
+        // VaultBackend.readNote contract, #441).
+        return truncateForRead(await super.readNote(relPath), CHARACTER_LIMIT);
       }
     }
 

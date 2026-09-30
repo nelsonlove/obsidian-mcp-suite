@@ -72,11 +72,11 @@ describe("a cut read carries truncated: true beside its rev", () => {
     assert.equal(small.rev, 1700, "an uncut note in the same batch keeps its rev");
   });
 
-  test("an uncut note still carries its rev, in the exact old shape", async () => {
+  test("an uncut note carries its rev and truncated: false", async () => {
     const { server, backend } = await fixture();
     await backend.writeNote("Small.md", "# Small", false);
     const res = await server.call("obsidian_read_note", { path: "Small.md" });
-    assert.deepEqual(res.structuredContent, { path: "Small.md", content: "# Small", rev: 1700 });
+    assert.deepEqual(res.structuredContent, { path: "Small.md", content: "# Small", rev: 1700, truncated: false });
   });
 });
 
@@ -85,7 +85,15 @@ describe("a backend that does not cut", () => {
     const server = fakeServer();
     registerFsTools(server, { async readNote() { return BODY; } }, { rev: () => 1700 });
     const res = await server.call("obsidian_read_note", { path: "Big.md" });
-    assert.deepEqual(res.structuredContent, { path: "Big.md", content: BODY, rev: 1700 });
+    assert.deepEqual(res.structuredContent, { path: "Big.md", content: BODY, rev: 1700, truncated: false });
+  });
+
+  test("a long read cut with a FOREIGN trailer is not reported as cut — only truncateForRead's trailer is", async () => {
+    const server = fakeServer();
+    const foreign = BODY.slice(0, CHARACTER_LIMIT) + "\n\n[cut at 100000 of 150000]";
+    registerFsTools(server, { async readNote() { return foreign; } }, { rev: () => 1700 });
+    const res = await server.call("obsidian_read_note", { path: "Big.md" });
+    assert.equal(res.structuredContent.truncated, false);
   });
 });
 
@@ -144,16 +152,21 @@ describe("a 150k note survives a read → write round trip", () => {
     await assert.rejects(backend.writeNote("Below.md", cut + "\n\n## History\n\n- appended below the cut\n", false), { code: "truncated_read" });
   });
 
-  test("a note documenting the trailer in a closed code fence is written, reads as NOT cut, stays editable, and heals as a backlink source", async () => {
+  test("a note carrying a trailer-shaped line reads as NOT cut, stays editable, and heals as a backlink source", async () => {
     // The guard runs over the text the CALLER supplies, never over the note
-    // that would result, and skips a CLOSED code fence: this note is created
-    // through the backend, reads uncut with its rev, takes an append and a
-    // patch, and a move of the note it links to rewrites the link in it.
+    // that would result. Creating this note through the backend is refused
+    // (a line that IS the trailer, with digits, wherever it stands — a doc
+    // writes N and M instead); on disk it is an ordinary note: it reads uncut
+    // with its rev, takes an append and a patch, and a move of the note it
+    // links to rewrites the link in it.
     const { server, backend, vaultRoot } = await fixture();
     const quoted = "# Doc\n\n```\n[truncated: note is 123456 chars, showing first 100000]\n```\n\nSee [[Target]].\n";
-    await backend.writeNote("Doc.md", quoted, false);
+    await assert.rejects(backend.writeNote("Doc.md", quoted, false), { code: "truncated_read" });
+    const lettered = quoted.replace("123456", "N").replace("100000", "M").replace("See [[Target]].", "No link here.");
+    await backend.writeNote("Lettered.md", lettered, false);
+    await (await import("node:fs/promises")).writeFile(join(vaultRoot, "Doc.md"), quoted);
     const res = await server.call("obsidian_read_note", { path: "Doc.md" });
-    assert.deepEqual(res.structuredContent, { path: "Doc.md", content: quoted, rev: 1700 });
+    assert.deepEqual(res.structuredContent, { path: "Doc.md", content: quoted, rev: 1700, truncated: false });
     await backend.appendNote("Doc.md", "\nmore\n");
     const patched = await backend.patchNote("Doc.md", { type: "heading", value: "Doc" }, "prepend", "first");
     assert.equal(patched.found, true);
@@ -167,12 +180,12 @@ describe("a 150k note survives a read → write round trip", () => {
     assert.match(disk, /first/);
   });
 
-  test("a cut that leaves a code fence open is still refused", async () => {
+  test("a cut inside a code fence is refused whether the caller leaves the fence open, closes it, or appends a fenced block", async () => {
     const { backend } = await fixture();
-    const openFence = "# Note\n\n```\ncode that was cut here\n\n[truncated: note is 150000 chars, showing first 100000]";
-    await assert.rejects(backend.writeNote("Open.md", openFence, false), { code: "truncated_read" });
-    const closedThenTrailer = "# Note\n\n```\nquoted\n```\n\n[truncated: note is 150000 chars, showing first 100000]";
-    await assert.rejects(backend.writeNote("Closed.md", closedThenTrailer, false), { code: "truncated_read" });
+    const cutInFence = "# Note\n\n```\ncode that was cut here\n\n[truncated: note is 150000 chars, showing first 100000]";
+    await assert.rejects(backend.writeNote("Open.md", cutInFence, false), { code: "truncated_read" });
+    await assert.rejects(backend.writeNote("Closed.md", cutInFence + "\n```\nmy new prose\n", false), { code: "truncated_read" });
+    await assert.rejects(backend.writeNote("Block.md", cutInFence + "\n\n```\nexample\n```\n", false), { code: "truncated_read" });
   });
 
   test("cutReadRefusal finds a cut read in content or body at any depth, and names the path", async () => {

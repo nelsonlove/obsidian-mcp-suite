@@ -22,8 +22,10 @@
  * or `body` of a mutating call, before the queue, so every tool that takes
  * text is covered without knowing it), and once inside each backend write
  * that takes text, as the last line for callers that reach a backend
- * directly. A closed fenced code block is skipped, so a note that documents
- * the trailer verbatim can be written; a fence left open by the cut is not.
+ * directly. No code fence is exempt: a cut can land inside a fence, and a
+ * caller that closes it would otherwise hide the trailer. A note that must
+ * show the trailer on a line of its own writes it with letters (`N chars`,
+ * `showing first M`), which the digit match never takes for a cut.
  *
  * The read tools report a cut read as `truncated: true` (`isCutRead`). They
  * still return its `rev`: the rev is not what lost the tail, the content was,
@@ -34,19 +36,14 @@
 /** Matches the trailer as a whole line, anywhere in the text, with any
  *  surrounding whitespace or a CR (an editor that pads or re-terminates the
  *  line must not slip the guard). Text that merely MENTIONS the trailer inside
- *  a sentence or a code span never matches; a line that IS the trailer,
- *  wherever it stands outside a closed code fence, does — that is the price
- *  of catching a cut read that a caller appended below (matching only at the
- *  end would miss it). */
+ *  a sentence or a code span, or with letters for the numbers, never matches;
+ *  a line that IS the trailer, wherever it stands, does — that is the price of
+ *  catching a cut read that a caller appended below, or closed a fence after
+ *  (matching only at the end, or outside fences, would miss it). */
 export const TRUNCATION_TRAILER_RE = /^[ \t]*\[truncated: note is \d+ chars, showing first \d+\][ \t\r]*$/m;
 
 /** The trailer at the very end of a read, exactly as `truncateForRead` writes it. */
 const TRAILER_AT_END_RE = /\n\n\[truncated: note is \d+ chars, showing first \d+\]$/;
-
-/** A CLOSED fenced code block (``` or ~~~, matching fence, on its own line
- *  each). A fence the cut left open never matches, so the trailer after it
- *  stays visible to the guard. */
-const CLOSED_FENCE_RE = /^[ \t]*(`{3,}|~{3,})[^\n]*\r?\n[\s\S]*?^[ \t]*\1[ \t]*\r?$/gm;
 
 /** The trailer `readNote` appends after the cut content. */
 export function truncationTrailer(length: number, limit: number): string {
@@ -67,10 +64,10 @@ export function isCutRead(content: string, limit: number): boolean {
   return content.length > limit && TRAILER_AT_END_RE.test(content);
 }
 
-/** True when `text` carries the trailer line outside a closed code fence —
- *  a cut read, not authored text. */
+/** True when `text` carries the trailer line — a cut read, not authored text.
+ *  One linear scan; no code context is exempt (see the module doc). */
 export function carriesTruncationTrailer(text: string): boolean {
-  return TRUNCATION_TRAILER_RE.test(text.replace(CLOSED_FENCE_RE, ""));
+  return TRUNCATION_TRAILER_RE.test(text);
 }
 
 /** Typed refusal for a write of a cut read — rendered as `Error [truncated_read]`. */
