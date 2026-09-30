@@ -292,6 +292,8 @@ leave the single-artifact rollback intact.
 
 ## docs/reference.md
 
+- Every write path that takes text from the caller (`obsidian_write_note`, `obsidian_write_notes`, `obsidian_patch_note`, `obsidian_append_note`, `obsidian_append_at_heading`) refuses that text when it carries the trailer line, with `Error [truncated_read]` before any mutation, on both backends.
+  substantiated 2026-09-30 (#442): `assertNotTruncatedRead` is the first statement of `writeNote`, `appendNote` and `patchNote` on both backends and of the `obsidian_append_at_heading` handler; `packages/core/tests/truncated-read.test.mjs` and `packages/host/tests/truncated-read.test.mjs` refuse each path over a real cut read and check the note is untouched; `write-notes.test.mjs` pins the batch item's code.
 - Every mutating operation also appends **one JSONL line** to `.obsidian/plugins/vault-mcp/journal/YYYY-MM.jsonl` (rolled monthly, inside the host's own folder rather than the note tree):
 - If a journal write fails it is logged to the console and dropped; it never fails the vault operation.
 - Safety guards that apply: read-only mode always applies (mutating external tools are blocked when read-only is on); the path allowlist scopes arguments under recognized path keys (path, from, to, paths, and a few others) — when an allowlist is active, mutating external tools whose args carry no recognized path key are blocked outright, since the host cannot scope the call.
