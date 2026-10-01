@@ -363,13 +363,19 @@ describe("obsidian_write_note — accept-forbidden guard reaches the real fs-fai
   test("a write to a path outside the vault is refused through the real MCP tool, not folded into the vault (#444)", async () => {
     const { client, teardown } = await makeClientFromFsServer();
     const text = (r: Awaited<ReturnType<typeof client.callTool>>) => (r.content as Array<{ type: string; text: string }>)[0].text;
+    // A name unique to this run: `..` of the temp vault is the shared temp
+    // root, so a stale file from another run must not fail this one, and on
+    // a regression the stray file is removed below.
+    const name = `outside-444-${process.pid}-${Date.now()}.md`;
+    const outside = path.join(tmpVault, "..", name);
     try {
-      const res = await client.callTool({ name: "obsidian_write_note", arguments: { path: "../outside-444.md", content: "x", overwrite: true } });
-      assert.ok(res.isError, "the escaping path must be refused, not written as <vault>/outside-444.md");
+      const res = await client.callTool({ name: "obsidian_write_note", arguments: { path: `../${name}`, content: "x", overwrite: true } });
+      assert.ok(res.isError, `the escaping path must be refused, not written as <vault>/${name}`);
       assert.match(text(res), /escapes the vault root/);
-      await assert.rejects(readFile(path.join(tmpVault, "outside-444.md"), "utf8"), "nothing landed inside the vault under the folded name");
-      await assert.rejects(readFile(path.join(tmpVault, "..", "outside-444.md"), "utf8"), "nothing landed outside it either");
+      await assert.rejects(readFile(path.join(tmpVault, name), "utf8"), "nothing landed inside the vault under the folded name");
+      await assert.rejects(readFile(outside, "utf8"), "nothing landed outside it either");
     } finally {
+      await rm(outside, { force: true });
       await teardown();
     }
   });

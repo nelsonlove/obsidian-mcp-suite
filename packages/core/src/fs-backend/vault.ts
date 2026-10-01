@@ -31,6 +31,14 @@ import { assertNotTruncatedRead, assertPatchRangeRead, truncateForRead } from ".
  * per-instance vault roots without touching the module-level singleton.
  */
 
+/** The one containment check: `abs` is `root` or lies under it. Both sides
+ *  must be resolved paths; a doubled or trailing separator on either defeats
+ *  the textual test (#444). */
+function isWithin(root: string, abs: string): boolean {
+  const rootWithSep = root.endsWith(path.sep) ? root : root + path.sep;
+  return abs === root || abs.startsWith(rootWithSep);
+}
+
 // Folders we never traverse or expose.
 const IGNORED_DIRS = new Set([".obsidian", ".trash", ".git", "node_modules"]);
 
@@ -323,9 +331,8 @@ class VaultImpl {
   private realRootCache: string | null = null;
 
   readonly root: string;
-  /** The root is normalised once (`path.resolve`): the containment check
-   *  below compares resolved child paths against it textually, so a root
-   *  with a doubled or trailing separator would refuse every path (#444). */
+  /** The root is normalised once (`path.resolve`), because `isWithin` is a
+   *  textual check against resolved children (#444). */
   constructor(root: string) {
     this.root = path.resolve(root);
   }
@@ -361,9 +368,7 @@ class VaultImpl {
         }
         throw e;
       }
-      const root = this.realVaultRoot();
-      const rootWithSep = root.endsWith(path.sep) ? root : root + path.sep;
-      if (real !== root && !real.startsWith(rootWithSep)) {
+      if (!isWithin(this.realVaultRoot(), real)) {
         throw new Error(`Path escapes the vault root via symlink: '${relPath}'`);
       }
       return;
@@ -376,12 +381,17 @@ class VaultImpl {
    * it, or hits an ignored folder.
    */
   resolveInVault(relPath: string): string {
+    // A backslash is not a separator on POSIX and is not allowed in an
+    // Obsidian file name; refused rather than left to become a literal
+    // character in a name (`..\\x.md` used to be folded into the vault).
+    if (relPath.includes("\\")) {
+      throw new Error(`Path contains a backslash; vault paths use '/': '${relPath}'`);
+    }
     // A path that climbs out of the vault is REFUSED by the check below, not
     // folded back in: `../outside.md` used to be written silently as
     // `outside.md` inside the vault and reported as created (#444).
-    const abs = path.resolve(this.root, path.normalize(relPath));
-    const rootWithSep = this.root.endsWith(path.sep) ? this.root : this.root + path.sep;
-    if (abs !== this.root && !abs.startsWith(rootWithSep)) {
+    const abs = path.resolve(this.root, relPath);
+    if (!isWithin(this.root, abs)) {
       throw new Error(`Path escapes the vault root: '${relPath}'`);
     }
     const segments = path.relative(this.root, abs).split(path.sep);
