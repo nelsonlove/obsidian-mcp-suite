@@ -35,8 +35,8 @@
  *     read tools cut at the limit, so a whole-note write of such a note is a
  *     write of a cut read wherever its text came from (a few reads —
  *     obsidian_read_note_parsed, obsidian_get_active_note — do return it
- *     whole, and are bound by the same policy until #443 gives a whole read
- *     its own road). A `content` + `overwrite: true` call on such a note is
+ *     whole, and are bound by the same policy; the road through it is
+ *     `full: true` on obsidian_read_note, below). A `content` + `overwrite: true` call on such a note is
  *     refused at each transport's interception, before the queue, from the
  *     note's length on disk. A long note is edited by anchor, or read whole
  *     first: `obsidian_read_note` with `full: true` returns it whole with
@@ -114,7 +114,7 @@ export function carriesTruncationTrailer(text: string): boolean {
 }
 
 const WAY_OUT =
-  "Edit the note by anchor instead (obsidian_patch_note on a section that ends before the limit, obsidian_append_note, obsidian_manage_frontmatter; the read's rev is good for those). For a whole rewrite, read the note whole first — obsidian_read_note with full: true — and write with the rev that read returned.";
+  "Edit the note by anchor instead (obsidian_patch_note on a section that ends before the limit, obsidian_append_note, obsidian_manage_frontmatter; the read's rev is good for those). For a whole rewrite, read the note whole first — obsidian_read_note with full: true — then write it within ten minutes, with that read's rev where the transport returns one (where it shows none, the note must simply be unchanged).";
 
 /** Typed refusal — rendered as `Error [truncated_read]`. Built by the two
  *  guards below; `new TruncatedReadError(path)` is the trailer refusal. */

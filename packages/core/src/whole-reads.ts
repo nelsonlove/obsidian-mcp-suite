@@ -27,23 +27,29 @@
 export const WRITE_WINDOW_MS = 10 * 60_000;
 export const WHOLE_READ_TTL_MS = WRITE_WINDOW_MS;
 
+/** A whole read's token: the host's rev (a number, the mtime); on a transport
+ *  that composes its own (the FS server: mtime and size in one string),
+ *  whatever its `rev` hook returns. Compared by equality only. */
+export type RevToken = number | string;
+
 export class WholeReads {
-  private readonly byPath = new Map<string, { rev: number; at: number }>();
+  private readonly byPath = new Map<string, { rev: RevToken; at: number }>();
   constructor(
     private readonly ttlMs: number = WHOLE_READ_TTL_MS,
     private readonly now: () => number = () => Date.now(),
   ) {}
 
-  /** Remember that `path` was served whole at `rev`; a newer whole read
-   *  replaces an older one, and every entry past the window is swept, so a
-   *  connection that reads many notes whole holds only the last window. */
-  remember(path: string, rev: number): void {
+  /** Remember that `path` was served whole at `rev`; the latest whole read
+   *  replaces the one before, whatever its token (a token is not ordered: an
+   *  mtime survives a move or a restore, so a "higher" one is not "newer"),
+   *  and every entry past the window is swept, so a connection that reads
+   *  many notes whole holds only the last window. Two whole reads of one
+   *  note racing each other can leave the slower one remembered; the other
+   *  caller's overwrite is then refused as unproven and reads again — a false
+   *  refusal, never a lost tail. */
+  remember(path: string, rev: RevToken): void {
     const now = this.now();
     for (const [p, e] of this.byPath) if (now - e.at > this.ttlMs) this.byPath.delete(p);
-    // A slower read that sampled an OLDER rev must not replace a newer one:
-    // the newer read's caller holds the current rev, and is the one to serve.
-    const e = this.byPath.get(path);
-    if (e && e.rev > rev) return;
     this.byPath.set(path, { rev, at: now });
   }
 
@@ -53,7 +59,7 @@ export class WholeReads {
   }
 
   /** True when `path` was served whole at exactly `rev` within the window. */
-  has(path: string, rev: number | undefined): boolean {
+  has(path: string, rev: RevToken | undefined): boolean {
     if (rev === undefined) return false;
     const e = this.byPath.get(path);
     if (!e) return false;

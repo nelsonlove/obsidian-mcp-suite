@@ -106,7 +106,7 @@ export class ObsidianBackend implements VaultBackend {
      * so the caller conditioned the replace on the rev this connection
      * served whole, and the note has not moved since.
      */
-    private readonly wholeReads?: { has(path: string, rev: number | undefined): boolean },
+    private readonly wholeReads?: { has(path: string, rev: number | string | undefined): boolean },
   ) {}
 
   /**
