@@ -117,7 +117,7 @@ export function carriesTruncationTrailer(text: string): boolean {
 }
 
 const WAY_OUT =
-  "Edit the note by anchor instead (obsidian_patch_note on a section that ends before the limit, obsidian_append_note, obsidian_manage_frontmatter; the read's rev is good for those). For a whole rewrite, read the note whole first — obsidian_read_note with full: true — then write it within ten minutes on the same connection, with that read's rev and a NEW idempotency_key (a refused call's key answers with the refusal).";
+  "Edit the note by anchor instead (obsidian_patch_note on a section that ends before the limit, obsidian_append_note, obsidian_manage_frontmatter; the read's rev is good for those). For a whole rewrite on the plugin, read the note whole first — obsidian_read_note with full: true — then write it within ten minutes on the same connection, with that read's rev and a NEW idempotency_key (a refused call's key answers with the refusal). The FS server has no such road until #446: edit by anchor there.";
 
 /** Typed refusal — rendered as `Error [truncated_read]`. Built by the two
  *  guards below; `new TruncatedReadError(path)` is the trailer refusal. */
@@ -159,9 +159,11 @@ export async function wholeNoteOverwriteRefusal(
   // `overwrite: true` and `create_only: true` (the item carried no if_rev):
   // if the note exists, that is the protection refusal's case, not this one.
   if (args.create_only === true) return null;
+  // The proof first: a stat and a map lookup, against a length probe that
+  // reads the whole note above the limit in bytes.
+  if (provenWhole && (await provenWhole(args.path))) return null;
   const onDisk = await noteLength(args.path);
   if (onDisk === undefined || onDisk <= limit) return null;
-  if (provenWhole && (await provenWhole(args.path))) return null;
   return new TruncatedReadError(
     args.path,
     `'${args.path}' is ${onDisk} chars on disk, longer than the read limit of ${limit}. A note longer than the limit is never overwritten whole over MCP: the read tools cut it there, so a whole-note write of it is a write of a cut read, whatever was edited in. Nothing was written. ${WAY_OUT}`,

@@ -43,7 +43,7 @@ import {
   type SchemeRegistry,
 } from "../kernel/scheme/registry.js";
 import { OperationRefusedError, type OperationExecutor } from "../kernel/operations/executor.js";
-import { CHARACTER_LIMIT, cutReadError, wholeNoteOverwriteRefusal, wholeReadToken } from "@vault-mcp/core";
+import { CHARACTER_LIMIT, cutReadError, wholeNoteOverwriteRefusal, wholeReadToken, type WholeReads } from "@vault-mcp/core";
 
 /** Guard/queue-level failure envelope: matches the `Error [code]: message` shape guardCall already emits. */
 function codedError(code: string, message: string) {
@@ -253,7 +253,7 @@ export interface GuardedOpts {
    * if_rev is a remembered whole read's rev for that path AND the note's
    * current rev. Absent ⇒ no whole read is ever proven.
    */
-  wholeReads?: { has(path: string, rev: number | string | undefined): boolean };
+  wholeReads?: Pick<WholeReads, "has">;
   noteRev?: (path: string) => number | undefined;
   /** The note's size, composed with its rev into the token a whole read is remembered under (see server.ts). */
   noteSize?: (path: string) => number | undefined;
@@ -634,7 +634,12 @@ async function runGuarded(opts: GuardedOpts, def: any, handler: any, name: strin
         const long = await longNoteRefusal();
         if (long) return codedError(long.code, long.message);
         mark("attempted");
-        return handler(toolArgs, extra);
+        // The one proof of a whole read, decided here and handed to the
+        // handler (obsidian_patch_note passes it to the backend's replace
+        // rule): the backend never infers it from ambient state.
+        const path = (toolArgs as Record<string, unknown>).path;
+        const proven = isMutating && typeof path === "string" ? await provenWhole(path) : false;
+        return handler(toolArgs, { ...(extra ?? {}), provenWhole: proven });
       }
     );
   } catch (e) {

@@ -28,13 +28,12 @@
  *   (#441), as the plugin's guard does before its queue:** a `content` that
  *   carries the read trailer is `Error [truncated_read]` thrown before
  *   `runMutation`, so it takes no queue slot and leaves no journal record.
- *   **The whole-note-overwrite rule runs AT DEQUEUE here** (#443), unlike on
- *   the plugin: its proof on this transport is "the note's mtime is one a
- *   whole read this process served", and with no if_rev to re-check at the
- *   write, the mtime must be compared where the write happens, after every
+ *   **The whole-note-overwrite rule runs AT DEQUEUE here** (#443), as on the
+ *   plugin: the note's length must be the one the write meets, after every
  *   write queued ahead has landed. So that refusal is journaled as an error.
- *   The same proof lets `obsidian_patch_note` replace past the limit, read at
- *   dequeue too.
+ *   No proof of a whole read stands it aside on this transport (nor the
+ *   replace-past-the-limit rule): its writes carry no if_rev, so nothing
+ *   could tie a proof to the caller; #446 is that road.
  *
  * - **`actor.connection` is per-PROCESS, not per-connection.** FS mode builds a
  *   stateless McpServer per HTTP request; no per-session identity reaches the
