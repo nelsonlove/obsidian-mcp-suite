@@ -60,9 +60,12 @@ describe("resolveInVault — lexical guards", () => {
     assert.throws(() => trailing.resolveInVault("../outside.md"), /escapes the vault root/);
   });
 
-  test("a backslash in a path is refused where it is not the separator, not a literal character in a name", { skip: path.sep === "\\" }, () => {
-    assert.throws(() => vault.resolveInVault("..\\outside.md"), /backslash/);
+  test("a backslash in a path is refused outright, on every platform, typed invalid_path", () => {
+    assert.throws(() => vault.resolveInVault("..\\outside.md"), (e) => e.code === "invalid_path" && /backslash/.test(e.message));
     assert.throws(() => vault.resolveInVault("Projects\\Plan.md"), /backslash/);
+    assert.throws(() => vault.resolveInVault("../outside.md"), (e) => e.code === "invalid_path");
+    assert.throws(() => vault.resolveInVault("/etc/passwd"), (e) => e.code === "invalid_path");
+    assert.throws(() => vault.resolveInVault(".git/config"), (e) => e.code === "invalid_path");
   });
 
   test("refuses ignored folders", () => {

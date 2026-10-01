@@ -1,5 +1,4 @@
 import { createVaultAt } from "./vault.js";
-import path from "node:path";
 import { IndexStore } from "./index-store.js";
 import type {
   VaultBackend,
@@ -48,13 +47,9 @@ export class FilesystemBackend implements VaultBackend {
   private readonly index: IndexStore;
 
   constructor(vaultRoot: string) {
-    // Resolved here so the vault and the index hold one spelling of the root
-    // (#444: a doubled separator in one and not the other is the class of
-    // bug a textual path comparison then has); VaultImpl resolves its root
-    // again, which is idempotent.
-    const root = path.resolve(vaultRoot);
-    this.vault = createVaultAt(root);
-    this.index = new IndexStore(root);
+    // Each resolves the root itself (#444), so both hold one spelling.
+    this.vault = createVaultAt(vaultRoot);
+    this.index = new IndexStore(vaultRoot);
   }
 
   // ── Read: listing & navigation ─────────────────────────────────────────────

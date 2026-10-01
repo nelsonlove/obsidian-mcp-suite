@@ -246,13 +246,12 @@ export function makeBackend(
     fn: () => Promise<T>,
   ): Promise<T> => {
     requireWrites();
-    // A malformed or escaping path is refused before the queue, typed by the
-    // vault's own resolver, unjournaled like every argument refusal (#444):
-    // the kernel never queues or records an attempt the vault would refuse.
-    for (const key of ["path", "from", "to"]) {
-      const v = args[key];
-      if (typeof v === "string") resolveInVault(v);
-    }
+    // A malformed or escaping path is refused before the queue, typed
+    // (`invalid_path`) by the vault's own resolver, unjournaled like every
+    // argument refusal (#444): the kernel never queues or records an attempt
+    // the vault would refuse. The paths are the op's own `target`, the same
+    // set the journal records, so no key list has to be kept by hand.
+    for (const p of target.paths ?? (target.path ? [target.path] : [])) resolveInVault(p);
     // A cut read handed back as `content`, or a whole-note overwrite of a
     // note longer than the read limit (never done whole over MCP), is refused
     // before the queue, as the host's guard does (#441): unjournaled, like
