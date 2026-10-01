@@ -38,10 +38,23 @@ describe("resolveInVault — lexical guards", () => {
     assert.ok(abs.endsWith(path.join("Projects", "Plan.md")));
   });
 
-  test("strips leading ../ rather than escaping", () => {
-    const abs = vault.resolveInVault("../../etc/passwd");
-    // Must stay inside the vault root, not resolve to the real /etc/passwd.
-    assert.ok(abs.startsWith(tmpRoot + path.sep));
+  test("refuses a path that climbs out of the vault, rather than folding it back in (#444)", () => {
+    // Used to be stripped to `etc/passwd` inside the vault and written there
+    // silently; a caller that asked for a path outside the vault is told so.
+    assert.throws(() => vault.resolveInVault("../../etc/passwd"), /escapes the vault root/);
+    assert.throws(() => vault.resolveInVault("../outside.md"), /escapes the vault root/);
+    assert.throws(() => vault.resolveInVault("sub/../../outside.md"), /escapes the vault root/);
+    assert.throws(() => vault.resolveInVault("/etc/passwd"), /escapes the vault root/);
+    // Climbing inside the vault is fine.
+    assert.ok(vault.resolveInVault("sub/../Plan.md").endsWith(path.join(tmpRoot, "Plan.md")));
+  });
+
+  test("a root with a doubled or trailing separator resolves every path, not none (#444)", () => {
+    const doubled = vault.createVaultAt(tmpRoot + path.sep + path.sep);
+    assert.ok(doubled.resolveInVault("Projects/Plan.md").endsWith(path.join("Projects", "Plan.md")));
+    const trailing = vault.createVaultAt(tmpRoot + path.sep);
+    assert.ok(trailing.resolveInVault("Plan.md").endsWith(path.join(tmpRoot, "Plan.md")));
+    assert.throws(() => trailing.resolveInVault("../outside.md"), /escapes the vault root/);
   });
 
   test("refuses ignored folders", () => {
