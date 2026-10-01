@@ -19,6 +19,7 @@ installObsidianStub();
 const { ObsidianBackend } = await import("../src/mcp/obsidian-backend.ts");
 const { makeGuarded } = await import("../src/mcp/guarded.ts");
 const { Kernel, WriteQueue, WriteJournal, IdempotencyStore, LockStore } = await import("../src/kernel/index.ts");
+const { requiredProtection } = await import("../src/kernel/write-protection.ts");
 const { registerFsTools, CHARACTER_LIMIT, WholeReads } = await import("@vault-mcp/core");
 
 const ACTOR = { transport: "mcp", client: "claude-code/1.0.0", connection: "conn-1" };
@@ -160,6 +161,15 @@ describe("a whole read is the proof a whole-note overwrite needs", () => {
     const ok = await server.call("obsidian_patch_note", { path: "Big.md", anchor_type: "heading", anchor: "Big", op: "replace", content: "whole rewrite", if_rev: read.rev, idempotency_key: key() });
     assert.equal(ok.isError, undefined, errText(ok));
     assert.match(store.get("Big.md"), /# Big\n\nwhole rewrite\n$/);
+  });
+
+  test("the backend's replace stand-aside rests on obsidian_patch_note replace requiring the token — pinned", () => {
+    // ObsidianBackend.patchNote stands aside on this connection's memory at
+    // the note's CURRENT rev, trusting the kernel to have matched the call's
+    // if_rev to it at dequeue. That is only true while a replace requires
+    // if_rev; if this row is ever exempted, the stand-aside must be told the
+    // proof by the guard instead (the FS server's road).
+    assert.equal(requiredProtection("obsidian_patch_note", { op: "replace" }), "token");
   });
 
   test("a short note is unaffected: overwritten with its rev as always", async () => {

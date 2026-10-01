@@ -59,8 +59,11 @@ describe("WholeReads — the memory", () => {
     assert.equal(m.has("A.md", 10), false, "a newer whole read replaces the older");
     assert.equal(m.has("A.md", 12), true);
     m.remember("A.md", 11);
-    assert.equal(m.has("A.md", 12), true, "a slower read that sampled an older rev never replaces a newer one");
-    assert.equal(m.has("A.md", 11), false);
+    assert.equal(m.has("A.md", 11), true, "the latest whole read is the one remembered, whatever its token: a token is not ordered");
+    assert.equal(m.has("A.md", 12), false);
+    m.remember("S.md", "1700:123");
+    assert.equal(m.has("S.md", "1700:123"), true, "a composed string token (the FS server's) works the same");
+    assert.equal(m.has("S.md", "1700:124"), false);
     assert.equal(WHOLE_READ_TTL_MS, WRITE_WINDOW_MS, "one window");
     now += WHOLE_READ_TTL_MS + 1;
     assert.equal(m.has("A.md", 12), false, "the window is the idempotency window");

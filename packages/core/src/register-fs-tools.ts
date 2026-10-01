@@ -41,7 +41,7 @@ export interface RegisterFsToolsOpts {
    * overwrite conditioned on that rev can pass. Sampled before the content is
    * read, like the rev itself.
    */
-  onWholeRead?: (path: string, rev: number) => void;
+  onWholeRead?: (path: string, rev: number | string) => void;
   /**
    * When false, the rev from `rev` feeds `onWholeRead` only and is never put
    * in a response: for a transport whose writes cannot honour `if_rev` (the
@@ -61,7 +61,7 @@ export interface RegisterFsToolsOpts {
    * optimistic concurrency. Omitted (or returning undefined) ⇒ no `rev` field,
    * exactly as before.
    */
-  rev?: (path: string) => number | undefined;
+  rev?: (path: string) => number | string | undefined;
 }
 
 /**
@@ -109,8 +109,8 @@ function makeHandler(
   backend: VaultBackend,
   dec: (s: string) => string,
   includeIndexStatus: (() => IndexStatusSnapshot) | undefined,
-  revOf?: (path: string) => number | undefined,
-  onWholeRead?: (path: string, rev: number) => void,
+  revOf?: (path: string) => number | string | undefined,
+  onWholeRead?: (path: string, rev: number | string) => void,
   revInResponse = true,
 ) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -122,11 +122,11 @@ function makeHandler(
    * has none for this path). Additive: a caller that ignores `rev` sees the
    * response it always saw.
    */
-  const revField = (path: string): { rev?: number } => {
+  const revField = (path: string): { rev?: number | string } => {
     const r = revOf?.(path);
     return r === undefined ? {} : { rev: r };
   };
-  const shown = (revd: { rev?: number }): { rev?: number } => (revInResponse ? revd : {});
+  const shown = (revd: { rev?: number | string }): { rev?: number | string } => (revInResponse ? revd : {});
 
   switch (name) {
     // ── obsidian_list_notes ────────────────────────────────────────────────
@@ -193,7 +193,7 @@ function makeHandler(
     case "obsidian_read_notes":
       return async ({ paths }: { paths: string[] }) => {
         type Result =
-          | { idx: number; kind: "ok"; value: { path: string; content: string; truncated: boolean; rev?: number } }
+          | { idx: number; kind: "ok"; value: { path: string; content: string; truncated: boolean; rev?: number | string } }
           | { idx: number; kind: "err"; value: { path: string; error: string } };
 
         // Preserve input order even when duplicate paths are provided.

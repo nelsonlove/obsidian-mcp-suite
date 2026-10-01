@@ -203,23 +203,17 @@ export class FsWritesDisabledError extends Error {
  * served. A read's `rev` on this transport is the file's mtime in ms.
  */
 const fsWholeReads = new WholeReads();
-/** Beside the mtime, the size at the whole read: on a volume with coarse
- *  mtimes (exFAT, some mounts) an edit inside the same tick keeps the mtime,
- *  so the proof is "same mtime AND same size". */
-const fsWholeSizes = new Map<string, number>();
 
-/** The FS transport's rev for a note: its mtime in ms; undefined when it cannot be read. */
-export function fsNoteRev(rel: string): number | undefined {
+/** The FS transport's token for a note: its mtime in ms AND its size, from
+ *  one stat, as one string — sampled by the read tool BEFORE the content is
+ *  read, like the host's rev, so a write racing the whole read makes the
+ *  remembered token too old, never too new. The size is in it because a
+ *  volume with coarse mtimes (exFAT, some mounts) keeps the mtime across an
+ *  edit inside the same tick. Undefined when the note cannot be read. */
+export function fsNoteRev(rel: string): string | undefined {
   try {
-    return statSync(resolveInVault(rel)).mtimeMs;
-  } catch {
-    return undefined;
-  }
-}
-
-function fsNoteSize(rel: string): number | undefined {
-  try {
-    return statSync(resolveInVault(rel)).size;
+    const st = statSync(resolveInVault(rel));
+    return `${st.mtimeMs}:${st.size}`;
   } catch {
     return undefined;
   }
@@ -271,8 +265,7 @@ export function makeBackend(
   };
   // A whole-note rule stands aside when the note is unchanged since a whole
   // read this process served (#443).
-  const provenWhole = async (rel: string): Promise<boolean> =>
-    fsWholeReads.has(rel, fsNoteRev(rel)) && fsWholeSizes.get(rel) === fsNoteSize(rel);
+  const provenWhole = async (rel: string): Promise<boolean> => fsWholeReads.has(rel, fsNoteRev(rel));
   const mutate = async <T>(
     op: string,
     target: { path?: string; paths?: string[] },
@@ -285,17 +278,17 @@ export function makeBackend(
     const cut = cutReadError(args);
     if (cut) throw cut;
     const kernel = opts.kernel ?? getFsWriteKernel();
-    // The whole-note-overwrite rule on this transport: the argument shape
-    // and the note's length (a stat, and a read only above the limit in
-    // bytes) are checked here, before the queue, so the critical section
-    // never pays for them; the PROOF — "unchanged since a whole read this
-    // process served", the note's mtime and size — is compared at DEQUEUE,
-    // after every write queued ahead has landed, because this transport has
-    // no if_rev to re-check at the write. A long overwrite refused there is
-    // journaled as an error (#443).
-    const longOverwrite = await wholeNoteOverwriteRefusal(args, noteLength, CHARACTER_LIMIT);
+    // The whole-note-overwrite rule runs whole at DEQUEUE on this transport
+    // (#443): both halves — is the note longer than the limit, and is it
+    // unchanged since a whole read this process served (its mtime and size)
+    // — must hold after every write queued ahead has landed, because a write
+    // ahead can push a note past the limit, and this transport has no if_rev
+    // to re-check at the write. The cost in the critical section is a stat
+    // per overwrite, and a read only for a note above the limit in bytes. A
+    // long overwrite refused there is journaled as an error.
     return kernel.runMutation(op, target, args, async () => {
-      if (longOverwrite && !(await provenWhole(args.path as string))) throw longOverwrite;
+      const long = await wholeNoteOverwriteRefusal(args, noteLength, CHARACTER_LIMIT, provenWhole);
+      if (long) throw long;
       return fn();
     });
   };
@@ -424,11 +417,7 @@ export function buildFsServer(opts?: FsHandlerOpts): McpServer {
     // FS writes carry no if_rev, so no read on this transport shows a rev.
     rev: (p) => fsNoteRev(p),
     revInResponse: false,
-    onWholeRead: (p, rev) => {
-      fsWholeReads.remember(p, rev);
-      const size = fsNoteSize(p);
-      if (size !== undefined) fsWholeSizes.set(p, size);
-    },
+    onWholeRead: (p, rev) => fsWholeReads.remember(p, rev),
   });
 
   return server;

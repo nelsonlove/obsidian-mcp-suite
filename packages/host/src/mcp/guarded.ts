@@ -253,7 +253,7 @@ export interface GuardedOpts {
    * if_rev is a remembered whole read's rev for that path AND the note's
    * current rev. Absent ⇒ no whole read is ever proven.
    */
-  wholeReads?: { has(path: string, rev: number | undefined): boolean };
+  wholeReads?: { has(path: string, rev: number | string | undefined): boolean };
   noteRev?: (path: string) => number | undefined;
   /**
    * The scope-provider registry backing `jd:<address>` (and other configured
