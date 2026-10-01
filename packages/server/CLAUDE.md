@@ -39,7 +39,7 @@ is in-process only — nothing serializes against a concurrently running Obsidia
 or a second server process. A deployment opts in explicitly via
 `VAULT_MCP_FS_ALLOW_WRITES=true` (`src/fs-mode.ts`'s
 `isFsWritesEnabled`/`FsWritesDisabledError`), and `GET /health` reports the
-current setting as `fsWritesEnabled`. Three argument refusals run before the FS kernel, in `mutate`: a malformed or escaping path, typed `invalid_path` by `resolveInVault` over the op's `target` paths (#444); and two (#441, `Error [truncated_read]`, unjournaled): a `content` carrying the read trailer (a cut read handed back), and a whole-note overwrite of a note longer than the read limit, which is never done whole over MCP; `noteLength` resolves the path through `resolveInVault`, so a path outside the vault is never stat'ed for it. Reads are never gated, never queued, and
+current setting as `fsWritesEnabled`. Three argument refusals run before the FS kernel, in `mutate`: a malformed or escaping path, typed `invalid_path` by `resolveInVault` over the op's `target` paths (#444) — this one runs before the op's own argument checks, so a bad path on `obsidian_delete_note` is reported before a missing `confirm`, and a bad path before a missing `.md`; and two (#441, `Error [truncated_read]`, unjournaled): a `content` carrying the read trailer (a cut read handed back), and a whole-note overwrite of a note longer than the read limit, which is never done whole over MCP; `noteLength` resolves the path through `resolveInVault`, so a path outside the vault is never stat'ed for it. Reads are never gated, never queued, and
 never journaled.
 
 ## Auth (dual + per-user allowlist)
