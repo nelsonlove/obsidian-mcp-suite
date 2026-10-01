@@ -49,12 +49,19 @@ describe("resolveInVault — lexical guards", () => {
     assert.ok(vault.resolveInVault("sub/../Plan.md").endsWith(path.join(tmpRoot, "Plan.md")));
   });
 
-  test("a root with a doubled or trailing separator resolves every path, not none (#444)", () => {
+  test("a root with a doubled or trailing separator is normalised once, so every path resolves and the root itself is clean (#444)", () => {
     const doubled = vault.createVaultAt(tmpRoot + path.sep + path.sep);
+    assert.equal(doubled.root, path.resolve(tmpRoot), "the root is the one spelling");
     assert.ok(doubled.resolveInVault("Projects/Plan.md").endsWith(path.join("Projects", "Plan.md")));
     const trailing = vault.createVaultAt(tmpRoot + path.sep);
+    assert.equal(trailing.root, path.resolve(tmpRoot));
     assert.ok(trailing.resolveInVault("Plan.md").endsWith(path.join(tmpRoot, "Plan.md")));
     assert.throws(() => trailing.resolveInVault("../outside.md"), /escapes the vault root/);
+  });
+
+  test("a backslash in a path is refused, not a literal character in a name", () => {
+    assert.throws(() => vault.resolveInVault("..\\outside.md"), /backslash/);
+    assert.throws(() => vault.resolveInVault("Projects\\Plan.md"), /backslash/);
   });
 
   test("refuses ignored folders", () => {

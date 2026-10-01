@@ -143,7 +143,10 @@ export function getFsWriteKernel(): FsWriteKernel {
     processKernel = new FsWriteKernel({
       journalDir: defaultJournalDir(vaultName),
       identity: { vault: vaultName, version: SERVER_VERSION },
-      resolvePath: (relPath) => path.join(vaultRoot(), relPath),
+      // Through the vault's resolver: an escaping path is never stat'ed for
+      // the journal's revBefore (its throw is swallowed by the kernel's
+      // revOf, which then records no rev) (#444).
+      resolvePath: (relPath) => resolveInVault(relPath),
     });
   }
   return processKernel;
