@@ -381,11 +381,18 @@ class VaultImpl {
    * it, or hits an ignored folder.
    */
   resolveInVault(relPath: string): string {
-    // A backslash is not a separator on POSIX and is not allowed in an
-    // Obsidian file name; refused rather than left to become a literal
-    // character in a name (`..\\x.md` used to be folded into the vault).
-    if (relPath.includes("\\")) {
+    // Where '\\' is not the separator it is not allowed in an Obsidian file
+    // name either; refused rather than left to become a literal character
+    // in a name (`..\\x.md` used to be folded into the vault). On win32 it
+    // IS the separator and passes to `path.resolve` as such.
+    if (path.sep !== "\\" && relPath.includes("\\")) {
       throw new Error(`Path contains a backslash; vault paths use '/': '${relPath}'`);
+    }
+    // A vault path is relative: an absolute one, even inside the vault,
+    // would give the note a second spelling in the journal and the index
+    // (docs/developer-guide.md: reject absolute paths).
+    if (path.isAbsolute(relPath)) {
+      throw new Error(`Path is absolute; vault paths are relative to the vault root: '${relPath}'`);
     }
     // A path that climbs out of the vault is REFUSED by the check below, not
     // folded back in: `../outside.md` used to be written silently as

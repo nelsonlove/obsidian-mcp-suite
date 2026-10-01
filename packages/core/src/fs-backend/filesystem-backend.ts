@@ -48,9 +48,10 @@ export class FilesystemBackend implements VaultBackend {
   private readonly index: IndexStore;
 
   constructor(vaultRoot: string) {
-    // Normalised once, here, so the vault and the index hold one spelling of
-    // the root (#444: a doubled separator in one and not the other is the
-    // class of bug a textual path comparison then has).
+    // Resolved here so the vault and the index hold one spelling of the root
+    // (#444: a doubled separator in one and not the other is the class of
+    // bug a textual path comparison then has); VaultImpl resolves its root
+    // again, which is idempotent.
     const root = path.resolve(vaultRoot);
     this.vault = createVaultAt(root);
     this.index = new IndexStore(root);

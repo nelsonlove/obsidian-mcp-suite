@@ -374,6 +374,10 @@ describe("obsidian_write_note — accept-forbidden guard reaches the real fs-fai
       assert.match(text(res), /escapes the vault root/);
       await assert.rejects(readFile(path.join(tmpVault, name), "utf8"), "nothing landed inside the vault under the folded name");
       await assert.rejects(readFile(outside, "utf8"), "nothing landed outside it either");
+      // Refused before the kernel: no journal record for the attempt.
+      const files = await readdir(tmpJournalDir);
+      const lines = (await Promise.all(files.map((f) => readFile(path.join(tmpJournalDir, f), "utf8")))).join("\n");
+      assert.equal(lines.includes(name), false, "an argument refusal is not journaled");
     } finally {
       await rm(outside, { force: true });
       await teardown();
