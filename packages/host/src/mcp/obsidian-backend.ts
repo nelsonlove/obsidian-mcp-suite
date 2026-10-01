@@ -31,7 +31,7 @@
  */
 
 import { moveWithLinks, type LinkCheck } from "./move-with-links.js";
-import { indexedLinkers, linkIndexReady } from "./link-index.js";
+import { indexedLinkers, linkIndexReady, LinkIndexLoadingError } from "./link-index.js";
 import { TFile, TFolder, getAllTags, type App } from "obsidian";
 import {
   CHARACTER_LIMIT,
@@ -390,13 +390,11 @@ export class ObsidianBackend implements VaultBackend {
 
   async getBacklinks(notePath: string): Promise<string[]> {
     const file = this.app.vault.getAbstractFileByPath(notePath);
-    if (!file) throw new Error(`not found: ${notePath}`);
+    if (!(file instanceof TFile)) throw new Error(`not found: ${notePath}`);
     // From Obsidian's own link index, never `getBacklinksForFile` (see
     // link-index.ts, #451). Refused, not answered short, while the index is
     // still loading after a start.
-    if (!linkIndexReady(this.app)) {
-      throw new Error("Obsidian is still loading its link index after a start, so backlinks would be incomplete; retry in a minute");
-    }
+    if (!linkIndexReady(this.app)) throw new LinkIndexLoadingError();
     const linkers = indexedLinkers(this.app, file.path).map((l) => l.src);
     // The ARGUMENT is guarded; the ANSWER is a list of other notes' paths, and
     // "who links to this" is exactly how a visible note names hidden ones. A

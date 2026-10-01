@@ -345,24 +345,54 @@ describe("link resolution fails closed", () => {
     app.metadataCache.initialized = false;
     const res = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
     assert.equal(res.isError, true);
-    assert.match(res.content[0].text, /still loading its link index/);
+    assert.match(res.content[0].text, /^Error \[index_loading\]: .*still loading its link index/, "a typed, retryable refusal");
+
+    // Caches loaded but the link resolver not done: still not ready.
     app.metadataCache.initialized = true;
+    let clean = false;
+    const waiting = [];
+    app.metadataCache.isCacheClean = () => clean;
+    app.metadataCache.onCleanCache = (cb) => (clean ? cb() : waiting.push(cb));
+    const mid = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
+    assert.match(mid.content[0].text, /^Error \[index_loading\]/, "initialized alone is not ready");
+
+    // The first clean moment latches ready: later dirty moments (every write) never refuse.
+    clean = true;
+    for (const cb of waiting) cb();
+    clean = false;
     const ok = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
     assert.deepEqual(ok.structuredContent.backlinks, ["Archive/Payroll/Salaries.md"]);
+  });
+
+  test("obsidian_get_backlinks refuses a folder path instead of answering 'nothing links here'", async () => {
+    const app = fakeApp();
+    const res = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects" });
+    assert.equal(res.isError, true);
+    assert.match(res.content[0].text, /not found: Projects/);
   });
 
   test("no host source calls getBacklinksForFile (#451): a plugin may patch it and answer short", async () => {
     const SRC = new URL("../src/", import.meta.url);
     const offenders = [];
     let scanned = 0;
+    // Any mention of the name in code, outside comment lines.
+    const calls = (text) =>
+      /getBacklinksForFile/.test(text.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n"));
     for await (const rel of glob("**/*.ts", { cwd: SRC })) {
       scanned++;
       const text = await readFile(new URL(rel, SRC), "utf8");
-      const code = text.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
-      if (/getBacklinksForFile\s*\(|\[\s*["'`]getBacklinksForFile["'`]\s*\]/.test(code)) offenders.push(rel);
+      if (calls(text)) offenders.push(rel);
     }
     assert.ok(scanned > 20, `the scan must see the host sources (saw ${scanned})`);
     assert.deepEqual(offenders, []);
+    // The instrument finds what it must (planted calls) and passes what it must (comments).
+    for (const planted of [
+      "(this.app.metadataCache as any).getBacklinksForFile(file)",
+      "mc.getBacklinksForFile?.(file)",
+      "mc.getBacklinksForFile.call(mc, file)",
+      'mc["getBacklinksForFile"](file)',
+    ]) assert.equal(calls(planted), true, planted);
+    assert.equal(calls("// never `getBacklinksForFile`\n * getBacklinksForFile is patched"), false);
   });
 
   test("obsidian_get_outlinks keeps the link TEXT and withholds where it landed", async () => {
