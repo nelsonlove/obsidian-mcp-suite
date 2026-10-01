@@ -79,6 +79,8 @@ function makeFakeImporterClass({
   dataPath = null,
   readableDataFolder = () => DATA_PATH,
   onImport = () => {},
+  /** The fork's shape (3.1.9-nl.3): a file-name template replaced the date prefix. */
+  withTitleTemplate = false,
 } = {}) {
   const instances = [];
   class FakeImporter {
@@ -92,6 +94,7 @@ function makeFakeImporterClass({
       this.selectedFolders = [];
       this.outputLocation = "";
       this.filePrefixFormat = "";
+      if (withTitleTemplate) this.noteTitleTemplate = "{{title}}";
       this.importCalls = 0;
     }
     readableDataFolder() {
@@ -149,6 +152,12 @@ describe("importer version gate", () => {
     for (const v of ["2.6.1", "2.6.3", "2.7.0", "1.8.13", "", undefined]) {
       assert.equal(importerVersionSupported(v), false, `version ${v} must not pass the gate`);
     }
+  });
+
+  test("3.1.9-nl.3 (the fork, checked touchpoint by touchpoint on 2026-10-01) is in the known-good set", () => {
+    assert.ok(KNOWN_GOOD_IMPORTER_VERSIONS.includes("3.1.9-nl.3"));
+    assert.equal(importerVersionSupported("3.1.9-nl.3"), true);
+    assert.equal(importerVersionSupported("3.1.9"), false, "the fork's exact version, not upstream's");
   });
 
   test("2.6.2 is in the known-good set (the version every touchpoint was verified against)", () => {
@@ -479,6 +488,25 @@ describe("import run", () => {
     assert.equal(res.isError, undefined, res.content?.[0]?.text);
     assert.equal(instances[0].outputLocation, "Apple Notes");
     assert.equal(instances[0].filePrefixFormat, "YYYY-MM-DD");
+  });
+
+  test("on the fork's shape the prefix becomes the file-name template the fork itself derives; 2.6.2's shape never gains the member", async () => {
+    const fork = makeFakeImporterClass({ withTitleTemplate: true });
+    const { tool } = register({ plugin: fakePlugin({ version: "3.1.9-nl.3", importerClass: fork.FakeImporter }) });
+    const res = await tool.handler({ dry_run: false, source_disposition: "none", disposition_dry_run: false });
+    assert.equal(res.isError, undefined, res.content?.[0]?.text);
+    assert.equal(fork.instances[0].filePrefixFormat, "YYYY-MM-DD", "set as before; ignored by the fork");
+    assert.equal(fork.instances[0].noteTitleTemplate, '{{ctime | date:"YYYY-MM-DD"}} {{title}}', "the fork's own migration of a stored prefix");
+
+    const forkEmpty = makeFakeImporterClass({ withTitleTemplate: true });
+    const { tool: tool2 } = register({ plugin: fakePlugin({ version: "3.1.9-nl.3", importerClass: forkEmpty.FakeImporter }) });
+    await tool2.handler({ dry_run: false, source_disposition: "none", disposition_dry_run: false, file_prefix_format: "" });
+    assert.equal(forkEmpty.instances[0].noteTitleTemplate, "{{title}}", "an explicit empty prefix is the plain title, as in the fork");
+
+    const stock = makeFakeImporterClass();
+    const { tool: tool3 } = register({ plugin: fakePlugin({ importerClass: stock.FakeImporter }) });
+    await tool3.handler({ dry_run: false, source_disposition: "none", disposition_dry_run: false });
+    assert.equal("noteTitleTemplate" in stock.instances[0], false, "2.6.2's shape is untouched");
   });
 
   test("failed imports are reported with capped names", async () => {
