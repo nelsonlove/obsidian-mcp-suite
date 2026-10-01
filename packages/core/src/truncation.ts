@@ -37,15 +37,15 @@
  *     obsidian_read_note_parsed, obsidian_get_active_note — do return it
  *     whole, and are bound by the same policy; the road through it is
  *     `full: true` on obsidian_read_note, below). A `content` + `overwrite: true` call on such a note is
- *     refused at each transport's interception, before the queue, from the
- *     note's length on disk. A long note is edited by anchor, or read whole
+ *     refused by each transport at dequeue, from the note's length on disk,
+ *     where the proof of a whole read (next) is read against the note as the
+ *     write meets it; so that refusal is journaled. A long note is edited by anchor, or read whole
  *     first: `obsidian_read_note` with `full: true` returns it whole with
- *     its rev, the transport remembers that whole read (`whole-reads.ts`; on the host
- *     one memory per connection, told under a token of mtime and size),
- *     and this rule — decided at dequeue on both transports, where the
- *     kernel has matched if_rev and every write queued ahead has landed —
- *     stands aside for a call whose if_rev is that rev, the note's current
- *     rev, and whose token is the remembered one (#443). A caller that reaches a backend directly
+ *     its rev, the host remembers that whole read (`whole-reads.ts`; one memory per
+ *     connection, told under a token of mtime and size, only with a kernel),
+ *     and this rule stands aside for a call whose if_rev is that rev, the
+ *     note's current rev, and whose token is the remembered one (#443). The
+ *     FS server serves the whole read but keeps no memory until #446. A caller that reaches a backend directly
  *     is not bound by that rule (it is not over MCP) — but by the next one.
  *   - `assertPatchRangeRead`, the same mechanism through the anchored road:
  *     a `replace` whose section runs past the read limit (the top heading of
@@ -117,7 +117,7 @@ export function carriesTruncationTrailer(text: string): boolean {
 }
 
 const WAY_OUT =
-  "Edit the note by anchor instead (obsidian_patch_note on a section that ends before the limit, obsidian_append_note, obsidian_manage_frontmatter; the read's rev is good for those). For a whole rewrite, read the note whole first — obsidian_read_note with full: true — then write it within ten minutes on the same connection, with that read's rev where the transport returns one (where it shows none, the note must simply be unchanged).";
+  "Edit the note by anchor instead (obsidian_patch_note on a section that ends before the limit, obsidian_append_note, obsidian_manage_frontmatter; the read's rev is good for those). For a whole rewrite, read the note whole first — obsidian_read_note with full: true — then write it within ten minutes on the same connection, with that read's rev and a NEW idempotency_key (a refused call's key answers with the refusal).";
 
 /** Typed refusal — rendered as `Error [truncated_read]`. Built by the two
  *  guards below; `new TruncatedReadError(path)` is the trailer refusal. */

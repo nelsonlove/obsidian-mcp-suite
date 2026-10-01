@@ -45,7 +45,6 @@ import {
   cutReadError,
   wholeNoteOverwriteRefusal,
   noteLengthFrom,
-  WholeReads,
   readNoteWhole,
   CHARACTER_LIMIT,
   resolveInVault,
@@ -202,23 +201,6 @@ export class FsWritesDisabledError extends Error {
  * read's rev — the note is unchanged since some whole read this process
  * served. A read's `rev` on this transport is the file's mtime in ms.
  */
-const fsWholeReads = new WholeReads();
-
-/** The FS transport's token for a note: its mtime in ms AND its size, from
- *  one stat, as one string — sampled by the read tool BEFORE the content is
- *  read, like the host's rev, so a write racing the whole read makes the
- *  remembered token too old, never too new. The size is in it because a
- *  volume with coarse mtimes (exFAT, some mounts) keeps the mtime across an
- *  edit inside the same tick. Undefined when the note cannot be read. */
-export async function fsWholeToken(rel: string): Promise<string | undefined> {
-  try {
-    const st = await fsp.stat(resolveInVault(rel));
-    return `${st.mtimeMs}:${st.size}`;
-  } catch {
-    return undefined;
-  }
-}
-
 export function makeBackend(
   opts: { allowWrites?: boolean; kernel?: FsWriteKernel } = {},
 ): VaultBackend {
@@ -263,9 +245,6 @@ export function makeBackend(
     }
     return noteLengthFrom(size, () => fsp.readFile(abs, "utf8"), CHARACTER_LIMIT);
   };
-  // A whole-note rule stands aside when the note is unchanged since a whole
-  // read this process served (#443).
-  const provenWhole = async (rel: string): Promise<boolean> => fsWholeReads.has(rel, await fsWholeToken(rel));
   const mutate = async <T>(
     op: string,
     target: { path?: string; paths?: string[] },
@@ -278,16 +257,14 @@ export function makeBackend(
     const cut = cutReadError(args);
     if (cut) throw cut;
     const kernel = opts.kernel ?? getFsWriteKernel();
-    // The whole-note-overwrite rule runs whole at DEQUEUE on this transport
-    // (#443): both halves — is the note longer than the limit, and is it
-    // unchanged since a whole read this process served (its mtime and size)
-    // — must hold after every write queued ahead has landed, because a write
-    // ahead can push a note past the limit, and this transport has no if_rev
-    // to re-check at the write. The cost in the critical section is a stat
-    // per overwrite, and a read only for a note above the limit in bytes. A
+    // The whole-note-overwrite rule runs at DEQUEUE on this transport, as on
+    // the plugin: the note's length must hold after every write queued ahead
+    // has landed (a write ahead can push a note past the limit). No proof
+    // of a whole read stands it aside here: this transport's writes carry no
+    // if_rev, so nothing could tie a proof to the caller (#443, #446). A
     // long overwrite refused there is journaled as an error.
     return kernel.runMutation(op, target, args, async () => {
-      const long = await wholeNoteOverwriteRefusal(args, noteLength, CHARACTER_LIMIT, provenWhole);
+      const long = await wholeNoteOverwriteRefusal(args, noteLength, CHARACTER_LIMIT);
       if (long) throw long;
       return fn();
     });
@@ -348,8 +325,7 @@ export function makeBackend(
         "obsidian_patch_note",
         { path: relPath },
         { path: relPath, anchor, op, content },
-        // The proof is read at dequeue, for a replace only (#443).
-        async () => patchNote(relPath, anchor, op, content, { rangeRuleStandsAside: op === "replace" && (await provenWhole(relPath)) }),
+        () => patchNote(relPath, anchor, op, content),
       ),
 
     writeNote: async (relPath, content, overwrite) =>
@@ -413,10 +389,9 @@ export function buildFsServer(opts?: FsHandlerOpts): McpServer {
   registerFsTools(server, makeBackend({ allowWrites: opts?.allowWrites, kernel: opts?.kernel }), {
     decodeHtml: true,
     includeIndexStatus: (opts?.indexStatus ?? true) ? indexStatus : undefined,
-    // No `rev` hook: FS writes carry no if_rev, so no read on this transport
-    // shows a rev. The whole-read memory is told under the FS token (#443).
-    wholeToken: fsWholeToken,
-    onWholeRead: (p, token) => fsWholeReads.remember(p, token),
+    // No `rev` hook and no whole-read memory: FS writes carry no if_rev, so
+    // no read shows a rev and no proof of a whole read can be tied to a
+    // caller (#443, #446). `full: true` still serves the whole note.
   });
 
   return server;

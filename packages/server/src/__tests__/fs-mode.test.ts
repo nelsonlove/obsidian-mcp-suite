@@ -18,7 +18,7 @@
 
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile, mkdir, readdir, readFile, utimes, stat } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, mkdir, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -364,7 +364,7 @@ describe("obsidian_write_note — accept-forbidden guard reaches the real fs-fai
     }
   });
 
-  test("full: true is the road through the whole-note policy on the FS server, while the note is unchanged (#443)", async () => {
+  test("full: true serves the whole note on the FS server, but no whole-note overwrite is let through there (#443, #446)", async () => {
     const { client, teardown } = await makeClientFromFsServer();
     const notePath = "fs-mode-443/Big.md";
     const body = "# Big\n\n" + "x".repeat(150_000) + "\n\n## Tail\n";
@@ -373,54 +373,20 @@ describe("obsidian_write_note — accept-forbidden guard reaches the real fs-fai
     try {
       const created = await client.callTool({ name: "obsidian_write_note", arguments: { path: notePath, content: body, overwrite: false } });
       assert.ok(!created.isError, `unexpected error: ${text(created)}`);
-      // Not proven: an overwrite after a cut read is refused.
-      const cut = parsed(await client.callTool({ name: "obsidian_read_note", arguments: { path: notePath } }));
-      assert.equal(cut.truncated, true);
-      const refused = await client.callTool({ name: "obsidian_write_note", arguments: { path: notePath, content: body.replace("# Big", "# Big (from a cut read)"), overwrite: true } });
-      assert.ok(refused.isError);
-      assert.match(text(refused), /^Error \[truncated_read\]/);
-      // Proven: a whole read, then the overwrite lands.
       const whole = parsed(await client.callTool({ name: "obsidian_read_note", arguments: { path: notePath, full: true } }));
       assert.equal(whole.whole, true);
       assert.equal(whole.content, body);
       assert.equal("rev" in whole, false, "no read on this transport shows a rev: its writes cannot honour one");
-      const landed = await client.callTool({ name: "obsidian_write_note", arguments: { path: notePath, content: body.replace("# Big", "# Big (rewritten)"), overwrite: true } });
-      assert.ok(!landed.isError, `unexpected error: ${text(landed)}`);
-      assert.match(await readFile(path.join(tmpVault, notePath), "utf8"), /^# Big \(rewritten\)/);
-      // Spent: the note moved with that write; the next overwrite needs a new whole read.
-      const again = await client.callTool({ name: "obsidian_write_note", arguments: { path: notePath, content: body.replace("# Big", "# Big (again)"), overwrite: true } });
-      assert.ok(again.isError);
-      assert.match(text(again), /^Error \[truncated_read\]/);
-      // A whole read, then a change from outside (the file touched on disk): refused, the rev moved.
-      parsed(await client.callTool({ name: "obsidian_read_note", arguments: { path: notePath, full: true } }));
-      const later = new Date(Date.now() + 5_000);
-      await utimes(path.join(tmpVault, notePath), later, later);
-      const stale = await client.callTool({ name: "obsidian_write_note", arguments: { path: notePath, content: body.replace("# Big", "# Big (stale)"), overwrite: true } });
-      assert.ok(stale.isError);
-      assert.match(text(stale), /^Error \[truncated_read\]/);
-      assert.match(await readFile(path.join(tmpVault, notePath), "utf8"), /^# Big \(rewritten\)/, "the note on disk is the one rewrite that was proven");
-      // The proof is read at dequeue: a write queued ahead of the overwrite
-      // moves the note, and the overwrite then finds it changed.
-      parsed(await client.callTool({ name: "obsidian_read_note", arguments: { path: notePath, full: true } }));
-      const [appended, raced] = await Promise.all([
-        client.callTool({ name: "obsidian_append_note", arguments: { path: notePath, content: "\nappended first\n" } }),
-        client.callTool({ name: "obsidian_write_note", arguments: { path: notePath, content: body.replace("# Big", "# Big (raced)"), overwrite: true } }),
-      ]);
+      // No proof can be tied to a caller here, so the policy stays: the
+      // whole note back is refused like any whole-note overwrite of a long note.
+      const back = await client.callTool({ name: "obsidian_write_note", arguments: { path: notePath, content: body.replace("# Big", "# Big (rewritten)"), overwrite: true } });
+      assert.ok(back.isError);
+      assert.match(text(back), /^Error \[truncated_read\]/);
+      assert.equal(await readFile(path.join(tmpVault, notePath), "utf8"), body, "the note on disk is intact");
+      // Edits by anchor still land.
+      const appended = await client.callTool({ name: "obsidian_append_note", arguments: { path: notePath, content: "\nappended\n" } });
       assert.ok(!appended.isError, text(appended));
-      assert.ok(raced.isError, "the overwrite queued behind the append found the note moved");
-      assert.match(text(raced), /^Error \[truncated_read\]/);
-      const after = await readFile(path.join(tmpVault, notePath), "utf8");
-      assert.match(after, /appended first/, "the append queued ahead survived");
-      assert.doesNotMatch(after, /raced/);
-      // A coarse-mtime volume: an edit that keeps the mtime still spends the
-      // proof, because the size moved too.
-      parsed(await client.callTool({ name: "obsidian_read_note", arguments: { path: notePath, full: true } }));
-      const kept = await stat(path.join(tmpVault, notePath));
-      await writeFile(path.join(tmpVault, notePath), after + "\nedited within the same mtime tick\n");
-      await utimes(path.join(tmpVault, notePath), kept.atime, kept.mtime);
-      const sameTick = await client.callTool({ name: "obsidian_write_note", arguments: { path: notePath, content: body.replace("# Big", "# Big (same tick)"), overwrite: true } });
-      assert.ok(sameTick.isError, "the mtime did not move, but the size did: not proven");
-      assert.match(await readFile(path.join(tmpVault, notePath), "utf8"), /edited within the same mtime tick/);
+      assert.match(await readFile(path.join(tmpVault, notePath), "utf8"), /appended/);
     } finally {
       await teardown();
     }

@@ -20,7 +20,7 @@ const { ObsidianBackend } = await import("../src/mcp/obsidian-backend.ts");
 const { makeGuarded } = await import("../src/mcp/guarded.ts");
 const { Kernel, WriteQueue, WriteJournal, IdempotencyStore, LockStore } = await import("../src/kernel/index.ts");
 const { requiredProtection } = await import("../src/kernel/write-protection.ts");
-const { registerFsTools, CHARACTER_LIMIT, WholeReads } = await import("@vault-mcp/core");
+const { registerFsTools, CHARACTER_LIMIT, WholeReads, wholeReadToken } = await import("@vault-mcp/core");
 
 const ACTOR = { transport: "mcp", client: "claude-code/1.0.0", connection: "conn-1" };
 const OPEN_SETTINGS = { readOnly: false, allowlist: [] };
@@ -83,7 +83,7 @@ function fixture() {
   };
   registerFsTools(server, backend, {
     rev: (p) => probe.rev(p),
-    wholeToken: (p) => (store.has(p) ? `${mtimes.get(p)}:${store.get(p).length}` : undefined),
+    wholeToken: (p) => (store.has(p) ? { token: wholeReadToken(mtimes.get(p), store.get(p).length), rev: mtimes.get(p) } : undefined),
     onWholeRead: (p, token) => wholeReads.remember(p, token),
   });
   return { server, store, mtimes, bump };

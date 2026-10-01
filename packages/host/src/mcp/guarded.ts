@@ -43,7 +43,7 @@ import {
   type SchemeRegistry,
 } from "../kernel/scheme/registry.js";
 import { OperationRefusedError, type OperationExecutor } from "../kernel/operations/executor.js";
-import { CHARACTER_LIMIT, cutReadError, wholeNoteOverwriteRefusal } from "@vault-mcp/core";
+import { CHARACTER_LIMIT, cutReadError, wholeNoteOverwriteRefusal, wholeReadToken } from "@vault-mcp/core";
 
 /** Guard/queue-level failure envelope: matches the `Error [code]: message` shape guardCall already emits. */
 function codedError(code: string, message: string) {
@@ -572,7 +572,7 @@ async function runGuarded(opts: GuardedOpts, def: any, handler: any, name: strin
   const provenWhole = async (path: string) =>
     ifRev !== undefined &&
     opts.noteRev?.(path) === ifRev &&
-    !!opts.wholeReads?.has(path, `${ifRev}:${opts.noteSize?.(path)}`);
+    !!opts.wholeReads?.has(path, wholeReadToken(ifRev, opts.noteSize?.(path)));
   const longNoteRefusal = async () =>
     isMutating && opts.noteLength
       ? wholeNoteOverwriteRefusal(toolArgs as Record<string, unknown>, opts.noteLength, CHARACTER_LIMIT, provenWhole)

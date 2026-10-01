@@ -5,6 +5,7 @@ import { registerFsTools, ok,
   noteLengthFrom,
   WholeReads,
   WRITE_WINDOW_MS,
+  wholeReadToken,
 } from "@vault-mcp/core";
 import { serverInfo, codedError } from "./helpers.js";
 import { registerCoreTools, type ServerCtx } from "./tools-core.js";
@@ -418,11 +419,17 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
     // The token a whole read is remembered under: the mtime (the rev the
     // caller will condition on) and the size (a coarse-mtime volume keeps
     // the mtime across an edit in the same tick), sampled before the read.
-    wholeToken: (p) => {
-      const f = app.vault.getAbstractFileByPath(p);
-      return f instanceof TFile ? `${f.stat.mtime}:${f.stat.size}` : undefined;
-    },
-    onWholeRead: (p, token) => wholeReads.remember(p, token),
+    // Only with a kernel: without one if_rev is refused outright, so no
+    // whole read could ever be proven, and the memory would only mislead.
+    ...(ctx.kernel
+      ? {
+          wholeToken: (p: string) => {
+            const f = app.vault.getAbstractFileByPath(p);
+            return f instanceof TFile ? { token: wholeReadToken(f.stat.mtime, f.stat.size), rev: f.stat.mtime } : undefined;
+          },
+          onWholeRead: (p: string, token: number | string) => wholeReads.remember(p, token),
+        }
+      : {}),
   });
 
   // ── remaining tools — live-only, complementary, nav, integrations ────────────

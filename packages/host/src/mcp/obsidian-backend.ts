@@ -37,6 +37,7 @@ import {
   assertNotTruncatedRead,
   assertPatchRangeRead,
   truncateForRead,
+  wholeReadToken,
   acceptTransitionNeedsBefore,
   deriveJdIdFromPath,
   parseGuardFrontmatter,
@@ -544,7 +545,7 @@ export class ObsidianBackend implements VaultBackend {
     // and size, as server.ts composes it) — the latter only when a kernel
     // matched the call's if_rev to that mtime at dequeue, which is why
     // server.ts hands the memory over only with one.
-    if (op === "replace" && !opts.rangeRuleStandsAside && !this.wholeReads?.has(relPath, `${file.stat.mtime}:${file.stat.size}`)) {
+    if (op === "replace" && !opts.rangeRuleStandsAside && !this.wholeReads?.has(relPath, wholeReadToken(file.stat.mtime, file.stat.size))) {
       assertPatchRangeRead(relPath, text.length, end, CHARACTER_LIMIT);
     }
     let next: string;
