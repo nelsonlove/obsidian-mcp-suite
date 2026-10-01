@@ -24,7 +24,7 @@ import { FilesystemBackend } from "../src/fs-backend/filesystem-backend.ts";
 import { registerFsTools } from "../src/register-fs-tools.ts";
 import { CHARACTER_LIMIT } from "../src/fs-backend/vault.ts";
 import { WholeReads, WHOLE_READ_TTL_MS, WRITE_WINDOW_MS } from "../src/whole-reads.ts";
-import { wholeNoteOverwriteRefusal, preQueueTruncationRefusal } from "../src/truncation.ts";
+import { wholeNoteOverwriteRefusal } from "../src/truncation.ts";
 
 const LONG = 150_000;
 const BODY = "# Big\n\n" + "x".repeat(LONG - 7 - 10) + "\n\n## Tail\n";
@@ -111,21 +111,30 @@ describe("obsidian_read_note full: true", () => {
     assert.match(res.content[0].text, /cannot read a note whole/);
   });
 
-  test("with revInResponse false the rev feeds the memory but no read shows it", async () => {
+  test("wholeToken names the whole read, sampled before the content, and a transport with no rev hook shows no rev", async () => {
     const told = [];
+    const order = [];
     const vaultRoot = await mkdtemp(join(tmpdir(), "vault-443-"));
     const backend = new FilesystemBackend(vaultRoot);
     await backend.writeNote("Big.md", BODY, false);
+    const inner = backend.readNoteWhole.bind(backend);
+    backend.readNoteWhole = async (p) => { order.push("read"); return inner(p); };
     const server = fakeServer();
-    registerFsTools(server, backend, { rev: () => 1700, revInResponse: false, onWholeRead: (p, r) => told.push([p, r]) });
+    registerFsTools(server, backend, { wholeToken: async (p) => { order.push("token"); return `${p}:tok`; }, onWholeRead: (p, t) => told.push([p, t]) });
     const whole = (await server.call("obsidian_read_note", { path: "Big.md", full: true })).structuredContent;
     assert.equal(whole.whole, true);
-    assert.equal("rev" in whole, false);
-    assert.deepEqual(told, [["Big.md", 1700]]);
-    const cut = (await server.call("obsidian_read_note", { path: "Big.md" })).structuredContent;
-    assert.equal("rev" in cut, false);
+    assert.equal("rev" in whole, false, "no rev hook, no rev shown");
+    assert.deepEqual(told, [["Big.md", "Big.md:tok"]]);
+    assert.deepEqual(order, ["token", "read"], "the token is sampled before the content is read");
     const batch = (await server.call("obsidian_read_notes", { paths: ["Big.md"] })).structuredContent.notes[0];
     assert.equal("rev" in batch, false);
+  });
+
+  test("without wholeToken the rev is the token", async () => {
+    const told = [];
+    const { server } = await fixture({ onWholeRead: (p, t) => told.push([p, t]) });
+    await server.call("obsidian_read_note", { path: "Big.md", full: true });
+    assert.deepEqual(told, [["Big.md", 1700]]);
   });
 
   test("with no rev source the whole read is served but nothing is remembered", async () => {
@@ -148,8 +157,7 @@ describe("the whole-note rules stand aside on a proven whole read only", () => {
     assert.equal(await wholeNoteOverwriteRefusal({ path: "Big.md", content: BODY, overwrite: true }, noteLength, CHARACTER_LIMIT, yes), null);
     assert.equal((await wholeNoteOverwriteRefusal({ path: "Big.md", content: BODY, overwrite: true }, noteLength, CHARACTER_LIMIT, no))?.code, "truncated_read");
     assert.equal((await wholeNoteOverwriteRefusal({ path: "Big.md", content: BODY, overwrite: true }, noteLength, CHARACTER_LIMIT))?.code, "truncated_read");
-    assert.match((await preQueueTruncationRefusal({ path: "Big.md", content: cut, overwrite: true }, noteLength, CHARACTER_LIMIT, yes)).message, /carries the read trailer/);
-    assert.equal(await preQueueTruncationRefusal({ path: "Big.md", content: BODY, overwrite: true }, noteLength, CHARACTER_LIMIT, yes), null);
+    assert.ok(cut.includes("[truncated:"), "the cut read is the trailer check's business, not this rule's");
   });
 
   test("the replace rule: patchNote with rangeRuleStandsAside lands a replace past the limit; without, refuses", async () => {

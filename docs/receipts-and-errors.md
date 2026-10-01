@@ -157,7 +157,7 @@ Stable identifiers belong to the runtime error registry. The exact set may grow,
 | Identity | `uid_unresolved`, `uid_ambiguous`, `address_unresolved`, `address_ambiguous` | No | Resolve identity; never guess among candidates |
 | Collision | `destination_occupied`, `already_exists` | No | Inspect occupant and prepare a new plan |
 | Concurrency | `rev_conflict` | No | Re-read and re-plan |
-| Integrity | `truncated_read` | No | The content is a cut read of a note longer than the read limit; edit the note by anchor within the read limit; never write the cut read back; a whole rewrite of a long note waits for #443 |
+| Integrity | `truncated_read` | No | The content is a cut read of a note longer than the read limit; edit the note by anchor within the read limit; never write the cut read back; for a whole rewrite, read the note whole first (`obsidian_read_note` with `full: true`) and write within ten minutes on the same connection with that read's rev |
 | Retry identity | `idempotency_mismatch` | No second mutation | Use original arguments for a true retry or a new key for new work |
 | Timeout | `write_timeout`, `base_timeout` | Write timeout uncertain; read timeout no mutation | Re-read writes; retry reads when safe |
 | Authority | `accept_forbidden`, `protected_property` | No | Route acceptance/property decision to the human surface |

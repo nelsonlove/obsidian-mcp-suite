@@ -347,6 +347,10 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
     actor,
     wholeReads,
     noteRev: (p: string) => probe.rev(p),
+    noteSize: (p: string) => {
+      const f = app.vault.getAbstractFileByPath(p);
+      return f instanceof TFile ? f.stat.size : undefined;
+    },
     executor,
     sessionRefusal,
     // `jd:<address>` addressing at the interception point: same per-call
@@ -411,7 +415,14 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   registerFsTools(server, backend, {
     decodeHtml: false,
     rev: (p) => probe.rev(p),
-    onWholeRead: (p, rev) => wholeReads.remember(p, rev),
+    // The token a whole read is remembered under: the mtime (the rev the
+    // caller will condition on) and the size (a coarse-mtime volume keeps
+    // the mtime across an edit in the same tick), sampled before the read.
+    wholeToken: (p) => {
+      const f = app.vault.getAbstractFileByPath(p);
+      return f instanceof TFile ? `${f.stat.mtime}:${f.stat.size}` : undefined;
+    },
+    onWholeRead: (p, token) => wholeReads.remember(p, token),
   });
 
   // ── remaining tools — live-only, complementary, nav, integrations ────────────

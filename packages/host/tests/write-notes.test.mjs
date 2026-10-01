@@ -180,8 +180,11 @@ describe("obsidian_write_notes — a cut read is one item's refusal, by its own 
   });
 });
 
-describe("obsidian_write_notes — a whole-note overwrite of a long note is one item's refusal, before the queue (#441)", () => {
-  test("the item reports truncated_read from the interception; the writer is never reached; the other item writes", async () => {
+describe("obsidian_write_notes — a whole-note overwrite of a long note is one item's refusal, at dequeue (#441, #443)", () => {
+  test("the item reports truncated_read from the guard at dequeue; the writer is never reached; the other item writes; the refusal is journaled", async () => {
+    // The refusal is makeGuarded's own, decided inside the kernel's queued
+    // closure (#443: after the idempotency claim and the if_rev check), not
+    // the writer's: the fake writer carries no guard.
     const long = "# Long\n" + "x".repeat(CHARACTER_LIMIT + 5000);
     const { call, vault, records } = harness({ existing: new Map([["Inbox/Long.md", { rev: 500, content: long }]]) });
     const res = await call({
@@ -199,7 +202,8 @@ describe("obsidian_write_notes — a whole-note overwrite of a long note is one 
     assert.equal(vault.get("Inbox/Long.md").content, long, "the long note is untouched");
     assert.equal(vault.get("Inbox/OK.md").content, "ok");
     await tick();
-    assert.equal(records().some((r) => r.target.path === "Inbox/Long.md"), false, "a pre-queue refusal is not journaled");
+    const rec = records().find((r) => r.target.path === "Inbox/Long.md");
+    assert.equal(rec?.outcome, "error", "decided at dequeue, so journaled");
   });
 
   test("an overwrite item with if_rev on a long note is refused by the rule, but without if_rev the protection refusal comes first", async () => {

@@ -52,7 +52,7 @@ import {
 } from "@vault-mcp/core";
 import type { VaultBackend, VaultWatcherHandle } from "@vault-mcp/core";
 import path from "node:path";
-import { promises as fsp, statSync } from "node:fs";
+import { promises as fsp } from "node:fs";
 import { FsWriteKernel, defaultJournalDir } from "./fs-write-kernel.js";
 
 /** This server's version, as asserted in MCP serverInfo and journal identity. */
@@ -210,9 +210,9 @@ const fsWholeReads = new WholeReads();
  *  remembered token too old, never too new. The size is in it because a
  *  volume with coarse mtimes (exFAT, some mounts) keeps the mtime across an
  *  edit inside the same tick. Undefined when the note cannot be read. */
-export function fsNoteRev(rel: string): string | undefined {
+export async function fsWholeToken(rel: string): Promise<string | undefined> {
   try {
-    const st = statSync(resolveInVault(rel));
+    const st = await fsp.stat(resolveInVault(rel));
     return `${st.mtimeMs}:${st.size}`;
   } catch {
     return undefined;
@@ -265,7 +265,7 @@ export function makeBackend(
   };
   // A whole-note rule stands aside when the note is unchanged since a whole
   // read this process served (#443).
-  const provenWhole = async (rel: string): Promise<boolean> => fsWholeReads.has(rel, fsNoteRev(rel));
+  const provenWhole = async (rel: string): Promise<boolean> => fsWholeReads.has(rel, await fsWholeToken(rel));
   const mutate = async <T>(
     op: string,
     target: { path?: string; paths?: string[] },
@@ -413,11 +413,10 @@ export function buildFsServer(opts?: FsHandlerOpts): McpServer {
   registerFsTools(server, makeBackend({ allowWrites: opts?.allowWrites, kernel: opts?.kernel }), {
     decodeHtml: true,
     includeIndexStatus: (opts?.indexStatus ?? true) ? indexStatus : undefined,
-    // The file's mtime names the whole read the process remembers (#443);
-    // FS writes carry no if_rev, so no read on this transport shows a rev.
-    rev: (p) => fsNoteRev(p),
-    revInResponse: false,
-    onWholeRead: (p, rev) => fsWholeReads.remember(p, rev),
+    // No `rev` hook: FS writes carry no if_rev, so no read on this transport
+    // shows a rev. The whole-read memory is told under the FS token (#443).
+    wholeToken: fsWholeToken,
+    onWholeRead: (p, token) => fsWholeReads.remember(p, token),
   });
 
   return server;

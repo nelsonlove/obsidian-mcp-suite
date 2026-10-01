@@ -30,7 +30,12 @@ const BODY = "---\ntitle: Big\n---\n# Big\n\n" + "x".repeat(LONG - 40) + "\n\n##
 function fixture() {
   const store = new Map([["Big.md", BODY], ["Other.md", BODY.replace("Big", "Other")], ["Small.md", "# Small"]]);
   const mtimes = new Map([["Big.md", 1700], ["Other.md", 1700], ["Small.md", 1700]]);
-  const fileOf = (p) => (store.has(p) ? new TFile(p, mtimes.get(p)) : null);
+  const fileOf = (p) => {
+    if (!store.has(p)) return null;
+    const f = new TFile(p, mtimes.get(p));
+    f.stat.size = store.get(p).length;
+    return f;
+  };
   const bump = (p) => mtimes.set(p, mtimes.get(p) + 1);
   const app = {
     vault: {
@@ -67,6 +72,7 @@ function fixture() {
     actor: () => ACTOR,
     wholeReads,
     noteRev: (p) => probe.rev(p),
+    noteSize: (p) => store.get(p)?.length,
     noteLength: async (p) => store.get(p)?.length,
   });
   const backend = new ObsidianBackend(app, () => null, undefined, wholeReads);
@@ -75,7 +81,11 @@ function fixture() {
     registerTool(name, meta, handler) { handlers.set(name, guarded(meta, handler, name)); return { name, meta }; },
     call(name, args) { return handlers.get(name)(args, {}); },
   };
-  registerFsTools(server, backend, { rev: (p) => probe.rev(p), onWholeRead: (p, rev) => wholeReads.remember(p, rev) });
+  registerFsTools(server, backend, {
+    rev: (p) => probe.rev(p),
+    wholeToken: (p) => (store.has(p) ? `${mtimes.get(p)}:${store.get(p).length}` : undefined),
+    onWholeRead: (p, token) => wholeReads.remember(p, token),
+  });
   return { server, store, mtimes, bump };
 }
 
@@ -103,8 +113,20 @@ describe("a whole read is the proof a whole-note overwrite needs", () => {
     store.set("Big.md", BODY + "\nedited in Obsidian\n"); bump("Big.md");
     const res = await server.call("obsidian_write_note", { path: "Big.md", content: BODY.replace("# Big", "# Big (stale rewrite)"), overwrite: true, if_rev: read.rev, idempotency_key: key() });
     assert.equal(res.isError, true);
-    assert.match(errText(res), /^Error \[truncated_read\]/);
+    // At dequeue the kernel's own if_rev check answers first (rev_conflict);
+    // had it not, the rule would (truncated_read). Either way: refused.
+    assert.match(errText(res), /^Error \[(rev_conflict|truncated_read)\]/);
     assert.match(store.get("Big.md"), /edited in Obsidian/, "the edit from Obsidian is intact");
+  });
+
+  test("an edit that keeps the mtime (a coarse-mtime volume) still spends the proof: the size moved", async () => {
+    const { server, store } = fixture();
+    const read = (await server.call("obsidian_read_note", { path: "Big.md", full: true })).structuredContent;
+    store.set("Big.md", BODY + "\nsame tick\n"); // the mtime stays 1700
+    const res = await server.call("obsidian_write_note", { path: "Big.md", content: BODY.replace("# Big", "# Big (stale)"), overwrite: true, if_rev: read.rev, idempotency_key: key() });
+    assert.equal(res.isError, true);
+    assert.match(errText(res), /^Error \[truncated_read\]/);
+    assert.match(store.get("Big.md"), /same tick/);
   });
 
   test("a remembered rev never carries over to another path", async () => {
