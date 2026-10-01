@@ -392,6 +392,20 @@ describe("obsidian_write_note — accept-forbidden guard reaches the real fs-fai
     }
   });
 
+  test("a write to a path outside the vault is refused through the real MCP tool, not folded into the vault (#444)", async () => {
+    const { client, teardown } = await makeClientFromFsServer();
+    const text = (r: Awaited<ReturnType<typeof client.callTool>>) => (r.content as Array<{ type: string; text: string }>)[0].text;
+    try {
+      const res = await client.callTool({ name: "obsidian_write_note", arguments: { path: "../outside-444.md", content: "x", overwrite: true } });
+      assert.ok(res.isError, "the escaping path must be refused, not written as <vault>/outside-444.md");
+      assert.match(text(res), /escapes the vault root/);
+      await assert.rejects(readFile(path.join(tmpVault, "outside-444.md"), "utf8"), "nothing landed inside the vault under the folded name");
+      await assert.rejects(readFile(path.join(tmpVault, "..", "outside-444.md"), "utf8"), "nothing landed outside it either");
+    } finally {
+      await teardown();
+    }
+  });
+
   test("a write carrying an accepted-family value behind a leading BOM is REFUSED (recognition parity)", async () => {
     const { client, teardown } = await makeClientFromFsServer();
     try {

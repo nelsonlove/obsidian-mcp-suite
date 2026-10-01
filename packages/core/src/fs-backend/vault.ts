@@ -323,7 +323,13 @@ export function decodeHtmlEntities(s: string): string {
 class VaultImpl {
   private realRootCache: string | null = null;
 
-  constructor(readonly root: string) {}
+  readonly root: string;
+  /** The root is normalised once (`path.resolve`): the containment check
+   *  below compares resolved child paths against it textually, so a root
+   *  with a doubled or trailing separator would refuse every path (#444). */
+  constructor(root: string) {
+    this.root = path.resolve(root);
+  }
 
   private realVaultRoot(): string {
     if (this.realRootCache) return this.realRootCache;
@@ -371,8 +377,10 @@ class VaultImpl {
    * it, or hits an ignored folder.
    */
   resolveInVault(relPath: string): string {
-    const normalized = path.normalize(relPath).replace(/^(\.\.(\/|\\|$))+/, "");
-    const abs = path.resolve(this.root, normalized);
+    // A path that climbs out of the vault is REFUSED by the check below, not
+    // folded back in: `../outside.md` used to be written silently as
+    // `outside.md` inside the vault and reported as created (#444).
+    const abs = path.resolve(this.root, path.normalize(relPath));
     const rootWithSep = this.root.endsWith(path.sep) ? this.root : this.root + path.sep;
     if (abs !== this.root && !abs.startsWith(rootWithSep)) {
       throw new Error(`Path escapes the vault root: '${relPath}'`);
