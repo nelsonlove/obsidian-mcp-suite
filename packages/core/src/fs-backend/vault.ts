@@ -32,6 +32,17 @@ import { assertNotTruncatedRead, assertPatchRangeRead, truncateForRead } from ".
  * per-instance vault roots without touching the module-level singleton.
  */
 
+/** A vault-relative path the vault refuses to resolve — rendered as
+ *  `Error [invalid_path]`, the code every sibling package uses for the same
+ *  mistakes (#444). */
+export class InvalidPathError extends Error {
+  readonly code = "invalid_path";
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidPathError";
+  }
+}
+
 /** The one containment check: `abs` is `root` or lies under it. Both sides
  *  must be resolved paths; a doubled or trailing separator on either defeats
  *  the textual test (#444). */
@@ -370,7 +381,7 @@ class VaultImpl {
         throw e;
       }
       if (!isWithin(this.realVaultRoot(), real)) {
-        throw new Error(`Path escapes the vault root via symlink: '${relPath}'`);
+        throw new InvalidPathError(`Path escapes the vault root via symlink: '${relPath}'`);
       }
       return;
     }
@@ -382,29 +393,31 @@ class VaultImpl {
    * it, or hits an ignored folder.
    */
   resolveInVault(relPath: string): string {
-    // Where '\\' is not the separator it is not allowed in an Obsidian file
-    // name either; refused rather than left to become a literal character
-    // in a name (`..\\x.md` used to be folded into the vault). On win32 it
-    // IS the separator and passes to `path.resolve` as such.
-    if (path.sep !== "\\" && relPath.includes("\\")) {
-      throw new Error(`Path contains a backslash; vault paths use '/': '${relPath}'`);
+    // A backslash is refused outright, on every platform, as every sibling
+    // package does: a vault path uses '/', an Obsidian name may not contain
+    // '\\', and everything downstream (the journal, the index, the ignored
+    // folder check) splits on '/' alone — so a platform where '\\' is the
+    // separator would give the same note two spellings. The removed regex
+    // used to fold `..\\x.md` into the vault.
+    if (relPath.includes("\\")) {
+      throw new InvalidPathError(`Path contains a backslash; vault paths use '/': '${relPath}'`);
     }
     // A vault path is relative: an absolute one, even inside the vault,
     // would give the note a second spelling in the journal and the index
     // (docs/developer-guide.md: reject absolute paths).
     if (path.isAbsolute(relPath)) {
-      throw new Error(`Path is absolute; vault paths are relative to the vault root: '${relPath}'`);
+      throw new InvalidPathError(`Path is absolute; vault paths are relative to the vault root: '${relPath}'`);
     }
     // A path that climbs out of the vault is REFUSED by the check below, not
     // folded back in: `../outside.md` used to be written silently as
     // `outside.md` inside the vault and reported as created (#444).
     const abs = path.resolve(this.root, relPath);
     if (!isWithin(this.root, abs)) {
-      throw new Error(`Path escapes the vault root: '${relPath}'`);
+      throw new InvalidPathError(`Path escapes the vault root: '${relPath}'`);
     }
     const segments = path.relative(this.root, abs).split(path.sep);
     if (segments.some((s) => IGNORED_DIRS.has(s))) {
-      throw new Error(`Path touches an ignored folder: '${relPath}'`);
+      throw new InvalidPathError(`Path touches an ignored folder: '${relPath}'`);
     }
     this.assertNoSymlinkEscape(abs, relPath);
     return abs;

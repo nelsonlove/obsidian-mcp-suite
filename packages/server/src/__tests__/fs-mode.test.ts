@@ -403,7 +403,7 @@ describe("obsidian_write_note — accept-forbidden guard reaches the real fs-fai
     try {
       const res = await client.callTool({ name: "obsidian_write_note", arguments: { path: `../${name}`, content: "x", overwrite: true } });
       assert.ok(res.isError, `the escaping path must be refused, not written as <vault>/${name}`);
-      assert.match(text(res), /escapes the vault root/);
+      assert.match(text(res), /^Error \[invalid_path\]: Path escapes the vault root/);
       await assert.rejects(readFile(path.join(tmpVault, name), "utf8"), "nothing landed inside the vault under the folded name");
       await assert.rejects(readFile(outside, "utf8"), "nothing landed outside it either");
       // Refused before the kernel: no journal record for the attempt.
