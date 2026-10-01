@@ -61,6 +61,17 @@ describe("WholeReads — the memory", () => {
     now += WHOLE_READ_TTL_MS + 1;
     assert.equal(m.has("A.md", 12), false, "the window is the idempotency window");
   });
+
+  test("remember sweeps every entry past the window, so a sweep of whole reads holds only the last window", () => {
+    let now = 1_000_000;
+    const m = new WholeReads(WHOLE_READ_TTL_MS, () => now);
+    for (let i = 0; i < 500; i++) m.remember(`N${i}.md`, i);
+    assert.equal(m.size, 500);
+    now += WHOLE_READ_TTL_MS + 1;
+    m.remember("Last.md", 1);
+    assert.equal(m.size, 1);
+    assert.equal(m.has("Last.md", 1), true);
+  });
 });
 
 describe("obsidian_read_note full: true", () => {
@@ -91,6 +102,23 @@ describe("obsidian_read_note full: true", () => {
     const res = await server.call("obsidian_read_note", { path: "A.md", full: true });
     assert.equal(res.isError, true);
     assert.match(res.content[0].text, /cannot read a note whole/);
+  });
+
+  test("with revInResponse false the rev feeds the memory but no read shows it", async () => {
+    const told = [];
+    const vaultRoot = await mkdtemp(join(tmpdir(), "vault-443-"));
+    const backend = new FilesystemBackend(vaultRoot);
+    await backend.writeNote("Big.md", BODY, false);
+    const server = fakeServer();
+    registerFsTools(server, backend, { rev: () => 1700, revInResponse: false, onWholeRead: (p, r) => told.push([p, r]) });
+    const whole = (await server.call("obsidian_read_note", { path: "Big.md", full: true })).structuredContent;
+    assert.equal(whole.whole, true);
+    assert.equal("rev" in whole, false);
+    assert.deepEqual(told, [["Big.md", 1700]]);
+    const cut = (await server.call("obsidian_read_note", { path: "Big.md" })).structuredContent;
+    assert.equal("rev" in cut, false);
+    const batch = (await server.call("obsidian_read_notes", { paths: ["Big.md"] })).structuredContent.notes[0];
+    assert.equal("rev" in batch, false);
   });
 
   test("with no rev source the whole read is served but nothing is remembered", async () => {

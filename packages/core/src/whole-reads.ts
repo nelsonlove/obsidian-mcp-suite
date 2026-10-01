@@ -30,9 +30,18 @@ export class WholeReads {
     private readonly now: () => number = () => Date.now(),
   ) {}
 
-  /** Remember that `path` was served whole at `rev`; a newer whole read replaces an older one. */
+  /** Remember that `path` was served whole at `rev`; a newer whole read
+   *  replaces an older one, and every entry past the window is swept, so a
+   *  connection that reads many notes whole holds only the last window. */
   remember(path: string, rev: number): void {
-    this.byPath.set(path, { rev, at: this.now() });
+    const now = this.now();
+    for (const [p, e] of this.byPath) if (now - e.at > this.ttlMs) this.byPath.delete(p);
+    this.byPath.set(path, { rev, at: now });
+  }
+
+  /** Entries held (expired ones included until the next sweep); for tests. */
+  get size(): number {
+    return this.byPath.size;
   }
 
   /** True when `path` was served whole at exactly `rev` within the window. */

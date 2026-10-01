@@ -329,7 +329,7 @@ describe("obsidian_write_note — accept-forbidden guard reaches the real fs-fai
     }
   });
 
-  test("a cut read is never written back through the FS server: both refusals run before its kernel, unjournaled (#441)", async () => {
+  test("a cut read is never written back through the FS server: the trailer refusal before its kernel, the overwrite refusal at dequeue (#441, #443)", async () => {
     const { client, teardown } = await makeClientFromFsServer();
     const notePath = "fs-mode-441/Big.md";
     const body = "# Big\n\n" + "x".repeat(150_000) + "\n\n## Tail\n";
@@ -351,10 +351,14 @@ describe("obsidian_write_note — accept-forbidden guard reaches the real fs-fai
       assert.ok(grown.isError);
       assert.match(text(grown), /^Error \[truncated_read\]:[\s\S]*never overwritten whole over MCP/);
       assert.equal(await readFile(path.join(tmpVault, notePath), "utf8"), body, "the note on disk is intact");
-      // Only the create reached the kernel: one journal record for the path.
+      // The trailer refusal never reached the kernel (no record); the
+      // overwrite refusal is decided at dequeue on this transport (#443), so
+      // it is journaled as an error beside the create.
       const files = await readdir(tmpJournalDir);
       const lines = (await Promise.all(files.map((f) => readFile(path.join(tmpJournalDir, f), "utf8")))).join("\n").split("\n").filter(Boolean);
-      assert.equal(lines.filter((l) => l.includes(notePath)).length, 1, "the two refusals left no journal record");
+      const mine = lines.filter((l) => l.includes(notePath));
+      assert.equal(mine.length, 2, "one record for the create, one for the overwrite refused at dequeue; none for the trailer refusal");
+      assert.ok(mine.some((l) => l.includes('"outcome":"error"') && l.includes("longer than the read limit")), "the dequeue refusal is on the record (the journal carries the message)");
     } finally {
       await teardown();
     }
@@ -379,7 +383,7 @@ describe("obsidian_write_note — accept-forbidden guard reaches the real fs-fai
       const whole = parsed(await client.callTool({ name: "obsidian_read_note", arguments: { path: notePath, full: true } }));
       assert.equal(whole.whole, true);
       assert.equal(whole.content, body);
-      assert.equal(typeof whole.rev, "number", "an FS read carries the mtime as its rev");
+      assert.equal("rev" in whole, false, "no read on this transport shows a rev: its writes cannot honour one");
       const landed = await client.callTool({ name: "obsidian_write_note", arguments: { path: notePath, content: body.replace("# Big", "# Big (rewritten)"), overwrite: true } });
       assert.ok(!landed.isError, `unexpected error: ${text(landed)}`);
       assert.match(await readFile(path.join(tmpVault, notePath), "utf8"), /^# Big \(rewritten\)/);
@@ -395,6 +399,19 @@ describe("obsidian_write_note — accept-forbidden guard reaches the real fs-fai
       assert.ok(stale.isError);
       assert.match(text(stale), /^Error \[truncated_read\]/);
       assert.match(await readFile(path.join(tmpVault, notePath), "utf8"), /^# Big \(rewritten\)/, "the note on disk is the one rewrite that was proven");
+      // The proof is read at dequeue: a write queued ahead of the overwrite
+      // moves the note, and the overwrite then finds it changed.
+      parsed(await client.callTool({ name: "obsidian_read_note", arguments: { path: notePath, full: true } }));
+      const [appended, raced] = await Promise.all([
+        client.callTool({ name: "obsidian_append_note", arguments: { path: notePath, content: "\nappended first\n" } }),
+        client.callTool({ name: "obsidian_write_note", arguments: { path: notePath, content: body.replace("# Big", "# Big (raced)"), overwrite: true } }),
+      ]);
+      assert.ok(!appended.isError, text(appended));
+      assert.ok(raced.isError, "the overwrite queued behind the append found the note moved");
+      assert.match(text(raced), /^Error \[truncated_read\]/);
+      const after = await readFile(path.join(tmpVault, notePath), "utf8");
+      assert.match(after, /appended first/, "the append queued ahead survived");
+      assert.doesNotMatch(after, /raced/);
     } finally {
       await teardown();
     }

@@ -43,6 +43,13 @@ export interface RegisterFsToolsOpts {
    */
   onWholeRead?: (path: string, rev: number) => void;
   /**
+   * When false, the rev from `rev` feeds `onWholeRead` only and is never put
+   * in a response: for a transport whose writes cannot honour `if_rev` (the
+   * FS server), so a read never advertises a conditioning it has not got.
+   * Default true.
+   */
+  revInResponse?: boolean;
+  /**
    * When provided, the return value is merged into every read-tool response as
    * `index_status`. Also read before/after for obsidian_force_reindex timing.
    */
@@ -76,12 +83,12 @@ type ToolRegistrar = { registerTool(name: string, meta: any, handler: (args: any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function registerFsTools(server: any, backend: VaultBackend, opts: RegisterFsToolsOpts = {}): void {
   const reg = server as ToolRegistrar;
-  const { decodeHtml = false, includeIndexStatus, rev, onWholeRead } = opts;
+  const { decodeHtml = false, includeIndexStatus, rev, onWholeRead, revInResponse = true } = opts;
 
   const dec = (s: string): string => (decodeHtml ? decodeHtmlEntities(s) : s);
 
   for (const tool of FS_TOOLS) {
-    const handler = makeHandler(tool.name, backend, dec, includeIndexStatus, rev, onWholeRead);
+    const handler = makeHandler(tool.name, backend, dec, includeIndexStatus, rev, onWholeRead, revInResponse);
     reg.registerTool(
       tool.name,
       {
@@ -104,6 +111,7 @@ function makeHandler(
   includeIndexStatus: (() => IndexStatusSnapshot) | undefined,
   revOf?: (path: string) => number | undefined,
   onWholeRead?: (path: string, rev: number) => void,
+  revInResponse = true,
 ) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const status = (extra: Record<string, unknown> = {}): Record<string, unknown> =>
@@ -118,6 +126,7 @@ function makeHandler(
     const r = revOf?.(path);
     return r === undefined ? {} : { rev: r };
   };
+  const shown = (revd: { rev?: number }): { rev?: number } => (revInResponse ? revd : {});
 
   switch (name) {
     // ── obsidian_list_notes ────────────────────────────────────────────────
@@ -167,12 +176,12 @@ function makeHandler(
             if (!backend.readNoteWhole) return fail(new Error("this server cannot read a note whole (full: true): the backend has no whole read"));
             const whole = await backend.readNoteWhole(decoded);
             if (revd.rev !== undefined) onWholeRead?.(decoded, revd.rev);
-            return ok(status({ path: decoded, content: whole, ...revd, truncated: false, whole: true }));
+            return ok(status({ path: decoded, content: whole, ...shown(revd), truncated: false, whole: true }));
           }
           const content = await backend.readNote(decoded);
           // `truncated` flags a cut read (truncation.ts) and is always
           // present, as on obsidian_read_notes; a cut read keeps its rev (#441).
-          return ok(status({ path: decoded, content, ...revd, truncated: isCutRead(content, CHARACTER_LIMIT) }));
+          return ok(status({ path: decoded, content, ...shown(revd), truncated: isCutRead(content, CHARACTER_LIMIT) }));
         } catch (e) {
           return fail(e);
         }
@@ -198,7 +207,7 @@ function makeHandler(
               return {
                 idx,
                 kind: "ok",
-                value: { path: p, content, truncated, ...revd },
+                value: { path: p, content, truncated, ...shown(revd) },
               };
             } catch (e) {
               return { idx, kind: "err", value: { path: p, error: e instanceof Error ? e.message : String(e) } };

@@ -42,7 +42,8 @@ import {
   searchByFrontmatter,
   startVaultWatcher,
   registerFsTools,
-  preQueueTruncationRefusal,
+  cutReadError,
+  wholeNoteOverwriteRefusal,
   noteLengthFrom,
   WholeReads,
   readNoteWhole,
@@ -266,14 +267,21 @@ export function makeBackend(
     fn: () => Promise<T>,
   ): Promise<T> => {
     requireWrites();
-    // A cut read handed back as `content`, or a whole-note overwrite of a
-    // note longer than the read limit (never done whole over MCP), is refused
-    // before the queue, as the host's guard does (#441): unjournaled, like
-    // every argument refusal.
-    const cut = await preQueueTruncationRefusal(args, noteLength, CHARACTER_LIMIT, provenWhole);
+    // A cut read handed back as `content` is refused before the queue, as the
+    // host's guard does (#441): unjournaled, like every argument refusal.
+    const cut = cutReadError(args);
     if (cut) throw cut;
     const kernel = opts.kernel ?? getFsWriteKernel();
-    return kernel.runMutation(op, target, args, fn);
+    // The whole-note-overwrite rule runs at DEQUEUE on this transport (so it
+    // is journaled as an error): its proof is "unchanged since a whole read
+    // this process served", and with no if_rev to re-check at the write, the
+    // note's mtime must be compared where the write happens, after every
+    // write queued ahead of this one has landed (#443).
+    return kernel.runMutation(op, target, args, async () => {
+      const long = await wholeNoteOverwriteRefusal(args, noteLength, CHARACTER_LIMIT, provenWhole);
+      if (long) throw long;
+      return fn();
+    });
   };
 
   return {
@@ -326,15 +334,14 @@ export function makeBackend(
       );
     },
 
-    patchNote: async (relPath, anchor, op, content) => {
-      const rangeRuleStandsAside = await provenWhole(relPath);
-      return mutate(
+    patchNote: async (relPath, anchor, op, content) =>
+      mutate(
         "obsidian_patch_note",
         { path: relPath },
         { path: relPath, anchor, op, content },
-        () => patchNote(relPath, anchor, op, content, { rangeRuleStandsAside }),
-      );
-    },
+        // The proof is read at dequeue, for a replace only (#443).
+        async () => patchNote(relPath, anchor, op, content, { rangeRuleStandsAside: op === "replace" && (await provenWhole(relPath)) }),
+      ),
 
     writeNote: async (relPath, content, overwrite) =>
       mutate(
@@ -397,10 +404,10 @@ export function buildFsServer(opts?: FsHandlerOpts): McpServer {
   registerFsTools(server, makeBackend({ allowWrites: opts?.allowWrites, kernel: opts?.kernel }), {
     decodeHtml: true,
     includeIndexStatus: (opts?.indexStatus ?? true) ? indexStatus : undefined,
-    // A read's rev on this transport is the file's mtime (#443); FS writes
-    // carry no if_rev, so it conditions nothing here — it names the whole
-    // read the process remembers.
+    // The file's mtime names the whole read the process remembers (#443);
+    // FS writes carry no if_rev, so no read on this transport shows a rev.
     rev: (p) => fsNoteRev(p),
+    revInResponse: false,
     onWholeRead: (p, rev) => fsWholeReads.remember(p, rev),
   });
 

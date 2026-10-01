@@ -585,8 +585,14 @@ async function runGuarded(opts: GuardedOpts, def: any, handler: any, name: strin
   // `protection` (kernel/write-protection.ts), read over the RESOLVED args.
   const missing = protectionRefusal(name ?? def?.title ?? "unknown", toolArgs as Record<string, unknown>, { ifRev, idempotencyKey });
   if (missing) return codedError(missing.code, missing.message);
-  const long = await longNoteRefusal();
-  if (long) return codedError(long.code, long.message);
+  // A keyed retry of a call the kernel already holds (returned, or still in
+  // flight) goes to the kernel to be replayed or shared, not to this rule:
+  // after a proven whole-note overwrite landed, the note's rev has moved, and
+  // the retry of that very call must not be refused as unproven (#443).
+  if (!(idempotencyKey && opts.kernel.idempotency.has(idempotencyKey))) {
+    const long = await longNoteRefusal();
+    if (long) return codedError(long.code, long.message);
+  }
   // The operation reaches the write queue here. Marked rather than assumed:
   // every refusal above this line — read-only mode, the allowlist, an
   // unresolved uid or address, an unenforceable if_rev — returns without ever
