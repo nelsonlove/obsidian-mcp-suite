@@ -119,15 +119,22 @@ function fakeApp({ notes = NOTES, caches = CACHES, active = null, bookmarks = nu
     metadataCache: {
       getFileCache: (f) => caches[f.path] ?? null,
       getFirstLinkpathDest: (linkpath) => byBasename.get(String(linkpath).toLowerCase()) ?? null,
-      getBacklinksForFile: (file) => {
-        const data = new Map();
+      // Obsidian's link index, built from the caches: source → target → count.
+      get resolvedLinks() {
+        const out = {};
         for (const [path, cache] of Object.entries(caches)) {
-          if ((cache.links ?? []).some((l) => byBasename.get(l.link.toLowerCase())?.path === file.path)) {
-            data.set(path, []);
+          for (const l of cache.links ?? []) {
+            const dest = byBasename.get(l.link.toLowerCase());
+            if (!dest) continue;
+            out[path] ??= {};
+            out[path][dest.path] = (out[path][dest.path] ?? 0) + 1;
           }
         }
-        return { data };
+        return out;
       },
+      // What a plugin patch (Advanced Metadata Cache during its first index
+      // build) can return: a short answer. getBacklinks must not read it.
+      getBacklinksForFile: () => ({ data: new Map() }),
       // The host's own vault-wide aggregate — the one a sandboxed session must
       // not be handed.
       getTags: () => ({ "#work": 3, "#payroll": 1 }),
@@ -304,6 +311,17 @@ describe("link resolution fails closed", () => {
     assert.equal(body(res).count, 0, "the count follows the list — a bare count is still an oracle");
     const open = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
     assert.deepEqual(open.structuredContent.backlinks, ["Archive/Payroll/Salaries.md"]);
+  });
+
+  test("obsidian_get_backlinks answers from Obsidian's own link index, not a patched getBacklinksForFile", async () => {
+    const app = fakeApp();
+    // The fixture's getBacklinksForFile returns nothing, as a plugin patch can
+    // while its index builds; the answer must still come from resolvedLinks.
+    const res = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
+    assert.deepEqual(res.structuredContent.backlinks, ["Archive/Payroll/Salaries.md"]);
+    app.metadataCache.getBacklinksForFile = () => { throw new Error("getBacklinksForFile must not be called"); };
+    const again = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
+    assert.deepEqual(again.structuredContent.backlinks, ["Archive/Payroll/Salaries.md"]);
   });
 
   test("obsidian_get_outlinks keeps the link TEXT and withholds where it landed", async () => {
