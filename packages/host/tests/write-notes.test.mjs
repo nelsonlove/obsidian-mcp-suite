@@ -19,7 +19,7 @@ import { Kernel, WriteQueue, WriteJournal, IdempotencyStore, LockStore, UidIndex
 import { makeRegistry, DEFAULT_SCHEMES } from "../src/kernel/scheme/registry.ts";
 import { registerWriteNotesTool, batchItemWriter } from "../src/mcp/tools-write-notes.ts";
 import { parseYaml } from "./obsidian-stub.mjs";
-import { CHARACTER_LIMIT } from "@vault-mcp/core";
+import { CHARACTER_LIMIT, WholeReads, wholeReadToken } from "@vault-mcp/core";
 
 const ACTOR = { transport: "mcp", client: "claude-code/1.0.0", connection: "conn-1" };
 const OPEN_SETTINGS = { readOnly: false, allowlist: [] };
@@ -51,7 +51,7 @@ function fakeAdapter() {
  * and 5), by wiring the identical resolveGuardedPath/guardedOpts server.ts
  * wires — not a reimplementation of resolution for the test's own sake.
  */
-function harness({ existing = new Map(), settings = OPEN_SETTINGS, uidSource, schemes, schemeNotes } = {}) {
+function harness({ existing = new Map(), settings = OPEN_SETTINGS, uidSource, schemes, schemeNotes, wholeReads } = {}) {
   const vault = new Map();        // path -> { content, rev }
   const existingFm = new Map();   // path -> parsed frontmatter (metadata cache stand-in)
   let clock = 100;
@@ -90,8 +90,10 @@ function harness({ existing = new Map(), settings = OPEN_SETTINGS, uidSource, sc
     getSettings: () => settings,
     kernel,
     actor: () => ACTOR,
-    // The whole-note-overwrite rule (#441) reads the note's length here.
+    // The whole-note-overwrite rule (#441) reads the note's length here; the
+    // proof of a whole read (#443) its memory and the note's stat.
     noteLength: async (path) => vault.get(path)?.content.length,
+    ...(wholeReads ? { wholeReads, noteStat: (path) => (vault.has(path) ? { mtime: vault.get(path).rev, size: vault.get(path).content.length } : undefined) } : {}),
     ...(uids ? { uids } : {}),
     ...(schemes ? { schemes: () => schemes, schemeNotes: () => schemeNotes ?? [] } : {}),
   };
@@ -214,6 +216,17 @@ describe("obsidian_write_notes — a whole-note overwrite of a long note is one 
     // guarded writer directly, below, in truncated-read.test.mjs's host fixture.
     const res = await call({ notes: [{ path: "Inbox/Long.md", body: "# x", if_rev: 500 }], stamp: false });
     assert.equal(structured(res).errors[0].code, "truncated_read");
+  });
+
+  test("an item conditioned on a remembered whole read lands: the proof reaches the batch road (#443)", async () => {
+    const long = "# Long\n" + "x".repeat(CHARACTER_LIMIT + 5000);
+    const wholeReads = new WholeReads();
+    wholeReads.remember("Inbox/Long.md", wholeReadToken(500, long.length));
+    const { call, vault } = harness({ existing: new Map([["Inbox/Long.md", { rev: 500, content: long }]]), wholeReads });
+    const res = await call({ notes: [{ path: "Inbox/Long.md", body: "# Long (rewritten whole)\n" + "y".repeat(CHARACTER_LIMIT + 10), if_rev: 500 }], stamp: false });
+    const body = structured(res);
+    assert.equal(body.error_count, 0, JSON.stringify(body.errors));
+    assert.match(vault.get("Inbox/Long.md").content, /^# Long \(rewritten whole\)/);
   });
 
   test("a create-only item (no if_rev) on an existing long note is the protection refusal, not this rule", async () => {

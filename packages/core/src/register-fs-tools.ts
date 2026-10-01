@@ -45,8 +45,9 @@ export interface RegisterFsToolsOpts {
   /**
    * The token a whole read is remembered under (#443), sampled ONCE, before
    * the content is read, together with the rev the response shows — so the
-   * two cannot come from different states of the note. Absent ⇒ the rev is
-   * the token and nothing else changes.
+   * two cannot come from different states of the note. Absent ⇒ nothing is
+   * remembered (`onWholeRead` is never called): the token's spelling is
+   * `wholeReadToken`'s, and a bare rev would never match it.
    */
   wholeToken?: (path: string) => { token: number | string; rev?: number } | undefined;
   /**
@@ -175,9 +176,8 @@ function makeHandler(
             if (!backend.readNoteWhole) return fail(new Error("this server cannot read a note whole (full: true): the backend has no whole read"));
             const sampled = wholeToken ? wholeToken(decoded) : undefined;
             const revd = sampled ? (sampled.rev === undefined ? {} : { rev: sampled.rev }) : revField(decoded);
-            const token = sampled ? sampled.token : revd.rev;
             const whole = await backend.readNoteWhole(decoded);
-            if (token !== undefined) onWholeRead?.(decoded, token);
+            if (sampled) onWholeRead?.(decoded, sampled.token);
             return ok(status({ path: decoded, content: whole, ...revd, truncated: false, whole: true }));
           }
           const revd = revField(decoded);

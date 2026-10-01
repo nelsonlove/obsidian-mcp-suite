@@ -37,12 +37,12 @@ function fakeServer() {
   };
 }
 
-async function fixture({ rev = () => 1700, onWholeRead } = {}) {
+async function fixture({ rev = () => 1700, onWholeRead, wholeToken } = {}) {
   const vaultRoot = await mkdtemp(join(tmpdir(), "vault-443-"));
   const backend = new FilesystemBackend(vaultRoot);
   await backend.writeNote("Big.md", BODY, false);
   const server = fakeServer();
-  registerFsTools(server, backend, { rev, onWholeRead });
+  registerFsTools(server, backend, { rev, onWholeRead, wholeToken });
   return { vaultRoot, backend, server };
 }
 
@@ -75,16 +75,17 @@ describe("WholeReads — the memory", () => {
     for (let i = 0; i < 500; i++) m.remember(`N${i}.md`, i);
     assert.equal(m.size, 500);
     now += WRITE_WINDOW_MS + 1;
-    m.remember("Last.md", 1);
-    assert.equal(m.size, 1);
-    assert.equal(m.has("Last.md", 1), true);
+    for (let i = 0; i < 64; i++) m.remember(`Late${i}.md`, i);
+    assert.ok(m.size <= 64, `the sweep ran within 64 remembers: ${m.size}`);
+    assert.equal(m.has("Late63.md", 63), true);
+    assert.equal(m.has("N1.md", 1), false);
   });
 });
 
 describe("obsidian_read_note full: true", () => {
   test("serves the whole note with whole: true and its rev, and tells the memory", async () => {
     const told = [];
-    const { server } = await fixture({ onWholeRead: (p, r) => told.push([p, r]) });
+    const { server } = await fixture({ onWholeRead: (p, r) => told.push([p, r]), wholeToken: () => ({ token: 1700, rev: 1700 }) });
     const res = await server.call("obsidian_read_note", { path: "Big.md", full: true });
     const sc = res.structuredContent;
     assert.equal(sc.content, BODY);
@@ -133,20 +134,22 @@ describe("obsidian_read_note full: true", () => {
     assert.equal(batch.rev, 9999, "the cut and batch roads show the rev hook's value as before; only the whole read samples it with the token");
   });
 
-  test("without wholeToken the rev is the token", async () => {
+  test("without wholeToken nothing is remembered: a bare rev would never match the token's spelling", async () => {
     const told = [];
     const { server } = await fixture({ onWholeRead: (p, t) => told.push([p, t]) });
-    await server.call("obsidian_read_note", { path: "Big.md", full: true });
-    assert.deepEqual(told, [["Big.md", 1700]]);
+    const whole = (await server.call("obsidian_read_note", { path: "Big.md", full: true })).structuredContent;
+    assert.equal(whole.whole, true);
+    assert.equal(whole.rev, 1700, "the rev is still shown");
+    assert.deepEqual(told, []);
   });
 
-  test("with no rev source the whole read is served but nothing is remembered", async () => {
+  test("with a token source but no rev the whole read is served, remembered, and shows no rev", async () => {
     const told = [];
-    const { server } = await fixture({ rev: () => undefined, onWholeRead: (p, r) => told.push([p, r]) });
+    const { server } = await fixture({ rev: () => undefined, wholeToken: () => ({ token: "t" }), onWholeRead: (p, r) => told.push([p, r]) });
     const sc = (await server.call("obsidian_read_note", { path: "Big.md", full: true })).structuredContent;
     assert.equal(sc.whole, true);
     assert.equal("rev" in sc, false);
-    assert.deepEqual(told, []);
+    assert.deepEqual(told, [["Big.md", "t"]]);
   });
 });
 

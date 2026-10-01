@@ -40,6 +40,7 @@ export function wholeReadToken(mtime: number, size: number | undefined): string 
 
 export class WholeReads {
   private readonly byPath = new Map<string, { rev: RevToken; at: number }>();
+  private remembers = 0;
   constructor(
     private readonly ttlMs: number = WRITE_WINDOW_MS,
     private readonly now: () => number = () => Date.now(),
@@ -55,7 +56,11 @@ export class WholeReads {
    *  refusal, never a lost tail. */
   remember(path: string, rev: RevToken): void {
     const now = this.now();
-    for (const [p, e] of this.byPath) if (now - e.at > this.ttlMs) this.byPath.delete(p);
+    // Swept every 64 remembers (and on a miss in `has`), not on every one:
+    // a burst of whole reads stays linear.
+    if (++this.remembers % 64 === 0) {
+      for (const [p, e] of this.byPath) if (now - e.at > this.ttlMs) this.byPath.delete(p);
+    }
     this.byPath.set(path, { rev, at: now });
   }
 

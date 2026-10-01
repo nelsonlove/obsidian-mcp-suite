@@ -254,9 +254,9 @@ export interface GuardedOpts {
    * current rev. Absent ⇒ no whole read is ever proven.
    */
   wholeReads?: Pick<WholeReads, "has">;
-  noteRev?: (path: string) => number | undefined;
-  /** The note's size, composed with its rev into the token a whole read is remembered under (see server.ts). */
-  noteSize?: (path: string) => number | undefined;
+  /** The note's mtime (its rev) and size from ONE lookup, composed into the
+   *  token a whole read is remembered under (see server.ts). */
+  noteStat?: (path: string) => { mtime: number; size: number } | undefined;
   /**
    * The scope-provider registry backing `jd:<address>` (and other configured
    * scheme ids) addressing. Resolved PER CALL, like `getSettings`, so a
@@ -569,10 +569,15 @@ async function runGuarded(opts: GuardedOpts, def: any, handler: any, name: strin
   // (after the idempotency claim, so a keyed retry replays; after the if_rev
   // check and every write queued ahead, so the proof is read against the
   // state the write meets, as the FS server does); without one, right here.
-  const provenWhole = async (path: string) =>
-    ifRev !== undefined &&
-    opts.noteRev?.(path) === ifRev &&
-    !!opts.wholeReads?.has(path, wholeReadToken(ifRev, opts.noteSize?.(path)));
+  // Decided at most once per call (memoised): the note's stat from one
+  // lookup, and the memory's answer for its token.
+  let provenMemo: Promise<boolean> | undefined;
+  const provenWhole = (path: string): Promise<boolean> =>
+    (provenMemo ??= (async () => {
+      if (ifRev === undefined || !opts.wholeReads || !opts.noteStat) return false;
+      const st = opts.noteStat(path);
+      return !!st && st.mtime === ifRev && opts.wholeReads.has(path, wholeReadToken(st.mtime, st.size));
+    })());
   const longNoteRefusal = async () =>
     isMutating && opts.noteLength
       ? wholeNoteOverwriteRefusal(toolArgs as Record<string, unknown>, opts.noteLength, CHARACTER_LIMIT, provenWhole)
@@ -634,11 +639,12 @@ async function runGuarded(opts: GuardedOpts, def: any, handler: any, name: strin
         const long = await longNoteRefusal();
         if (long) return codedError(long.code, long.message);
         mark("attempted");
-        // The one proof of a whole read, decided here and handed to the
-        // handler (obsidian_patch_note passes it to the backend's replace
-        // rule): the backend never infers it from ambient state.
+        // The one proof of a whole read, decided here and handed to the one
+        // handler that reads it (obsidian_patch_note passes it to the
+        // backend's replace rule): the backend never infers it from ambient
+        // state, and no other call pays for it.
         const path = (toolArgs as Record<string, unknown>).path;
-        const proven = isMutating && typeof path === "string" ? await provenWhole(path) : false;
+        const proven = name === "obsidian_patch_note" && typeof path === "string" ? await provenWhole(path) : false;
         return handler(toolArgs, { ...(extra ?? {}), provenWhole: proven });
       }
     );

@@ -36,17 +36,19 @@
  *     write of a cut read wherever its text came from (a few reads —
  *     obsidian_read_note_parsed, obsidian_get_active_note — do return it
  *     whole, and are bound by the same policy; the road through it is
- *     `full: true` on obsidian_read_note, below). A `content` + `overwrite: true` call on such a note is
- *     refused by each transport at dequeue, from the note's length on disk,
- *     where the proof of a whole read (next) is read against the note as the
- *     write meets it; so that refusal is journaled. A long note is edited by anchor, or read whole
+ *     `full: true` on obsidian_read_note, below). A `content` +
+ *     `overwrite: true` call on such a note is refused by each transport at
+ *     dequeue, from the note's length on disk, where the proof of a whole
+ *     read (next) is read against the note as the write meets it; so that
+ *     refusal is journaled. A long note is edited by anchor, or read whole
  *     first: `obsidian_read_note` with `full: true` returns it whole with
- *     its rev, the host remembers that whole read (`whole-reads.ts`; one memory per
- *     connection, told under a token of mtime and size, only with a kernel),
- *     and this rule stands aside for a call whose if_rev is that rev, the
- *     note's current rev, and whose token is the remembered one (#443). The
- *     FS server serves the whole read but keeps no memory until #446. A caller that reaches a backend directly
- *     is not bound by that rule (it is not over MCP) — but by the next one.
+ *     its rev, the host remembers that whole read (`whole-reads.ts`; one
+ *     memory per connection, told under a token of mtime and size, only
+ *     with a kernel), and this rule stands aside for a call whose if_rev is
+ *     that rev, the note's current rev, and whose token is the remembered
+ *     one (#443). The FS server serves the whole read but keeps no memory
+ *     until #446. A caller that reaches a backend directly is not bound by
+ *     that rule (it is not over MCP) — but by the next one.
  *   - `assertPatchRangeRead`, the same mechanism through the anchored road:
  *     a `replace` whose section runs past the read limit (the top heading of
  *     a long note runs to its end) replaces text no cut read showed. So
