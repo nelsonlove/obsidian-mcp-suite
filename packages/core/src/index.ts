@@ -89,6 +89,7 @@ export { FilesystemBackend } from "./fs-backend/filesystem-backend.js";
 // Vault filesystem functions (module-level, bound to process.env.VAULT_PATH)
 export {
   CHARACTER_LIMIT,
+  InvalidPathError,
   decodeHtmlEntities,
   vaultRoot,
   resolveInVault,

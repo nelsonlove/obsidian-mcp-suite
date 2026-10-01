@@ -45,10 +45,9 @@ import type {
 export class FilesystemBackend implements VaultBackend {
   private readonly vault: ReturnType<typeof createVaultAt>;
   private readonly index: IndexStore;
-  private readonly vaultRootPath: string;
 
   constructor(vaultRoot: string) {
-    this.vaultRootPath = vaultRoot;
+    // Each resolves the root itself (#444), so both hold one spelling.
     this.vault = createVaultAt(vaultRoot);
     this.index = new IndexStore(vaultRoot);
   }
