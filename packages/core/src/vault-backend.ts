@@ -263,6 +263,8 @@ export interface VaultBackend {
     anchor: PatchAnchor,
     op: PatchOp,
     content: string,
+    /** #443: the transport proved a whole read of this note at its current rev, so a replace past the read limit is allowed. */
+    opts?: { rangeRuleStandsAside?: boolean },
   ): Promise<{ found: boolean; anchor: PatchAnchor; op: PatchOp; previous?: string }>;
 
   // ── Write: full note ops ───────────────────────────────────────────────────

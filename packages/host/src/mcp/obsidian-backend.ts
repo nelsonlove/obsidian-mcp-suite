@@ -509,6 +509,7 @@ export class ObsidianBackend implements VaultBackend {
     anchor: PatchAnchor,
     op: PatchOp,
     content: string,
+    opts: { rangeRuleStandsAside?: boolean } = {},
   ): Promise<{ found: boolean; anchor: PatchAnchor; op: PatchOp; previous?: string }> {
     if (!relPath.endsWith(".md")) throw new Error("path must end in .md");
     // A cut read handed back as the fragment is refused first (#441).
@@ -541,7 +542,11 @@ export class ObsidianBackend implements VaultBackend {
     const previous = text.slice(start, end);
     // A replace whose section runs past the read limit on a long note would
     // replace text no cut read showed (#441).
-    if (op === "replace" && !this.wholeReads?.has(relPath, file.stat.mtime)) {
+    // The rule stands aside on the transport's word (`opts`), or on this
+    // connection's memory of a whole read at the note's current rev — the
+    // latter only when a kernel matched the call's if_rev to that rev at
+    // dequeue, which is why server.ts hands the memory over only with one.
+    if (op === "replace" && !opts.rangeRuleStandsAside && !this.wholeReads?.has(relPath, file.stat.mtime)) {
       assertPatchRangeRead(relPath, text.length, end, CHARACTER_LIMIT);
     }
     let next: string;

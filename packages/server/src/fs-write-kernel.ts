@@ -24,14 +24,17 @@
  *   is just `ok | error` (no late-ok/late-error/conflict/deduped: FS mode has
  *   no if_rev and no idempotency keys to produce them).
  *
- * - **Two argument refusals run BEFORE this kernel, in fs-mode.ts's `mutate`
- *   (#441), as the plugin's guard does before its queue:** a `content`
- *   that carries the read trailer (a cut read handed back), and a whole-note
- *   overwrite (`content` + `overwrite: true`) of a note longer than the read
- *   limit, which is never overwritten whole over MCP. Both are `Error [truncated_read]`,
- *   thrown before `runMutation`, so they take no queue slot and leave no
- *   journal record — like every other argument refusal, and unlike the
- *   backend's own trailer check, which is the last line for direct callers.
+ * - **The cut-read refusal runs BEFORE this kernel, in fs-mode.ts's `mutate`
+ *   (#441), as the plugin's guard does before its queue:** a `content` that
+ *   carries the read trailer is `Error [truncated_read]` thrown before
+ *   `runMutation`, so it takes no queue slot and leaves no journal record.
+ *   **The whole-note-overwrite rule runs AT DEQUEUE here** (#443), unlike on
+ *   the plugin: its proof on this transport is "the note's mtime is one a
+ *   whole read this process served", and with no if_rev to re-check at the
+ *   write, the mtime must be compared where the write happens, after every
+ *   write queued ahead has landed. So that refusal is journaled as an error.
+ *   The same proof lets `obsidian_patch_note` replace past the limit, read at
+ *   dequeue too.
  *
  * - **`actor.connection` is per-PROCESS, not per-connection.** FS mode builds a
  *   stateless McpServer per HTTP request; no per-session identity reaches the

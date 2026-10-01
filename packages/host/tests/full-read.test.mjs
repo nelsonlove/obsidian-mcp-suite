@@ -138,6 +138,18 @@ describe("a whole read is the proof a whole-note overwrite needs", () => {
     assert.match(store.get("Big.md"), /^---\ntitle: Big\n---\n# Big 1/);
   });
 
+  test("a keyed retry of a proven overwrite that landed is replayed, not refused", async () => {
+    const { server, store } = fixture();
+    const read = (await server.call("obsidian_read_note", { path: "Big.md", full: true })).structuredContent;
+    const args = { path: "Big.md", content: BODY.replace("# Big", "# Big (once)"), overwrite: true, if_rev: read.rev, idempotency_key: "retry-key" };
+    const first = await server.call("obsidian_write_note", args);
+    assert.equal(first.isError, undefined, errText(first));
+    const retry = await server.call("obsidian_write_note", args);
+    assert.equal(retry.isError, undefined, "the retry is the kernel's replay: " + errText(retry));
+    assert.deepEqual(retry.structuredContent ?? JSON.parse(retry.content[0].text), first.structuredContent ?? JSON.parse(first.content[0].text));
+    assert.match(store.get("Big.md"), /# Big \(once\)/);
+  });
+
   test("a replace past the limit lands after a whole read, conditioned on its rev, and not otherwise", async () => {
     const { server, store } = fixture();
     const cut = (await server.call("obsidian_read_note", { path: "Big.md" })).structuredContent;
