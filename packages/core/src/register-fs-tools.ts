@@ -168,7 +168,9 @@ function makeHandler(
           // only make the returned rev too OLD — the caller's later `if_rev`
           // then conflicts. Sampling after would hand back a rev newer than the
           // content returned, and that write would silently clobber the racer.
-          const revd = revField(decoded);
+          // Sampled only where it is used: a transport that shows no rev
+          // (revInResponse false) samples it for the whole-read memory alone.
+          const revd = revInResponse || full ? revField(decoded) : {};
           if (full) {
             // The whole note, never cut (#443). The whole read is remembered
             // at the rev sampled above, for the same reason: a racing write
@@ -199,8 +201,9 @@ function makeHandler(
           paths.map(async (raw, idx): Promise<Result> => {
             const p = dec(raw);
             try {
-              // Sampled before the read, for the same reason as obsidian_read_note.
-              const revd = revField(p);
+              // Sampled before the read, for the same reason as obsidian_read_note;
+              // not at all where no rev is shown (the batch never reads whole).
+              const revd = revInResponse ? revField(p) : {};
               const content = await backend.readNote(p);
               // The cut is flagged as in obsidian_read_note (truncation.ts).
               const truncated = isCutRead(content, CHARACTER_LIMIT);

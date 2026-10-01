@@ -1,3 +1,4 @@
+import { WRITE_WINDOW_MS } from "@vault-mcp/core";
 // Idempotency keys — kernel v0's "retries are safe" capability.
 //
 // A caller that cannot tell whether its request landed (dropped socket,
@@ -54,7 +55,7 @@
 // to make an operation exactly-once forever: after the TTL a key is gone.
 
 /** Default replay window. Long enough to cover a stuck write plus a retry, short enough to stay small. */
-export const IDEMPOTENCY_TTL_MS = 10 * 60_000;
+export const IDEMPOTENCY_TTL_MS = WRITE_WINDOW_MS;
 /** Default cap. Oldest-used entries are evicted first (LRU). */
 export const IDEMPOTENCY_MAX = 500;
 

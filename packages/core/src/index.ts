@@ -54,7 +54,7 @@ export {
   noteLengthFrom,
   cutReadError,
 } from "./truncation.js";
-export { WholeReads, WHOLE_READ_TTL_MS } from "./whole-reads.js";
+export { WholeReads, WHOLE_READ_TTL_MS, WRITE_WINDOW_MS } from "./whole-reads.js";
 export {
   SHARED_ANNOTATIONS,
   FS_TOOLS,

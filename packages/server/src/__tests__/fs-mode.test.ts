@@ -18,7 +18,7 @@
 
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile, mkdir, readdir, readFile, utimes } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, mkdir, readdir, readFile, utimes, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -412,6 +412,15 @@ describe("obsidian_write_note — accept-forbidden guard reaches the real fs-fai
       const after = await readFile(path.join(tmpVault, notePath), "utf8");
       assert.match(after, /appended first/, "the append queued ahead survived");
       assert.doesNotMatch(after, /raced/);
+      // A coarse-mtime volume: an edit that keeps the mtime still spends the
+      // proof, because the size moved too.
+      parsed(await client.callTool({ name: "obsidian_read_note", arguments: { path: notePath, full: true } }));
+      const kept = await stat(path.join(tmpVault, notePath));
+      await writeFile(path.join(tmpVault, notePath), after + "\nedited within the same mtime tick\n");
+      await utimes(path.join(tmpVault, notePath), kept.atime, kept.mtime);
+      const sameTick = await client.callTool({ name: "obsidian_write_note", arguments: { path: notePath, content: body.replace("# Big", "# Big (same tick)"), overwrite: true } });
+      assert.ok(sameTick.isError, "the mtime did not move, but the size did: not proven");
+      assert.match(await readFile(path.join(tmpVault, notePath), "utf8"), /edited within the same mtime tick/);
     } finally {
       await teardown();
     }
