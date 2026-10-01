@@ -1,10 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { TFile, stringifyYaml, parseYaml, type App } from "obsidian";
-import { IDEMPOTENCY_TTL_MS } from "../kernel/idempotency.js";
 import { registerFsTools, ok,
   CHARACTER_LIMIT,
   noteLengthFrom,
   WholeReads,
+  WRITE_WINDOW_MS,
 } from "@vault-mcp/core";
 import { serverInfo, codedError } from "./helpers.js";
 import { registerCoreTools, type ServerCtx } from "./tools-core.js";
@@ -340,7 +340,7 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
 
   // This connection's memory of whole reads (#443): what obsidian_read_note
   // served whole, and the proof the whole-note rules accept.
-  const wholeReads = new WholeReads(IDEMPOTENCY_TTL_MS);
+  const wholeReads = new WholeReads(WRITE_WINDOW_MS);
   const guardedOpts = {
     getSettings: () => ctx.getSettings(),
     kernel: ctx.kernel,

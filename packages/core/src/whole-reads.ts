@@ -21,7 +21,11 @@
  * whole read this process served).
  */
 
-export const WHOLE_READ_TTL_MS = 10 * 60_000;
+/** The one write window: how long a transport holds an idempotency key, and
+ *  how long it remembers a whole read. The host's kernel imports it as its
+ *  idempotency TTL, so the two cannot drift. */
+export const WRITE_WINDOW_MS = 10 * 60_000;
+export const WHOLE_READ_TTL_MS = WRITE_WINDOW_MS;
 
 export class WholeReads {
   private readonly byPath = new Map<string, { rev: number; at: number }>();
@@ -36,6 +40,10 @@ export class WholeReads {
   remember(path: string, rev: number): void {
     const now = this.now();
     for (const [p, e] of this.byPath) if (now - e.at > this.ttlMs) this.byPath.delete(p);
+    // A slower read that sampled an OLDER rev must not replace a newer one:
+    // the newer read's caller holds the current rev, and is the one to serve.
+    const e = this.byPath.get(path);
+    if (e && e.rev > rev) return;
     this.byPath.set(path, { rev, at: now });
   }
 
