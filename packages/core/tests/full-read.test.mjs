@@ -37,12 +37,12 @@ function fakeServer() {
   };
 }
 
-async function fixture({ rev = () => 1700, onWholeRead, wholeToken } = {}) {
+async function fixture({ rev = () => 1700, onWholeRead, wholeToken, onCutRead } = {}) {
   const vaultRoot = await mkdtemp(join(tmpdir(), "vault-443-"));
   const backend = new FilesystemBackend(vaultRoot);
   await backend.writeNote("Big.md", BODY, false);
   const server = fakeServer();
-  registerFsTools(server, backend, { rev, onWholeRead, wholeToken });
+  registerFsTools(server, backend, { rev, onWholeRead, wholeToken, onCutRead });
   return { vaultRoot, backend, server };
 }
 
@@ -62,8 +62,10 @@ describe("WholeReads — the memory", () => {
     assert.equal(m.has("A.md", 11), true, "the latest whole read is the one remembered, whatever its token: a token is not ordered");
     assert.equal(m.has("A.md", 12), false);
     m.remember("S.md", "1700:123");
-    assert.equal(m.has("S.md", "1700:123"), true, "a composed string token (the FS server's) works the same");
+    assert.equal(m.has("S.md", "1700:123"), true, "a composed string token");
     assert.equal(m.has("S.md", "1700:124"), false);
+    m.forget("S.md");
+    assert.equal(m.has("S.md", "1700:123"), false, "a forgotten path proves nothing");
     assert.equal(WRITE_WINDOW_MS, 10 * 60_000, "one window, ten minutes");
     now += WRITE_WINDOW_MS + 1;
     assert.equal(m.has("A.md", 12), false, "the window is the idempotency window");
@@ -85,23 +87,29 @@ describe("WholeReads — the memory", () => {
 describe("obsidian_read_note full: true", () => {
   test("serves the whole note with whole: true and its rev, and tells the memory", async () => {
     const told = [];
-    const { server } = await fixture({ onWholeRead: (p, r) => told.push([p, r]), wholeToken: () => ({ token: 1700, rev: 1700 }) });
+    const { server } = await fixture({ onWholeRead: (p, r) => told.push([p, r]), wholeToken: () => ({ token: "1700:7", rev: 1700 }) });
     const res = await server.call("obsidian_read_note", { path: "Big.md", full: true });
     const sc = res.structuredContent;
     assert.equal(sc.content, BODY);
     assert.equal(sc.whole, true);
     assert.equal(sc.truncated, false);
     assert.equal(sc.rev, 1700);
-    assert.deepEqual(told, [["Big.md", 1700]]);
+    assert.deepEqual(told, [["Big.md", "1700:7"]]);
   });
 
-  test("without full the read is cut as before, and the memory is not told", async () => {
+  test("without full the read is cut as before; the memory is not told, and a cut read tells onCutRead (a whole one does not)", async () => {
     const told = [];
-    const { server } = await fixture({ onWholeRead: (p, r) => told.push([p, r]) });
+    const cuts = [];
+    const { server, backend } = await fixture({ onWholeRead: (p, r) => told.push([p, r]), onCutRead: (p) => cuts.push(p) });
     const sc = (await server.call("obsidian_read_note", { path: "Big.md" })).structuredContent;
     assert.equal(sc.truncated, true);
     assert.equal("whole" in sc, false);
     assert.deepEqual(told, []);
+    assert.deepEqual(cuts, ["Big.md"]);
+    await backend.writeNote("Small.md", "# Small", false);
+    await server.call("obsidian_read_note", { path: "Small.md" });
+    await server.call("obsidian_read_notes", { paths: ["Small.md", "Big.md"] });
+    assert.deepEqual(cuts, ["Big.md", "Big.md"], "only a cut read, on either read tool, tells it");
   });
 
   test("a backend with no whole read says so", async () => {

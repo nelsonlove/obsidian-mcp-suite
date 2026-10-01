@@ -63,6 +63,7 @@
  * and an anchored edit of a long note (`obsidian_patch_note`,
  * `obsidian_manage_frontmatter`) needs it.
  */
+import { WRITE_WINDOW_MS } from "./whole-reads.js";
 
 /** The trailer's one spelling. Every other form here — the trailer a read
  *  appends, the whole-line match, the end-of-read match — is built from it. */
@@ -118,8 +119,11 @@ export function carriesTruncationTrailer(text: string): boolean {
   return TRUNCATION_TRAILER_RE.test(text);
 }
 
+/** The write window, as the texts say it, from the one constant. */
+const WINDOW_TEXT = `${WRITE_WINDOW_MS / 60_000} minutes`;
+
 const WAY_OUT =
-  "Edit the note by anchor instead (obsidian_patch_note on a section that ends before the limit, obsidian_append_note, obsidian_manage_frontmatter; the read's rev is good for those). For a whole rewrite on the plugin, read the note whole first — obsidian_read_note with full: true — then write it within ten minutes on the same connection, with that read's rev and a NEW idempotency_key (a refused call's key answers with the refusal). The FS server has no such road until #446: edit by anchor there.";
+  `Edit the note by anchor instead (obsidian_patch_note on a section that ends before the limit, obsidian_append_note, obsidian_manage_frontmatter; the read's rev is good for those). For a whole rewrite on the plugin, read the note whole first — obsidian_read_note with full: true — then write it within ${WINDOW_TEXT} on the same connection, with that read's rev and a NEW idempotency_key (a refused call's key answers with the refusal). The FS server has no such road until #446: edit by anchor there.`;
 
 /** Typed refusal — rendered as `Error [truncated_read]`. Built by the two
  *  guards below; `new TruncatedReadError(path)` is the trailer refusal. */
@@ -146,8 +150,9 @@ export function assertNotTruncatedRead(path: string, text: string): void {
  *  carries `content` with `overwrite: true` for a note whose length on disk
  *  (`noteLength`, in characters; undefined when the note does not exist)
  *  exceeds the read limit is refused: such a note is never overwritten whole
- *  over MCP (the module doc says why). Run BEFORE the queue, like
- *  `cutReadError`. */
+ *  over MCP (the module doc says why). Run by each transport at DEQUEUE,
+ *  where the proof of a whole read is read against the note as the write
+ *  meets it; a refusal there is journaled. */
 export async function wholeNoteOverwriteRefusal(
   args: Record<string, unknown> | undefined,
   noteLength: (path: string) => Promise<number | undefined>,

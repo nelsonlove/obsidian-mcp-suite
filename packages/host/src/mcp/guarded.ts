@@ -557,8 +557,8 @@ async function runGuarded(opts: GuardedOpts, def: any, handler: any, name: strin
   // A cut read handed back as `content` is refused here, before the queue,
   // whatever the tool (#441): the one check that covers every tool that
   // takes text, including a satellite's (the backends carry the same check
-  // as the last line for direct callers). And a whole-note overwrite of a
-  // note longer than the read limit is refused the same way: such a note is
+  // as the last line for direct callers). A whole-note overwrite of a note
+  // longer than the read limit is refused at dequeue, below: such a note is
   // never overwritten whole over MCP (core's truncation.ts says why).
   if (isMutating) {
     const cut = cutReadError(toolArgs as Record<string, unknown>);
@@ -569,15 +569,21 @@ async function runGuarded(opts: GuardedOpts, def: any, handler: any, name: strin
   // (after the idempotency claim, so a keyed retry replays; after the if_rev
   // check and every write queued ahead, so the proof is read against the
   // state the write meets, as the FS server does); without one, right here.
-  // Decided at most once per call (memoised): the note's stat from one
-  // lookup, and the memory's answer for its token.
-  let provenMemo: Promise<boolean> | undefined;
-  const provenWhole = (path: string): Promise<boolean> =>
-    (provenMemo ??= (async () => {
-      if (ifRev === undefined || !opts.wholeReads || !opts.noteStat) return false;
-      const st = opts.noteStat(path);
-      return !!st && st.mtime === ifRev && opts.wholeReads.has(path, wholeReadToken(st.mtime, st.size));
-    })());
+  // Decided at most once per call and path (memoised): the note's stat from
+  // one lookup, and the memory's answer for its token.
+  const provenMemo = new Map<string, Promise<boolean>>();
+  const provenWhole = (path: string): Promise<boolean> => {
+    let p = provenMemo.get(path);
+    if (!p) {
+      p = (async () => {
+        if (ifRev === undefined || !opts.wholeReads || !opts.noteStat) return false;
+        const st = opts.noteStat(path);
+        return !!st && st.mtime === ifRev && opts.wholeReads.has(path, wholeReadToken(st.mtime, st.size));
+      })();
+      provenMemo.set(path, p);
+    }
+    return p;
+  };
   const longNoteRefusal = async () =>
     isMutating && opts.noteLength
       ? wholeNoteOverwriteRefusal(toolArgs as Record<string, unknown>, opts.noteLength, CHARACTER_LIMIT, provenWhole)
@@ -644,8 +650,10 @@ async function runGuarded(opts: GuardedOpts, def: any, handler: any, name: strin
         // backend's replace rule): the backend never infers it from ambient
         // state, and no other call pays for it.
         const path = (toolArgs as Record<string, unknown>).path;
-        const proven = name === "obsidian_patch_note" && typeof path === "string" ? await provenWhole(path) : false;
-        return handler(toolArgs, { ...(extra ?? {}), provenWhole: proven });
+        if (name === "obsidian_patch_note" && typeof path === "string") {
+          return handler(toolArgs, { ...(extra ?? {}), provenWhole: await provenWhole(path) });
+        }
+        return handler(toolArgs, extra);
       }
     );
   } catch (e) {

@@ -424,7 +424,10 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
             const st = noteStat(p);
             return st ? { token: wholeReadToken(st.mtime, st.size), rev: st.mtime } : undefined;
           },
-          onWholeRead: (p: string, token: number | string) => wholeReads.remember(p, token),
+          onWholeRead: (p: string, token: string) => wholeReads.remember(p, token),
+          // A cut read served after the whole read: the text the caller holds
+          // may be the cut one, so the proof is forgotten.
+          onCutRead: (p: string) => wholeReads.forget(p),
         }
       : {}),
   });
