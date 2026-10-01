@@ -93,14 +93,26 @@ function makeFakeImporterClass({
       this.dataPath = dataPath;
       this.selectedFolders = [];
       this.outputLocation = "";
-      this.filePrefixFormat = "";
       if (withTitleTemplate) this.noteTitleTemplate = "{{title}}";
+      else this.filePrefixFormat = "";
+      // As if the importer dialog last saved the risky choices.
+      this.duplicateHandling = "create-copy";
+      this.saveSourceId = false;
       this.importCalls = 0;
+      this.steps = [];
+    }
+    indexImportedNotes() {
+      this.steps.push("index");
+    }
+    async finalizeMarkdownOutput(ctx) {
+      this.steps.push("finalize");
+      this.finalizedWith = ctx;
     }
     readableDataFolder() {
       return readableDataFolder();
     }
     async import(ctx) {
+      this.steps.push("import");
       this.importCalls++;
       this.importedWith = ctx;
       await onImport(ctx, this);
@@ -490,23 +502,64 @@ describe("import run", () => {
     assert.equal(instances[0].filePrefixFormat, "YYYY-MM-DD");
   });
 
-  test("on the fork's shape the prefix becomes the file-name template the fork itself derives; 2.6.2's shape never gains the member", async () => {
-    const fork = makeFakeImporterClass({ withTitleTemplate: true });
-    const { tool } = register({ plugin: fakePlugin({ version: "3.1.9-nl.3", importerClass: fork.FakeImporter }) });
+  test("on the fork the saved file-name template is kept unless file_prefix_format is given; 2.6.2 never gains the member", async () => {
+    const FORK = "3.1.9-nl.3";
+    const kept = makeFakeImporterClass({ withTitleTemplate: true });
+    const { tool } = register({ plugin: fakePlugin({ version: FORK, importerClass: kept.FakeImporter }) });
     const res = await tool.handler({ dry_run: false, source_disposition: "none", disposition_dry_run: false });
     assert.equal(res.isError, undefined, res.content?.[0]?.text);
-    assert.equal(fork.instances[0].filePrefixFormat, "YYYY-MM-DD", "set as before; ignored by the fork");
-    assert.equal(fork.instances[0].noteTitleTemplate, '{{ctime | date:"YYYY-MM-DD"}} {{title}}', "the fork's own migration of a stored prefix");
+    assert.equal(kept.instances[0].noteTitleTemplate, "{{title}}", "the saved template stands when no prefix is asked for");
+    assert.equal("filePrefixFormat" in kept.instances[0], false, "the fork has no prefix member and gains none");
+    assert.equal(res.structuredContent.file_prefix_format, null);
+    assert.equal(res.structuredContent.note_title_template, "{{title}}", "the result names the template used");
 
-    const forkEmpty = makeFakeImporterClass({ withTitleTemplate: true });
-    const { tool: tool2 } = register({ plugin: fakePlugin({ version: "3.1.9-nl.3", importerClass: forkEmpty.FakeImporter }) });
-    await tool2.handler({ dry_run: false, source_disposition: "none", disposition_dry_run: false, file_prefix_format: "" });
-    assert.equal(forkEmpty.instances[0].noteTitleTemplate, "{{title}}", "an explicit empty prefix is the plain title, as in the fork");
+    const given = makeFakeImporterClass({ withTitleTemplate: true });
+    const { tool: tool2 } = register({ plugin: fakePlugin({ version: FORK, importerClass: given.FakeImporter }) });
+    const res2 = await tool2.handler({ dry_run: true, source_disposition: "none", disposition_dry_run: false, file_prefix_format: "YYYY-MM-DD" });
+    assert.equal(given.instances[0].noteTitleTemplate, '{{ctime | date:"YYYY-MM-DD"}} {{title}}', "the fork's own migration of a stored prefix");
+    assert.equal(res2.structuredContent.note_title_template, '{{ctime | date:"YYYY-MM-DD"}} {{title}}', "dry_run shows the naming too");
+
+    const empty = makeFakeImporterClass({ withTitleTemplate: true });
+    const { tool: tool3 } = register({ plugin: fakePlugin({ version: FORK, importerClass: empty.FakeImporter }) });
+    await tool3.handler({ dry_run: false, source_disposition: "none", disposition_dry_run: false, file_prefix_format: "" });
+    assert.equal(empty.instances[0].noteTitleTemplate, "{{title}}", "an explicit empty prefix is the plain title, as in the fork");
 
     const stock = makeFakeImporterClass();
-    const { tool: tool3 } = register({ plugin: fakePlugin({ importerClass: stock.FakeImporter }) });
-    await tool3.handler({ dry_run: false, source_disposition: "none", disposition_dry_run: false });
+    const { tool: tool4 } = register({ plugin: fakePlugin({ importerClass: stock.FakeImporter }) });
+    const res4 = await tool4.handler({ dry_run: false, source_disposition: "none", disposition_dry_run: false });
     assert.equal("noteTitleTemplate" in stock.instances[0], false, "2.6.2's shape is untouched");
+    assert.equal(res4.structuredContent.file_prefix_format, "YYYY-MM-DD");
+    assert.equal("note_title_template" in res4.structuredContent, false);
+  });
+
+  test("the version picks the naming road, not a probe: a 2.6.2 instance that happens to carry noteTitleTemplate gets the prefix only", async () => {
+    const odd = makeFakeImporterClass({ withTitleTemplate: true });
+    const { tool } = register({ plugin: fakePlugin({ importerClass: odd.FakeImporter }) });
+    await tool.handler({ dry_run: false, source_disposition: "none", disposition_dry_run: false });
+    assert.equal(odd.instances[0].filePrefixFormat, "YYYY-MM-DD");
+    assert.equal(odd.instances[0].noteTitleTemplate, "{{title}}");
+  });
+
+  test("index runs before the import and finalize after it, with the same context, even when the import throws; duplicates and source ID are pinned", async () => {
+    const { FakeImporter, instances } = makeFakeImporterClass();
+    const { tool } = register({ plugin: fakePlugin({ importerClass: FakeImporter }) });
+    const res = await tool.handler({ dry_run: false, source_disposition: "none", disposition_dry_run: false });
+    assert.equal(res.isError, undefined, res.content?.[0]?.text);
+    assert.deepEqual(instances[0].steps, ["index", "import", "finalize"]);
+    assert.equal(instances[0].finalizedWith, instances[0].importedWith);
+    assert.equal(instances[0].duplicateHandling, "update", "a saved 'Create copy' must not duplicate every note");
+    assert.equal(instances[0].saveSourceId, true);
+
+    const dry = makeFakeImporterClass();
+    const { tool: toolDry } = register({ plugin: fakePlugin({ importerClass: dry.FakeImporter }) });
+    await toolDry.handler({ dry_run: true, source_disposition: "none", disposition_dry_run: false });
+    assert.deepEqual(dry.instances[0].steps, [], "dry_run runs none of the three");
+
+    const boom = makeFakeImporterClass({ onImport: () => { throw new Error("boom"); } });
+    const { tool: toolBoom } = register({ plugin: fakePlugin({ importerClass: boom.FakeImporter }) });
+    const resBoom = await toolBoom.handler({ dry_run: false, source_disposition: "none", disposition_dry_run: false });
+    assert.equal(resBoom.isError, true);
+    assert.deepEqual(boom.instances[0].steps, ["index", "import", "finalize"], "finalize runs in finally, as in the fork");
   });
 
   test("failed imports are reported with capped names", async () => {
