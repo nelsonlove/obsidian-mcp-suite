@@ -1,4 +1,5 @@
 import { createVaultAt } from "./vault.js";
+import path from "node:path";
 import { IndexStore } from "./index-store.js";
 import type {
   VaultBackend,
@@ -45,12 +46,14 @@ import type {
 export class FilesystemBackend implements VaultBackend {
   private readonly vault: ReturnType<typeof createVaultAt>;
   private readonly index: IndexStore;
-  private readonly vaultRootPath: string;
 
   constructor(vaultRoot: string) {
-    this.vaultRootPath = vaultRoot;
-    this.vault = createVaultAt(vaultRoot);
-    this.index = new IndexStore(vaultRoot);
+    // Normalised once, here, so the vault and the index hold one spelling of
+    // the root (#444: a doubled separator in one and not the other is the
+    // class of bug a textual path comparison then has).
+    const root = path.resolve(vaultRoot);
+    this.vault = createVaultAt(root);
+    this.index = new IndexStore(root);
   }
 
   // ── Read: listing & navigation ─────────────────────────────────────────────
