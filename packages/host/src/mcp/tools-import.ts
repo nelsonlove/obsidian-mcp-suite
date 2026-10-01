@@ -3,7 +3,8 @@
 // run the catalog build (no fork) and agents get a first-class MCP tool
 // instead of a fire-and-forget palette command.
 //
-// How it works (the issue's design sketch, verified against importer 2.6.2):
+// How it works (the issue's design sketch, verified against importer 2.6.2,
+// and against the fork 3.1.9-nl.3 on 2026-10-01 — see KNOWN_GOOD_IMPORTER_VERSIONS):
 // upstream 2.x replaced the import modal with an `ImporterHost` whose step
 // elements are NULLABLE — `draw()`/`addSetting()` no-op against a null
 // element — and made folder selection an explicit `selectedFolders: number[]`
@@ -87,8 +88,21 @@ export const IMPORTER_PLUGIN_ID = "obsidian-importer";
  * undocumented plugin internals, so even a patch release is unproven until
  * someone re-checks `plugin.importers`, the null-element host construction,
  * `selectedFolders`, `ready`, and `dataPath`/`readableDataFolder`.
+ *
+ * `3.1.9-nl.3` is Nelson's fork (nelsonlove/obsidian-importer, branch
+ * nl-main-3.1.9, commit e904b8d), checked 2026-10-01 touchpoint by touchpoint:
+ * the same `importers['apple-notes'].importer` class, the same null-element
+ * `ImporterHost` shape its own headless road builds (`sourceEl`/`outputEl`/
+ * `optionsEl` null, `plugin`, `importerId`, `abortController`), `addSetting`
+ * and `draw` no-ops against a null step element, `ready`, `notAvailable`,
+ * `outputLocation`, `selectedFolders`, the private `dataPath` and
+ * `readableDataFolder()`, and an `import(ctx)` that calls exactly the context
+ * methods `HeadlessImportContext` has. One difference: it has no
+ * `filePrefixFormat`; a file-name TEMPLATE (`noteTitleTemplate`, default
+ * `{{title}}`) replaced the date prefix, so this tool sets the template the
+ * fork itself derives from a stored prefix (see the write below).
  */
-export const KNOWN_GOOD_IMPORTER_VERSIONS = ["2.6.2"];
+export const KNOWN_GOOD_IMPORTER_VERSIONS = ["2.6.2", "3.1.9-nl.3"];
 
 export function importerVersionSupported(version: string | undefined): version is string {
   return typeof version === "string" && KNOWN_GOOD_IMPORTER_VERSIONS.includes(version);
@@ -118,6 +132,8 @@ export interface AppleNotesImporterLike {
   notAvailable: boolean;
   outputLocation: string;
   filePrefixFormat: string;
+  /** 3.1.9-nl.3 (the fork): the file-name template that replaced `filePrefixFormat`; absent on 2.6.2. */
+  noteTitleTemplate?: string;
   selectedFolders: number[];
   /** TS-private on the real class; runtime-accessible, and null/undefined when constructed headlessly. */
   dataPath?: string | null;
@@ -602,6 +618,13 @@ export function registerImportTools(server: McpServer, app: App, ctx: ImportTool
 
         importer.outputLocation = outputFolder;
         importer.filePrefixFormat = filePrefixFormat;
+        // The fork (3.1.9-nl.3) names files by a template and ignores
+        // `filePrefixFormat`; set the template it derives itself from a stored
+        // prefix (apple-notes.ts, init), so `file_prefix_format` means the
+        // same thing on both versions.
+        if ("noteTitleTemplate" in importer) {
+          importer.noteTitleTemplate = filePrefixFormat === "" ? "{{title}}" : `{{ctime | date:${JSON.stringify(filePrefixFormat)}}} {{title}}`;
+        }
 
         // ── folder selection (ZFOLDERTYPE-based, never localized names) ─────
         const dbPath = join(importer.dataPath, NOTE_DB);
