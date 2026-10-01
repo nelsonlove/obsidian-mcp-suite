@@ -31,6 +31,7 @@
  */
 
 import { moveWithLinks, type LinkCheck } from "./move-with-links.js";
+import { indexedLinkers, linkIndexReady } from "./link-index.js";
 import { TFile, TFolder, getAllTags, type App } from "obsidian";
 import {
   CHARACTER_LIMIT,
@@ -390,16 +391,13 @@ export class ObsidianBackend implements VaultBackend {
   async getBacklinks(notePath: string): Promise<string[]> {
     const file = this.app.vault.getAbstractFileByPath(notePath);
     if (!file) throw new Error(`not found: ${notePath}`);
-    // From Obsidian's own link index (`resolvedLinks`: source → target →
-    // count), never `getBacklinksForFile`. A plugin may replace that method:
-    // Advanced Metadata Cache 1.1.1 does, and for about 6 minutes after each
-    // Obsidian start (its first index build) it answered 1 where the native
-    // answer was 110. `resolvedLinks` is the map the native method reads, and
-    // the fast move cross-checks against it too.
-    const linkers: string[] = [];
-    for (const [src, targets] of Object.entries(this.app.metadataCache.resolvedLinks ?? {})) {
-      if ((targets?.[file.path] ?? 0) > 0) linkers.push(src);
+    // From Obsidian's own link index, never `getBacklinksForFile` (see
+    // link-index.ts, #451). Refused, not answered short, while the index is
+    // still loading after a start.
+    if (!linkIndexReady(this.app)) {
+      throw new Error("Obsidian is still loading its link index after a start, so backlinks would be incomplete; retry in a minute");
     }
+    const linkers = indexedLinkers(this.app, file.path).map((l) => l.src);
     // The ARGUMENT is guarded; the ANSWER is a list of other notes' paths, and
     // "who links to this" is exactly how a visible note names hidden ones. A
     // linker you cannot read is not disclosed — the same fail-closed choice
