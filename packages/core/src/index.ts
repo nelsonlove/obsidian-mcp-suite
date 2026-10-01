@@ -49,11 +49,12 @@ export {
   TruncatedReadError,
   assertNotTruncatedRead,
   wholeNoteOverwriteRefusal,
-  preQueueTruncationRefusal,
   assertPatchRangeRead,
   noteLengthFrom,
   cutReadError,
 } from "./truncation.js";
+export { WholeReads, WRITE_WINDOW_MS, wholeReadToken } from "./whole-reads.js";
+export type { RevToken } from "./whole-reads.js";
 export {
   SHARED_ANNOTATIONS,
   FS_TOOLS,
@@ -94,6 +95,7 @@ export {
   resolveInVault,
   listNotes,
   readNote,
+  readNoteWhole,
   writeNote,
   appendNote,
   searchNotes,

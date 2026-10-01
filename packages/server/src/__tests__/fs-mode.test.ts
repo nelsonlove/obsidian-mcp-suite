@@ -329,7 +329,7 @@ describe("obsidian_write_note — accept-forbidden guard reaches the real fs-fai
     }
   });
 
-  test("a cut read is never written back through the FS server: both refusals run before its kernel, unjournaled (#441)", async () => {
+  test("a cut read is never written back through the FS server: the trailer refusal before its kernel, the overwrite refusal at dequeue (#441, #443)", async () => {
     const { client, teardown } = await makeClientFromFsServer();
     const notePath = "fs-mode-441/Big.md";
     const body = "# Big\n\n" + "x".repeat(150_000) + "\n\n## Tail\n";
@@ -351,10 +351,42 @@ describe("obsidian_write_note — accept-forbidden guard reaches the real fs-fai
       assert.ok(grown.isError);
       assert.match(text(grown), /^Error \[truncated_read\]:[\s\S]*never overwritten whole over MCP/);
       assert.equal(await readFile(path.join(tmpVault, notePath), "utf8"), body, "the note on disk is intact");
-      // Only the create reached the kernel: one journal record for the path.
+      // The trailer refusal never reached the kernel (no record); the
+      // overwrite refusal is decided at dequeue on this transport (#443), so
+      // it is journaled as an error beside the create.
       const files = await readdir(tmpJournalDir);
       const lines = (await Promise.all(files.map((f) => readFile(path.join(tmpJournalDir, f), "utf8")))).join("\n").split("\n").filter(Boolean);
-      assert.equal(lines.filter((l) => l.includes(notePath)).length, 1, "the two refusals left no journal record");
+      const mine = lines.filter((l) => l.includes(notePath));
+      assert.equal(mine.length, 2, "one record for the create, one for the overwrite refused at dequeue; none for the trailer refusal");
+      assert.ok(mine.some((l) => l.includes('"outcome":"error"') && l.includes("longer than the read limit")), "the dequeue refusal is on the record (the journal carries the message)");
+    } finally {
+      await teardown();
+    }
+  });
+
+  test("full: true serves the whole note on the FS server, but no whole-note overwrite is let through there (#443, #446)", async () => {
+    const { client, teardown } = await makeClientFromFsServer();
+    const notePath = "fs-mode-443/Big.md";
+    const body = "# Big\n\n" + "x".repeat(150_000) + "\n\n## Tail\n";
+    const text = (r: Awaited<ReturnType<typeof client.callTool>>) => (r.content as Array<{ type: string; text: string }>)[0].text;
+    const parsed = (r: Awaited<ReturnType<typeof client.callTool>>) => JSON.parse(text(r)) as { content: string; rev?: number; whole?: boolean; truncated: boolean };
+    try {
+      const created = await client.callTool({ name: "obsidian_write_note", arguments: { path: notePath, content: body, overwrite: false } });
+      assert.ok(!created.isError, `unexpected error: ${text(created)}`);
+      const whole = parsed(await client.callTool({ name: "obsidian_read_note", arguments: { path: notePath, full: true } }));
+      assert.equal(whole.whole, true);
+      assert.equal(whole.content, body);
+      assert.equal("rev" in whole, false, "no read on this transport shows a rev: its writes cannot honour one");
+      // No proof can be tied to a caller here, so the policy stays: the
+      // whole note back is refused like any whole-note overwrite of a long note.
+      const back = await client.callTool({ name: "obsidian_write_note", arguments: { path: notePath, content: body.replace("# Big", "# Big (rewritten)"), overwrite: true } });
+      assert.ok(back.isError);
+      assert.match(text(back), /^Error \[truncated_read\]/);
+      assert.equal(await readFile(path.join(tmpVault, notePath), "utf8"), body, "the note on disk is intact");
+      // Edits by anchor still land.
+      const appended = await client.callTool({ name: "obsidian_append_note", arguments: { path: notePath, content: "\nappended\n" } });
+      assert.ok(!appended.isError, text(appended));
+      assert.match(await readFile(path.join(tmpVault, notePath), "utf8"), /appended/);
     } finally {
       await teardown();
     }

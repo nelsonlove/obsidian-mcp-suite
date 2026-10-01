@@ -42,8 +42,10 @@ import {
   searchByFrontmatter,
   startVaultWatcher,
   registerFsTools,
-  preQueueTruncationRefusal,
+  cutReadError,
+  wholeNoteOverwriteRefusal,
   noteLengthFrom,
+  readNoteWhole,
   CHARACTER_LIMIT,
   resolveInVault,
 } from "@vault-mcp/core";
@@ -192,6 +194,14 @@ export class FsWritesDisabledError extends Error {
 // singletons are pinned to VAULT_PATH at process start, which is the same
 // root the vault watcher uses — keeping the index consistent.
 
+/**
+ * No memory of whole reads on this transport (#443, #446): its servers are
+ * stateless per request and its writes carry no if_rev, so nothing could tie
+ * a proof of a whole read to the caller, and a per-process memory would let
+ * one client's whole read prove another client's overwrite. `full: true`
+ * serves the whole note here; the whole-note policy stays until #446 gives
+ * these writes a conditional form.
+ */
 export function makeBackend(
   opts: { allowWrites?: boolean; kernel?: FsWriteKernel } = {},
 ): VaultBackend {
@@ -211,9 +221,7 @@ export function makeBackend(
   // A note's length in characters for the whole-note-overwrite rule (#441);
   // a file of at most CHARACTER_LIMIT bytes cannot exceed it, so only a
   // larger file is read (the rare case, and only on an overwrite of it). The
-  // check runs before the queue, so a queued write that carries the note
-  // over the limit between this check and the dequeue is not seen by it;
-  // that race is if_rev's, as for every other argument refusal.
+  // rule runs at dequeue (`mutate`), so the length is the one the write meets.
   const noteLength = async (rel: string): Promise<number | undefined> => {
     // Through the vault's own resolver, so a path that escapes the vault (or
     // names an ignored folder) is never stat'ed or read here: it throws and
@@ -243,14 +251,22 @@ export function makeBackend(
     fn: () => Promise<T>,
   ): Promise<T> => {
     requireWrites();
-    // A cut read handed back as `content`, or a whole-note overwrite of a
-    // note longer than the read limit (never done whole over MCP), is refused
-    // before the queue, as the host's guard does (#441): unjournaled, like
-    // every argument refusal.
-    const cut = await preQueueTruncationRefusal(args, noteLength, CHARACTER_LIMIT);
+    // A cut read handed back as `content` is refused before the queue, as the
+    // host's guard does (#441): unjournaled, like every argument refusal.
+    const cut = cutReadError(args);
     if (cut) throw cut;
     const kernel = opts.kernel ?? getFsWriteKernel();
-    return kernel.runMutation(op, target, args, fn);
+    // The whole-note-overwrite rule runs at DEQUEUE on this transport, as on
+    // the plugin: the note's length must hold after every write queued ahead
+    // has landed (a write ahead can push a note past the limit). No proof
+    // of a whole read stands it aside here: this transport's writes carry no
+    // if_rev, so nothing could tie a proof to the caller (#443, #446). A
+    // long overwrite refused there is journaled as an error.
+    return kernel.runMutation(op, target, args, async () => {
+      const long = await wholeNoteOverwriteRefusal(args, noteLength, CHARACTER_LIMIT);
+      if (long) throw long;
+      return fn();
+    });
   };
 
   return {
@@ -259,6 +275,8 @@ export function makeBackend(
     listFolders: (subdir) => listFolders(subdir),
 
     readNote: (relPath) => readNote(relPath),
+
+    readNoteWhole: (relPath) => readNoteWhole(relPath),
 
     searchNotes: (query, limit, mode) => searchNotes(query, limit, mode),
 
@@ -370,6 +388,9 @@ export function buildFsServer(opts?: FsHandlerOpts): McpServer {
   registerFsTools(server, makeBackend({ allowWrites: opts?.allowWrites, kernel: opts?.kernel }), {
     decodeHtml: true,
     includeIndexStatus: (opts?.indexStatus ?? true) ? indexStatus : undefined,
+    // No `rev` hook and no whole-read memory: FS writes carry no if_rev, so
+    // no read shows a rev and no proof of a whole read can be tied to a
+    // caller (#443, #446). `full: true` still serves the whole note.
   });
 
   return server;

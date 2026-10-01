@@ -3,6 +3,8 @@ import { TFile, stringifyYaml, parseYaml, type App } from "obsidian";
 import { registerFsTools, ok,
   CHARACTER_LIMIT,
   noteLengthFrom,
+  WholeReads,
+  wholeReadToken,
 } from "@vault-mcp/core";
 import { serverInfo, codedError } from "./helpers.js";
 import { registerCoreTools, type ServerCtx } from "./tools-core.js";
@@ -336,10 +338,20 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
     sourcesOf: (req) => collectPaths((req.inputs ?? {}) as Record<string, unknown>),
   });
 
+  // This connection's memory of whole reads (#443): what obsidian_read_note
+  // served whole, and the proof the whole-note rules accept. `noteStat` is
+  // the one lookup both the token and the proof are built from.
+  const wholeReads = new WholeReads();
+  const noteStat = (p: string): { mtime: number; size: number } | undefined => {
+    const f = app.vault.getAbstractFileByPath(p);
+    return f instanceof TFile ? { mtime: f.stat.mtime, size: f.stat.size } : undefined;
+  };
   const guardedOpts = {
     getSettings: () => ctx.getSettings(),
     kernel: ctx.kernel,
     actor,
+    wholeReads,
+    noteStat,
     executor,
     sessionRefusal,
     // `jd:<address>` addressing at the interception point: same per-call
@@ -401,6 +413,23 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   registerFsTools(server, backend, {
     decodeHtml: false,
     rev: (p) => probe.rev(p),
+    // The token a whole read is remembered under: the mtime (the rev the
+    // caller will condition on) and the size (a coarse-mtime volume keeps
+    // the mtime across an edit in the same tick), sampled before the read.
+    // Only with a kernel: without one if_rev is refused outright, so no
+    // whole read could ever be proven, and the memory would only mislead.
+    ...(ctx.kernel
+      ? {
+          wholeToken: (p: string) => {
+            const st = noteStat(p);
+            return st ? { token: wholeReadToken(st.mtime, st.size), rev: st.mtime } : undefined;
+          },
+          onWholeRead: (p: string, token: string) => wholeReads.remember(p, token),
+          // A cut read served after the whole read: the text the caller holds
+          // may be the cut one, so the proof is forgotten.
+          onCutRead: (p: string) => wholeReads.forget(p),
+        }
+      : {}),
   });
 
   // ── remaining tools — live-only, complementary, nav, integrations ────────────

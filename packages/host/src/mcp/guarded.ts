@@ -43,7 +43,7 @@ import {
   type SchemeRegistry,
 } from "../kernel/scheme/registry.js";
 import { OperationRefusedError, type OperationExecutor } from "../kernel/operations/executor.js";
-import { CHARACTER_LIMIT, cutReadError, wholeNoteOverwriteRefusal } from "@vault-mcp/core";
+import { CHARACTER_LIMIT, cutReadError, wholeNoteOverwriteRefusal, wholeReadToken, type WholeReads } from "@vault-mcp/core";
 
 /** Guard/queue-level failure envelope: matches the `Error [code]: message` shape guardCall already emits. */
 function codedError(code: string, message: string) {
@@ -247,6 +247,16 @@ export interface GuardedOpts {
    * skipped (tests, bare embeds).
    */
   noteLength?: (path: string) => Promise<number | undefined>;
+  /**
+   * This connection's memory of whole reads and the note's current rev
+   * (#443): the whole-note-overwrite rule stands aside for a call whose
+   * if_rev is a remembered whole read's rev for that path AND the note's
+   * current rev. Absent ⇒ no whole read is ever proven.
+   */
+  wholeReads?: Pick<WholeReads, "has">;
+  /** The note's mtime (its rev) and size from ONE lookup, composed into the
+   *  token a whole read is remembered under (see server.ts). */
+  noteStat?: (path: string) => { mtime: number; size: number } | undefined;
   /**
    * The scope-provider registry backing `jd:<address>` (and other configured
    * scheme ids) addressing. Resolved PER CALL, like `getSettings`, so a
@@ -547,20 +557,36 @@ async function runGuarded(opts: GuardedOpts, def: any, handler: any, name: strin
   // A cut read handed back as `content` is refused here, before the queue,
   // whatever the tool (#441): the one check that covers every tool that
   // takes text, including a satellite's (the backends carry the same check
-  // as the last line for direct callers). And a whole-note overwrite of a
-  // note longer than the read limit is refused the same way: such a note is
+  // as the last line for direct callers). A whole-note overwrite of a note
+  // longer than the read limit is refused at dequeue, below: such a note is
   // never overwritten whole over MCP (core's truncation.ts says why).
   if (isMutating) {
     const cut = cutReadError(toolArgs as Record<string, unknown>);
     if (cut) return codedError(cut.code, cut.message);
   }
   // The whole-note-overwrite rule reads the note's length, so it runs after
-  // the cheaper refusals: after the protection check with a kernel (a call
-  // without its if_rev is protection_required, as the inventory promises),
-  // right here without one.
+  // the cheaper refusals: with a kernel, at DEQUEUE inside the queued closure
+  // (after the idempotency claim, so a keyed retry replays; after the if_rev
+  // check and every write queued ahead, so the proof is read against the
+  // state the write meets, as the FS server does); without one, right here.
+  // Decided at most once per call and path (memoised): the note's stat from
+  // one lookup, and the memory's answer for its token.
+  const provenMemo = new Map<string, Promise<boolean>>();
+  const provenWhole = (path: string): Promise<boolean> => {
+    let p = provenMemo.get(path);
+    if (!p) {
+      p = (async () => {
+        if (ifRev === undefined || !opts.wholeReads || !opts.noteStat) return false;
+        const st = opts.noteStat(path);
+        return !!st && st.mtime === ifRev && opts.wholeReads.has(path, wholeReadToken(st.mtime, st.size));
+      })();
+      provenMemo.set(path, p);
+    }
+    return p;
+  };
   const longNoteRefusal = async () =>
     isMutating && opts.noteLength
-      ? wholeNoteOverwriteRefusal(toolArgs as Record<string, unknown>, opts.noteLength, CHARACTER_LIMIT)
+      ? wholeNoteOverwriteRefusal(toolArgs as Record<string, unknown>, opts.noteLength, CHARACTER_LIMIT, provenWhole)
       : null;
   if (!isMutating || !opts.kernel) {
     const long = await longNoteRefusal();
@@ -575,8 +601,6 @@ async function runGuarded(opts: GuardedOpts, def: any, handler: any, name: strin
   // `protection` (kernel/write-protection.ts), read over the RESOLVED args.
   const missing = protectionRefusal(name ?? def?.title ?? "unknown", toolArgs as Record<string, unknown>, { ifRev, idempotencyKey });
   if (missing) return codedError(missing.code, missing.message);
-  const long = await longNoteRefusal();
-  if (long) return codedError(long.code, long.message);
   // The operation reaches the write queue here. Marked rather than assumed:
   // every refusal above this line — read-only mode, the allowlist, an
   // unresolved uid or address, an unenforceable if_rev — returns without ever
@@ -615,7 +639,20 @@ async function runGuarded(opts: GuardedOpts, def: any, handler: any, name: strin
         // context that no longer exists (WP5).
         const refusal = await opts.sessionRefusal?.();
         if (refusal) return codedError(refusal.code, refusal.detail);
+        // The whole-note-overwrite rule (#441, #443), decided here at
+        // dequeue: journaled as an error when it refuses, like the kernel's
+        // own if_rev conflict.
+        const long = await longNoteRefusal();
+        if (long) return codedError(long.code, long.message);
         mark("attempted");
+        // The one proof of a whole read, decided here and handed to the one
+        // handler that reads it (obsidian_patch_note passes it to the
+        // backend's replace rule): the backend never infers it from ambient
+        // state, and no other call pays for it.
+        const path = (toolArgs as Record<string, unknown>).path;
+        if (name === "obsidian_patch_note" && typeof path === "string") {
+          return handler(toolArgs, { ...(extra ?? {}), provenWhole: await provenWhole(path) });
+        }
         return handler(toolArgs, extra);
       }
     );

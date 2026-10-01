@@ -247,10 +247,14 @@ export class ObsidianBackend implements VaultBackend {
   // ── note reading ────────────────────────────────────────────────────────────
 
   async readNote(relPath: string): Promise<string> {
+    return truncateForRead(await this.readNoteWhole(relPath), CHARACTER_LIMIT);
+  }
+
+  /** The whole note, never cut (#443); the cut read is this, cut. */
+  async readNoteWhole(relPath: string): Promise<string> {
     const f = this.app.vault.getAbstractFileByPath(relPath);
     if (!(f instanceof TFile)) throw new Error(`not found: ${relPath}`);
-    const content = await this.app.vault.read(f);
-    return truncateForRead(content, CHARACTER_LIMIT);
+    return this.app.vault.read(f);
   }
 
   // ── search ──────────────────────────────────────────────────────────────────
@@ -493,6 +497,7 @@ export class ObsidianBackend implements VaultBackend {
     anchor: PatchAnchor,
     op: PatchOp,
     content: string,
+    opts: { rangeRuleStandsAside?: boolean } = {},
   ): Promise<{ found: boolean; anchor: PatchAnchor; op: PatchOp; previous?: string }> {
     if (!relPath.endsWith(".md")) throw new Error("path must end in .md");
     // A cut read handed back as the fragment is refused first (#441).
@@ -525,7 +530,11 @@ export class ObsidianBackend implements VaultBackend {
     const previous = text.slice(start, end);
     // A replace whose section runs past the read limit on a long note would
     // replace text no cut read showed (#441).
-    if (op === "replace") assertPatchRangeRead(relPath, text.length, end, CHARACTER_LIMIT);
+    // The rule stands aside on the transport's word alone (`opts`, from the
+    // guard's proof decided at dequeue, #443); this backend infers nothing.
+    if (op === "replace" && !opts.rangeRuleStandsAside) {
+      assertPatchRangeRead(relPath, text.length, end, CHARACTER_LIMIT);
+    }
     let next: string;
     if (op === "replace") {
       const body = anchor.type === "heading" ? `\n\n${content}\n` : content;
