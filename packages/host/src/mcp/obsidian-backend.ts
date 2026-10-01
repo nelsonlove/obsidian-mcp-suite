@@ -37,7 +37,6 @@ import {
   assertNotTruncatedRead,
   assertPatchRangeRead,
   truncateForRead,
-  wholeReadToken,
   acceptTransitionNeedsBefore,
   deriveJdIdFromPath,
   parseGuardFrontmatter,
@@ -99,15 +98,6 @@ export class ObsidianBackend implements VaultBackend {
      * is logged and never fails the write, the same rule capture follows.
      */
     private readonly onWriteNote?: (facts: { path: string; baseBytes: Uint8Array | null; proposedBytes: Uint8Array; created: boolean }) => void,
-    /**
-     * This connection's memory of whole reads (#443). `patchNote`'s
-     * replace-past-the-limit rule stands aside when the note's CURRENT rev is
-     * a remembered whole read: the kernel has already matched the call's
-     * if_rev to that rev at dequeue (obsidian_patch_note requires the token),
-     * so the caller conditioned the replace on the rev this connection
-     * served whole, and the note has not moved since.
-     */
-    private readonly wholeReads?: { has(path: string, rev: number | string | undefined): boolean },
   ) {}
 
   /**
@@ -540,12 +530,9 @@ export class ObsidianBackend implements VaultBackend {
     const previous = text.slice(start, end);
     // A replace whose section runs past the read limit on a long note would
     // replace text no cut read showed (#441).
-    // The rule stands aside on the transport's word (`opts`), or on this
-    // connection's memory of a whole read at the note's current token (mtime
-    // and size, as server.ts composes it) — the latter only when a kernel
-    // matched the call's if_rev to that mtime at dequeue, which is why
-    // server.ts hands the memory over only with one.
-    if (op === "replace" && !opts.rangeRuleStandsAside && !this.wholeReads?.has(relPath, wholeReadToken(file.stat.mtime, file.stat.size))) {
+    // The rule stands aside on the transport's word alone (`opts`, from the
+    // guard's proof decided at dequeue, #443); this backend infers nothing.
+    if (op === "replace" && !opts.rangeRuleStandsAside) {
       assertPatchRangeRead(relPath, text.length, end, CHARACTER_LIMIT);
     }
     let next: string;

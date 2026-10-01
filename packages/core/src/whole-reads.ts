@@ -25,7 +25,6 @@
  *  how long it remembers a whole read. The host's kernel imports it as its
  *  idempotency TTL, so the two cannot drift. */
 export const WRITE_WINDOW_MS = 10 * 60_000;
-export const WHOLE_READ_TTL_MS = WRITE_WINDOW_MS;
 
 /** A whole read's token, compared by equality only: `wholeReadToken` (the
  *  mtime and the size, one string) where a transport has both, else its rev. */
@@ -42,7 +41,7 @@ export function wholeReadToken(mtime: number, size: number | undefined): string 
 export class WholeReads {
   private readonly byPath = new Map<string, { rev: RevToken; at: number }>();
   constructor(
-    private readonly ttlMs: number = WHOLE_READ_TTL_MS,
+    private readonly ttlMs: number = WRITE_WINDOW_MS,
     private readonly now: () => number = () => Date.now(),
   ) {}
 

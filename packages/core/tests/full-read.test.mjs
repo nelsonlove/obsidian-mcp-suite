@@ -23,7 +23,7 @@ import { join } from "node:path";
 import { FilesystemBackend } from "../src/fs-backend/filesystem-backend.ts";
 import { registerFsTools } from "../src/register-fs-tools.ts";
 import { CHARACTER_LIMIT } from "../src/fs-backend/vault.ts";
-import { WholeReads, WHOLE_READ_TTL_MS, WRITE_WINDOW_MS } from "../src/whole-reads.ts";
+import { WholeReads, WRITE_WINDOW_MS } from "../src/whole-reads.ts";
 import { wholeNoteOverwriteRefusal } from "../src/truncation.ts";
 
 const LONG = 150_000;
@@ -49,7 +49,7 @@ async function fixture({ rev = () => 1700, onWholeRead } = {}) {
 describe("WholeReads — the memory", () => {
   test("remembers the path at its rev, for the window, and nothing else", () => {
     let now = 1_000_000;
-    const m = new WholeReads(WHOLE_READ_TTL_MS, () => now);
+    const m = new WholeReads(WRITE_WINDOW_MS, () => now);
     m.remember("A.md", 10);
     assert.equal(m.has("A.md", 10), true);
     assert.equal(m.has("A.md", 11), false, "another rev of the same path proves nothing");
@@ -64,17 +64,17 @@ describe("WholeReads — the memory", () => {
     m.remember("S.md", "1700:123");
     assert.equal(m.has("S.md", "1700:123"), true, "a composed string token (the FS server's) works the same");
     assert.equal(m.has("S.md", "1700:124"), false);
-    assert.equal(WHOLE_READ_TTL_MS, WRITE_WINDOW_MS, "one window");
-    now += WHOLE_READ_TTL_MS + 1;
+    assert.equal(WRITE_WINDOW_MS, 10 * 60_000, "one window, ten minutes");
+    now += WRITE_WINDOW_MS + 1;
     assert.equal(m.has("A.md", 12), false, "the window is the idempotency window");
   });
 
   test("remember sweeps every entry past the window, so a sweep of whole reads holds only the last window", () => {
     let now = 1_000_000;
-    const m = new WholeReads(WHOLE_READ_TTL_MS, () => now);
+    const m = new WholeReads(WRITE_WINDOW_MS, () => now);
     for (let i = 0; i < 500; i++) m.remember(`N${i}.md`, i);
     assert.equal(m.size, 500);
-    now += WHOLE_READ_TTL_MS + 1;
+    now += WRITE_WINDOW_MS + 1;
     m.remember("Last.md", 1);
     assert.equal(m.size, 1);
     assert.equal(m.has("Last.md", 1), true);

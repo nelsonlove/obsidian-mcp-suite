@@ -195,11 +195,12 @@ export class FsWritesDisabledError extends Error {
 // root the vault watcher uses — keeping the index consistent.
 
 /**
- * The FS server's memory of whole reads (#443), one per process: its servers
- * are stateless per request and its writes carry no if_rev, so a whole-note
- * rule stands aside when the note's CURRENT mtime is a remembered whole
- * read's rev — the note is unchanged since some whole read this process
- * served. A read's `rev` on this transport is the file's mtime in ms.
+ * No memory of whole reads on this transport (#443, #446): its servers are
+ * stateless per request and its writes carry no if_rev, so nothing could tie
+ * a proof of a whole read to the caller, and a per-process memory would let
+ * one client's whole read prove another client's overwrite. `full: true`
+ * serves the whole note here; the whole-note policy stays until #446 gives
+ * these writes a conditional form.
  */
 export function makeBackend(
   opts: { allowWrites?: boolean; kernel?: FsWriteKernel } = {},
@@ -220,9 +221,7 @@ export function makeBackend(
   // A note's length in characters for the whole-note-overwrite rule (#441);
   // a file of at most CHARACTER_LIMIT bytes cannot exceed it, so only a
   // larger file is read (the rare case, and only on an overwrite of it). The
-  // check runs before the queue, so a queued write that carries the note
-  // over the limit between this check and the dequeue is not seen by it;
-  // that race is if_rev's, as for every other argument refusal.
+  // rule runs at dequeue (`mutate`), so the length is the one the write meets.
   const noteLength = async (rel: string): Promise<number | undefined> => {
     // Through the vault's own resolver, so a path that escapes the vault (or
     // names an ignored folder) is never stat'ed or read here: it throws and

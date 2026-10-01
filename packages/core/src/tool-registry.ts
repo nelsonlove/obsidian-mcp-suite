@@ -117,7 +117,7 @@ export const FS_TOOLS: ToolDef[] = [
       "Read the full markdown content of a note by its vault-relative path. " +
       "Where the host tracks revisions, the response also carries the note's current `rev` — pass it back as `if_rev` on a following write to make that write conditional (it fails instead of clobbering a change you didn't see). " +
       "`truncated` says whether the note came back whole. A note longer than the read limit comes back cut at the limit, with `truncated: true` and a trailing `[truncated: note is N chars, showing first M]` line (M is the number shown): never write that content back (every write refuses it with Error [truncated_read]); its `rev` is good for an anchored edit (obsidian_patch_note, obsidian_append_note, obsidian_manage_frontmatter), which is how a long note is edited. " +
-      "To rewrite a long note whole, read it with `full: true`: the whole note comes back (`whole: true`, at your cost in context), and for ten minutes, on this connection, a whole-note overwrite of that note is allowed while it is unchanged — on the plugin, conditioned on the `rev` this read returns; on a server that shows no `rev`, by the note being unchanged on disk. Read-only.",
+      "To rewrite a long note whole, read it with `full: true`: the whole note comes back (`whole: true`, at your cost in context), and on the plugin, for ten minutes on this connection, a whole-note overwrite of that note conditioned on the `rev` this read returns is allowed while the note is unchanged. The FS server serves the whole note too but has no such road until #446: edit by anchor there. Read-only.",
     inputSchema: {
       path: z
         .string()
@@ -126,7 +126,7 @@ export const FS_TOOLS: ToolDef[] = [
       full: z
         .boolean()
         .optional()
-        .describe("Read the note WHOLE, never cut, whatever its length — the road to a whole-note rewrite of a long note (write it back within ten minutes, with this read's rev where the transport returns one). Costs your context; use it only for that."),
+        .describe("Read the note WHOLE, never cut, whatever its length — on the plugin, the road to a whole-note rewrite of a long note (write it back within ten minutes on this connection with this read's rev); the FS server has no such road until #446. Costs your context; use it only for that."),
     },
     annotations: RO,
     capability: "fs-expressible",

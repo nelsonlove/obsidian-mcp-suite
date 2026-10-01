@@ -4,7 +4,6 @@ import { registerFsTools, ok,
   CHARACTER_LIMIT,
   noteLengthFrom,
   WholeReads,
-  WRITE_WINDOW_MS,
   wholeReadToken,
 } from "@vault-mcp/core";
 import { serverInfo, codedError } from "./helpers.js";
@@ -341,7 +340,7 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
 
   // This connection's memory of whole reads (#443): what obsidian_read_note
   // served whole, and the proof the whole-note rules accept.
-  const wholeReads = new WholeReads(WRITE_WINDOW_MS);
+  const wholeReads = new WholeReads();
   const guardedOpts = {
     getSettings: () => ctx.getSettings(),
     kernel: ctx.kernel,
@@ -407,12 +406,9 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   const visible = (paths: string[]) => visiblePaths(paths, ctx.getSettings());
   // Hoisted so obsidian_write_notes can drive the same backend writeNote through
   // its own per-item guarded dispatch (see the write-notes block below).
-  // The backend's replace rule reads the memory only with a kernel: it
-  // trusts the note's current rev to be the call's if_rev, which only a
-  // kernel's dequeue check makes true.
   const backend = new ObsidianBackend(app, visible, (facts) => {
     writeFacts = facts;
-  }, ctx.kernel ? wholeReads : undefined);
+  });
   registerFsTools(server, backend, {
     decodeHtml: false,
     rev: (p) => probe.rev(p),

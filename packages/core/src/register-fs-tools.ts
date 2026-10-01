@@ -399,18 +399,22 @@ function makeHandler(
         anchor: string;
         op: "append" | "prepend" | "replace";
         content: string;
-      }) => {
+      }, extra?: { provenWhole?: boolean }) => {
         try {
           const decodedPath = dec(p);
           // Block IDs must be alphanumeric + dash/underscore by Obsidian convention.
           if (anchor_type === "block" && !/^[A-Za-z0-9_-]+$/.test(anchor)) {
             return fail(new Error(`Block anchor must match [A-Za-z0-9_-]+. Got: '${anchor}'`));
           }
+          // `extra.provenWhole` is the host guard's word, decided at dequeue
+          // (#443): the caller read this note whole on this connection at
+          // the rev it conditioned on. Only the guard sets it.
           const result = await backend.patchNote(
             decodedPath,
             { type: anchor_type, value: anchor },
             op,
             content,
+            { rangeRuleStandsAside: extra?.provenWhole === true },
           );
           return ok({ path: decodedPath, ...result });
         } catch (e) {
