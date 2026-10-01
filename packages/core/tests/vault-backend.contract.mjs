@@ -97,9 +97,8 @@ export function makeBackendContractTests(makeBackend) {
 
     // Place a sentinel file ONE level above the vault root. A porous backend
     // would expose this content via "../sentinelName"; a correct backend must
-    // NOT — it either strips the traversal (returning a different/nonexistent
-    // path) or throws. Both outcomes satisfy the invariant; returning the
-    // sentinel's actual content does not.
+    // NOT — it refuses the traversal (#444: folding it back into the vault
+    // is a defect too, since the caller is told nothing).
     const parentDir = path.dirname(vaultRoot);
     const sentinelName = `contract-sentinel-${uid()}.txt`;
     const sentinelPath = path.join(parentDir, sentinelName);
@@ -127,21 +126,25 @@ export function makeBackendContractTests(makeBackend) {
         assert.ok(
           readResult !== sentinelContent,
           `readNote('${traversalPath}') returned the outside sentinel's content — ` +
-            `vault containment FAILED (backend must strip or reject traversal sequences)`,
+            `vault containment FAILED (backend must reject traversal sequences)`,
         );
       }
 
       // ── WRITE containment ──────────────────────────────────────────────
-      // A backend that honors ../ would create a file at parentDir/escapee.md.
-      // A correct backend either throws or creates the file inside the vault.
+      // A backend that honors ../ would create a file at parentDir/escapee.md;
+      // one that folds it would create <vault>/escapee.md and say "created".
+      // A correct backend throws and creates nothing, anywhere (#444).
       const escapeeBasename = `contract-escapee-${uid()}.md`;
       const escapeeInParent = path.join(parentDir, escapeeBasename);
 
-      try {
-        await backend.writeNote(`../${escapeeBasename}`, "escaped write", true);
-      } catch {
-        // threw — acceptable; what matters is no outside file was created
-      }
+      await assert.rejects(
+        backend.writeNote(`../${escapeeBasename}`, "escaped write", true),
+        `writeNote('../${escapeeBasename}') must be refused, not folded into the vault`,
+      );
+      await assert.rejects(
+        fs.access(path.join(vaultRoot, escapeeBasename)),
+        `writeNote('../${escapeeBasename}') created '${escapeeBasename}' INSIDE the vault — the traversal was folded, not refused`,
+      );
 
       let createdOutside = false;
       try {

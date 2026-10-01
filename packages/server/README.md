@@ -72,8 +72,7 @@ Phase 1 of the deployment plan (HANDOFF.md):
   this process (Phase 2). Claude does **not** support user-pasted static bearer
   tokens, so a shared secret header is not a substitute.
 
-Path safety: all filesystem access goes through `resolveInVault`, which strips
-leading `../` traversal so requests stay contained within `VAULT_PATH`, and
+Path safety: all filesystem access goes through `resolveInVault`, which refuses — typed `invalid_path` — a path that climbs out of the vault (`../x.md` is not folded back in; #444), an absolute path, a backslash, and a path into an ignored folder, and checks that no symlink leads outside the vault root../` traversal so requests stay contained within `VAULT_PATH`, and
 refuses paths that touch ignored folders (`.obsidian`, `.trash`, `.git`,
 `node_modules`).
 
