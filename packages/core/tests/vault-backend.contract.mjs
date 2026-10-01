@@ -139,7 +139,8 @@ export function makeBackendContractTests(makeBackend) {
 
       await assert.rejects(
         backend.writeNote(`../${escapeeBasename}`, "escaped write", true),
-        `writeNote('../${escapeeBasename}') must be refused, not folded into the vault`,
+        (e) => e.code === "invalid_path" && /escapes the vault root/.test(e.message),
+        `writeNote('../${escapeeBasename}') must be refused as invalid_path, not folded into the vault`,
       );
       await assert.rejects(
         fs.access(path.join(vaultRoot, escapeeBasename)),

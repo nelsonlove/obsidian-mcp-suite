@@ -410,6 +410,18 @@ describe("obsidian_write_note — accept-forbidden guard reaches the real fs-fai
       const files = await readdir(tmpJournalDir);
       const lines = (await Promise.all(files.map((f) => readFile(path.join(tmpJournalDir, f), "utf8")))).join("\n");
       assert.equal(lines.includes(name), false, "an argument refusal is not journaled");
+      // The same refusal on a move's destination (the `target.paths` branch) and on the read tools.
+      await client.callTool({ name: "obsidian_write_note", arguments: { path: "fs-mode-444/Inside.md", content: "x", overwrite: false } });
+      const moved = await client.callTool({ name: "obsidian_move_note", arguments: { from: "fs-mode-444/Inside.md", to: `../${name}` } });
+      assert.ok(moved.isError);
+      assert.match(text(moved), /^Error \[invalid_path\]/);
+      assert.ok(!(await readFile(path.join(tmpVault, "fs-mode-444/Inside.md"), "utf8")).includes("nothing"), "the source note is still where it was");
+      await assert.rejects(readFile(outside, "utf8"), "the move landed nothing outside");
+      const read = await client.callTool({ name: "obsidian_read_note", arguments: { path: `../${name}` } });
+      assert.ok(read.isError);
+      assert.match(text(read), /^Error \[invalid_path\]/);
+      const batch = JSON.parse(text(await client.callTool({ name: "obsidian_read_notes", arguments: { paths: [`../${name}`] } }))) as { errors: Array<{ error: string }> };
+      assert.match(batch.errors[0].error, /escapes the vault root/);
     } finally {
       await rm(outside, { force: true });
       await teardown();
