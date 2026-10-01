@@ -111,7 +111,7 @@ describe("obsidian_read_note full: true", () => {
     assert.match(res.content[0].text, /cannot read a note whole/);
   });
 
-  test("wholeToken names the whole read, sampled before the content, and a transport with no rev hook shows no rev", async () => {
+  test("wholeToken names the whole read, sampled once before the content, with the rev the response shows", async () => {
     const told = [];
     const order = [];
     const vaultRoot = await mkdtemp(join(tmpdir(), "vault-443-"));
@@ -120,14 +120,17 @@ describe("obsidian_read_note full: true", () => {
     const inner = backend.readNoteWhole.bind(backend);
     backend.readNoteWhole = async (p) => { order.push("read"); return inner(p); };
     const server = fakeServer();
-    registerFsTools(server, backend, { wholeToken: async (p) => { order.push("token"); return `${p}:tok`; }, onWholeRead: (p, t) => told.push([p, t]) });
+    registerFsTools(server, backend, { rev: () => 9999, wholeToken: (p) => { order.push("token"); return { token: `${p}:tok`, rev: 1700 }; }, onWholeRead: (p, t) => told.push([p, t]) });
     const whole = (await server.call("obsidian_read_note", { path: "Big.md", full: true })).structuredContent;
     assert.equal(whole.whole, true);
-    assert.equal("rev" in whole, false, "no rev hook, no rev shown");
+    assert.equal(whole.rev, 1700, "the rev shown is the one sampled WITH the token, never a second sample");
     assert.deepEqual(told, [["Big.md", "Big.md:tok"]]);
     assert.deepEqual(order, ["token", "read"], "the token is sampled before the content is read");
+    const noRev = fakeServer();
+    registerFsTools(noRev, backend, { wholeToken: (p) => ({ token: `${p}:tok` }), onWholeRead: () => {} });
+    assert.equal("rev" in (await noRev.call("obsidian_read_note", { path: "Big.md", full: true })).structuredContent, false, "a token without a rev shows none");
     const batch = (await server.call("obsidian_read_notes", { paths: ["Big.md"] })).structuredContent.notes[0];
-    assert.equal("rev" in batch, false);
+    assert.equal(batch.rev, 9999, "the cut and batch roads show the rev hook's value as before; only the whole read samples it with the token");
   });
 
   test("without wholeToken the rev is the token", async () => {

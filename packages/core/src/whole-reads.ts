@@ -14,11 +14,11 @@
  * has not changed since. A rev remembered for one path proves nothing for
  * another; a rev the note has moved past proves nothing any more.
  *
- * Scope: one instance per connection on the host (a connection's own
- * reads), one per process on the FS server (its servers are stateless per
- * request and its writes carry no if_rev, so it compares the remembered rev
- * with the note's current mtime instead — the note is unchanged since some
- * whole read this process served).
+ * Scope: one instance per connection on the host, a connection's own reads,
+ * and only with a kernel (whose dequeue check is what matches if_rev to the
+ * note's rev). The FS server serves a whole read but keeps no memory: its
+ * writes carry no if_rev, so nothing ties a proof to the caller there, and
+ * the whole-note policy stays until #446 gives its writes a conditional form.
  */
 
 /** The one write window: how long a transport holds an idempotency key, and
@@ -27,10 +27,17 @@
 export const WRITE_WINDOW_MS = 10 * 60_000;
 export const WHOLE_READ_TTL_MS = WRITE_WINDOW_MS;
 
-/** A whole read's token: the host's rev (a number, the mtime); on a transport
- *  that composes its own (the FS server: mtime and size in one string),
- *  whatever its `rev` hook returns. Compared by equality only. */
+/** A whole read's token, compared by equality only: `wholeReadToken` (the
+ *  mtime and the size, one string) where a transport has both, else its rev. */
 export type RevToken = number | string;
+
+/** The one spelling of the token a whole read is remembered under: the
+ *  note's mtime (the rev the caller conditions on) and its size (a volume
+ *  with coarse mtimes keeps the mtime across an edit in the same tick).
+ *  Every place that composes or compares it uses this. */
+export function wholeReadToken(mtime: number, size: number | undefined): string {
+  return `${mtime}:${size}`;
+}
 
 export class WholeReads {
   private readonly byPath = new Map<string, { rev: RevToken; at: number }>();

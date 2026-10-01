@@ -43,11 +43,12 @@ export interface RegisterFsToolsOpts {
    */
   onWholeRead?: (path: string, token: number | string) => void;
   /**
-   * The token a whole read is remembered under (#443), sampled BEFORE the
-   * content is read like `rev`: the host composes its mtime and size, the
-   * FS server (which shows no rev) its own. Defaults to `rev`'s value.
+   * The token a whole read is remembered under (#443), sampled ONCE, before
+   * the content is read, together with the rev the response shows — so the
+   * two cannot come from different states of the note. Absent ⇒ the rev is
+   * the token and nothing else changes.
    */
-  wholeToken?: (path: string) => number | string | undefined | Promise<number | string | undefined>;
+  wholeToken?: (path: string) => { token: number | string; rev?: number } | undefined;
   /**
    * When provided, the return value is merged into every read-tool response as
    * `index_status`. Also read before/after for obsidian_force_reindex timing.
@@ -110,7 +111,7 @@ function makeHandler(
   includeIndexStatus: (() => IndexStatusSnapshot) | undefined,
   revOf?: (path: string) => number | string | undefined,
   onWholeRead?: (path: string, token: number | string) => void,
-  wholeToken?: (path: string) => number | string | undefined | Promise<number | string | undefined>,
+  wholeToken?: (path: string) => { token: number | string; rev?: number } | undefined,
 ) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const status = (extra: Record<string, unknown> = {}): Record<string, unknown> =>
@@ -166,17 +167,20 @@ function makeHandler(
           // only make the returned rev too OLD — the caller's later `if_rev`
           // then conflicts. Sampling after would hand back a rev newer than the
           // content returned, and that write would silently clobber the racer.
-          const revd = revField(decoded);
           if (full) {
             // The whole note, never cut (#443). The token it is remembered
-            // under is sampled HERE, before the content, for the same reason
-            // as the rev: a racing write makes it too old, never too new.
+            // under and the rev the response shows are sampled HERE, once,
+            // before the content: a racing write makes them too old, never
+            // too new, and they can never disagree with each other.
             if (!backend.readNoteWhole) return fail(new Error("this server cannot read a note whole (full: true): the backend has no whole read"));
-            const token = wholeToken ? await wholeToken(decoded) : revd.rev;
+            const sampled = wholeToken ? wholeToken(decoded) : undefined;
+            const revd = sampled ? (sampled.rev === undefined ? {} : { rev: sampled.rev }) : revField(decoded);
+            const token = sampled ? sampled.token : revd.rev;
             const whole = await backend.readNoteWhole(decoded);
             if (token !== undefined) onWholeRead?.(decoded, token);
             return ok(status({ path: decoded, content: whole, ...revd, truncated: false, whole: true }));
           }
+          const revd = revField(decoded);
           const content = await backend.readNote(decoded);
           // `truncated` flags a cut read (truncation.ts) and is always
           // present, as on obsidian_read_notes; a cut read keeps its rev (#441).
