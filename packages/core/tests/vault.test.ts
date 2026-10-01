@@ -44,7 +44,8 @@ describe("resolveInVault — lexical guards", () => {
     assert.throws(() => vault.resolveInVault("../../etc/passwd"), /escapes the vault root/);
     assert.throws(() => vault.resolveInVault("../outside.md"), /escapes the vault root/);
     assert.throws(() => vault.resolveInVault("sub/../../outside.md"), /escapes the vault root/);
-    assert.throws(() => vault.resolveInVault("/etc/passwd"), /escapes the vault root/);
+    assert.throws(() => vault.resolveInVault("/etc/passwd"), /absolute/);
+    assert.throws(() => vault.resolveInVault(path.join(tmpRoot, "Plan.md")), /absolute/, "an absolute path inside the vault is refused too: a note has one spelling");
     // Climbing inside the vault is fine.
     assert.ok(vault.resolveInVault("sub/../Plan.md").endsWith(path.join(tmpRoot, "Plan.md")));
   });
@@ -59,7 +60,7 @@ describe("resolveInVault — lexical guards", () => {
     assert.throws(() => trailing.resolveInVault("../outside.md"), /escapes the vault root/);
   });
 
-  test("a backslash in a path is refused, not a literal character in a name", () => {
+  test("a backslash in a path is refused where it is not the separator, not a literal character in a name", { skip: path.sep === "\\" }, () => {
     assert.throws(() => vault.resolveInVault("..\\outside.md"), /backslash/);
     assert.throws(() => vault.resolveInVault("Projects\\Plan.md"), /backslash/);
   });
