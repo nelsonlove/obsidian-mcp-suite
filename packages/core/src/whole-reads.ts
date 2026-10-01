@@ -19,6 +19,14 @@
  * note's rev). The FS server serves a whole read but keeps no memory: its
  * writes carry no if_rev, so nothing ties a proof to the caller there, and
  * the whole-note policy stays until #446 gives its writes a conditional form.
+ *
+ * What the proof is, exactly: that this connection was served the whole
+ * note at that rev. It cannot know which text the caller then edited: a
+ * caller holding an older cut read of the same note could write that back
+ * under a later whole read's rev. A cut read served AFTER the whole read
+ * forgets the proof (`forget`, told by the read tool), which closes the
+ * order a caller falls into by habit; the other order is the caller's own
+ * act, and the docs say so.
  */
 
 /** The one write window: how long a transport holds an idempotency key, and
@@ -26,9 +34,8 @@
  *  idempotency TTL, so the two cannot drift. */
 export const WRITE_WINDOW_MS = 10 * 60_000;
 
-/** A whole read's token, compared by equality only: `wholeReadToken` (the
- *  mtime and the size, one string) where a transport has both, else its rev. */
-export type RevToken = number | string;
+/** A whole read's token: `wholeReadToken`'s string, compared by equality. */
+export type RevToken = string;
 
 /** The one spelling of the token a whole read is remembered under: the
  *  note's mtime (the rev the caller conditions on) and its size (a volume
@@ -67,6 +74,12 @@ export class WholeReads {
   /** Entries held (expired ones included until the next sweep); for tests. */
   get size(): number {
     return this.byPath.size;
+  }
+
+  /** Forget `path`: a cut read of it was served after the whole read, so the
+   *  text the caller holds may be the cut one. */
+  forget(path: string): void {
+    this.byPath.delete(path);
   }
 
   /** True when `path` was served whole at exactly `rev` within the window. */

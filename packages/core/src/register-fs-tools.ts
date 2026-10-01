@@ -41,7 +41,13 @@ export interface RegisterFsToolsOpts {
    * overwrite conditioned on that rev can pass. Sampled before the content is
    * read, like the rev itself.
    */
-  onWholeRead?: (path: string, token: number | string) => void;
+  onWholeRead?: (path: string, token: string) => void;
+  /**
+   * Called when a CUT read of a note is served (#443): the transport forgets
+   * a whole read of that path, since the text the caller now holds may be
+   * the cut one.
+   */
+  onCutRead?: (path: string) => void;
   /**
    * The token a whole read is remembered under (#443), sampled ONCE, before
    * the content is read, together with the rev the response shows — so the
@@ -49,7 +55,7 @@ export interface RegisterFsToolsOpts {
    * remembered (`onWholeRead` is never called): the token's spelling is
    * `wholeReadToken`'s, and a bare rev would never match it.
    */
-  wholeToken?: (path: string) => { token: number | string; rev?: number } | undefined;
+  wholeToken?: (path: string) => { token: string; rev?: number } | undefined;
   /**
    * When provided, the return value is merged into every read-tool response as
    * `index_status`. Also read before/after for obsidian_force_reindex timing.
@@ -84,12 +90,12 @@ type ToolRegistrar = { registerTool(name: string, meta: any, handler: (args: any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function registerFsTools(server: any, backend: VaultBackend, opts: RegisterFsToolsOpts = {}): void {
   const reg = server as ToolRegistrar;
-  const { decodeHtml = false, includeIndexStatus, rev, onWholeRead, wholeToken } = opts;
+  const { decodeHtml = false, includeIndexStatus, rev, onWholeRead, wholeToken, onCutRead } = opts;
 
   const dec = (s: string): string => (decodeHtml ? decodeHtmlEntities(s) : s);
 
   for (const tool of FS_TOOLS) {
-    const handler = makeHandler(tool.name, backend, dec, includeIndexStatus, rev, onWholeRead, wholeToken);
+    const handler = makeHandler(tool.name, backend, dec, includeIndexStatus, rev, onWholeRead, wholeToken, onCutRead);
     reg.registerTool(
       tool.name,
       {
@@ -111,8 +117,9 @@ function makeHandler(
   dec: (s: string) => string,
   includeIndexStatus: (() => IndexStatusSnapshot) | undefined,
   revOf?: (path: string) => number | string | undefined,
-  onWholeRead?: (path: string, token: number | string) => void,
-  wholeToken?: (path: string) => { token: number | string; rev?: number } | undefined,
+  onWholeRead?: (path: string, token: string) => void,
+  wholeToken?: (path: string) => { token: string; rev?: number } | undefined,
+  onCutRead?: (path: string) => void,
 ) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const status = (extra: Record<string, unknown> = {}): Record<string, unknown> =>
@@ -184,7 +191,9 @@ function makeHandler(
           const content = await backend.readNote(decoded);
           // `truncated` flags a cut read (truncation.ts) and is always
           // present, as on obsidian_read_notes; a cut read keeps its rev (#441).
-          return ok(status({ path: decoded, content, ...revd, truncated: isCutRead(content, CHARACTER_LIMIT) }));
+          const truncated = isCutRead(content, CHARACTER_LIMIT);
+          if (truncated) onCutRead?.(decoded);
+          return ok(status({ path: decoded, content, ...revd, truncated }));
         } catch (e) {
           return fail(e);
         }
@@ -207,6 +216,7 @@ function makeHandler(
               const content = await backend.readNote(p);
               // The cut is flagged as in obsidian_read_note (truncation.ts).
               const truncated = isCutRead(content, CHARACTER_LIMIT);
+              if (truncated) onCutRead?.(p);
               return {
                 idx,
                 kind: "ok",

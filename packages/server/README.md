@@ -85,7 +85,7 @@ refuses paths that touch ignored folders (`.obsidian`, `.trash`, `.git`,
   parsing, swap in `gray-matter`.
 - Stateless transport: a fresh server+transport is built per POST, which avoids
   request-id collisions and scales trivially for single-user use.
-- Large notes are truncated at `CHARACTER_LIMIT` (100k chars) on read.
+- Large notes are truncated at `CHARACTER_LIMIT` (100k chars) on read; `obsidian_read_note` with `full: true` returns one whole (the whole-note write policy still applies on this server: #443, #446).
 
 ## Deployment walkthrough (Vultr + UTM NixOS jump host)
 

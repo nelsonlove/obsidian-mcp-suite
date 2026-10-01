@@ -83,6 +83,7 @@ function fixture() {
     rev: (p) => probe.rev(p),
     wholeToken: (p) => (store.has(p) ? { token: wholeReadToken(mtimes.get(p), store.get(p).length), rev: mtimes.get(p) } : undefined),
     onWholeRead: (p, token) => wholeReads.remember(p, token),
+    onCutRead: (p) => wholeReads.forget(p),
   });
   return { server, store, mtimes, bump };
 }
@@ -125,6 +126,17 @@ describe("a whole read is the proof a whole-note overwrite needs", () => {
     assert.equal(res.isError, true);
     assert.match(errText(res), /^Error \[truncated_read\]/);
     assert.match(store.get("Big.md"), /same tick/);
+  });
+
+  test("a cut read served after the whole read forgets the proof", async () => {
+    const { server, store } = fixture();
+    const read = (await server.call("obsidian_read_note", { path: "Big.md", full: true })).structuredContent;
+    const cut = (await server.call("obsidian_read_note", { path: "Big.md" })).structuredContent;
+    assert.equal(cut.truncated, true);
+    const res = await server.call("obsidian_write_note", { path: "Big.md", content: BODY.replace("# Big", "# Big (from which read?)"), overwrite: true, if_rev: read.rev, idempotency_key: key() });
+    assert.equal(res.isError, true);
+    assert.match(errText(res), /^Error \[truncated_read\]/);
+    assert.equal(store.get("Big.md"), BODY);
   });
 
   test("a remembered rev never carries over to another path", async () => {
