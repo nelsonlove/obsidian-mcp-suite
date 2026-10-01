@@ -41,14 +41,13 @@ export interface RegisterFsToolsOpts {
    * overwrite conditioned on that rev can pass. Sampled before the content is
    * read, like the rev itself.
    */
-  onWholeRead?: (path: string, rev: number | string) => void;
+  onWholeRead?: (path: string, token: number | string) => void;
   /**
-   * When false, the rev from `rev` feeds `onWholeRead` only and is never put
-   * in a response: for a transport whose writes cannot honour `if_rev` (the
-   * FS server), so a read never advertises a conditioning it has not got.
-   * Default true.
+   * The token a whole read is remembered under (#443), sampled BEFORE the
+   * content is read like `rev`: the host composes its mtime and size, the
+   * FS server (which shows no rev) its own. Defaults to `rev`'s value.
    */
-  revInResponse?: boolean;
+  wholeToken?: (path: string) => number | string | undefined | Promise<number | string | undefined>;
   /**
    * When provided, the return value is merged into every read-tool response as
    * `index_status`. Also read before/after for obsidian_force_reindex timing.
@@ -83,12 +82,12 @@ type ToolRegistrar = { registerTool(name: string, meta: any, handler: (args: any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function registerFsTools(server: any, backend: VaultBackend, opts: RegisterFsToolsOpts = {}): void {
   const reg = server as ToolRegistrar;
-  const { decodeHtml = false, includeIndexStatus, rev, onWholeRead, revInResponse = true } = opts;
+  const { decodeHtml = false, includeIndexStatus, rev, onWholeRead, wholeToken } = opts;
 
   const dec = (s: string): string => (decodeHtml ? decodeHtmlEntities(s) : s);
 
   for (const tool of FS_TOOLS) {
-    const handler = makeHandler(tool.name, backend, dec, includeIndexStatus, rev, onWholeRead, revInResponse);
+    const handler = makeHandler(tool.name, backend, dec, includeIndexStatus, rev, onWholeRead, wholeToken);
     reg.registerTool(
       tool.name,
       {
@@ -110,8 +109,8 @@ function makeHandler(
   dec: (s: string) => string,
   includeIndexStatus: (() => IndexStatusSnapshot) | undefined,
   revOf?: (path: string) => number | string | undefined,
-  onWholeRead?: (path: string, rev: number | string) => void,
-  revInResponse = true,
+  onWholeRead?: (path: string, token: number | string) => void,
+  wholeToken?: (path: string) => number | string | undefined | Promise<number | string | undefined>,
 ) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const status = (extra: Record<string, unknown> = {}): Record<string, unknown> =>
@@ -126,7 +125,6 @@ function makeHandler(
     const r = revOf?.(path);
     return r === undefined ? {} : { rev: r };
   };
-  const shown = (revd: { rev?: number | string }): { rev?: number | string } => (revInResponse ? revd : {});
 
   switch (name) {
     // ── obsidian_list_notes ────────────────────────────────────────────────
@@ -168,22 +166,21 @@ function makeHandler(
           // only make the returned rev too OLD — the caller's later `if_rev`
           // then conflicts. Sampling after would hand back a rev newer than the
           // content returned, and that write would silently clobber the racer.
-          // Sampled only where it is used: a transport that shows no rev
-          // (revInResponse false) samples it for the whole-read memory alone.
-          const revd = revInResponse || full ? revField(decoded) : {};
+          const revd = revField(decoded);
           if (full) {
-            // The whole note, never cut (#443). The whole read is remembered
-            // at the rev sampled above, for the same reason: a racing write
-            // makes the remembered rev too old, never too new.
+            // The whole note, never cut (#443). The token it is remembered
+            // under is sampled HERE, before the content, for the same reason
+            // as the rev: a racing write makes it too old, never too new.
             if (!backend.readNoteWhole) return fail(new Error("this server cannot read a note whole (full: true): the backend has no whole read"));
+            const token = wholeToken ? await wholeToken(decoded) : revd.rev;
             const whole = await backend.readNoteWhole(decoded);
-            if (revd.rev !== undefined) onWholeRead?.(decoded, revd.rev);
-            return ok(status({ path: decoded, content: whole, ...shown(revd), truncated: false, whole: true }));
+            if (token !== undefined) onWholeRead?.(decoded, token);
+            return ok(status({ path: decoded, content: whole, ...revd, truncated: false, whole: true }));
           }
           const content = await backend.readNote(decoded);
           // `truncated` flags a cut read (truncation.ts) and is always
           // present, as on obsidian_read_notes; a cut read keeps its rev (#441).
-          return ok(status({ path: decoded, content, ...shown(revd), truncated: isCutRead(content, CHARACTER_LIMIT) }));
+          return ok(status({ path: decoded, content, ...revd, truncated: isCutRead(content, CHARACTER_LIMIT) }));
         } catch (e) {
           return fail(e);
         }
@@ -201,16 +198,15 @@ function makeHandler(
           paths.map(async (raw, idx): Promise<Result> => {
             const p = dec(raw);
             try {
-              // Sampled before the read, for the same reason as obsidian_read_note;
-              // not at all where no rev is shown (the batch never reads whole).
-              const revd = revInResponse ? revField(p) : {};
+              // Sampled before the read, for the same reason as obsidian_read_note.
+              const revd = revField(p);
               const content = await backend.readNote(p);
               // The cut is flagged as in obsidian_read_note (truncation.ts).
               const truncated = isCutRead(content, CHARACTER_LIMIT);
               return {
                 idx,
                 kind: "ok",
-                value: { path: p, content, truncated, ...shown(revd) },
+                value: { path: p, content, truncated, ...revd },
               };
             } catch (e) {
               return { idx, kind: "err", value: { path: p, error: e instanceof Error ? e.message : String(e) } };

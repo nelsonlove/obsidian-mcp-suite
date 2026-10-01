@@ -256,13 +256,10 @@ export class ObsidianBackend implements VaultBackend {
   // ── note reading ────────────────────────────────────────────────────────────
 
   async readNote(relPath: string): Promise<string> {
-    const f = this.app.vault.getAbstractFileByPath(relPath);
-    if (!(f instanceof TFile)) throw new Error(`not found: ${relPath}`);
-    const content = await this.app.vault.read(f);
-    return truncateForRead(content, CHARACTER_LIMIT);
+    return truncateForRead(await this.readNoteWhole(relPath), CHARACTER_LIMIT);
   }
 
-  /** The whole note, never cut (#443). */
+  /** The whole note, never cut (#443); the cut read is this, cut. */
   async readNoteWhole(relPath: string): Promise<string> {
     const f = this.app.vault.getAbstractFileByPath(relPath);
     if (!(f instanceof TFile)) throw new Error(`not found: ${relPath}`);
@@ -543,10 +540,11 @@ export class ObsidianBackend implements VaultBackend {
     // A replace whose section runs past the read limit on a long note would
     // replace text no cut read showed (#441).
     // The rule stands aside on the transport's word (`opts`), or on this
-    // connection's memory of a whole read at the note's current rev — the
-    // latter only when a kernel matched the call's if_rev to that rev at
-    // dequeue, which is why server.ts hands the memory over only with one.
-    if (op === "replace" && !opts.rangeRuleStandsAside && !this.wholeReads?.has(relPath, file.stat.mtime)) {
+    // connection's memory of a whole read at the note's current token (mtime
+    // and size, as server.ts composes it) — the latter only when a kernel
+    // matched the call's if_rev to that mtime at dequeue, which is why
+    // server.ts hands the memory over only with one.
+    if (op === "replace" && !opts.rangeRuleStandsAside && !this.wholeReads?.has(relPath, `${file.stat.mtime}:${file.stat.size}`)) {
       assertPatchRangeRead(relPath, text.length, end, CHARACTER_LIMIT);
     }
     let next: string;

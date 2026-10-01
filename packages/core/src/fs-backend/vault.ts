@@ -473,12 +473,10 @@ class VaultImpl {
   }
 
   async readNote(relPath: string): Promise<string> {
-    const abs = this.resolveInVault(relPath);
-    const content = await fs.readFile(abs, "utf8");
-    return truncateForRead(content, CHARACTER_LIMIT);
+    return truncateForRead(await this.readNoteWhole(relPath), CHARACTER_LIMIT);
   }
 
-  /** The whole note, never cut (#443). */
+  /** The whole note, never cut (#443); the cut read is this, cut. */
   async readNoteWhole(relPath: string): Promise<string> {
     return fs.readFile(this.resolveInVault(relPath), "utf8");
   }
