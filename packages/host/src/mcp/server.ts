@@ -339,18 +339,19 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   });
 
   // This connection's memory of whole reads (#443): what obsidian_read_note
-  // served whole, and the proof the whole-note rules accept.
+  // served whole, and the proof the whole-note rules accept. `noteStat` is
+  // the one lookup both the token and the proof are built from.
   const wholeReads = new WholeReads();
+  const noteStat = (p: string): { mtime: number; size: number } | undefined => {
+    const f = app.vault.getAbstractFileByPath(p);
+    return f instanceof TFile ? { mtime: f.stat.mtime, size: f.stat.size } : undefined;
+  };
   const guardedOpts = {
     getSettings: () => ctx.getSettings(),
     kernel: ctx.kernel,
     actor,
     wholeReads,
-    noteRev: (p: string) => probe.rev(p),
-    noteSize: (p: string) => {
-      const f = app.vault.getAbstractFileByPath(p);
-      return f instanceof TFile ? f.stat.size : undefined;
-    },
+    noteStat,
     executor,
     sessionRefusal,
     // `jd:<address>` addressing at the interception point: same per-call
@@ -420,8 +421,8 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
     ...(ctx.kernel
       ? {
           wholeToken: (p: string) => {
-            const f = app.vault.getAbstractFileByPath(p);
-            return f instanceof TFile ? { token: wholeReadToken(f.stat.mtime, f.stat.size), rev: f.stat.mtime } : undefined;
+            const st = noteStat(p);
+            return st ? { token: wholeReadToken(st.mtime, st.size), rev: st.mtime } : undefined;
           },
           onWholeRead: (p: string, token: number | string) => wholeReads.remember(p, token),
         }

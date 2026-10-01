@@ -70,8 +70,7 @@ function fixture() {
     kernel,
     actor: () => ACTOR,
     wholeReads,
-    noteRev: (p) => probe.rev(p),
-    noteSize: (p) => store.get(p)?.length,
+    noteStat: (p) => (store.has(p) ? { mtime: mtimes.get(p), size: store.get(p).length } : undefined),
     noteLength: async (p) => store.get(p)?.length,
   });
   const backend = new ObsidianBackend(app, () => null);
