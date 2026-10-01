@@ -235,7 +235,7 @@ export const FS_TOOLS: ToolDef[] = [
     name: "obsidian_get_backlinks",
     title: "Get backlinks to a note",
     description:
-      "List notes that contain a `[[wikilink]]` pointing at the given note. Backlinks are resolved from the vault index; call `obsidian_force_reindex` if you need a synchronous index refresh before querying. Read-only.",
+      "List notes that contain a `[[wikilink]]` pointing at the given note. In Obsidian, backlinks come from Obsidian's own link index (`resolvedLinks`): a link written moments ago may not be in it yet, `.canvas` files are not counted, and a note's links to itself are left out; the call refuses while Obsidian is still loading the index after a start. Read-only.",
     inputSchema: {
       path: z
         .string()

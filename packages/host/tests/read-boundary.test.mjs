@@ -28,6 +28,7 @@
  */
 
 import { test, describe } from "node:test";
+import { glob, readFile } from "node:fs/promises";
 import assert from "node:assert/strict";
 
 import { installObsidianStub, TFile, TFolder, MarkdownView } from "./obsidian-stub.mjs";
@@ -123,7 +124,8 @@ function fakeApp({ notes = NOTES, caches = CACHES, active = null, bookmarks = nu
       get resolvedLinks() {
         const out = {};
         for (const [path, cache] of Object.entries(caches)) {
-          for (const l of cache.links ?? []) {
+          // As in Obsidian: links, embeds and frontmatter links all count.
+          for (const l of [...(cache.links ?? []), ...(cache.embeds ?? []), ...(cache.frontmatterLinks ?? [])]) {
             const dest = byBasename.get(l.link.toLowerCase());
             if (!dest) continue;
             out[path] ??= {};
@@ -319,9 +321,48 @@ describe("link resolution fails closed", () => {
     // while its index builds; the answer must still come from resolvedLinks.
     const res = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
     assert.deepEqual(res.structuredContent.backlinks, ["Archive/Payroll/Salaries.md"]);
-    app.metadataCache.getBacklinksForFile = () => { throw new Error("getBacklinksForFile must not be called"); };
-    const again = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
-    assert.deepEqual(again.structuredContent.backlinks, ["Archive/Payroll/Salaries.md"]);
+  });
+
+  test("obsidian_get_backlinks counts embeds and frontmatter links, and leaves out the note's links to itself", async () => {
+    const notes = {
+      ...NOTES,
+      "Projects/Embedder.md": "![[Alpha]]",
+      "Projects/Related.md": "---\nrelated: \"[[Alpha]]\"\n---\n",
+    };
+    const caches = {
+      ...CACHES,
+      "Projects/Embedder.md": { embeds: [{ link: "Alpha" }] },
+      "Projects/Related.md": { frontmatterLinks: [{ key: "related", link: "Alpha" }] },
+      "Projects/Alpha.md": { ...(CACHES["Projects/Alpha.md"] ?? {}), links: [...(CACHES["Projects/Alpha.md"]?.links ?? []), { link: "Alpha" }] },
+    };
+    const app = fakeApp({ notes, caches });
+    const res = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
+    assert.deepEqual([...res.structuredContent.backlinks].sort(), ["Archive/Payroll/Salaries.md", "Projects/Embedder.md", "Projects/Related.md"]);
+  });
+
+  test("obsidian_get_backlinks refuses, not answers short, while Obsidian is still loading its index", async () => {
+    const app = fakeApp();
+    app.metadataCache.initialized = false;
+    const res = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
+    assert.equal(res.isError, true);
+    assert.match(res.content[0].text, /still loading its link index/);
+    app.metadataCache.initialized = true;
+    const ok = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
+    assert.deepEqual(ok.structuredContent.backlinks, ["Archive/Payroll/Salaries.md"]);
+  });
+
+  test("no host source calls getBacklinksForFile (#451): a plugin may patch it and answer short", async () => {
+    const SRC = new URL("../src/", import.meta.url);
+    const offenders = [];
+    let scanned = 0;
+    for await (const rel of glob("**/*.ts", { cwd: SRC })) {
+      scanned++;
+      const text = await readFile(new URL(rel, SRC), "utf8");
+      const code = text.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
+      if (/getBacklinksForFile\s*\(|\[\s*["'`]getBacklinksForFile["'`]\s*\]/.test(code)) offenders.push(rel);
+    }
+    assert.ok(scanned > 20, `the scan must see the host sources (saw ${scanned})`);
+    assert.deepEqual(offenders, []);
   });
 
   test("obsidian_get_outlinks keeps the link TEXT and withholds where it landed", async () => {

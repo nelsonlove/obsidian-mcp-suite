@@ -28,6 +28,7 @@
 //      as before, and every note the index says links it must have been found.
 
 import { TFile, type App } from "obsidian";
+import { indexedLinkers } from "./link-index.js";
 import { parseLinks, rewriteLink, applyEdits, isRelativeLinkpath, type TextLink, type Edit } from "./link-rewrite.js";
 
 /** What the damage check found. `ok` is false whenever any list is non-empty (hidden notes included). */
@@ -162,9 +163,7 @@ export async function moveWithLinks(app: App, file: TFile, to: string, opts: Mov
     // Cross-check with the index: a note it says links the note where the text scan found
     // nothing, or (while its index entry is current) fewer links than the index counts. The
     // parser and Obsidian's index can disagree on rare markdown; this makes a miss loud.
-    for (const [src, targets] of Object.entries(app.metadataCache.resolvedLinks ?? {})) {
-      const indexed = targets?.[oldPath] ?? 0;
-      if (src === oldPath || indexed === 0) continue;
+    for (const { src, count: indexed } of indexedLinkers(app, oldPath)) {
       const plan = plans.get(src);
       const f = app.vault.getAbstractFileByPath(src);
       if (!plan || (plan.before < indexed && f instanceof TFile && cacheIsFresh(app, f))) check.index_only.push(src);
