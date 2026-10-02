@@ -504,8 +504,8 @@ class VaultImpl {
     if (existed && !overwrite) {
       throw new Error(`Note already exists: '${relPath}'. Set overwrite=true to replace it.`);
     }
-    // A new note may not take a name Obsidian Sync refuses; an existing one stays writable in place.
-    if (!existed) assertSyncSafeName(relPath);
+    // A new note may not take a name Obsidian Sync refuses; an existing one stays writable in place. A new note has no linkers.
+    if (!existed) assertSyncSafeName(relPath, false);
     await fs.mkdir(path.dirname(abs), { recursive: true });
     await fs.writeFile(abs, content, "utf8");
     return { path: this.toRelative(abs), created: !existed };
@@ -531,7 +531,7 @@ class VaultImpl {
     // — EXCEPT when the note is new/empty, where the appended leading `---`
     // fence becomes the note's real frontmatter. Guard the FINAL content
     // (existing + appended, matching the "\n" prefix used below) uniformly.
-    if (!existed) assertSyncSafeName(relPath);
+    if (!existed) assertSyncSafeName(relPath, false);
     const existingContent = existed ? await this.diskContentSafe(relPath) : null;
     const resultingContent = existingContent === null ? content : `${existingContent}\n${content}`;
     await this.guardWrittenContent(relPath, resultingContent);
@@ -831,7 +831,7 @@ class VaultImpl {
     if (absFrom === absTo) {
       throw new Error("'from' and 'to' resolve to the same path");
     }
-    assertSyncSafeMove(fromRel, toRel);
+    assertSyncSafeMove(fromRel, toRel, options.backlinks_provider(fromRel).some((p) => p !== fromRel));
 
     let toExists = true;
     try {

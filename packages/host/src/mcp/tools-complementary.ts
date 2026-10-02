@@ -164,7 +164,7 @@ export function registerComplementaryTools(server: McpServer, app: App, ctx: Ser
           // Create note with the heading + content
           const newContent = `# ${heading}\n\n${content}\n`;
           guardAppendResult(null, newContent);
-          assertSyncSafeName(p);
+          assertSyncSafeName(p, false); // a new note has no linkers
           await app.vault.create(p, newContent);
           return ok({ path: p, found: false, inserted: true, created_note: true });
         }
