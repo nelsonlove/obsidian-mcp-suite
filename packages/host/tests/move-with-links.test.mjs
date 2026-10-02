@@ -11,11 +11,13 @@
  */
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { installObsidianStub, TFile, TFolder } from "./obsidian-stub.mjs";
+import { installObsidianStub, TFile, TFolder, parseYaml } from "./obsidian-stub.mjs";
 import { parseLinks, rewriteLink, relativePath } from "../src/mcp/link-rewrite.ts";
 
 installObsidianStub();
 const { moveWithLinks, TextCache } = await import("../src/mcp/move-with-links.ts");
+const { recordTest } = await import("../src/mcp/records.ts");
+const { RECORDS_LEFT_CAP } = await import("../src/mcp/move-with-links.ts");
 
 const stripMd = (s) => s.replace(/\.md$/i, "");
 const base = (p) => stripMd(p.split("/").pop());
@@ -51,7 +53,10 @@ function fakeApp(files, { stale = [], wrongCache = {}, throwOn = [], changeBefor
       if (fm && l.start < fm[0].length) continue;
       (l.embed ? embeds : links).push({ link: l.linkpath + l.subpath, original: l.original, position: { start: { offset: l.start }, end: { offset: l.end } } });
     }
-    return { links, embeds, frontmatterLinks };
+    // The frontmatter and inline tags, as Obsidian's cache holds them: what the kernel's record probe reads (01.44 rule 8, #397).
+    const frontmatter = fm ? parseYaml(fm[1]) : undefined;
+    const tags = [...t.slice(fm ? fm[0].length : 0).matchAll(/(?:^|\s)(#[\w/-]+)/g)].map((m) => ({ tag: m[1] }));
+    return { links, embeds, frontmatterLinks, tags, ...(frontmatter ? { frontmatter } : {}) };
   };
   const caches = new Map();
   const fileCache = {};
@@ -394,6 +399,381 @@ describe("moveWithLinks", () => {
     assert.equal(r.ok, false);
     assert.ok(r.hidden >= 1);
     assert.ok(!JSON.stringify(r).includes("Secret/"));
+  });
+});
+
+describe("records are never rewritten (01.44 rule 8)", () => {
+  const ARCH = "00-09 System/00 System management/00.09 Archive";
+
+  test("recordTest: any JD archive folder, the agent record folders, and the record key; nothing else", () => {
+    const { app } = fakeApp({
+      "Live/Keyed.md": "---\nrecord: true\n---\nx\n",
+      "Live/Plain.md": "---\nrecord: false\n---\nx\n",
+    });
+    const is0 = recordTest();
+    const is = (p) => is0(p, ""); // by folder alone: a note with no key
+    const keyed = (p) => is0(p, p === "Live/Keyed.md" ? "---\nrecord: true\n---\nx\n" : p === "Live/Plain.md" ? "---\nrecord: false\n---\nx\n" : "");
+    assert.equal(is(`${ARCH}/Old plan.md`), true);
+    assert.equal(is(`${ARCH}/Deep/er/Note.md`), true);
+    assert.equal(is("40-49 Financial/41 Banking & accounts/41.09 Archive for 41 Banking & accounts/Stmt.md"), true);
+    assert.equal(is("00-09 System/03 Agents/03.04 Records/Agent notebook/2026-09/Agent session.md"), true);
+    assert.equal(is("00-09 System/03 Agents/03.16 Cross-session log/CROSS-SESSION.md"), true);
+    assert.equal(is("00-09 System/03 Agents/03.20 Imported chats/Chat.md"), true);
+    assert.equal(keyed("Live/Keyed.md"), true);
+    assert.equal(keyed("Live/Plain.md"), false);
+    assert.equal(is("00-09 System/06 Repos/06.37 claude-code-plugins/06.37.09 Archive for claude-code-plugins/X.md"), true, "the dotted JD form");
+    assert.equal(is("Projects/Archive/Note.md"), false, "a plain Archive folder is not a JD archive");
+    assert.equal(is("Projects/00.09 Archived ideas/Note.md"), false, "the folder name must be '.09 Archive' then a space or its end");
+    assert.equal(is("00.09 Archive.md"), false, "a note NAMED like an archive is not inside one");
+    assert.equal(is("00-09 System/03 Agents/03.04 Records.md"), false);
+  });
+
+  test("a record that links the moved note keeps its link as written, is listed in records_left, and the move is still ok", async () => {
+    const { app, text } = fakeApp({
+      "A/Old.md": "x\n",
+      "S/Live.md": "see [[Old]]\n",
+      [`${ARCH}/Plan.md`]: "cited [[Old]] and [md](../../../A/Old.md)\n",
+      "Live/Keyed.md": "---\nrecord: true\n---\nalso [[Old]]\n",
+    });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md");
+    assert.equal(text.get("S/Live.md"), "see [[New]]\n", "a living note is rewritten as before");
+    assert.equal(text.get(`${ARCH}/Plan.md`), "cited [[Old]] and [md](../../../A/Old.md)\n", "the record's bytes are untouched");
+    assert.equal(text.get("Live/Keyed.md"), "---\nrecord: true\n---\nalso [[Old]]\n");
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.deepEqual(
+      [...r.records_left].sort((a, b) => a.path.localeCompare(b.path)),
+      [
+        { path: `${ARCH}/Plan.md`, links: ["[[Old]]", "[md](../../../A/Old.md)"] },
+        { path: "Live/Keyed.md", links: ["[[Old]]"] },
+      ]
+    );
+    assert.deepEqual(r.files_rewritten, ["S/Live.md"]);
+    assert.deepEqual(r.index_only, [], "the index's record linkers are not flagged as missed");
+    assert.deepEqual(r.still_linking_old, []);
+  });
+
+  test("a moved record keeps its own relative links as written and lists them; living notes that link it are still rewritten", async () => {
+    const { app, text } = fakeApp({
+      [`${ARCH}/Old.md`]: "[o](../Other.md) and [[Other]]\n",
+      [`00-09 System/00 System management/Other.md`]: "x\n",
+      "S/Live.md": "see [[Old]]\n",
+    });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath(`${ARCH}/Old.md`), `${ARCH}/Deeper/New.md`);
+    assert.equal(text.get(`${ARCH}/Deeper/New.md`), "[o](../Other.md) and [[Other]]\n", "a record's own text is untouched");
+    assert.equal(text.get("S/Live.md"), "see [[New]]\n");
+    assert.deepEqual(r.records_left, [{ path: `${ARCH}/Deeper/New.md`, links: ["[o](../Other.md)"] }]);
+    assert.deepEqual(r.own_links_broken, [], "left on purpose, not damage");
+    assert.equal(r.ok, true, JSON.stringify(r));
+  });
+
+  test("records_left names only what the caller may see; the rest are counted in hidden", async () => {
+    const { app } = fakeApp({ "A/Old.md": "x\n", [`${ARCH}/Plan.md`]: "cited [[Old]]\n" });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md", { visible: (p) => !p.startsWith("00-09") });
+    assert.deepEqual(r.records_left, []);
+    assert.equal(r.hidden, 1);
+    assert.equal(r.ok, true);
+  });
+
+  test("the record test can be supplied by the caller", async () => {
+    const { app, text } = fakeApp({ "A/Old.md": "x\n", "S/Mine.md": "[[Old]]\n" });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md", { isRecord: (p) => p === "S/Mine.md" });
+    assert.equal(text.get("S/Mine.md"), "[[Old]]\n");
+    assert.deepEqual(r.records_left, [{ path: "S/Mine.md", links: ["[[Old]]"] }]);
+  });
+
+  test("an un-archived note is living at its new path: its own relative links are healed, nothing is left", async () => {
+    const { app, text } = fakeApp({
+      [`${ARCH}/Plan.md`]: "[o](../Other.md)\n",
+      "00-09 System/00 System management/Other.md": "x\n",
+    });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath(`${ARCH}/Plan.md`), "00-09 System/01 Live/Sub/Plan.md");
+    assert.equal(text.get("00-09 System/01 Live/Sub/Plan.md"), "[o](../../00%20System%20management/Other.md)\n");
+    assert.deepEqual(r.records_left, []);
+    assert.deepEqual(r.own_links_broken, []);
+    assert.equal(r.ok, true, JSON.stringify(r));
+  });
+
+  test("a folder-only move leaves a record's [[Old]] working, so nothing is listed", async () => {
+    const { app, text } = fakeApp({ "A/Old.md": "x\n", [`${ARCH}/Plan.md`]: "cited [[Old]]\n" });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/Old.md");
+    assert.equal(text.get(`${ARCH}/Plan.md`), "cited [[Old]]\n");
+    assert.deepEqual(r.records_left, []);
+    assert.equal(r.records_left_total, 0);
+  });
+
+  test("a note keyed record: true moments ago (its cache stale) is judged by its text, and left", async () => {
+    const { app, text } = fakeApp(
+      { "A/Old.md": "x\n", "S/New record.md": "nothing yet\n" },
+      { stale: { "S/New record.md": "---\nrecord: true\n---\ncited [[Old]]\n" } }
+    );
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md");
+    assert.equal(text.get("S/New record.md"), "---\nrecord: true\n---\ncited [[Old]]\n");
+    assert.deepEqual(r.records_left, [{ path: "S/New record.md", links: ["[[Old]]"] }]);
+  });
+
+  test("a moved record that links itself is listed once, under its new path", async () => {
+    const { app, text } = fakeApp({ [`${ARCH}/Old.md`]: "see [[Old]]\n" });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath(`${ARCH}/Old.md`), `${ARCH}/New.md`);
+    assert.equal(text.get(`${ARCH}/New.md`), "see [[Old]]\n");
+    assert.deepEqual(r.records_left, [{ path: `${ARCH}/New.md`, links: ["[[Old]]"] }]);
+  });
+
+  test("a record the index says links the note, where the text gave no link, is listed as index_only", async () => {
+    const { app } = fakeApp(
+      { "A/Old.md": "x\n", [`${ARCH}/Plan.md`]: "cited [[Old]]\n" },
+      { stale: { [`${ARCH}/Plan.md`]: "the link is gone from the text\n" } }
+    );
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md");
+    assert.deepEqual(r.records_left, [{ path: `${ARCH}/Plan.md`, links: [], index_only: true }]);
+    assert.deepEqual(r.index_only, []);
+  });
+
+  test("records_left is capped; records_left_total counts them all", async () => {
+    const files = { "A/Old.md": "x\n" };
+    for (let i = 0; i < RECORDS_LEFT_CAP + 5; i++) files[`${ARCH}/R${i}.md`] = "cited [[Old]]\n";
+    const { app } = fakeApp(files);
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md");
+    assert.equal(r.records_left.length, RECORDS_LEFT_CAP);
+    assert.equal(r.records_left_total, RECORDS_LEFT_CAP + 5);
+    assert.equal(r.ok, true);
+  });
+
+  test("a record folder's own folder note is its living index, healed like any living note", async () => {
+    const R = "00-09 System/03 Agents/03.04 Records";
+    const { app, text } = fakeApp({
+      [`${R}/Agent friction log.md`]: "x\n",
+      [`${R}/03.04 Records.md`]: "see [[00-09 System/03 Agents/03.04 Records/Agent friction log]]\n",
+      [`${ARCH}/00.09 Archive.md`]: "index [[Agent friction log]]\n",
+    });
+    const is = (p) => recordTest()(p, "");
+    assert.equal(is(`${R}/03.04 Records.md`), false);
+    assert.equal(is(`${ARCH}/00.09 Archive.md`), false);
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath(`${R}/Agent friction log.md`), `${R}/Friction log.md`);
+    assert.equal(text.get(`${R}/03.04 Records.md`), "see [[Friction log]]\n");
+    assert.equal(text.get(`${ARCH}/00.09 Archive.md`), "index [[Friction log]]\n");
+    assert.deepEqual(r.records_left, []);
+    assert.equal(r.ok, true, JSON.stringify(r));
+  });
+
+  test("record: True and record: true with a comment are records, read from text as from the cache", async () => {
+    const { app } = fakeApp({ "S/A.md": "---\nrecord: True\n---\n", "S/B.md": "---\nrecord: true  # since 2026-09\n---\n", "S/C.md": "---\nrecord: truthy\n---\n" });
+    const is = recordTest();
+    assert.equal(is("S/A.md", "---\nrecord: True\n---\n"), true);
+    assert.equal(is("S/B.md", "---\nrecord: true  # since 2026-09\n---\n"), true);
+    assert.equal(is("S/C.md", "---\nrecord: truthy\n---\n"), false);
+  });
+
+  test("a note made a record between the scan and its rewrite is left as written and listed", async () => {
+    const { app, text } = fakeApp(
+      { "A/Old.md": "x\n", "S/Live.md": "see [[Old]]\n" },
+      { changeBeforeProcess: { "S/Live.md": "---\nrecord: true\n---\nsee [[Old]]\n" } }
+    );
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md");
+    assert.equal(text.get("S/Live.md"), "---\nrecord: true\n---\nsee [[Old]]\n");
+    assert.deepEqual(r.records_left, [{ path: "S/Live.md", links: ["[[Old]]"] }]);
+    assert.deepEqual(r.not_reaching_new, []);
+    assert.equal(r.ok, true, JSON.stringify(r));
+  });
+
+  test("records_left_total counts hidden records too", async () => {
+    const { app } = fakeApp({ "A/Old.md": "x\n", [`${ARCH}/P.md`]: "cited [[Old]]\n", "Z/R.md": "---\nrecord: true\n---\n[[Old]]\n" });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md", { visible: (p) => !p.startsWith("00-09") });
+    assert.equal(r.records_left_total, 2);
+    assert.deepEqual(r.records_left.map((x) => x.path), ["Z/R.md"]);
+    assert.equal(r.hidden, 1);
+  });
+
+  test("the operator's tag identification (#397): a note tagged in frontmatter or inline is left; record: true alone is not a record then", async () => {
+    const tagId = { method: "tag", property: "record", value: "true", tag: "historical" };
+    const { app, text } = fakeApp({
+      "A/Old.md": "x\n",
+      "S/Fm.md": "---\ntags: [historical, x]\n---\nsee [[Old]]\n",
+      "S/Inline.md": "cited [[Old]] #historical\n",
+      "S/Code.md": "`#historical` [[Old]]\n",
+      "S/Keyed.md": "---\nrecord: true\n---\n[[Old]]\n",
+    });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md", { isRecord: recordTest(() => tagId) });
+    assert.equal(text.get("S/Fm.md"), "---\ntags: [historical, x]\n---\nsee [[Old]]\n");
+    assert.equal(text.get("S/Inline.md"), "cited [[Old]] #historical\n");
+    assert.equal(text.get("S/Code.md"), "`#historical` [[New]]\n", "a tag inside code is no tag");
+    assert.equal(text.get("S/Keyed.md"), "---\nrecord: true\n---\n[[New]]\n", "the operator chose a tag, so the key marks nothing");
+    assert.deepEqual(r.records_left.map((x) => x.path).sort(), ["S/Fm.md", "S/Inline.md"]);
+    assert.equal(r.ok, true, JSON.stringify(r));
+  });
+
+  test("the operator's own property and value (#397) mark a record, judged on the text", () => {
+    const id = { method: "property", property: "kind", value: "Record", tag: "record" };
+    const is = recordTest(() => id);
+    assert.equal(is("S/K.md", "---\nkind: record\n---\n"), true);
+    assert.equal(is("S/R.md", "---\nrecord: true\n---\n"), false);
+  });
+
+  test("record: \"true\" counts, as the kernel's isRecordFlag counts it; record: true#x is a string and does not", async () => {
+    const { app, text } = fakeApp({ "A/Old.md": "x\n", "S/Q.md": "---\nrecord: \"true\"\n---\n[[Old]]\n", "S/H.md": "---\nrecord: true#x\n---\n[[Old]]\n" });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md");
+    assert.equal(text.get("S/Q.md"), "---\nrecord: \"true\"\n---\n[[Old]]\n");
+    assert.equal(text.get("S/H.md"), "---\nrecord: true#x\n---\n[[New]]\n");
+    assert.deepEqual(r.records_left, [{ path: "S/Q.md", links: ["[[Old]]"] }]);
+  });
+
+  test("only the record ROOT's folder note is living: a folder note nested inside a record folder is a record", () => {
+    const { app } = fakeApp({ "x.md": "x\n" });
+    const is = (p) => recordTest()(p, "");
+    assert.equal(is(`${ARCH}/00.09 Archive.md`), false);
+    assert.equal(is(`${ARCH}/Old project/Old project.md`), true);
+    assert.equal(is("00-09 System/03 Agents/03.04 Records/03.04 Records.md"), false);
+    assert.equal(is("00-09 System/03 Agents/03.04 Records/Agent notebook/Agent notebook.md"), true);
+    assert.equal(is(`${ARCH}/41.09 Archive for x/41.09 Archive for x.md`), true, "an archive inside an archive: the outer one is the root");
+  });
+
+  test("the move tools wire the operator's identification, and the record-immutability toggle does not reach a move", async () => {
+    const { registerVaultWriteTools } = await import("../src/mcp/tools-vault-write.ts");
+    const { ObsidianBackend } = await import("../src/mcp/obsidian-backend.ts");
+    const tagId = { method: "tag", property: "record", value: "true", tag: "historical" };
+    const files = { "A/Old.md": "x\n", "S/T.md": "cited [[Old]] #historical\n" };
+    {
+      const { app, text } = fakeApp({ ...files });
+      let handler;
+      // isRecord: () => false is the probe with enforcement switched off (it answers "cannot tell").
+      registerVaultWriteTools({ registerTool: (name, _def, h) => { if (name === "obsidian_move_notes") handler = h; } }, app, { isRecord: () => false, recordIdentification: () => tagId });
+      const res = await handler({ moves: [{ from: "A/Old.md", to: "B/New.md" }], overwrite: false });
+      assert.equal(text.get("S/T.md"), "cited [[Old]] #historical\n", JSON.stringify(res));
+    }
+    {
+      const { app, text } = fakeApp({ ...files });
+      const r = await new ObsidianBackend(app, undefined, undefined, () => tagId).moveNote("A/Old.md", "B/New.md", { update_backlinks: true, overwrite: false });
+      assert.equal(text.get("S/T.md"), "cited [[Old]] #historical\n");
+      assert.deepEqual(r.link_check.records_left, [{ path: "S/T.md", links: ["[[Old]]"] }]);
+    }
+  });
+
+  test("a keyed record stays a record wherever it moves; a record only by its folder, moved out, is living", async () => {
+    const { app, text } = fakeApp({
+      [`${ARCH}/K.md`]: "---\nrecord: true\n---\n[o](../Other.md)\n",
+      [`${ARCH}/F.md`]: "[o](../Other.md)\n",
+      "00-09 System/00 System management/Other.md": "x\n",
+    });
+    const k = await moveWithLinks(app, app.vault.getAbstractFileByPath(`${ARCH}/K.md`), "Live/Sub/K.md");
+    assert.equal(text.get("Live/Sub/K.md"), "---\nrecord: true\n---\n[o](../Other.md)\n");
+    assert.deepEqual(k.records_left, [{ path: "Live/Sub/K.md", links: ["[o](../Other.md)"] }]);
+    await moveWithLinks(app, app.vault.getAbstractFileByPath(`${ARCH}/F.md`), "Live/Sub/F.md");
+    assert.equal(text.get("Live/Sub/F.md"), "[o](../../00-09%20System/00%20System%20management/Other.md)\n");
+  });
+
+  test("the REAL server wiring reaches the operator's setting, live: a main.ts-shaped ctx → buildMcpServer → obsidian_move_notes (PR #455 review, finding 1)", async () => {
+    // getSettings withholds both record settings (settings-projection WITHHELD), so before this fix
+    // every connection judged records by the shipped default whatever the operator had set.
+    const { buildMcpServer } = await import("../src/mcp/server.ts");
+    const tagId = { method: "tag", property: "record", value: "true", tag: "historical" };
+    const { app, text } = fakeApp({ "A/Old.md": "x\n", "S/T.md": "cited [[Old]] #historical\n", "S/K.md": "---\nrecord: true\n---\n[[Old]]\n" });
+    // The plugin's settings object, and the ctx main.ts builds over it: getSettings is the projection, which carries neither record setting.
+    const settings = { allowlist: [], readOnly: false, enforceRecordImmutability: true, recordIdentification: tagId };
+    const ctx = {
+      pluginVersion: "0.0.0", socketPath: "/tmp/none.sock", vaultName: "test", enabledPlugins: () => [],
+      getSettings: () => ({ allowlist: settings.allowlist, readOnly: settings.readOnly }),
+      enforceRecordImmutability: () => settings.enforceRecordImmutability,
+      recordIdentification: () => settings.recordIdentification,
+    };
+    // What buildMcpServer touches at build time beyond the move itself (registrars read these eagerly).
+    app.vault.adapter = { basePath: "/nonexistent-vault" };
+    const move = buildMcpServer(app, ctx)._registeredTools.obsidian_move_notes;
+    const r1 = await move.handler({ moves: [{ from: "A/Old.md", to: "B/New.md" }], overwrite: false }, {});
+    assert.equal(text.get("S/T.md"), "cited [[Old]] #historical\n", JSON.stringify(r1));
+    assert.equal(text.get("S/K.md"), "---\nrecord: true\n---\n[[New]]\n", "the operator chose a tag, so record: true marks nothing");
+    // The operator switches back to the property: the next move sees it with no reconnect.
+    settings.recordIdentification = { method: "property", property: "record", value: "true", tag: "record" };
+    const r2 = await move.handler({ moves: [{ from: "B/New.md", to: "C/Newer.md" }], overwrite: false }, {});
+    assert.equal(text.get("S/K.md"), "---\nrecord: true\n---\n[[New]]\n", JSON.stringify(r2));
+  });
+
+  test("main.ts hands the server both record settings through their own thunks, and nothing reads them through getSettings", async () => {
+    const fs = await import("node:fs");
+    const main = fs.readFileSync(new URL("../src/main.ts", import.meta.url), "utf8");
+    assert.match(main, /enforceRecordImmutability:\s*\(\)\s*=>\s*this\.settings\.enforceRecordImmutability,/);
+    assert.match(main, /recordIdentification:\s*\(\)\s*=>\s*this\.settings\.recordIdentification,/);
+    const server = fs.readFileSync(new URL("../src/mcp/server.ts", import.meta.url), "utf8");
+    assert.match(server, /normalizeRecordIdentification\(ctx\.recordIdentification\?\.\(\)\)/);
+    assert.match(server, /ctx\.enforceRecordImmutability\?\.\(\)\s*!==\s*false/);
+    for (const f of fs.readdirSync(new URL("../src/mcp/", import.meta.url)).filter((n) => n.endsWith(".ts"))) {
+      const src = fs.readFileSync(new URL(`../src/mcp/${f}`, import.meta.url), "utf8");
+      assert.doesNotMatch(src, /getSettings\(\)\??\.(?:recordIdentification|enforceRecordImmutability)\b/, `${f} reads a withheld record setting through getSettings`);
+    }
+  });
+
+  test("frontmatter is found as core's recognizer finds it: a BOM, blanks after ---, CRLF, a lone CR, text after the closing --- (finding 2)", () => {
+    const is = recordTest();
+    for (const t of [
+      "\uFEFF---\nrecord: true\n---\n",
+      "---  \nrecord: true\n---\n",
+      "---\r\nrecord: true\r\n---\r\n",
+      "---\rrecord: true\r---\r",
+      "---\nrecord: true\n--- trailing\nbody\n",
+    ]) assert.equal(is("S/N.md", t), true, JSON.stringify(t));
+    assert.equal(is("S/N.md", "x\n---\nrecord: true\n---\n"), false, "frontmatter only at the top");
+  });
+
+  test("a tag inside code is judged as Obsidian's index delimits code: quoted and listed fences, an unclosed fence, multi-line spans, escaped backticks (finding 3)", () => {
+    const tagId = { method: "tag", property: "record", value: "true", tag: "historical" };
+    const is = recordTest(() => tagId);
+    assert.equal(is("S/N.md", "> ```\n> #historical\n> ```\n"), false, "a fence inside a quote");
+    assert.equal(is("S/N.md", "- ```\n  #historical\n  ```\n"), false, "a fence on a list item");
+    assert.equal(is("S/N.md", "```\n#historical\n"), false, "an unclosed fence runs to the end");
+    assert.equal(is("S/N.md", "x `one\ntwo #historical` y\n"), false, "inline code over a line break in one paragraph");
+    assert.equal(is("S/N.md", "\\` #historical \\`\n"), true, "escaped backticks open no code");
+    assert.equal(is("S/N.md", "> ```\n> x\n> ```\n#historical\n"), true, "after the quoted fence closes");
+  });
+
+  test("tags are gathered as Obsidian's getAllTags gathers them: Tags: any case, tag: not at all, a string is one tag, **#tag** inline (finding 4)", () => {
+    const tagId = { method: "tag", property: "record", value: "true", tag: "historical" };
+    const is = recordTest(() => tagId);
+    assert.equal(is("S/N.md", "---\nTags: [historical]\n---\n"), true, "the key matches /^tags$/i");
+    assert.equal(is("S/N.md", "---\nTAGS: historical\n---\n"), true, "a string value is one tag");
+    assert.equal(is("S/N.md", "---\ntag: historical\n---\n"), false, "Obsidian 1.13 reads tags only, not tag");
+    assert.equal(is("S/N.md", "---\ntags: historical, x\n---\n"), false, "the string 'historical, x' holds a space, so Obsidian drops it");
+    assert.equal(is("S/N.md", "**#historical**\n"), true, "inside bold");
+    assert.equal(is("S/N.md", "==#historical==\n"), true, "inside a highlight");
+    assert.equal(is("S/N.md", "(#historical)\n"), false, "after a parenthesis is no tag");
+    assert.equal(is("S/N.md", "a#historical\n"), false, "inside a word is no tag");
+    assert.equal(is("S/N.md", "#historical\u2014x\n"), true, "an em dash ends the tag, as in Obsidian");
+  });
+
+  test("archiving is the moment a note becomes a record: a living note moved INTO a record folder has its own links healed on the way in, and kept from then on (finding 5)", async () => {
+    const { app, text } = fakeApp({
+      "Live/Sub/Plan.md": "[o](../Other.md)\n",
+      "Live/Other.md": "x\n",
+    });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("Live/Sub/Plan.md"), `${ARCH}/Plan.md`);
+    assert.equal(text.get(`${ARCH}/Plan.md`), "[o](../../../Live/Other.md)\n", "healed: the record cites a working target as of its archiving");
+    assert.deepEqual(r.records_left, []);
+    assert.equal(r.ok, true, JSON.stringify(r));
+    const r2 = await moveWithLinks(app, app.vault.getAbstractFileByPath(`${ARCH}/Plan.md`), `${ARCH}/Deeper/Plan.md`);
+    assert.equal(text.get(`${ARCH}/Deeper/Plan.md`), "[o](../../../Live/Other.md)\n", "a record now: left as written");
+    assert.deepEqual(r2.records_left, [{ path: `${ARCH}/Deeper/Plan.md`, links: ["[o](../../../Live/Other.md)"] }]);
+  });
+
+  test("a renumber reads the vault once and builds one record test for all its steps (finding 6)", async () => {
+    const fs = await import("node:fs");
+    const src = fs.readFileSync(new URL("../src/mcp/tools-scheme-write.ts", import.meta.url), "utf8");
+    const loop = src.indexOf("for (const step of result.steps)");
+    assert.ok(loop > 0);
+    // The one cache is made before the name checks, and they use it too (the merge review of #455).
+    const checks = src.lastIndexOf("for (const st of result.steps) await assertMoveName(app, st.from, st.to, false, texts);", loop);
+    assert.ok(checks > 0, "every step's name check shares the cache");
+    assert.match(src.slice(src.lastIndexOf("const texts = new TextCache(app);", checks), checks), /const texts = new TextCache\(app\);/);
+    assert.equal(src.slice(checks, loop).includes("new TextCache("), false, "no second cache before the moves");
+    const before = src.slice(src.lastIndexOf("const completed: MoveStep[] = [];", loop), loop);
+    assert.match(before, /const isRecord = recordTest\(ctx\.recordIdentification\);/);
+    assert.match(src.slice(loop, loop + 400), /moveOne\(app, step\.from, step\.to, false, \{ texts, isRecord \}\)/);
+  });
+
+  test("rename only (update_backlinks false) reads nothing for the record test", async () => {
+    const { app } = fakeApp({ "A/Old.md": "x\n" });
+    let reads = 0;
+    const read = app.vault.cachedRead;
+    app.vault.cachedRead = async (f) => { reads++; return read(f); };
+    app.vault.read = async (f) => { reads++; return read(f); };
+    await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md", { updateBacklinks: false });
+    assert.equal(reads, 0);
   });
 });
 

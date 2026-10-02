@@ -31,6 +31,7 @@ import { sealUnguardedRegistration } from "./seal-registration.js";
 import { visiblePaths } from "../guard.js";
 import type { JournalActor } from "../kernel/index.js";
 import { obsidianProbe } from "../kernel/obsidian-probe.js";
+import { normalizeRecordIdentification } from "../kernel/record-guard.js";
 import { ObsidianBackend } from "./obsidian-backend.js";
 import { registerWriteNotesTool, batchItemWriter, type GuardedWrite } from "./tools-write-notes.js";
 import { uuidv7, formatLocalTimestamp } from "./write-notes-compose.js";
@@ -388,16 +389,21 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   // enumerate the vault with no path to guard, so they filter their own
   // iteration through the allowlist. The filter is resolved per call, like the
   // guard's own settings, so a settings change lands without a reconnect.
-  // Same live enforcement getter as the plugin-singleton probe in main.ts:
-  // only `.rev` is consumed here today, but a probe whose `record()` ignored
-  // the setting would be a silent bypass the moment anything reads it.
-  const probe = obsidianProbe(app, () => ctx.getSettings().enforceRecordImmutability !== false);
+  // The same two live getters main.ts hands the plugin-singleton guard probe
+  // (`this.settings.enforceRecordImmutability`, `this.settings.recordIdentification`),
+  // reached through ctx's own thunks, never `getSettings()`, which withholds both
+  // (settings-projection WITHHELD). The probe's `.rev` feeds the fs tools and its
+  // `.record()` is obsidian_rename_heading's record skip; the moves' own record
+  // test (records.ts) takes the same identification, so a move, a heading rename
+  // and the kernel's guard judge a record the same way (#397).
+  const recordIdentification = () => normalizeRecordIdentification(ctx.recordIdentification?.());
+  const probe = obsidianProbe(app, () => ctx.enforceRecordImmutability?.() !== false, recordIdentification);
   const visible = (paths: string[]) => visiblePaths(paths, ctx.getSettings());
   // Hoisted so obsidian_write_notes can drive the same backend writeNote through
   // its own per-item guarded dispatch (see the write-notes block below).
   const backend = new ObsidianBackend(app, visible, (facts) => {
     writeFacts = facts;
-  });
+  }, recordIdentification);
   registerFsTools(server, backend, {
     decodeHtml: false,
     rev: (p) => probe.rev(p),
@@ -410,7 +416,7 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   // argument-level check can see a set the handler discovers.
   // isRecord: obsidian_rename_heading rewrites links in notes it discovers,
   // which the kernel's record check (paths an operation NAMES) cannot see.
-  registerVaultWriteTools(server, app, { getSettings: () => ctx.getSettings(), isRecord: (p) => probe.record?.(p) === true });
+  registerVaultWriteTools(server, app, { getSettings: () => ctx.getSettings(), isRecord: (p) => probe.record?.(p) === true, recordIdentification });
   // ── scope-provider write surface: assign/refile/renumber address ───────────
   // Cannot go through mountModules below: that host's registerAll gate refuses
   // any tool whose readOnlyHint !== true (its own header comment), and these
@@ -423,6 +429,7 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
     registry: guardedOpts.schemes,
     notes: guardedOpts.schemeNotes,
     getSettings: () => ctx.getSettings(),
+    recordIdentification,
   });
   // Folded in from obsidian-jd-survey (2026-08-19). Hand-registered here, the
   // same shape registerSchemeWriteTools above uses: modules-mount.ts's

@@ -122,6 +122,20 @@ export function getAllTags(cache) {
  * accept-forbidden guard's value-TYPE handling (string / array / map) testable
  * headlessly, so array/map acceptance forms are read as the guard sees them.
  */
+/**
+ * Load-time stand-ins so server.ts (the composition of every registrar) can be
+ * imported in node, for the tests that drive a tool through the REAL server
+ * wiring (move-with-links.test.mjs, the records block). Only their existence is needed at
+ * module-eval time; no test exercises their Obsidian behavior.
+ */
+export class FileSystemAdapter {}
+export class FuzzySuggestModal extends Modal {}
+export class Plugin {}
+/** A minimal YAML writer for flat maps (the only use a load-only test can reach). */
+export function stringifyYaml(obj) {
+  return Object.entries(obj ?? {}).map(([k, v]) => `${k}: ${Array.isArray(v) ? `[${v.join(", ")}]` : v}`).join("\n") + "\n";
+}
+
 export function parseYaml(text) {
   const scalar = (raw) => {
     const s = raw.trim();
@@ -133,8 +147,15 @@ export function parseYaml(text) {
     if (/^-?\d+(\.\d+)?$/.test(s)) return Number(s);
     return s;
   };
-  const inline = (raw) => {
+  // A YAML comment: ` #` and the rest of the line, after a plain or a closed quoted scalar. `true#x` keeps its `#` (no space), as YAML reads it.
+  const uncomment = (raw) => {
     const s = raw.trim();
+    const q = s[0] === '"' || s[0] === "'" ? s.indexOf(s[0], 1) : -1;
+    if (q > 0) return s.slice(0, q + 1) + s.slice(q + 1).replace(/\s+#.*$/, "");
+    return s.replace(/(^|\s+)#.*$/, "");
+  };
+  const inline = (raw) => {
+    const s = uncomment(raw);
     if (s.startsWith("[") && s.endsWith("]")) {
       const inner = s.slice(1, -1).trim();
       return inner === "" ? [] : inner.split(",").map((x) => scalar(x));
@@ -166,7 +187,7 @@ export function parseYaml(text) {
     if (rest === "" && lines[i + 1] && /^\s*-\s+/.test(lines[i + 1])) {
       const arr = [];
       while (lines[i + 1] && /^\s*-\s+/.test(lines[i + 1])) {
-        arr.push(scalar(lines[i + 1].replace(/^\s*-\s+/, "")));
+        arr.push(scalar(uncomment(lines[i + 1].replace(/^\s*-\s+/, ""))));
         i++;
       }
       obj[key] = arr;
