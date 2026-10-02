@@ -17,6 +17,7 @@ import { parseLinks, rewriteLink, relativePath } from "../src/mcp/link-rewrite.t
 installObsidianStub();
 const { moveWithLinks, TextCache } = await import("../src/mcp/move-with-links.ts");
 const { recordTest } = await import("../src/mcp/records.ts");
+const { RECORDS_LEFT_CAP } = await import("../src/mcp/move-with-links.ts");
 
 const stripMd = (s) => s.replace(/\.md$/i, "");
 const base = (p) => stripMd(p.split("/").pop());
@@ -417,6 +418,7 @@ describe("records are never rewritten (01.44 rule 8)", () => {
     assert.equal(is("00-09 System/03 Agents/03.20 Imported chats/Chat.md"), true);
     assert.equal(is("Live/Keyed.md"), true);
     assert.equal(is("Live/Plain.md"), false);
+    assert.equal(is("00-09 System/06 Repos/06.37 claude-code-plugins/06.37.09 Archive for claude-code-plugins/X.md"), true, "the dotted JD form");
     assert.equal(is("Projects/Archive/Note.md"), false, "a plain Archive folder is not a JD archive");
     assert.equal(is("Projects/00.09 Archived ideas/Note.md"), false, "the folder name must be '.09 Archive' then a space or its end");
     assert.equal(is("00.09 Archive.md"), false, "a note NAMED like an archive is not inside one");
@@ -474,5 +476,62 @@ describe("records are never rewritten (01.44 rule 8)", () => {
     const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md", { isRecord: (p) => p === "S/Mine.md" });
     assert.equal(text.get("S/Mine.md"), "[[Old]]\n");
     assert.deepEqual(r.records_left, [{ path: "S/Mine.md", links: ["[[Old]]"] }]);
+  });
+
+  test("an un-archived note is living at its new path: its own relative links are healed, nothing is left", async () => {
+    const { app, text } = fakeApp({
+      [`${ARCH}/Plan.md`]: "[o](../Other.md)\n",
+      "00-09 System/00 System management/Other.md": "x\n",
+    });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath(`${ARCH}/Plan.md`), "00-09 System/01 Live/Sub/Plan.md");
+    assert.equal(text.get("00-09 System/01 Live/Sub/Plan.md"), "[o](../../00%20System%20management/Other.md)\n");
+    assert.deepEqual(r.records_left, []);
+    assert.deepEqual(r.own_links_broken, []);
+    assert.equal(r.ok, true, JSON.stringify(r));
+  });
+
+  test("a folder-only move leaves a record's [[Old]] working, so nothing is listed", async () => {
+    const { app, text } = fakeApp({ "A/Old.md": "x\n", [`${ARCH}/Plan.md`]: "cited [[Old]]\n" });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/Old.md");
+    assert.equal(text.get(`${ARCH}/Plan.md`), "cited [[Old]]\n");
+    assert.deepEqual(r.records_left, []);
+    assert.equal(r.records_left_total, 0);
+  });
+
+  test("a note keyed record: true moments ago (its cache stale) is judged by its text, and left", async () => {
+    const { app, text } = fakeApp(
+      { "A/Old.md": "x\n", "S/New record.md": "nothing yet\n" },
+      { stale: { "S/New record.md": "---\nrecord: true\n---\ncited [[Old]]\n" } }
+    );
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md");
+    assert.equal(text.get("S/New record.md"), "---\nrecord: true\n---\ncited [[Old]]\n");
+    assert.deepEqual(r.records_left, [{ path: "S/New record.md", links: ["[[Old]]"] }]);
+  });
+
+  test("a moved record that links itself is listed once, under its new path", async () => {
+    const { app, text } = fakeApp({ [`${ARCH}/Old.md`]: "see [[Old]]\n" });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath(`${ARCH}/Old.md`), `${ARCH}/New.md`);
+    assert.equal(text.get(`${ARCH}/New.md`), "see [[Old]]\n");
+    assert.deepEqual(r.records_left, [{ path: `${ARCH}/New.md`, links: ["[[Old]]"] }]);
+  });
+
+  test("a record the index says links the note, where the text gave no link, is listed as index_only", async () => {
+    const { app } = fakeApp(
+      { "A/Old.md": "x\n", [`${ARCH}/Plan.md`]: "cited [[Old]]\n" },
+      { stale: { [`${ARCH}/Plan.md`]: "the link is gone from the text\n" } }
+    );
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md");
+    assert.deepEqual(r.records_left, [{ path: `${ARCH}/Plan.md`, links: [], index_only: true }]);
+    assert.deepEqual(r.index_only, []);
+  });
+
+  test("records_left is capped; records_left_total counts them all", async () => {
+    const files = { "A/Old.md": "x\n" };
+    for (let i = 0; i < RECORDS_LEFT_CAP + 5; i++) files[`${ARCH}/R${i}.md`] = "cited [[Old]]\n";
+    const { app } = fakeApp(files);
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md");
+    assert.equal(r.records_left.length, RECORDS_LEFT_CAP);
+    assert.equal(r.records_left_total, RECORDS_LEFT_CAP + 5);
+    assert.equal(r.ok, true);
   });
 });
