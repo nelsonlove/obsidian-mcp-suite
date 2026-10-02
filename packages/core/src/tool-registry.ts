@@ -340,7 +340,7 @@ export const FS_TOOLS: ToolDef[] = [
     name: "obsidian_write_note",
     title: "Write a note",
     description:
-      "Create a note, or overwrite an existing one when overwrite=true. Path must end in .md. Parent folders are created as needed. " +
+      "Create a note, or overwrite an existing one when overwrite=true. Path must end in .md. Parent folders are created as needed. A NEW note's path may not hold a character Obsidian Sync refuses (\\ : * ? \" < > |) or one that breaks links (# ^ [ ]): refused with `unsafe_name`; On the live Obsidian server, [ ] are allowed only in the name of a note under an existing JD archive folder (NN.09 Archive…) that no other note links to, never in a folder name (the filesystem server never allows them); an existing note with such a name is still written in place. " +
       "An overwrite that changes a heading's text breaks every [[Note#Heading]] link to it: to rename a heading, use `obsidian_rename_heading` (on the live Obsidian server), which rewrites those links. " +
       "Never write back a cut read (a note over the read limit comes back with a `[truncated: …]` line and `truncated: true`): content carrying that line, or any whole-note overwrite of a note longer than the limit (never done whole over MCP), is refused with Error [truncated_read]; edit such a note by anchor.",
     inputSchema: {
@@ -369,7 +369,7 @@ export const FS_TOOLS: ToolDef[] = [
     name: "obsidian_move_note",
     title: "Rename / move a note and rewrite backlinks",
     description:
-      "Move (or rename) a note from one vault path to another. With `update_backlinks: true` (default), every note that wikilinks to `from` is rewritten to point at `to`. " +
+      "Move (or rename) a note from one vault path to another. With `update_backlinks: true` (default), every note that wikilinks to `from` is rewritten to point at `to`. `to` may keep the note's own name and the folders it is already in, but any NEW name or folder may not hold a character Obsidian Sync refuses (\\ : * ? \" < > |) or one that breaks links (# ^ [ ]): refused with `unsafe_name`. [ ] are allowed only in the name of a note under an existing JD archive folder (NN.09 Archive…) that no other note links to, never in a folder name; a kept name with brackets may only stay under an archive folder. " +
       "Resolution uses the vault index: only refs that currently resolve to `from` are touched; ambiguous basename matches are left alone. " +
       "Ref *shape* is preserved across the rewrite — bare basename refs (`[[from-basename]]`) get the new basename, full-path refs get the new full path. `|alias` and `#fragment` suffixes are kept verbatim. " +
       "Refuses if `to` already exists unless `overwrite: true`. Parent folders of `to` are created as needed. " +

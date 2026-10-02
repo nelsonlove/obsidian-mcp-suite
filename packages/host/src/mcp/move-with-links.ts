@@ -118,6 +118,22 @@ function cacheIsFresh(app: App, f: TFile): boolean {
   return !!entry && entry.mtime === f.stat.mtime && entry.size === f.stat.size;
 }
 
+/**
+ * True when any other note's CURRENT TEXT links to `file`: the same scan the
+ * move's find step makes (every note whose text names it, parsed), so a link
+ * written a moment ago counts although Obsidian's index has not caught up.
+ */
+export async function hasTextLinkers(app: App, file: TFile, texts: TextCache = new TextCache(app)): Promise<boolean> {
+  const names = needles(file.basename);
+  for (const src of app.vault.getMarkdownFiles()) {
+    if (src === file) continue;
+    const t = lower(await texts.get(src));
+    if (!names.some((n) => t.includes(n))) continue;
+    if (parseLinks(await texts.get(src)).some((l) => resolves(app, l.linkpath, src.path) === file)) return true;
+  }
+  return false;
+}
+
 function resolves(app: App, linkpath: string, source: string): TFile | null {
   if (!linkpath) return null;
   return app.metadataCache.getFirstLinkpathDest(linkpath, source);

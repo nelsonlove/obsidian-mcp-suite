@@ -41,6 +41,7 @@
 // even under `dry_run: true`, so a preview never claims a plan this session
 // could not actually carry out.
 
+import { assertMoveName } from "./name-checks.js";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { App } from "obsidian";
@@ -155,6 +156,8 @@ export function registerSchemeWriteTools(server: McpServer, app: App, ctx: Schem
         const hidden = firstHidden([result.step.to]);
         if (hidden) return computedOutOfAllowlist(hidden);
 
+        // The name is checked before a dry run answers, so a preview never promises a move the real run refuses.
+        await assertMoveName(app, result.step.from, result.step.to);
         if (dry_run) return ok({ dry_run: true, address: result.address, moves: [result.step] });
 
         try {
@@ -261,6 +264,7 @@ export function registerSchemeWriteTools(server: McpServer, app: App, ctx: Schem
         const hidden = firstHidden([step.to]);
         if (hidden) return computedOutOfAllowlist(hidden);
 
+        await assertMoveName(app, step.from, step.to);
         if (dry_run) return ok({ dry_run: true, address: result.address, moves: [step] });
 
         try {
@@ -363,6 +367,9 @@ export function registerSchemeWriteTools(server: McpServer, app: App, ctx: Schem
         const hidden = firstHidden(computedPaths);
         if (hidden) return computedOutOfAllowlist(hidden);
 
+        // Every step's name is checked before ANY step runs (and before a dry run answers): a refusal on step 2 must
+        // not come after step 1 has already moved the occupant away.
+        for (const st of result.steps) await assertMoveName(app, st.from, st.to);
         if (dry_run) return ok({ dry_run: true, address, moves: result.steps, displaced: result.displaced });
 
         const completed: MoveStep[] = [];
