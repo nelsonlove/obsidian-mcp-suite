@@ -666,7 +666,7 @@ export class ObsidianBackend implements VaultBackend {
       check = await moveWithLinks(this.app, file, toRel, {
         updateBacklinks: options.update_backlinks,
         visible: (p) => this.visible([p]).length === 1,
-        isRecord: recordTest(this.app, this.recordIdentification),
+        isRecord: recordTest(this.recordIdentification),
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

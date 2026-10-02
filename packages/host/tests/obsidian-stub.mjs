@@ -122,6 +122,20 @@ export function getAllTags(cache) {
  * accept-forbidden guard's value-TYPE handling (string / array / map) testable
  * headlessly, so array/map acceptance forms are read as the guard sees them.
  */
+/**
+ * Load-time stand-ins so server.ts (the composition of every registrar) can be
+ * imported in node, for the tests that drive a tool through the REAL server
+ * wiring (move-with-links.test.mjs, the records block). Only their existence is needed at
+ * module-eval time; no test exercises their Obsidian behavior.
+ */
+export class FileSystemAdapter {}
+export class FuzzySuggestModal extends Modal {}
+export class Plugin {}
+/** A minimal YAML writer for flat maps (the only use a load-only test can reach). */
+export function stringifyYaml(obj) {
+  return Object.entries(obj ?? {}).map(([k, v]) => `${k}: ${Array.isArray(v) ? `[${v.join(", ")}]` : v}`).join("\n") + "\n";
+}
+
 export function parseYaml(text) {
   const scalar = (raw) => {
     const s = raw.trim();

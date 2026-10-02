@@ -282,7 +282,7 @@ describe("moving real notes on a copy, under a write stream: no damage", { skip:
       }
       assert.equal(check.ok, true, `damage check: ${JSON.stringify({ ...check, files_rewritten: check.files_rewritten.length })}`);
       // Records (01.44 rule 8) are never rewritten: byte-identical, and every one that reached the note is listed.
-      const isRecordAt = recordTest(app);
+      const isRecordAt = recordTest();
       // The moved note stays a record only if it is one at both ends (moved out of record folders, it is living and healed).
       const isRecord = (p0) => (p0 === target ? isRecordAt(p0, snapshot.get(p0)) && isRecordAt(to, snapshot.get(p0)) : isRecordAt(p0, snapshot.get(p0)));
       const leftPaths = new Set(check.records_left.map((x) => x.path));

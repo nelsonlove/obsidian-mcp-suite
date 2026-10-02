@@ -124,7 +124,7 @@ export function registerVaultWriteTools(server: McpServer, app: App, ctx: VaultW
       const errors: Array<{ from: string; to: string; error: string }> = [];
       // One read of the vault's text for the whole batch (see TextCache).
       const texts = new TextCache(app);
-      const isRecord = recordTest(app, ctx.recordIdentification);
+      const isRecord = recordTest(ctx.recordIdentification);
       for (const { from, to } of moves) {
         try {
           const settings = ctx.getSettings?.();

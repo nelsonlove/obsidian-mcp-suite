@@ -53,12 +53,6 @@ export interface ServerCtx {
      * (mcp/cli-policy.ts). Absent ⇒ the defaults: the opaque-accept set
      * denied, everything else allowed. */
     cliPolicy?: CliCommandPolicy;
-    /** Record-immutability enforcement (#264). Absent ⇒ ENFORCED: only an
-     * explicit `false` disables it, so a caller that never wired the setting
-     * fails toward protection. Read live by the per-connection probe. */
-    enforceRecordImmutability?: boolean;
-    /** How a note declares itself a record (#397); coerced through `normalizeRecordIdentification` wherever read. */
-    recordIdentification?: unknown;
   /** Capture the exact bytes a native read returned. Default off — see main.ts. */
   captureObservations?: boolean;
   /** Stopgap ceiling on total captured bytes, pending real retention. */
@@ -76,6 +70,22 @@ export interface ServerCtx {
   // nothing host-side ever read them except the composition root that built the
   // provider's proposal observer. They now live in the provider's own settings.
   };
+  /**
+   * The two record settings, each read live per call through its OWN thunk,
+   * the way main.ts hands them to the kernel's guard probe — not through
+   * `getSettings`, which withholds them on purpose (tests/settings-projection
+   * WITHHELD). They were `getSettings` fields until PR #455's review found the
+   * projection never forwarded them: every connection then judged records by
+   * the shipped default whatever the operator had set.
+   *   `enforceRecordImmutability` (#264): absent, or anything but an explicit
+   *     `false` ⇒ ENFORCED, so a caller that never wired it fails toward
+   *     protection.
+   *   `recordIdentification` (#397): how a note declares itself a record;
+   *     coerced through `normalizeRecordIdentification` wherever read, absent ⇒
+   *     the shipped default (`record: true`).
+   */
+  enforceRecordImmutability?: () => boolean;
+  recordIdentification?: () => unknown;
   // `getVocabularies` was here until the read-tier satellite extraction (suite
   // split, S7). It carried `settings.vocabularies` to the vocab module's tool
   // layer; that module is now the `vaultmcp-vocab` plugin, which owns its own
