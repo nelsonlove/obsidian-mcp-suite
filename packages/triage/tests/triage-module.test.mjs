@@ -673,6 +673,19 @@ describe("triage_dispose: typed refusals (identical for dry-run and apply)", () 
     assert.deepEqual(vault.log, [], "nothing may be written");
   });
 
+  test("a destination name Obsidian Sync refuses is refused at plan time, dry run and apply, before anything is written", async () => {
+    const vault = fakeVault({ [item("x.md")]: {} });
+    const server = register(vault);
+    for (const dry_run of [true, false]) {
+      const res = await server.tools
+        .get("vaultmcp_triage_dispose")
+        .handler({ path: item("x.md"), disposition: "move", target_path: "Archive: 2026", dry_run });
+      assert.equal(res.isError, true);
+      assert.match(errText(res), /unsafe_name/);
+    }
+    assert.deepEqual(vault.log, [], "nothing may be written");
+  });
+
   test("a computed destination outside the allowlist is refused, dry-run included", async () => {
     const vault = fakeVault({ [item("x.md")]: {} });
     const server = register(vault, {

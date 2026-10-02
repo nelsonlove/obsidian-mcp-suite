@@ -146,7 +146,7 @@ export function registerWriteNotesTool(
         "failed item (out-of-allowlist, if_rev conflict, accept-forbidden) is reported in `errors` and does NOT abort the " +
         "batch. Each item may carry its own `if_rev` (optimistic concurrency) and `idempotency_key` (retry-safety). " +
         "Existing notes are REPLACED (this writes whole notes, like obsidian_write_note). " +
-        "A NEW note's path may not hold a character Obsidian Sync refuses (\\ : * ? \" < > |) or one that breaks links (# ^ [ ]): that item is refused with `unsafe_name`. " +
+        "A NEW note's path may not hold a character Obsidian Sync refuses (\\ : * ? \" < > |) or one that breaks links (# ^ [ ]): that item is refused with `unsafe_name`. [ ] are allowed only in the name of a note under an existing JD archive folder (NN.09 Archive…) that no other note links to, never in a folder name. " +
         "Set `stamp: true` to make the server the single owner of frontmatter conventions: it mints a created-seeded " +
         "UUIDv7 `uid` only when absent (an existing uid is never overwritten), sets `created` (if missing) and `modified` " +
         "(always), enforces canonical field order, and defaults `acceptance-status: proposed` only when absent. Stamping " +

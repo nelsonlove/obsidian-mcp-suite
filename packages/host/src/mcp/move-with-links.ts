@@ -28,7 +28,6 @@
 //      as before, and every note the index says links it must have been found.
 
 import { TFile, type App } from "obsidian";
-import { assertSyncSafeMove, hasInboundLinks } from "@vault-mcp/core";
 import { parseLinks, rewriteLink, applyEdits, isRelativeLinkpath, type TextLink, type Edit } from "./link-rewrite.js";
 
 /** What the damage check found. `ok` is false whenever any list is non-empty (hidden notes included). */
@@ -119,6 +118,22 @@ function cacheIsFresh(app: App, f: TFile): boolean {
   return !!entry && entry.mtime === f.stat.mtime && entry.size === f.stat.size;
 }
 
+/**
+ * True when any other note's CURRENT TEXT links to `file`: the same scan the
+ * move's find step makes (every note whose text names it, parsed), so a link
+ * written a moment ago counts although Obsidian's index has not caught up.
+ */
+export async function hasTextLinkers(app: App, file: TFile, texts: TextCache = new TextCache(app)): Promise<boolean> {
+  const names = needles(file.basename);
+  for (const src of app.vault.getMarkdownFiles()) {
+    if (src === file) continue;
+    const t = lower(await texts.get(src));
+    if (!names.some((n) => t.includes(n))) continue;
+    if (parseLinks(await texts.get(src)).some((l) => resolves(app, l.linkpath, src.path) === file)) return true;
+  }
+  return false;
+}
+
 function resolves(app: App, linkpath: string, source: string): TFile | null {
   if (!linkpath) return null;
   return app.metadataCache.getFirstLinkpathDest(linkpath, source);
@@ -136,8 +151,6 @@ function countBy<T>(xs: T[], key: (x: T) => string): Map<string, number> {
  * returned LinkCheck instead.
  */
 export async function moveWithLinks(app: App, file: TFile, to: string, opts: MoveWithLinksOptions = {}): Promise<LinkCheck> {
-  // A rename may keep a refused character the note already had, never add one (sync-names.ts).
-  assertSyncSafeMove(file.path, to, hasInboundLinks(app.metadataCache.resolvedLinks, file.path));
   const visible = opts.visible ?? (() => true);
   const update = opts.updateBacklinks !== false;
   const oldPath = file.path;

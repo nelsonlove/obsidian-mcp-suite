@@ -29,8 +29,8 @@
 //            binding arrives from human-only plugin config; nothing here
 //            consults or bypasses the host's cli-policy denies.
 
-import { TFile, type App } from "obsidian";
-import { assertSyncSafeMove, executeQuickAddChoice, hasInboundLinks } from "@vault-mcp/core";
+import { TFile, TFolder, type App } from "obsidian";
+import { assertSyncSafeMove, executeQuickAddChoice } from "@vault-mcp/core";
 import type { TriageSource } from "./tools.js";
 
 async function ensureParentFolders(app: App, filePath: string): Promise<void> {
@@ -65,7 +65,8 @@ export async function moveNote(app: App, from: string, to: string): Promise<void
   if (!(file instanceof TFile)) throw new Error(`not found: ${from}`);
   if (app.vault.getAbstractFileByPath(to)) throw new Error(`destination exists: ${to}`);
   // A move may keep a name it has, never add one Obsidian Sync refuses (sync-names.ts in core).
-  assertSyncSafeMove(from, to, hasInboundLinks(app.metadataCache.resolvedLinks, from));
+  // No new bracket name from triage (it cannot vouch that nothing links the note); an archived bracket name may stay in an archive.
+  assertSyncSafeMove(from, to, { linked: true, folderExists: (p) => app.vault.getAbstractFileByPath(p) instanceof TFolder });
   await ensureParentFolders(app, to);
   // NEVER app.vault.rename — that moves the bytes and leaves every backlink
   // pointing at a note that is no longer there. Pinned by the source scan in
