@@ -10,6 +10,8 @@
 import { UnsafeNameError } from "@vault-mcp/core";
 import { assertMoveName } from "./name-checks.js";
 import { moveWithLinks, TextCache, type LinkCheck, type MoveWithLinksOptions } from "./move-with-links.js";
+import { recordTest } from "./records.js";
+import type { RecordIdentification } from "../kernel/record-guard.js";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { type App, TFile } from "obsidian";
@@ -39,6 +41,12 @@ export interface VaultWriteToolsCtx {
    * Absent ⇒ no note is treated as a record.
    */
   isRecord?: (path: string) => boolean;
+  /**
+   * The operator's record identification (#397), read live per call, for the
+   * move's own record test (records.ts), which judges a note on its current
+   * text. Absent ⇒ the shipped default `record: true`.
+   */
+  recordIdentification?: () => RecordIdentification;
 }
 
 async function ensureParentFolders(app: App, filePath: string): Promise<void> {
@@ -94,7 +102,7 @@ export function registerVaultWriteTools(server: McpServer, app: App, ctx: VaultW
     {
       title: "Move/rename multiple notes",
       description:
-        "Move or rename several notes in one call. Items are processed sequentially. Each note is renamed at the file level (no wait for Obsidian's index) and vault-mcp rewrites every link to it itself, then checks for damage: each item's `link_check` reports any link still naming the old path, any note reaching the note fewer times than before, any note it could not rewrite, and `ok`; `links_ok` is false if any item found damage. A runtime-failed item (missing source, existing destination) is reported in `errors` and does not fail the call, but if every item fails the call is flagged as an error. Statically invalid batches are rejected up front with no moves performed: a non-.md path, an item whose from and to are identical, a destination whose NEW name or folder holds a character Obsidian Sync refuses (\\ : * ? \" < > |) or one that breaks links (# ^ [ ]) (typed `unsafe_name`; the note's own name and the folders it is already in may be kept; [ ] are allowed only in the name of a note under an existing JD archive folder (NN.09 Archive…) that no other note links to, never in a folder name), or a path appearing twice as a source, twice as a destination, or as both (swaps/chains) — compared after normalization.",
+        "Move or rename several notes in one call. Items are processed sequentially. Each note is renamed at the file level (no wait for Obsidian's index) and vault-mcp rewrites every link to it itself, then checks for damage: each item's `link_check` reports any link still naming the old path, any note reaching the note fewer times than before, any note it could not rewrite, and `ok`. Links inside records (a note the operator's record identifier marks, `record: true` by default, or one under a JD `NN.09 Archive` folder in any area, 03.04 Records, 03.16 Cross-session log or 03.20 Imported chats) are never rewritten, and a moved record keeps its own links as written (a marked record stays one wherever it moves; a note that is a record only by its folder is living once moved out); each link left that no longer reaches its target is listed in `records_left` (at most 100 notes; `records_left_total` counts all), which is not damage. `links_ok` is false if any item found damage. A runtime-failed item (missing source, existing destination) is reported in `errors` and does not fail the call, but if every item fails the call is flagged as an error. Statically invalid batches are rejected up front with no moves performed: a non-.md path, an item whose from and to are identical, a destination whose NEW name or folder holds a character Obsidian Sync refuses (\\ : * ? \" < > |) or one that breaks links (# ^ [ ]) (typed `unsafe_name`; the note's own name and the folders it is already in may be kept; [ ] are allowed only in the name of a note under an existing JD archive folder (NN.09 Archive…) that no other note links to, never in a folder name), or a path appearing twice as a source, twice as a destination, or as both (swaps/chains) — compared after normalization.",
       inputSchema: {
         moves: z
           .array(
@@ -129,10 +137,11 @@ export function registerVaultWriteTools(server: McpServer, app: App, ctx: VaultW
       const errors: Array<{ from: string; to: string; error: string }> = [];
       // One read of the vault's text for the whole batch (see TextCache).
       const texts = new TextCache(app);
+      const isRecord = recordTest(ctx.recordIdentification);
       for (const { from, to } of moves) {
         try {
           const settings = ctx.getSettings?.();
-          const link_check = await moveOne(app, from, to, overwrite, { visible: (p) => (settings ? isVisible(p, settings) : true), texts });
+          const link_check = await moveOne(app, from, to, overwrite, { visible: (p) => (settings ? isVisible(p, settings) : true), texts, isRecord });
           moved.push({ from, to, link_check });
         } catch (e) {
           errors.push({ from, to, error: e instanceof Error ? e.message : String(e) });
