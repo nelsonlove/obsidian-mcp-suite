@@ -730,6 +730,12 @@ export default class VaultMcpPlugin extends Plugin {
         guardedTerritories: this.settings.guardedTerritories,
         vaultConventions: this.settings.vaultConventions,
       }),
+      // The record settings, live per call through their own thunks — the same
+      // two getters the kernel's guard probe above takes — and deliberately not
+      // in the getSettings projection (settings-projection WITHHELD). The moves'
+      // record test and obsidian_rename_heading read them through server.ts.
+      enforceRecordImmutability: () => this.settings.enforceRecordImmutability,
+      recordIdentification: () => this.settings.recordIdentification,
       serverIdentity,
       sessions: {
         // LIFECYCLE ONLY (condition 7 — the host mints). `get` is deliberately

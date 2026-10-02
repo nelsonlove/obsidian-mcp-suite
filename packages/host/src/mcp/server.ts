@@ -389,14 +389,15 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   // enumerate the vault with no path to guard, so they filter their own
   // iteration through the allowlist. The filter is resolved per call, like the
   // guard's own settings, so a settings change lands without a reconnect.
-  // Same live enforcement getter as the plugin-singleton probe in main.ts:
-  // only `.rev` is consumed here today, but a probe whose `record()` ignored
-  // the setting would be a silent bypass the moment anything reads it.
-  // The operator's record identification (#397), read live per call: the probe
-  // (obsidian_rename_heading's record skip) and the moves' own record test
-  // (records.ts) must judge a record the way the kernel's guard does.
-  const recordIdentification = () => normalizeRecordIdentification(ctx.getSettings().recordIdentification);
-  const probe = obsidianProbe(app, () => ctx.getSettings().enforceRecordImmutability !== false, recordIdentification);
+  // The same two live getters main.ts hands the plugin-singleton guard probe
+  // (`this.settings.enforceRecordImmutability`, `this.settings.recordIdentification`),
+  // reached through ctx's own thunks, never `getSettings()`, which withholds both
+  // (settings-projection WITHHELD). The probe's `.rev` feeds the fs tools and its
+  // `.record()` is obsidian_rename_heading's record skip; the moves' own record
+  // test (records.ts) takes the same identification, so a move, a heading rename
+  // and the kernel's guard judge a record the same way (#397).
+  const recordIdentification = () => normalizeRecordIdentification(ctx.recordIdentification?.());
+  const probe = obsidianProbe(app, () => ctx.enforceRecordImmutability?.() !== false, recordIdentification);
   const visible = (paths: string[]) => visiblePaths(paths, ctx.getSettings());
   // Hoisted so obsidian_write_notes can drive the same backend writeNote through
   // its own per-item guarded dispatch (see the write-notes block below).

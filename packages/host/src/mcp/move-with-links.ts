@@ -159,7 +159,7 @@ export async function moveWithLinks(app: App, file: TFile, to: string, opts: Mov
   const oldPath = file.path;
   const names = needles(file.basename);
   const check: LinkCheck = { ok: true, links_rewritten: 0, files_rewritten: [], candidates: 0, stale_sources: 0, still_linking_old: [], not_reaching_new: [], own_links_broken: [], index_only: [], failed: [], records_left: [], records_left_total: 0, find_ms: 0, check_ms: 0, hidden: 0 };
-  const isRecord = opts.isRecord ?? recordTest(app);
+  const isRecord = opts.isRecord ?? recordTest();
   // Records whose links are left as written, with the links that reached the note (or, for the moved note, their targets).
   const recordLinks = new Map<string, TextLink[]>();
   const recordIndexOnly: string[] = [];
