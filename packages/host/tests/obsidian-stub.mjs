@@ -133,8 +133,15 @@ export function parseYaml(text) {
     if (/^-?\d+(\.\d+)?$/.test(s)) return Number(s);
     return s;
   };
-  const inline = (raw) => {
+  // A YAML comment: ` #` and the rest of the line, after a plain or a closed quoted scalar. `true#x` keeps its `#` (no space), as YAML reads it.
+  const uncomment = (raw) => {
     const s = raw.trim();
+    const q = s[0] === '"' || s[0] === "'" ? s.indexOf(s[0], 1) : -1;
+    if (q > 0) return s.slice(0, q + 1) + s.slice(q + 1).replace(/\s+#.*$/, "");
+    return s.replace(/(^|\s+)#.*$/, "");
+  };
+  const inline = (raw) => {
+    const s = uncomment(raw);
     if (s.startsWith("[") && s.endsWith("]")) {
       const inner = s.slice(1, -1).trim();
       return inner === "" ? [] : inner.split(",").map((x) => scalar(x));
@@ -166,7 +173,7 @@ export function parseYaml(text) {
     if (rest === "" && lines[i + 1] && /^\s*-\s+/.test(lines[i + 1])) {
       const arr = [];
       while (lines[i + 1] && /^\s*-\s+/.test(lines[i + 1])) {
-        arr.push(scalar(lines[i + 1].replace(/^\s*-\s+/, "")));
+        arr.push(scalar(uncomment(lines[i + 1].replace(/^\s*-\s+/, ""))));
         i++;
       }
       obj[key] = arr;

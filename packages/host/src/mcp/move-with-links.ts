@@ -84,7 +84,7 @@ export interface MoveWithLinksOptions {
    * moves would otherwise read the vault 50 times inside one 30 s queue slot.
    */
   texts?: TextCache;
-  /** Which notes are records, never rewritten. Default: the vault's own test (records.ts). */
+  /** Which notes are records, never rewritten. Default: records.ts's test with the shipped identification `record: true`; the tools pass the operator's (#397). */
   isRecord?: IsRecord;
 }
 

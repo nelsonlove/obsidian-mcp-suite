@@ -48,6 +48,8 @@ import { ok, fail, codedError } from "./helpers.js";
 import { visiblePaths, isVisible, type GuardSettings } from "../guard.js";
 import { pickInstance, parseScopeToken } from "./tools-scheme.js";
 import { moveOne, RW } from "./tools-vault-write.js";
+import { recordTest } from "./records.js";
+import type { RecordIdentification } from "../kernel/record-guard.js";
 import { planAssign, planRefile, planRenumber, type MoveStep, type OnOccupied } from "../kernel/scheme/mutate.js";
 import type { Address } from "../kernel/scheme/provider.js";
 import { excludeRoots, type SchemeInstance, type SchemeRegistry, type SchemeInstanceConfig } from "../kernel/scheme/registry.js";
@@ -58,6 +60,8 @@ export interface SchemeWriteToolsCtx {
   /** Vault markdown paths; wired in server.ts from app.vault.getMarkdownFiles(). */
   notes: () => string[];
   getSettings?: () => GuardSettings & { schemes?: SchemeInstanceConfig[] };
+  /** The operator's record identification (#397), for the moves' record test (records.ts). Absent ⇒ the default `record: true`. */
+  recordIdentification?: () => RecordIdentification;
 }
 
 // Intentionally-duplicated one-liner: `@vault-mcp/core`'s `fail()` does this
@@ -158,7 +162,7 @@ export function registerSchemeWriteTools(server: McpServer, app: App, ctx: Schem
         if (dry_run) return ok({ dry_run: true, address: result.address, moves: [result.step] });
 
         try {
-          await moveOne(app, result.step.from, result.step.to, false);
+          await moveOne(app, result.step.from, result.step.to, false, { isRecord: recordTest(app, ctx.recordIdentification) });
         } catch (e) {
           return fail(e);
         }
@@ -264,7 +268,7 @@ export function registerSchemeWriteTools(server: McpServer, app: App, ctx: Schem
         if (dry_run) return ok({ dry_run: true, address: result.address, moves: [step] });
 
         try {
-          await moveOne(app, step.from, step.to, false);
+          await moveOne(app, step.from, step.to, false, { isRecord: recordTest(app, ctx.recordIdentification) });
         } catch (e) {
           return fail(e);
         }
@@ -368,7 +372,7 @@ export function registerSchemeWriteTools(server: McpServer, app: App, ctx: Schem
         const completed: MoveStep[] = [];
         for (const step of result.steps) {
           try {
-            await moveOne(app, step.from, step.to, false);
+            await moveOne(app, step.from, step.to, false, { isRecord: recordTest(app, ctx.recordIdentification) });
             completed.push(step);
           } catch (e) {
             if (completed.length === 0) return fail(e);

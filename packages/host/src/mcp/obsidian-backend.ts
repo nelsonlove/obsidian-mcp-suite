@@ -31,6 +31,8 @@
  */
 
 import { moveWithLinks, type LinkCheck } from "./move-with-links.js";
+import { recordTest } from "./records.js";
+import type { RecordIdentification } from "../kernel/record-guard.js";
 import { TFile, TFolder, getAllTags, type App } from "obsidian";
 import {
   CHARACTER_LIMIT,
@@ -98,6 +100,8 @@ export class ObsidianBackend implements VaultBackend {
      * is logged and never fails the write, the same rule capture follows.
      */
     private readonly onWriteNote?: (facts: { path: string; baseBytes: Uint8Array | null; proposedBytes: Uint8Array; created: boolean }) => void,
+    /** The operator's record identification (#397), for moveNote's record test (records.ts). Absent ⇒ the default `record: true`. */
+    private readonly recordIdentification?: () => RecordIdentification,
   ) {}
 
   /**
@@ -662,6 +666,7 @@ export class ObsidianBackend implements VaultBackend {
       check = await moveWithLinks(this.app, file, toRel, {
         updateBacklinks: options.update_backlinks,
         visible: (p) => this.visible([p]).length === 1,
+        isRecord: recordTest(this.app, this.recordIdentification),
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
