@@ -596,3 +596,17 @@ describe("obsidian_write_notes — per item, as write_note (01.33.5)", () => {
     assert.equal(writeCalls.filter((p) => p === "E/Once.md").length, 1);
   });
 });
+
+describe("batchItemWriter — names Obsidian Sync refuses", () => {
+  test("a new note with such a name is refused, typed, and nothing is written; an existing one is written in place", async () => {
+    const written = [];
+    const have = new Set(["L/Old: one.md"]);
+    const item = batchItemWriter((p) => { written.push(p); return { path: p }; }, (p) => have.has(p));
+    const refused = await item({ path: "L/New: one.md", content: "x" });
+    assert.equal(refused.isError, true);
+    assert.match(refused.content[0].text, /^Error \[unsafe_name\]/);
+    const kept = await item({ path: "L/Old: one.md", content: "x" });
+    assert.equal(kept.isError, undefined);
+    assert.deepEqual(written, ["L/Old: one.md"]);
+  });
+});

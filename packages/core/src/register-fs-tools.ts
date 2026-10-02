@@ -9,6 +9,7 @@
  * typed as a structural duck type that McpServer satisfies.
  */
 
+import { syncUnsafeChars, assertSyncSafeName } from "./sync-names.js";
 import type { VaultBackend, FrontmatterEditValue } from "./vault-backend.js";
 import { FS_TOOLS } from "./tool-registry.js";
 import { ok, fail } from "./responses.js";
@@ -393,7 +394,10 @@ function makeHandler(
     case "obsidian_write_note":
       return async ({ path: p, content, overwrite }: { path: string; content: string; overwrite: boolean }) => {
         try {
-          return ok(await backend.writeNote(dec(p), content, overwrite));
+          const target = dec(p);
+          // A new note may not take a name Obsidian Sync refuses; an existing one stays writable in place.
+          if (syncUnsafeChars(target) && !(await backend.readNote(target).then(() => true, () => false))) assertSyncSafeName(target);
+          return ok(await backend.writeNote(target, content, overwrite));
         } catch (e) {
           return fail(e);
         }
@@ -425,6 +429,8 @@ function makeHandler(
         try {
           const decodedFrom = dec(from);
           const decodedTo = dec(to);
+          // A move or rename lands the note on a NEW name, so the name must be one Obsidian Sync accepts.
+          assertSyncSafeName(decodedTo);
           const r = await backend.moveNote(decodedFrom, decodedTo, { update_backlinks, overwrite });
           // Backlink count fields are number|null. null means "backend performed the
           // operation but cannot determine the count" (e.g. the live Obsidian backend

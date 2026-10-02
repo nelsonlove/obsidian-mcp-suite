@@ -116,3 +116,12 @@ test("#29 backlinkKeys: Map and object with same keys produce identical results"
   const o = Object.fromEntries(keys.map((k) => [k, {}]));
   assert.deepEqual(backlinkKeys(m).sort(), backlinkKeys(o).sort());
 });
+
+test("validateMoves rejects the whole batch when a destination holds a name Obsidian Sync refuses", () => {
+  const r = validateMoves([
+    { from: "A/a.md", to: "B/a.md" },
+    { from: "A/b.md", to: "B/Q: b.md" },
+  ]);
+  assert.match(r, /Obsidian Sync refuses.*B\/Q: b\.md/);
+  assert.equal(validateMoves([{ from: "A/Q: b.md", to: "B/Q - b.md" }]), null, "a bad SOURCE name can be moved to a clean one");
+});
