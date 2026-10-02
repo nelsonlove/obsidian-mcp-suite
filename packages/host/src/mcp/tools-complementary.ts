@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { assertCreateName } from "./name-checks.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { type App, TFile, getAllTags } from "obsidian";
 import {
@@ -163,6 +164,7 @@ export function registerComplementaryTools(server: McpServer, app: App, ctx: Ser
           // Create note with the heading + content
           const newContent = `# ${heading}\n\n${content}\n`;
           guardAppendResult(null, newContent);
+          assertCreateName(app, p);
           await app.vault.create(p, newContent);
           return ok({ path: p, found: false, inserted: true, created_note: true });
         }

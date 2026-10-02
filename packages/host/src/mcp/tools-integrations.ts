@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { assertCreateName } from "./name-checks.js";
 import { runCommandRefusal } from "./cli-policy.js";
 import { templateContentAcceptRefusal } from "./tools-cli.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -253,6 +254,10 @@ export function registerIntegrationTools(server: McpServer, app: App, ctx: Serve
               `The transport never persists acceptance — acceptance is a human gesture only.`,
             ));
           }
+
+          // This tool always creates a NEW note (Templater picks a free name if the path is taken),
+          // so the name may never hold a character Obsidian Sync refuses (sync-names.ts).
+          assertCreateName(app, target_path);
 
           // Derive folder and filename from target_path
           const lastSlash = target_path.lastIndexOf("/");

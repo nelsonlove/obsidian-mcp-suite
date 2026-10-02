@@ -7,6 +7,8 @@
 // obsidian_repoint_link (repoint broken wikilinks) and obsidian_rename_heading
 // (rename a heading and heal every link to it, #424) — along with their helpers.
 
+import { UnsafeNameError } from "@vault-mcp/core";
+import { assertMoveName } from "./name-checks.js";
 import { moveWithLinks, TextCache, type LinkCheck, type MoveWithLinksOptions } from "./move-with-links.js";
 import { recordTest } from "./records.js";
 import type { RecordIdentification } from "../kernel/record-guard.js";
@@ -69,6 +71,8 @@ export async function moveOne(app: App, from: string, to: string, overwrite: boo
   if (!from.endsWith(".md")) throw new Error("source must end in .md");
   if (!to.endsWith(".md")) throw new Error("destination must end in .md");
   if (from === to) throw new Error("from and to are the same path");
+  // Before anything is trashed or any folder is made (the scheme moves come here without the batch pre-check).
+  await assertMoveName(app, from, to, overwrite, opts.texts);
   const file = app.vault.getAbstractFileByPath(from);
   if (!(file instanceof TFile)) throw new Error(`not found: ${from}`);
   const dest = app.vault.getAbstractFileByPath(to);
@@ -98,7 +102,7 @@ export function registerVaultWriteTools(server: McpServer, app: App, ctx: VaultW
     {
       title: "Move/rename multiple notes",
       description:
-        "Move or rename several notes in one call. Items are processed sequentially. Each note is renamed at the file level (no wait for Obsidian's index) and vault-mcp rewrites every link to it itself, then checks for damage: each item's `link_check` reports any link still naming the old path, any note reaching the note fewer times than before, any note it could not rewrite, and `ok`. Links inside records (a note the operator's record identifier marks, `record: true` by default, or one under a JD `NN.09 Archive` folder in any area, 03.04 Records, 03.16 Cross-session log or 03.20 Imported chats) are never rewritten, and a moved record keeps its own links as written (a marked record stays one wherever it moves; a note that is a record only by its folder is living once moved out); each link left that no longer reaches its target is listed in `records_left` (at most 100 notes; `records_left_total` counts all), which is not damage. `links_ok` is false if any item found damage. A runtime-failed item (missing source, existing destination) is reported in `errors` and does not fail the call, but if every item fails the call is flagged as an error. Statically invalid batches are rejected up front with no moves performed: a non-.md path, an item whose from and to are identical, or a path appearing twice as a source, twice as a destination, or as both (swaps/chains) — compared after normalization.",
+        "Move or rename several notes in one call. Items are processed sequentially. Each note is renamed at the file level (no wait for Obsidian's index) and vault-mcp rewrites every link to it itself, then checks for damage: each item's `link_check` reports any link still naming the old path, any note reaching the note fewer times than before, any note it could not rewrite, and `ok`. Links inside records (a note the operator's record identifier marks, `record: true` by default, or one under a JD `NN.09 Archive` folder in any area, 03.04 Records, 03.16 Cross-session log or 03.20 Imported chats) are never rewritten, and a moved record keeps its own links as written (a marked record stays one wherever it moves; a note that is a record only by its folder is living once moved out); each link left that no longer reaches its target is listed in `records_left` (at most 100 notes; `records_left_total` counts all), which is not damage. `links_ok` is false if any item found damage. A runtime-failed item (missing source, existing destination) is reported in `errors` and does not fail the call, but if every item fails the call is flagged as an error. Statically invalid batches are rejected up front with no moves performed: a non-.md path, an item whose from and to are identical, a destination whose NEW name or folder holds a character Obsidian Sync refuses (\\ : * ? \" < > |) or one that breaks links (# ^ [ ]) (typed `unsafe_name`; the note's own name and the folders it is already in may be kept; [ ] are allowed only in the name of a note under an existing JD archive folder (NN.09 Archive…) that no other note links to, never in a folder name), or a path appearing twice as a source, twice as a destination, or as both (swaps/chains) — compared after normalization.",
       inputSchema: {
         moves: z
           .array(
@@ -118,6 +122,15 @@ export function registerVaultWriteTools(server: McpServer, app: App, ctx: VaultW
       annotations: RW,
     },
     async ({ moves, overwrite }) => {
+      // A destination that adds a name Obsidian Sync refuses rejects the whole batch, typed, before any move.
+      const nameTexts = new TextCache(app);
+      for (const { from, to } of moves) {
+        try {
+          await assertMoveName(app, from, to, overwrite, nameTexts);
+        } catch (e) {
+          return fail(new UnsafeNameError(`invalid batch, no moves performed — ${(e as Error).message}`));
+        }
+      }
       const invalid = validateMoves(moves);
       if (invalid) return fail(new Error(`invalid batch, no moves performed — ${invalid}`));
       const moved: Array<{ from: string; to: string; link_check: LinkCheck }> = [];

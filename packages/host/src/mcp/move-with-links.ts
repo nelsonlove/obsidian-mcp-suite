@@ -32,6 +32,7 @@
 //      as before, and every note the index says links it must have been found.
 
 import { TFile, type App } from "obsidian";
+import { indexedLinkers } from "./link-index.js";
 import { parseLinks, rewriteLink, applyEdits, isRelativeLinkpath, type TextLink, type Edit } from "./link-rewrite.js";
 import { recordTest, type IsRecord } from "./records.js";
 
@@ -137,6 +138,22 @@ function cacheIsFresh(app: App, f: TFile): boolean {
   return !!entry && entry.mtime === f.stat.mtime && entry.size === f.stat.size;
 }
 
+/**
+ * True when any other note's CURRENT TEXT links to `file`: the same scan the
+ * move's find step makes (every note whose text names it, parsed), so a link
+ * written a moment ago counts although Obsidian's index has not caught up.
+ */
+export async function hasTextLinkers(app: App, file: TFile, texts: TextCache = new TextCache(app)): Promise<boolean> {
+  const names = needles(file.basename);
+  for (const src of app.vault.getMarkdownFiles()) {
+    if (src === file) continue;
+    const t = lower(await texts.get(src));
+    if (!names.some((n) => t.includes(n))) continue;
+    if (parseLinks(await texts.get(src)).some((l) => resolves(app, l.linkpath, src.path) === file)) return true;
+  }
+  return false;
+}
+
 function resolves(app: App, linkpath: string, source: string): TFile | null {
   if (!linkpath) return null;
   return app.metadataCache.getFirstLinkpathDest(linkpath, source);
@@ -198,9 +215,7 @@ export async function moveWithLinks(app: App, file: TFile, to: string, opts: Mov
     // Cross-check with the index: a note it says links the note where the text scan found
     // nothing, or (while its index entry is current) fewer links than the index counts. The
     // parser and Obsidian's index can disagree on rare markdown; this makes a miss loud.
-    for (const [src, targets] of Object.entries(app.metadataCache.resolvedLinks ?? {})) {
-      const indexed = targets?.[oldPath] ?? 0;
-      if (src === oldPath || indexed === 0) continue;
+    for (const { src, count: indexed } of indexedLinkers(app, oldPath)) {
       if (recordLinks.has(src)) continue; // left as written, and listed in records_left
       const plan = plans.get(src);
       const f = app.vault.getAbstractFileByPath(src);
