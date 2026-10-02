@@ -698,7 +698,7 @@ export function buildJdScaffoldTools(source: JdScaffoldSource, ctx: JdScaffoldTo
         folder_path: z.string().min(1).describe("Vault path of the category folder."),
         prefix: z.string().min(1).describe('The category\'s two-digit prefix (e.g. "06").'),
         id: z.string().min(1).describe('Two-digit id for the new note (e.g. "13").'),
-        title: z.string().min(1).describe("Title for the new note — sanitized before use (no path separators, leading dot, or Windows-forbidden characters)."),
+        title: z.string().min(1).describe("Title for the new note — refused if empty, if it starts with a dot or holds \"..\", or if it holds a path separator, a control character, a character Obsidian Sync refuses (\\ : * ? \" < > |) or one that breaks links (# ^ [ ])."),
         templates_folder: z.string().min(1).describe("Vault path of the folder containing template notes."),
         dry_run: z.boolean().describe("If true, report the plan without writing anything."),
       },
@@ -716,7 +716,7 @@ export function buildJdScaffoldTools(source: JdScaffoldSource, ctx: JdScaffoldTo
 
         if (!/^\d{2}$/.test(id)) refuse("invalid_id", `"${id}" must be exactly two digits.`);
         const sanitized = sanitizeTitle(rawTitle);
-        if (!sanitized) refuse("invalid_title", `"${rawTitle}" is empty, leading-dot, or contains invalid characters (/, \\, .., :, etc.).`);
+        if (!sanitized) refuse("invalid_title", `"${rawTitle}" is empty, leading-dot, or holds a refused character: a path separator, \"..\", a control character, one Obsidian Sync refuses (\\ : * ? \" < > |) or one that breaks links (# ^ [ ]).`);
 
         const destPath = destPathForGenericId(folderPath, prefix, id, sanitized);
         if (!isVisible(destPath, settings)) refuse("out_of_allowlist", `the computed destination is outside the active path allowlist.`);
@@ -770,7 +770,7 @@ export function buildJdScaffoldTools(source: JdScaffoldSource, ctx: JdScaffoldTo
         if (!/^[A-Za-z][\w-]*$/.test(stemCode)) refuse("invalid_stem_code", `"${stemCode}" isn't a valid stem code (expected a leading letter, then word characters/hyphens only).`);
 
         const sanitized = sanitizeTitle(rawName);
-        if (!sanitized) refuse("invalid_title", `"${rawName}" is empty, leading-dot, or contains invalid characters (/, \\, .., :, etc.).`);
+        if (!sanitized) refuse("invalid_title", `"${rawName}" is empty, leading-dot, or holds a refused character: a path separator, \"..\", a control character, one Obsidian Sync refuses (\\ : * ? \" < > |) or one that breaks links (# ^ [ ]).`);
 
         const destPath = destPathForStem(folderPath, prefix, stemCode, sanitized);
         if (!isVisible(destPath, settings)) refuse("out_of_allowlist", `the computed destination is outside the active path allowlist.`);

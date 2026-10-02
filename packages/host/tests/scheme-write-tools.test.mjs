@@ -688,3 +688,25 @@ describe("coded refusals (PR #214 finding #4)", () => {
     assert.match(res.content[0].text, /Error \[excluded_root\]/);
   });
 });
+
+describe("scheme moves check the new name before any step and before a dry run answers", () => {
+  const notes = [...NOTES, "Unfiled/New: thing.md"];
+
+  test("assign_address: the dry run refuses what the real run would refuse", async () => {
+    const { call, calls } = toolServer({ notes });
+    const res = await call("obsidian_assign_address", { path: "Unfiled/New: thing.md", scope: "06", dry_run: true });
+    assert.equal(res.isError, true);
+    assert.match(res.content[0].text, /unsafe_name/);
+    assert.deepEqual(calls.vaultRename, []);
+  });
+
+  test("renumber with displacement: a refused name on step 2 stops it before step 1 moves the occupant", async () => {
+    const { call, calls } = toolServer({ notes });
+    const res = await call("obsidian_renumber_address", { path: "Unfiled/New: thing.md", to_address: "06.11", dry_run: false, on_occupied: "auto" });
+    assert.equal(res.isError, true);
+    assert.match(res.content[0].text, /unsafe_name/);
+    assert.deepEqual(calls.vaultRename, [], "the occupant was not moved");
+    const dry = await call("obsidian_renumber_address", { path: "Unfiled/New: thing.md", to_address: "06.11", dry_run: true, on_occupied: "auto" });
+    assert.equal(dry.isError, true, "and the dry run says so");
+  });
+});

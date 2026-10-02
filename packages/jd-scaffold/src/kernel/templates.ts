@@ -27,6 +27,7 @@
 // the tool layer (src/tools.ts's `discoverTemplates`, over the injected
 // JdScaffoldSource); this module classifies an already-discovered listing.
 
+import { SYNC_UNSAFE_CHARS } from "@vault-mcp/core";
 import type { ZeroId, ZeroSpec } from "./types.js";
 
 const ZERO_IDS: ReadonlySet<ZeroId> = new Set<ZeroId>(["00", "01", "02", "03", "04", "05", "06", "07", "08", "09"]);
@@ -255,7 +256,9 @@ export function sanitizeTitle(raw: string): string | null {
   if (trimmed.startsWith(".")) return null;
   if (trimmed.includes("..")) return null;
   // eslint-disable-next-line no-control-regex
-  if (/[/\\:|?*<>"\x00-\x1f]/.test(trimmed)) return null;
+  if (/[/\x00-\x1f]/.test(trimmed)) return null;
+  // The set Obsidian Sync refuses and the characters that break links: one copy, in core (sync-names.ts).
+  if (SYNC_UNSAFE_CHARS.test(trimmed)) return null;
   return trimmed;
 }
 
