@@ -32,6 +32,7 @@
 
 import { assertCreateName, assertMoveName } from "./name-checks.js";
 import { moveWithLinks, type LinkCheck } from "./move-with-links.js";
+import { indexedLinkers, linkIndexReady, LinkIndexLoadingError } from "./link-index.js";
 import { TFile, TFolder, getAllTags, type App } from "obsidian";
 import {
   CHARACTER_LIMIT,
@@ -43,7 +44,6 @@ import {
   parseGuardFrontmatter,
   unverifiableProtectedPropertyIn, unverifiableBeforeReason,
 } from "@vault-mcp/core";
-import { backlinkKeys } from "./helpers.js";
 import { AcceptForbiddenError, acceptTransitionReason } from "./write-notes-compose.js";
 import type {
   VaultBackend,
@@ -391,16 +391,17 @@ export class ObsidianBackend implements VaultBackend {
 
   async getBacklinks(notePath: string): Promise<string[]> {
     const file = this.app.vault.getAbstractFileByPath(notePath);
-    if (!file) throw new Error(`not found: ${notePath}`);
-    // getBacklinksForFile is not in the public obsidian types — cast required.
-    // .data can be a Map (most Obsidian builds) or a plain object (some older
-    // builds) — backlinkKeys handles both shapes defensively.
-    const bl = (this.app.metadataCache as any).getBacklinksForFile(file);
+    if (!(file instanceof TFile)) throw new Error(`not found: ${notePath}`);
+    // From Obsidian's own link index, never `getBacklinksForFile` (see
+    // link-index.ts, #451). Refused, not answered short, while the index is
+    // still loading after a start.
+    if (!linkIndexReady(this.app)) throw new LinkIndexLoadingError();
+    const linkers = indexedLinkers(this.app, file.path).map((l) => l.src);
     // The ARGUMENT is guarded; the ANSWER is a list of other notes' paths, and
     // "who links to this" is exactly how a visible note names hidden ones. A
     // linker you cannot read is not disclosed — the same fail-closed choice
     // `obsidian_check_links` makes about whose notes it reports from.
-    return this.visible(backlinkKeys(bl?.data));
+    return this.visible(linkers);
   }
 
   async getOutlinks(notePath: string): Promise<OutlinkEntry[]> {

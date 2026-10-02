@@ -235,7 +235,7 @@ export const FS_TOOLS: ToolDef[] = [
     name: "obsidian_get_backlinks",
     title: "Get backlinks to a note",
     description:
-      "List notes that contain a `[[wikilink]]` pointing at the given note. Backlinks are resolved from the vault index; call `obsidian_force_reindex` if you need a synchronous index refresh before querying. Read-only.",
+      "List notes that link to the given note (a `[[wikilink]]`, an embed, or a link in frontmatter). Backlinks come from the vault index. In Obsidian that is Obsidian's own link index: a link written moments ago may not be in it yet, `.canvas` files are not counted, a note's links to itself are left out, and the call refuses with `index_loading` (retry) while Obsidian is still loading the index after a start. In the filesystem server, call `obsidian_force_reindex` if you need a synchronous index refresh before querying. Read-only.",
     inputSchema: {
       path: z
         .string()

@@ -28,6 +28,7 @@
  */
 
 import { test, describe } from "node:test";
+import { glob, readFile } from "node:fs/promises";
 import assert from "node:assert/strict";
 
 import { installObsidianStub, TFile, TFolder, MarkdownView } from "./obsidian-stub.mjs";
@@ -106,8 +107,12 @@ function fakeApp({ notes = NOTES, caches = CACHES, active = null, bookmarks = nu
   const byBasename = new Map();
   for (const [path, file] of files) byBasename.set(file.basename.toLowerCase(), file);
 
+  // Notes the link resolver has not reached yet: no key in resolvedLinks.
+  const unresolved = new Set();
+
   const app = {
     reads,
+    unresolved,
     vault: {
       getMarkdownFiles: () => [...files.values()],
       getRoot: () => root,
@@ -119,15 +124,27 @@ function fakeApp({ notes = NOTES, caches = CACHES, active = null, bookmarks = nu
     metadataCache: {
       getFileCache: (f) => caches[f.path] ?? null,
       getFirstLinkpathDest: (linkpath) => byBasename.get(String(linkpath).toLowerCase()) ?? null,
-      getBacklinksForFile: (file) => {
-        const data = new Map();
+      // Obsidian's link index, built from the caches: source → target → count.
+      // As in Obsidian, every resolved note with a cache has a key, `{}` when
+      // it links nothing; a note in `unresolved` has none yet.
+      get resolvedLinks() {
+        const out = {};
         for (const [path, cache] of Object.entries(caches)) {
-          if ((cache.links ?? []).some((l) => byBasename.get(l.link.toLowerCase())?.path === file.path)) {
-            data.set(path, []);
+          if (!files.has(path) || unresolved.has(path)) continue;
+          out[path] ??= {};
+          // As in Obsidian: links, embeds and frontmatter links all count.
+          for (const l of [...(cache.links ?? []), ...(cache.embeds ?? []), ...(cache.frontmatterLinks ?? [])]) {
+            const dest = byBasename.get(l.link.toLowerCase());
+            if (!dest) continue;
+            out[path] ??= {};
+            out[path][dest.path] = (out[path][dest.path] ?? 0) + 1;
           }
         }
-        return { data };
+        return out;
       },
+      // What a plugin patch (Advanced Metadata Cache during its first index
+      // build) can return: a short answer. getBacklinks must not read it.
+      getBacklinksForFile: () => ({ data: new Map() }),
       // The host's own vault-wide aggregate — the one a sandboxed session must
       // not be handed.
       getTags: () => ({ "#work": 3, "#payroll": 1 }),
@@ -304,6 +321,123 @@ describe("link resolution fails closed", () => {
     assert.equal(body(res).count, 0, "the count follows the list — a bare count is still an oracle");
     const open = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
     assert.deepEqual(open.structuredContent.backlinks, ["Archive/Payroll/Salaries.md"]);
+  });
+
+  test("obsidian_get_backlinks answers from Obsidian's own link index, not a patched getBacklinksForFile", async () => {
+    const app = fakeApp();
+    // The fixture's getBacklinksForFile returns nothing, as a plugin patch can
+    // while its index builds; the answer must still come from resolvedLinks.
+    const res = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
+    assert.deepEqual(res.structuredContent.backlinks, ["Archive/Payroll/Salaries.md"]);
+  });
+
+  test("obsidian_get_backlinks counts embeds and frontmatter links, and leaves out the note's links to itself", async () => {
+    const notes = {
+      ...NOTES,
+      "Projects/Embedder.md": "![[Alpha]]",
+      "Projects/Related.md": "---\nrelated: \"[[Alpha]]\"\n---\n",
+    };
+    const caches = {
+      ...CACHES,
+      "Projects/Embedder.md": { embeds: [{ link: "Alpha" }] },
+      "Projects/Related.md": { frontmatterLinks: [{ key: "related", link: "Alpha" }] },
+      "Projects/Alpha.md": { ...(CACHES["Projects/Alpha.md"] ?? {}), links: [...(CACHES["Projects/Alpha.md"]?.links ?? []), { link: "Alpha" }] },
+    };
+    const app = fakeApp({ notes, caches });
+    const res = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
+    assert.deepEqual([...res.structuredContent.backlinks].sort(), ["Archive/Payroll/Salaries.md", "Projects/Embedder.md", "Projects/Related.md"]);
+  });
+
+  // linkResolverQueue as Obsidian builds it: `items` is a queue object with a
+  // `length` getter, not an Array. Readiness must not depend on it.
+  const idleResolverQueue = () => ({
+    items: { queue: [], offset: 0, get length() { return this.queue.length - this.offset; } },
+    runnable: { isRunning: () => false },
+  });
+
+  test("obsidian_get_backlinks refuses while initialized is false, even with every note resolved", async () => {
+    const app = fakeApp();
+    app.metadataCache.initialized = false;
+    const res = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
+    assert.equal(res.isError, true);
+    assert.match(res.content[0].text, /^Error \[index_loading\]: .*still loading its link index.*retry shortly$/, "a typed, retryable refusal that promises no time");
+  });
+
+  test("obsidian_get_backlinks refuses while a note with a cache has no resolvedLinks key, even with the resolver queue idle and 'resolved' fired", async () => {
+    const app = fakeApp();
+    const listeners = {};
+    app.metadataCache.on = (name, cb) => ((listeners[name] ??= []).push(cb), { name });
+    app.metadataCache.initialized = true;
+    app.metadataCache.linkResolverQueue = idleResolverQueue();
+    app.metadataCache.isCacheClean = () => true;
+    app.unresolved.add("Projects/Beta.md");
+    for (const cb of listeners.resolved ?? []) cb();
+    const res = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
+    assert.match(res.content[0].text, /^Error \[index_loading\]/, "a missing key means resolvedLinks is not complete yet");
+    assert.equal(listeners.resolved, undefined, "no event listener is registered, so none is left behind on a plugin reload");
+  });
+
+  test("obsidian_get_backlinks is ready once every note has a resolvedLinks key, though cache work is in progress, and latches", async () => {
+    const app = fakeApp();
+    app.metadataCache.initialized = true;
+    // The resolver queue shaped as Obsidian shapes it, busy, and other cache
+    // work in progress (every write bumps inProgressTaskCount), so
+    // isCacheClean() is false: none of that may hold the answer back.
+    app.metadataCache.linkResolverQueue = { ...idleResolverQueue(), runnable: { isRunning: () => true } };
+    app.metadataCache.linkResolverQueue.items.queue.push("Projects/Beta.md");
+    app.metadataCache.inProgressTaskCount = 3;
+    app.metadataCache.isCacheClean = () => false;
+    const ok = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
+    assert.deepEqual(ok.structuredContent.backlinks, ["Archive/Payroll/Salaries.md"]);
+
+    // Latched: a note changed later (no key until the resolver reaches it)
+    // never turns into a refusal.
+    app.unresolved.add("Projects/Beta.md");
+    const later = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
+    assert.deepEqual(later.structuredContent.backlinks, ["Archive/Payroll/Salaries.md"], "latched");
+  });
+
+  test("obsidian_get_backlinks lets a note with no cache (failed to parse) through only once no note is still being read", async () => {
+    const notes = { ...NOTES, "Projects/Broken.md": "\u0000" };
+    const app = fakeApp({ notes });
+    app.metadataCache.initialized = true;
+    app.metadataCache.inProgressTaskCount = 1;
+    const mid = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
+    assert.match(mid.content[0].text, /^Error \[index_loading\]/, "it may still be a note being read for the first time");
+    app.metadataCache.inProgressTaskCount = 0;
+    const ok = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
+    assert.deepEqual(ok.structuredContent.backlinks, ["Archive/Payroll/Salaries.md"]);
+  });
+
+  test("obsidian_get_backlinks refuses a folder path instead of answering 'nothing links here'", async () => {
+    const app = fakeApp();
+    const res = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects" });
+    assert.equal(res.isError, true);
+    assert.match(res.content[0].text, /not found: Projects/);
+  });
+
+  test("no host source calls getBacklinksForFile (#451): a plugin may patch it and answer short", async () => {
+    const SRC = new URL("../src/", import.meta.url);
+    const offenders = [];
+    let scanned = 0;
+    // Any mention of the name in code, outside comment lines.
+    const calls = (text) =>
+      /getBacklinksForFile/.test(text.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n"));
+    for await (const rel of glob("**/*.ts", { cwd: SRC })) {
+      scanned++;
+      const text = await readFile(new URL(rel, SRC), "utf8");
+      if (calls(text)) offenders.push(rel);
+    }
+    assert.ok(scanned > 20, `the scan must see the host sources (saw ${scanned})`);
+    assert.deepEqual(offenders, []);
+    // The instrument finds what it must (planted calls) and passes what it must (comments).
+    for (const planted of [
+      "(this.app.metadataCache as any).getBacklinksForFile(file)",
+      "mc.getBacklinksForFile?.(file)",
+      "mc.getBacklinksForFile.call(mc, file)",
+      'mc["getBacklinksForFile"](file)',
+    ]) assert.equal(calls(planted), true, planted);
+    assert.equal(calls("// never `getBacklinksForFile`\n * getBacklinksForFile is patched"), false);
   });
 
   test("obsidian_get_outlinks keeps the link TEXT and withholds where it landed", async () => {
