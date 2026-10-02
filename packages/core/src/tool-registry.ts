@@ -369,7 +369,7 @@ export const FS_TOOLS: ToolDef[] = [
     name: "obsidian_move_note",
     title: "Rename / move a note and rewrite backlinks",
     description:
-      "Move (or rename) a note from one vault path to another. With `update_backlinks: true` (default), every note that wikilinks to `from` is rewritten to point at `to`. `to` may not hold a character Obsidian Sync refuses (\\ : * ? \" < > |) or one that breaks links (# ^ [ ]): refused with `unsafe_name`, so a note with such a name can be moved only onto a clean one. " +
+      "Move (or rename) a note from one vault path to another. With `update_backlinks: true` (default), every note that wikilinks to `from` is rewritten to point at `to`. `to` may not ADD a character Obsidian Sync refuses (\\ : * ? \" < > |) or one that breaks links (# ^ [ ]) that `from` does not already hold: refused with `unsafe_name` (a note with such a name may keep it, or be moved onto a clean one). " +
       "Resolution uses the vault index: only refs that currently resolve to `from` are touched; ambiguous basename matches are left alone. " +
       "Ref *shape* is preserved across the rewrite — bare basename refs (`[[from-basename]]`) get the new basename, full-path refs get the new full path. `|alias` and `#fragment` suffixes are kept verbatim. " +
       "Refuses if `to` already exists unless `overwrite: true`. Parent folders of `to` are created as needed. " +

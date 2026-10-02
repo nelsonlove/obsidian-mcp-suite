@@ -1,6 +1,6 @@
 import { posix } from "node:path";
 // import ok separately (okError uses it in its body); re-export exposes ok/fail as this module's public API
-import { ok, syncUnsafeChars } from "@vault-mcp/core";
+import { ok } from "@vault-mcp/core";
 export { ok, fail } from "@vault-mcp/core";
 
 /**
@@ -48,7 +48,6 @@ export function validateMoves(moves: Array<{ from: string; to: string }>): strin
     const from = posix.normalize(rawFrom);
     const to = posix.normalize(rawTo);
     if (from === to) return `from and to are the same path: ${rawFrom}`;
-    if (syncUnsafeChars(to)) return `destination name holds a character Obsidian Sync refuses or one that breaks links (\\ : * ? " < > | # ^ [ ]): ${rawTo}`;
     if (froms.has(from)) return `duplicate source: ${rawFrom}`;
     if (tos.has(to)) return `duplicate destination: ${rawTo}`;
     froms.add(from);

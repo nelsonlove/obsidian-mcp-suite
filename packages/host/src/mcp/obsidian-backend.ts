@@ -36,6 +36,7 @@ import {
   CHARACTER_LIMIT,
   assertNotTruncatedRead,
   assertPatchRangeRead,
+  assertSyncSafeName,
   truncateForRead,
   acceptTransitionNeedsBefore,
   deriveJdIdFromPath,
@@ -574,6 +575,8 @@ export class ObsidianBackend implements VaultBackend {
       this.reportWrite(relPath, baseText, content, false);
       return { path: relPath, created: false };
     }
+    // A new note may not take a name Obsidian Sync refuses; an existing one stays writable in place.
+    assertSyncSafeName(relPath);
     await ensureParentFolders(this.app, relPath);
     await this.app.vault.create(relPath, content);
     this.reportWrite(relPath, null, content, true);
@@ -618,6 +621,7 @@ export class ObsidianBackend implements VaultBackend {
     // Creating the note: the appended content IS the whole note, so its own
     // leading fence would become real frontmatter — guard it like a write.
     await this.guardWrittenContent(relPath, content);
+    assertSyncSafeName(relPath);
     await ensureParentFolders(this.app, relPath);
     await this.app.vault.create(relPath, content);
     return { path: relPath, created: true };

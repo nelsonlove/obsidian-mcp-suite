@@ -396,3 +396,15 @@ describe("moveWithLinks", () => {
     assert.ok(!JSON.stringify(r).includes("Secret/"));
   });
 });
+
+describe("moveWithLinks — names Obsidian Sync refuses", () => {
+  test("a rename that adds a refused character is refused before anything moves; one that keeps or removes it moves", async () => {
+    const { app, text, calls } = fakeApp({ "A/Plain.md": "x\n", "A/Q: old.md": "y\n", "S/L.md": "[[Plain]]\n" });
+    await assert.rejects(moveWithLinks(app, app.vault.getAbstractFileByPath("A/Plain.md"), "A/Plain: v2.md"), (e) => e.code === "unsafe_name");
+    assert.deepEqual(calls.vaultRename, []);
+    assert.equal(text.get("S/L.md"), "[[Plain]]\n");
+    await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Q: old.md"), "B/Q: old.md");
+    await moveWithLinks(app, app.vault.getAbstractFileByPath("B/Q: old.md"), "B/Q - old.md");
+    assert.deepEqual(calls.vaultRename, [["A/Q: old.md", "B/Q: old.md"], ["B/Q: old.md", "B/Q - old.md"]]);
+  });
+});

@@ -167,6 +167,22 @@ describe("moves rewrite their own links and never wait on renameFile", () => {
     assert.deepEqual(calls.renameFile, []);
   });
 
+  test("obsidian_move_notes rejects the whole batch, typed unsafe_name, when a destination adds a name Obsidian Sync refuses", async () => {
+    const { app, calls } = fakeVault({ files: ["Notes/A.md", "Notes/B.md"], folders: ["Notes"] });
+    const s = fakeServer();
+    registerVaultWriteTools(s.server, app);
+    const res = await s.call("obsidian_move_notes", {
+      moves: [
+        { from: "Notes/A.md", to: "Archive/A.md" },
+        { from: "Notes/B.md", to: "Archive/B: v2.md" },
+      ],
+      overwrite: false,
+    });
+    assert.equal(res.isError, true);
+    assert.match(res.content[0].text, /^Error \[unsafe_name\]: invalid batch, no moves performed/);
+    assert.deepEqual(calls.vaultRename, [], "nothing moved, not even the clean first item");
+  });
+
   test("an overwriting move trashes the destination recoverably, then moves", async () => {
     const { app, calls } = fakeVault({ files: ["Notes/A.md", "Notes/B.md"] });
     const s = fakeServer();
