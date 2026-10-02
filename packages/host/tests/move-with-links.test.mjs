@@ -16,6 +16,7 @@ import { parseLinks, rewriteLink, relativePath } from "../src/mcp/link-rewrite.t
 
 installObsidianStub();
 const { moveWithLinks, TextCache } = await import("../src/mcp/move-with-links.ts");
+const { recordTest } = await import("../src/mcp/records.ts");
 
 const stripMd = (s) => s.replace(/\.md$/i, "");
 const base = (p) => stripMd(p.split("/").pop());
@@ -51,7 +52,9 @@ function fakeApp(files, { stale = [], wrongCache = {}, throwOn = [], changeBefor
       if (fm && l.start < fm[0].length) continue;
       (l.embed ? embeds : links).push({ link: l.linkpath + l.subpath, original: l.original, position: { start: { offset: l.start }, end: { offset: l.end } } });
     }
-    return { links, embeds, frontmatterLinks };
+    // `record: true` in frontmatter marks a record (01.44 rule 8).
+    const frontmatter = fm && /^record:\s*true\s*$/m.test(fm[1]) ? { record: true } : undefined;
+    return { links, embeds, frontmatterLinks, ...(frontmatter ? { frontmatter } : {}) };
   };
   const caches = new Map();
   const fileCache = {};
@@ -394,5 +397,82 @@ describe("moveWithLinks", () => {
     assert.equal(r.ok, false);
     assert.ok(r.hidden >= 1);
     assert.ok(!JSON.stringify(r).includes("Secret/"));
+  });
+});
+
+describe("records are never rewritten (01.44 rule 8)", () => {
+  const ARCH = "00-09 System/00 System management/00.09 Archive";
+
+  test("recordTest: any JD archive folder, the agent record folders, and the record key; nothing else", () => {
+    const { app } = fakeApp({
+      "Live/Keyed.md": "---\nrecord: true\n---\nx\n",
+      "Live/Plain.md": "---\nrecord: false\n---\nx\n",
+    });
+    const is = recordTest(app);
+    assert.equal(is(`${ARCH}/Old plan.md`), true);
+    assert.equal(is(`${ARCH}/Deep/er/Note.md`), true);
+    assert.equal(is("40-49 Financial/41 Banking & accounts/41.09 Archive for 41 Banking & accounts/Stmt.md"), true);
+    assert.equal(is("00-09 System/03 Agents/03.04 Records/Agent notebook/2026-09/Agent session.md"), true);
+    assert.equal(is("00-09 System/03 Agents/03.16 Cross-session log/CROSS-SESSION.md"), true);
+    assert.equal(is("00-09 System/03 Agents/03.20 Imported chats/Chat.md"), true);
+    assert.equal(is("Live/Keyed.md"), true);
+    assert.equal(is("Live/Plain.md"), false);
+    assert.equal(is("Projects/Archive/Note.md"), false, "a plain Archive folder is not a JD archive");
+    assert.equal(is("Projects/00.09 Archived ideas/Note.md"), false, "the folder name must be '.09 Archive' then a space or its end");
+    assert.equal(is("00.09 Archive.md"), false, "a note NAMED like an archive is not inside one");
+    assert.equal(is("00-09 System/03 Agents/03.04 Records.md"), false);
+  });
+
+  test("a record that links the moved note keeps its link as written, is listed in records_left, and the move is still ok", async () => {
+    const { app, text } = fakeApp({
+      "A/Old.md": "x\n",
+      "S/Live.md": "see [[Old]]\n",
+      [`${ARCH}/Plan.md`]: "cited [[Old]] and [md](../../../A/Old.md)\n",
+      "Live/Keyed.md": "---\nrecord: true\n---\nalso [[Old]]\n",
+    });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md");
+    assert.equal(text.get("S/Live.md"), "see [[New]]\n", "a living note is rewritten as before");
+    assert.equal(text.get(`${ARCH}/Plan.md`), "cited [[Old]] and [md](../../../A/Old.md)\n", "the record's bytes are untouched");
+    assert.equal(text.get("Live/Keyed.md"), "---\nrecord: true\n---\nalso [[Old]]\n");
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.deepEqual(
+      [...r.records_left].sort((a, b) => a.path.localeCompare(b.path)),
+      [
+        { path: `${ARCH}/Plan.md`, links: ["[[Old]]", "[md](../../../A/Old.md)"] },
+        { path: "Live/Keyed.md", links: ["[[Old]]"] },
+      ]
+    );
+    assert.deepEqual(r.files_rewritten, ["S/Live.md"]);
+    assert.deepEqual(r.index_only, [], "the index's record linkers are not flagged as missed");
+    assert.deepEqual(r.still_linking_old, []);
+  });
+
+  test("a moved record keeps its own relative links as written and lists them; living notes that link it are still rewritten", async () => {
+    const { app, text } = fakeApp({
+      [`${ARCH}/Old.md`]: "[o](../Other.md) and [[Other]]\n",
+      [`00-09 System/00 System management/Other.md`]: "x\n",
+      "S/Live.md": "see [[Old]]\n",
+    });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath(`${ARCH}/Old.md`), `${ARCH}/Deeper/New.md`);
+    assert.equal(text.get(`${ARCH}/Deeper/New.md`), "[o](../Other.md) and [[Other]]\n", "a record's own text is untouched");
+    assert.equal(text.get("S/Live.md"), "see [[New]]\n");
+    assert.deepEqual(r.records_left, [{ path: `${ARCH}/Deeper/New.md`, links: ["[o](../Other.md)"] }]);
+    assert.deepEqual(r.own_links_broken, [], "left on purpose, not damage");
+    assert.equal(r.ok, true, JSON.stringify(r));
+  });
+
+  test("records_left names only what the caller may see; the rest are counted in hidden", async () => {
+    const { app } = fakeApp({ "A/Old.md": "x\n", [`${ARCH}/Plan.md`]: "cited [[Old]]\n" });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md", { visible: (p) => !p.startsWith("00-09") });
+    assert.deepEqual(r.records_left, []);
+    assert.equal(r.hidden, 1);
+    assert.equal(r.ok, true);
+  });
+
+  test("the record test can be supplied by the caller", async () => {
+    const { app, text } = fakeApp({ "A/Old.md": "x\n", "S/Mine.md": "[[Old]]\n" });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md", { isRecord: (p) => p === "S/Mine.md" });
+    assert.equal(text.get("S/Mine.md"), "[[Old]]\n");
+    assert.deepEqual(r.records_left, [{ path: "S/Mine.md", links: ["[[Old]]"] }]);
   });
 });
