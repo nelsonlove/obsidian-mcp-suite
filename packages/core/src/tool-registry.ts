@@ -235,7 +235,7 @@ export const FS_TOOLS: ToolDef[] = [
     name: "obsidian_get_backlinks",
     title: "Get backlinks to a note",
     description:
-      "List notes that contain a `[[wikilink]]` pointing at the given note. Backlinks are resolved from the vault index; call `obsidian_force_reindex` if you need a synchronous index refresh before querying. Read-only.",
+      "List notes that link to the given note (a `[[wikilink]]`, an embed, or a link in frontmatter). Backlinks come from the vault index. In Obsidian that is Obsidian's own link index: a link written moments ago may not be in it yet, `.canvas` files are not counted, a note's links to itself are left out, and the call refuses with `index_loading` (retry) while Obsidian is still loading the index after a start. In the filesystem server, call `obsidian_force_reindex` if you need a synchronous index refresh before querying. Read-only.",
     inputSchema: {
       path: z
         .string()
@@ -340,7 +340,7 @@ export const FS_TOOLS: ToolDef[] = [
     name: "obsidian_write_note",
     title: "Write a note",
     description:
-      "Create a note, or overwrite an existing one when overwrite=true. Path must end in .md. Parent folders are created as needed. " +
+      "Create a note, or overwrite an existing one when overwrite=true. Path must end in .md. Parent folders are created as needed. A NEW note's path may not hold a character Obsidian Sync refuses (\\ : * ? \" < > |) or one that breaks links (# ^ [ ]): refused with `unsafe_name`; On the live Obsidian server, [ ] are allowed only in the name of a note under an existing JD archive folder (NN.09 Archive…) that no other note links to, never in a folder name (the filesystem server never allows them); an existing note with such a name is still written in place. " +
       "An overwrite that changes a heading's text breaks every [[Note#Heading]] link to it: to rename a heading, use `obsidian_rename_heading` (on the live Obsidian server), which rewrites those links. " +
       "Never write back a cut read (a note over the read limit comes back with a `[truncated: …]` line and `truncated: true`): content carrying that line, or any whole-note overwrite of a note longer than the limit (never done whole over MCP), is refused with Error [truncated_read]; edit such a note by anchor.",
     inputSchema: {
@@ -369,7 +369,7 @@ export const FS_TOOLS: ToolDef[] = [
     name: "obsidian_move_note",
     title: "Rename / move a note and rewrite backlinks",
     description:
-      "Move (or rename) a note from one vault path to another. With `update_backlinks: true` (default), every note that wikilinks to `from` is rewritten to point at `to`. " +
+      "Move (or rename) a note from one vault path to another. With `update_backlinks: true` (default), every note that wikilinks to `from` is rewritten to point at `to`. `to` may keep the note's own name and the folders it is already in, but any NEW name or folder may not hold a character Obsidian Sync refuses (\\ : * ? \" < > |) or one that breaks links (# ^ [ ]): refused with `unsafe_name`. [ ] are allowed only in the name of a note under an existing JD archive folder (NN.09 Archive…) that no other note links to, never in a folder name; a kept name with brackets may only stay under an archive folder. " +
         "On the live Obsidian server, links inside records (a note the operator's record identifier marks, `record: true` by default, or one under a JD `NN.09 Archive` folder in any area, 03.04 Records, 03.16 Cross-session log or 03.20 Imported chats) are never rewritten, and a moved record keeps its own links as written (a marked record stays one wherever it moves; a note that is a record only by its folder is living once moved out); each link left that no longer reaches its target is listed in `records_left` (at most 100 notes; `records_left_total` counts all), which is not damage. " +
       "Resolution uses the vault index: only refs that currently resolve to `from` are touched; ambiguous basename matches are left alone. " +
       "Ref *shape* is preserved across the rewrite — bare basename refs (`[[from-basename]]`) get the new basename, full-path refs get the new full path. `|alias` and `#fragment` suffixes are kept verbatim. " +
