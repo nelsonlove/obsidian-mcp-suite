@@ -54,6 +54,7 @@ export {
   noteLengthFrom,
   cutReadError,
 } from "./truncation.js";
+export { SYNC_UNSAFE_CHARS, UnsafeNameError, syncUnsafeChars, assertSyncSafeName } from "./sync-names.js";
 export {
   SHARED_ANNOTATIONS,
   FS_TOOLS,
