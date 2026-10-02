@@ -57,6 +57,8 @@ export interface ServerCtx {
      * explicit `false` disables it, so a caller that never wired the setting
      * fails toward protection. Read live by the per-connection probe. */
     enforceRecordImmutability?: boolean;
+    /** How a note declares itself a record (#397); coerced through `normalizeRecordIdentification` wherever read. */
+    recordIdentification?: unknown;
   /** Capture the exact bytes a native read returned. Default off — see main.ts. */
   captureObservations?: boolean;
   /** Stopgap ceiling on total captured bytes, pending real retention. */
