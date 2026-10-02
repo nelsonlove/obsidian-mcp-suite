@@ -756,8 +756,12 @@ describe("records are never rewritten (01.44 rule 8)", () => {
     const src = fs.readFileSync(new URL("../src/mcp/tools-scheme-write.ts", import.meta.url), "utf8");
     const loop = src.indexOf("for (const step of result.steps)");
     assert.ok(loop > 0);
+    // The one cache is made before the name checks, and they use it too (the merge review of #455).
+    const checks = src.lastIndexOf("for (const st of result.steps) await assertMoveName(app, st.from, st.to, false, texts);", loop);
+    assert.ok(checks > 0, "every step's name check shares the cache");
+    assert.match(src.slice(src.lastIndexOf("const texts = new TextCache(app);", checks), checks), /const texts = new TextCache\(app\);/);
+    assert.equal(src.slice(checks, loop).includes("new TextCache("), false, "no second cache before the moves");
     const before = src.slice(src.lastIndexOf("const completed: MoveStep[] = [];", loop), loop);
-    assert.match(before, /const texts = new TextCache\(app\);/);
     assert.match(before, /const isRecord = recordTest\(ctx\.recordIdentification\);/);
     assert.match(src.slice(loop, loop + 400), /moveOne\(app, step\.from, step\.to, false, \{ texts, isRecord \}\)/);
   });
