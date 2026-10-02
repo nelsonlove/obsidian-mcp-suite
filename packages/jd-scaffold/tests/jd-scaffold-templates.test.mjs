@@ -191,6 +191,9 @@ describe("sanitizeTitle", () => {
   test("rejects a .. substring", () => {
     assert.equal(sanitizeTitle("a..b"), null);
   });
+  test("rejects the characters that break links (# ^ [ ]), as the rest of vault-mcp does", () => {
+    for (const bad of ["Plan #2", "a^b", "Plan [draft]", "a]b"]) assert.equal(sanitizeTitle(bad), null, bad);
+  });
   test("rejects path separators and Windows-forbidden characters", () => {
     for (const bad of ["a/b", "a\\b", "a:b", "a|b", "a?b", "a*b", "a<b", 'a"b']) {
       assert.equal(sanitizeTitle(bad), null, `expected ${bad} to be rejected`);

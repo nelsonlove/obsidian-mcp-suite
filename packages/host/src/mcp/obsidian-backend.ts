@@ -37,6 +37,7 @@ import {
   assertNotTruncatedRead,
   assertPatchRangeRead,
   assertSyncSafeName,
+  assertSyncSafeMove,
   truncateForRead,
   acceptTransitionNeedsBefore,
   deriveJdIdFromPath,
@@ -641,6 +642,8 @@ export class ObsidianBackend implements VaultBackend {
     if (!fromRel.endsWith(".md")) throw new Error("source must end in .md");
     if (!toRel.endsWith(".md")) throw new Error("destination must end in .md");
     if (fromRel === toRel) throw new Error("from and to are the same path");
+    // Before anything is trashed or any folder is made: a refused name moves nothing.
+    assertSyncSafeMove(fromRel, toRel);
 
     const file = this.app.vault.getAbstractFileByPath(fromRel);
     if (!(file instanceof TFile)) throw new Error(`not found: ${fromRel}`);

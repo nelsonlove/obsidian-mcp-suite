@@ -62,6 +62,8 @@ export async function moveOne(app: App, from: string, to: string, overwrite: boo
   if (!from.endsWith(".md")) throw new Error("source must end in .md");
   if (!to.endsWith(".md")) throw new Error("destination must end in .md");
   if (from === to) throw new Error("from and to are the same path");
+  // Before anything is trashed or any folder is made (the scheme moves come here without the batch pre-check).
+  assertSyncSafeMove(from, to);
   const file = app.vault.getAbstractFileByPath(from);
   if (!(file instanceof TFile)) throw new Error(`not found: ${from}`);
   const dest = app.vault.getAbstractFileByPath(to);

@@ -38,6 +38,10 @@ describe("sync-unsafe names", () => {
     assert.doesNotThrow(() => assertSyncSafeMove("A/Q: x.md", "B/Q - x.md"), "a fix");
     assert.throws(() => assertSyncSafeMove("A/Q x.md", "B/Q: x.md"), /adds ':'/);
     assert.throws(() => assertSyncSafeMove("A/Q: x.md", "B/[old] Q: x.md"), /adds '\[', '\]'/);
+    // Per segment: a refused character elsewhere in the old path does not license a NEW name or folder.
+    assert.throws(() => assertSyncSafeMove("Inbox: misc/plain.md", "Inbox: misc/Q: why.md"), /adds ':'/);
+    assert.throws(() => assertSyncSafeMove("A/Q: x.md", "New: dir/Q: x.md"), /adds ':'/);
+    assert.doesNotThrow(() => assertSyncSafeMove("Inbox: misc/plain.md", "Inbox: misc/Sub/plain.md"), "the folder it is already in may stay");
   });
 
   test("filesystem server: write_note refuses a NEW such name and writes nothing; an existing one is written in place", async () => {
