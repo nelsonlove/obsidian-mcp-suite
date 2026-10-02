@@ -35,6 +35,9 @@ import { TFile, type App } from "obsidian";
 import { parseLinks, rewriteLink, applyEdits, isRelativeLinkpath, type TextLink, type Edit } from "./link-rewrite.js";
 import { recordTest, type IsRecord } from "./records.js";
 
+/** At most this many records are named in `records_left`; `records_left_total` counts them all. */
+export const RECORDS_LEFT_CAP = 100;
+
 /** What the damage check found. `ok` is false whenever any list is non-empty (hidden notes included). */
 export interface LinkCheck {
   ok: boolean;
@@ -54,8 +57,15 @@ export interface LinkCheck {
   index_only: string[];
   /** A note that could not be rewritten, and why. */
   failed: Array<{ path: string; reason: string }>;
-  /** A record whose links were left as written (01.44 rule 8): each link that named the note (or, for a moved record, its own relative link). Not damage. */
-  records_left: Array<{ path: string; links: string[] }>;
+  /**
+   * A record whose links were left as written (01.44 rule 8) and no longer reach
+   * their target after the move: each link that reached the note (or, for a
+   * moved record, its own link). `index_only`: Obsidian's index says the record
+   * links the note but its text gave no link to list. Not damage. At most
+   * RECORDS_LEFT_CAP entries; `records_left_total` counts them all.
+   */
+  records_left: Array<{ path: string; links: string[]; index_only?: true }>;
+  records_left_total: number;
   /** Milliseconds spent finding the links, and checking after the move. */
   find_ms: number;
   check_ms: number;
@@ -148,9 +158,11 @@ export async function moveWithLinks(app: App, file: TFile, to: string, opts: Mov
   const update = opts.updateBacklinks !== false;
   const oldPath = file.path;
   const names = needles(file.basename);
-  const check: LinkCheck = { ok: true, links_rewritten: 0, files_rewritten: [], candidates: 0, stale_sources: 0, still_linking_old: [], not_reaching_new: [], own_links_broken: [], index_only: [], failed: [], records_left: [], find_ms: 0, check_ms: 0, hidden: 0 };
+  const check: LinkCheck = { ok: true, links_rewritten: 0, files_rewritten: [], candidates: 0, stale_sources: 0, still_linking_old: [], not_reaching_new: [], own_links_broken: [], index_only: [], failed: [], records_left: [], records_left_total: 0, find_ms: 0, check_ms: 0, hidden: 0 };
   const isRecord = opts.isRecord ?? recordTest(app);
-  const movedIsRecord = isRecord(oldPath);
+  // Records whose links are left as written, with the links that reached the note (or, for the moved note, their targets).
+  const recordLinks = new Map<string, TextLink[]>();
+  const recordIndexOnly: string[] = [];
 
   // ── 1. find ───────────────────────────────────────────────────────────────
   const t0 = Date.now();
@@ -159,7 +171,12 @@ export async function moveWithLinks(app: App, file: TFile, to: string, opts: Mov
   // The moved note's own relative links break when its folder changes: their targets, by link path as written.
   const ownTargets = new Map<string, TFile>();
   const ownLinks: TFile[] = [];
-  const ownLeft: string[] = [];
+  // The moved note's own links, left as written because it is a record before AND after the move, with what each reached.
+  const ownLeft: Array<{ link: TextLink; target: TFile }> = [];
+  const ownText = await texts.get(file);
+  // A record by its key travels with it; by folder, it stays a record only if it lands in a record folder too.
+  // An un-archived note is living at its new path, so its links are healed as any other.
+  const movedIsRecord = isRecord(oldPath, ownText) && isRecord(to, ownText);
   if (update) {
     for (const src of app.vault.getMarkdownFiles()) {
       const text = await texts.get(src);
@@ -169,7 +186,11 @@ export async function moveWithLinks(app: App, file: TFile, to: string, opts: Mov
       if (!cacheIsFresh(app, src)) check.stale_sources++;
       const edits = parseLinks(text).filter((l) => resolves(app, l.linkpath, src.path) === file);
       if (edits.length === 0) continue;
-      if (isRecord(src.path)) { check.records_left.push({ path: src.path, links: edits.map((l) => l.original) }); continue; }
+      if (src === file ? movedIsRecord : isRecord(src.path, text)) {
+        if (src === file) for (const l of edits) ownLeft.push({ link: l, target: file });
+        else recordLinks.set(src.path, edits);
+        continue;
+      }
       plans.set(src.path, { path: src.path, text, edits, linkpaths: new Set(edits.map((l) => l.linkpath)), before: edits.length });
     }
     // Cross-check with the index: a note it says links the note where the text scan found
@@ -178,20 +199,20 @@ export async function moveWithLinks(app: App, file: TFile, to: string, opts: Mov
     for (const [src, targets] of Object.entries(app.metadataCache.resolvedLinks ?? {})) {
       const indexed = targets?.[oldPath] ?? 0;
       if (src === oldPath || indexed === 0) continue;
-      if (isRecord(src)) continue; // left as written, and listed in records_left when its text names the note
+      if (recordLinks.has(src)) continue; // left as written, and listed in records_left
       const plan = plans.get(src);
+      if (!plan && isRecord(src)) { recordIndexOnly.push(src); continue; }
       const f = app.vault.getAbstractFileByPath(src);
       if (!plan || (plan.before < indexed && f instanceof TFile && cacheIsFresh(app, f))) check.index_only.push(src);
     }
-    for (const l of parseLinks(await texts.get(file))) {
+    for (const l of parseLinks(ownText)) {
       if (!isRelativeLinkpath(l.linkpath)) continue;
       const target = resolves(app, l.linkpath, oldPath);
       if (!target || target === file) continue;
-      if (movedIsRecord) { ownLeft.push(l.original); continue; }
+      if (movedIsRecord) { ownLeft.push({ link: l, target }); continue; }
       ownTargets.set(l.linkpath, target); ownLinks.push(target);
     }
   }
-  if (ownLeft.length > 0) check.records_left.push({ path: to, links: ownLeft });
   const ownBefore = countBy(ownLinks, (t) => t.path);
   check.find_ms = Date.now() - t0;
 
@@ -268,6 +289,16 @@ export async function moveWithLinks(app: App, file: TFile, to: string, opts: Mov
       }
     }
   }
+  // Records left as written: list only the links that no longer reach their target (a folder-only move leaves `[[Old]]` working).
+  if (update) {
+    for (const [p, links] of recordLinks) {
+      const dangling = links.filter((l) => resolves(app, l.linkpath, p) !== file).map((l) => l.original);
+      if (dangling.length > 0) check.records_left.push({ path: p, links: dangling });
+    }
+    const ownDangling = ownLeft.filter(({ link, target }) => resolves(app, link.linkpath, to) !== target).map(({ link }) => link.original);
+    if (ownDangling.length > 0) check.records_left.push({ path: to, links: ownDangling });
+    for (const p of recordIndexOnly) check.records_left.push({ path: p, links: [], index_only: true });
+  }
   check.check_ms = Date.now() - t1;
 
   // Decide `ok` over everything, hidden notes included, then redact names the caller may not see.
@@ -279,6 +310,8 @@ export async function moveWithLinks(app: App, file: TFile, to: string, opts: Mov
   check.failed = check.failed.filter((x) => keep(x.path));
   check.index_only = check.index_only.filter(keep);
   check.records_left = check.records_left.filter((x) => keep(x.path));
+  check.records_left_total = check.records_left.length;
+  check.records_left = check.records_left.slice(0, RECORDS_LEFT_CAP);
   for (const [p, n] of rewritten) if (keep(p)) { check.files_rewritten.push(p); check.links_rewritten += n; }
   return check;
 }

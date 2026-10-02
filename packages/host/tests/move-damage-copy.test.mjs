@@ -282,14 +282,18 @@ describe("moving real notes on a copy, under a write stream: no damage", { skip:
       }
       assert.equal(check.ok, true, `damage check: ${JSON.stringify({ ...check, files_rewritten: check.files_rewritten.length })}`);
       // Records (01.44 rule 8) are never rewritten: byte-identical, and every one that reached the note is listed.
-      const isRecord = recordTest(app);
+      const isRecordAt = recordTest(app);
+      // The moved note stays a record only if it is one at both ends (moved out of record folders, it is living and healed).
+      const isRecord = (p0) => (p0 === target ? isRecordAt(p0, snapshot.get(p0)) && isRecordAt(to, snapshot.get(p0)) : isRecordAt(p0, snapshot.get(p0)));
       const leftPaths = new Set(check.records_left.map((x) => x.path));
       for (const [p0, snapText] of snapshot) {
         if (!isRecord(p0)) continue;
         const p = p0 === target ? to : p0;
         const oldText = p0 === mid ? midLine + snapText : snapText;
         assert.equal(text.get(p), oldText, `${p}: a record was rewritten`);
-        if (p0 !== target && (pre.get(p0) ?? 0) > 0) assert.ok(leftPaths.has(p), `${p}: a record that linked the note is missing from records_left`);
+        // Listed, unless its links still reach the note, or the list was capped.
+        if (p0 !== target && (pre.get(p0) ?? 0) > 0 && check.records_left_total === check.records_left.length && !leftPaths.has(p))
+          assert.equal(reach(p, text.get(p), to), pre.get(p0), `${p}: a record whose links no longer reach the note is missing from records_left`);
         summary.recordsLeft = (summary.recordsLeft ?? 0) + (p0 !== target && (pre.get(p0) ?? 0) > 0 ? 1 : 0);
       }
       for (const [p0, snapText] of snapshot) {
