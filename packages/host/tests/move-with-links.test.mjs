@@ -534,4 +534,59 @@ describe("records are never rewritten (01.44 rule 8)", () => {
     assert.equal(r.records_left_total, RECORDS_LEFT_CAP + 5);
     assert.equal(r.ok, true);
   });
+
+  test("a record folder's own folder note is its living index, healed like any living note", async () => {
+    const R = "00-09 System/03 Agents/03.04 Records";
+    const { app, text } = fakeApp({
+      [`${R}/Agent friction log.md`]: "x\n",
+      [`${R}/03.04 Records.md`]: "see [[00-09 System/03 Agents/03.04 Records/Agent friction log]]\n",
+      [`${ARCH}/00.09 Archive.md`]: "index [[Agent friction log]]\n",
+    });
+    const is = recordTest(app);
+    assert.equal(is(`${R}/03.04 Records.md`), false);
+    assert.equal(is(`${ARCH}/00.09 Archive.md`), false);
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath(`${R}/Agent friction log.md`), `${R}/Friction log.md`);
+    assert.equal(text.get(`${R}/03.04 Records.md`), "see [[Friction log]]\n");
+    assert.equal(text.get(`${ARCH}/00.09 Archive.md`), "index [[Friction log]]\n");
+    assert.deepEqual(r.records_left, []);
+    assert.equal(r.ok, true, JSON.stringify(r));
+  });
+
+  test("record: True and record: true with a comment are records, read from text as from the cache", async () => {
+    const { app } = fakeApp({ "S/A.md": "---\nrecord: True\n---\n", "S/B.md": "---\nrecord: true  # since 2026-09\n---\n", "S/C.md": "---\nrecord: truthy\n---\n" });
+    const is = recordTest(app);
+    assert.equal(is("S/A.md", "---\nrecord: True\n---\n"), true);
+    assert.equal(is("S/B.md", "---\nrecord: true  # since 2026-09\n---\n"), true);
+    assert.equal(is("S/C.md", "---\nrecord: truthy\n---\n"), false);
+  });
+
+  test("a note made a record between the scan and its rewrite is left as written and listed", async () => {
+    const { app, text } = fakeApp(
+      { "A/Old.md": "x\n", "S/Live.md": "see [[Old]]\n" },
+      { changeBeforeProcess: { "S/Live.md": "---\nrecord: true\n---\nsee [[Old]]\n" } }
+    );
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md");
+    assert.equal(text.get("S/Live.md"), "---\nrecord: true\n---\nsee [[Old]]\n");
+    assert.deepEqual(r.records_left, [{ path: "S/Live.md", links: ["[[Old]]"] }]);
+    assert.deepEqual(r.not_reaching_new, []);
+    assert.equal(r.ok, true, JSON.stringify(r));
+  });
+
+  test("records_left_total counts hidden records too", async () => {
+    const { app } = fakeApp({ "A/Old.md": "x\n", [`${ARCH}/P.md`]: "cited [[Old]]\n", "Z/R.md": "---\nrecord: true\n---\n[[Old]]\n" });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md", { visible: (p) => !p.startsWith("00-09") });
+    assert.equal(r.records_left_total, 2);
+    assert.deepEqual(r.records_left.map((x) => x.path), ["Z/R.md"]);
+    assert.equal(r.hidden, 1);
+  });
+
+  test("rename only (update_backlinks false) reads nothing for the record test", async () => {
+    const { app } = fakeApp({ "A/Old.md": "x\n" });
+    let reads = 0;
+    const read = app.vault.cachedRead;
+    app.vault.cachedRead = async (f) => { reads++; return read(f); };
+    app.vault.read = async (f) => { reads++; return read(f); };
+    await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md", { updateBacklinks: false });
+    assert.equal(reads, 0);
+  });
 });
