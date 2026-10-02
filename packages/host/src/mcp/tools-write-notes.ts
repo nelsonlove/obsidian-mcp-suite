@@ -29,8 +29,7 @@
 // is unit-testable headlessly against a real Kernel and fake vault.
 
 import { z } from "zod";
-import { ok, fail, okError, codedError } from "./helpers.js";
-import { syncUnsafeChars, assertSyncSafeName } from "@vault-mcp/core";
+import { ok, okError, codedError } from "./helpers.js";
 import { PROTECTION_REQUIRED } from "../kernel/write-protection.js";
 import { composeNote, AcceptForbiddenError, type ComposeResult } from "./write-notes-compose.js";
 
@@ -62,14 +61,6 @@ export function batchItemWriter(
           "Nothing was written. To overwrite it, read the note (obsidian_read_note returns `rev`) and pass that value as the item's if_rev. " +
           "If this item carried an idempotency_key, give the overwrite a NEW one: that key now answers with this refusal."
       );
-    }
-    // A new note may not take a name Obsidian Sync refuses; an existing one stays writable in place.
-    if (!exists(path) && syncUnsafeChars(path)) {
-      try {
-        assertSyncSafeName(path);
-      } catch (e) {
-        return fail(e);
-      }
     }
     return ok(await write(path, content, create_only ? false : (overwrite ?? true)));
   };

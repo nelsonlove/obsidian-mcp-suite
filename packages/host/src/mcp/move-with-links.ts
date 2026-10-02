@@ -28,6 +28,7 @@
 //      as before, and every note the index says links it must have been found.
 
 import { TFile, type App } from "obsidian";
+import { assertSyncSafeMove } from "@vault-mcp/core";
 import { parseLinks, rewriteLink, applyEdits, isRelativeLinkpath, type TextLink, type Edit } from "./link-rewrite.js";
 
 /** What the damage check found. `ok` is false whenever any list is non-empty (hidden notes included). */
@@ -135,6 +136,8 @@ function countBy<T>(xs: T[], key: (x: T) => string): Map<string, number> {
  * returned LinkCheck instead.
  */
 export async function moveWithLinks(app: App, file: TFile, to: string, opts: MoveWithLinksOptions = {}): Promise<LinkCheck> {
+  // A rename may keep a refused character the note already had, never add one (sync-names.ts).
+  assertSyncSafeMove(file.path, to);
   const visible = opts.visible ?? (() => true);
   const update = opts.updateBacklinks !== false;
   const oldPath = file.path;

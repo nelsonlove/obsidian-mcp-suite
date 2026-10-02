@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { assertSyncSafeName } from "@vault-mcp/core";
 import { runCommandRefusal } from "./cli-policy.js";
 import { templateContentAcceptRefusal } from "./tools-cli.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -253,6 +254,9 @@ export function registerIntegrationTools(server: McpServer, app: App, ctx: Serve
               `The transport never persists acceptance — acceptance is a human gesture only.`,
             ));
           }
+
+          // A new note may not take a name Obsidian Sync refuses (sync-names.ts).
+          if (!app.vault.getAbstractFileByPath(target_path)) assertSyncSafeName(target_path);
 
           // Derive folder and filename from target_path
           const lastSlash = target_path.lastIndexOf("/");
