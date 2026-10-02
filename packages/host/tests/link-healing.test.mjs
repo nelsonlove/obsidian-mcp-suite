@@ -132,6 +132,19 @@ describe("moves rewrite their own links and never wait on renameFile", () => {
     assert.equal(res.structuredContent.link_check.ok, true, JSON.stringify(res.structuredContent.link_check));
   });
 
+  test("obsidian_move_note refuses a name Obsidian Sync refuses before it trashes a destination or makes a folder", async () => {
+    const { app, calls } = fakeVault({ files: ["Notes/A.md", "Notes/A: two.md"] });
+    const s = fakeServer();
+    registerFsTools(s.server, new ObsidianBackend(app), { decodeHtml: false });
+    const res = await s.call("obsidian_move_note", { from: "Notes/A.md", to: "Notes/A: two.md", update_backlinks: true, overwrite: true });
+    assert.match(res.content[0].text, /^Error \[unsafe_name\]/);
+    const res2 = await s.call("obsidian_move_note", { from: "Notes/A.md", to: "New: dir/A.md", update_backlinks: true, overwrite: false });
+    assert.match(res2.content[0].text, /^Error \[unsafe_name\]/);
+    assert.deepEqual(calls.trash, [], "nothing trashed for a refused move");
+    assert.deepEqual(calls.createFolder, [], "no folder made for a refused move");
+    assert.deepEqual(calls.vaultRename, []);
+  });
+
   test("update_backlinks:false now renames only: no link is rewritten", async () => {
     const { app, calls, text } = fakeVault({ files: ["Notes/A.md", "Notes/S.md"], texts: { "Notes/S.md": "see [[A]]\n" } });
     const s = fakeServer();

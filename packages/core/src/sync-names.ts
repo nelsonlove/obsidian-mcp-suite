@@ -39,10 +39,15 @@ export function assertSyncSafeName(relPath: string): void {
   );
 }
 
-/** Throw `unsafe_name` when a move or rename to `to` would ADD a refused character that `from` does not already hold. */
+/**
+ * Throw `unsafe_name` when a move or rename to `to` would ADD a name holding a
+ * refused character: judged per segment, so a folder or file name `from`
+ * already has may be kept as it is, but any NEW segment (a new file name, a
+ * folder the note was not in) must be clean.
+ */
 export function assertSyncSafeMove(from: string, to: string): void {
-  const had = new Set(syncUnsafeChars(from) ?? []);
-  const added = (syncUnsafeChars(to) ?? []).filter((c) => !had.has(c));
+  const had = new Set(from.split("/"));
+  const added = [...new Set(to.split("/").filter((seg) => !had.has(seg)).flatMap((seg) => syncUnsafeChars(seg) ?? []))];
   if (added.length === 0) return;
   throw new UnsafeNameError(
     `'${to}' adds ${added.map((c) => `'${c}'`).join(", ")}: Obsidian Sync does not sync a name with any of \\ : * ? " < > |, ` +

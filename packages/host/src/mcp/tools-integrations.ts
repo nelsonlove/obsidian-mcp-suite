@@ -255,8 +255,9 @@ export function registerIntegrationTools(server: McpServer, app: App, ctx: Serve
             ));
           }
 
-          // A new note may not take a name Obsidian Sync refuses (sync-names.ts).
-          if (!app.vault.getAbstractFileByPath(target_path)) assertSyncSafeName(target_path);
+          // This tool always creates a NEW note (Templater picks a free name if the path is taken),
+          // so the name may never hold a character Obsidian Sync refuses (sync-names.ts).
+          assertSyncSafeName(target_path);
 
           // Derive folder and filename from target_path
           const lastSlash = target_path.lastIndexOf("/");
