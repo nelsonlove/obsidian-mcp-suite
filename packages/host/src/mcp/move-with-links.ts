@@ -38,7 +38,7 @@ import { recordTest, type IsRecord } from "./records.js";
 /** At most this many records are named in `records_left`; `records_left_total` counts them all. */
 export const RECORDS_LEFT_CAP = 100;
 
-/** What the damage check found. `ok` is false whenever any list is non-empty (hidden notes included). */
+/** What the damage check found. `ok` is false whenever any DAMAGE list is non-empty (hidden notes included); `records_left` is not damage and never affects it. */
 export interface LinkCheck {
   ok: boolean;
   /** Links rewritten, and in which notes (the moved note's own relative links included). Visible notes only. */
@@ -173,11 +173,13 @@ export async function moveWithLinks(app: App, file: TFile, to: string, opts: Mov
   const ownLinks: TFile[] = [];
   // The moved note's own links, left as written because it is a record before AND after the move, with what each reached.
   const ownLeft: Array<{ link: TextLink; target: TFile }> = [];
-  const ownText = await texts.get(file);
-  // A record by its key travels with it; by folder, it stays a record only if it lands in a record folder too.
-  // An un-archived note is living at its new path, so its links are healed as any other.
-  const movedIsRecord = isRecord(oldPath, ownText) && isRecord(to, ownText);
+  let ownText = "";
+  let movedIsRecord = false;
   if (update) {
+    ownText = await texts.get(file);
+    // A record by its key travels with it; by folder, it stays a record only if it lands in a record folder too.
+    // An un-archived note is living at its new path, so its links are healed as any other.
+    movedIsRecord = isRecord(oldPath, ownText) && isRecord(to, ownText);
     for (const src of app.vault.getMarkdownFiles()) {
       const text = await texts.get(src);
       const t = lower(text);
@@ -201,8 +203,8 @@ export async function moveWithLinks(app: App, file: TFile, to: string, opts: Mov
       if (src === oldPath || indexed === 0) continue;
       if (recordLinks.has(src)) continue; // left as written, and listed in records_left
       const plan = plans.get(src);
-      if (!plan && isRecord(src)) { recordIndexOnly.push(src); continue; }
       const f = app.vault.getAbstractFileByPath(src);
+      if (!plan && f instanceof TFile && isRecord(src, await texts.get(f))) { recordIndexOnly.push(src); continue; }
       if (!plan || (plan.before < indexed && f instanceof TFile && cacheIsFresh(app, f))) check.index_only.push(src);
     }
     for (const l of parseLinks(ownText)) {
@@ -231,8 +233,11 @@ export async function moveWithLinks(app: App, file: TFile, to: string, opts: Mov
     const src = app.vault.getAbstractFileByPath(srcPath);
     if (!(src instanceof TFile)) { check.failed.push({ path: srcPath, reason: "note not found after the move" }); continue; }
     let n = 0;
+    let becameRecord = false;
     try {
       await app.vault.process(src, (data) => {
+        // Judged again on the text about to be written: a note made a record since the scan is left as written.
+        if (srcPath !== to && isRecord(srcPath, data)) { becameRecord = true; return data; }
         // Planned positions when the text is what we read; else the links, re-found, whose target reached the note.
         const current = data === plan.text ? null : parseLinks(data);
         const links = current === null ? plan.edits : current.filter((l) => plan.linkpaths.has(l.linkpath));
@@ -258,6 +263,7 @@ export async function moveWithLinks(app: App, file: TFile, to: string, opts: Mov
       continue;
     }
     texts.forget(srcPath);
+    if (becameRecord) { plans.delete(plan.path); recordLinks.set(srcPath, plan.edits); continue; }
     if (n > 0) rewritten.set(srcPath, n);
   }
 
@@ -309,8 +315,9 @@ export async function moveWithLinks(app: App, file: TFile, to: string, opts: Mov
   check.own_links_broken = check.own_links_broken.filter((x) => keep(x.target));
   check.failed = check.failed.filter((x) => keep(x.path));
   check.index_only = check.index_only.filter(keep);
-  check.records_left = check.records_left.filter((x) => keep(x.path));
+  // The total counts every record left, hidden ones included (those are also counted in `hidden`).
   check.records_left_total = check.records_left.length;
+  check.records_left = check.records_left.filter((x) => keep(x.path));
   check.records_left = check.records_left.slice(0, RECORDS_LEFT_CAP);
   for (const [p, n] of rewritten) if (keep(p)) { check.files_rewritten.push(p); check.links_rewritten += n; }
   return check;

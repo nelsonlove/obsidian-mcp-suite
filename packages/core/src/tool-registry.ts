@@ -370,7 +370,7 @@ export const FS_TOOLS: ToolDef[] = [
     title: "Rename / move a note and rewrite backlinks",
     description:
       "Move (or rename) a note from one vault path to another. With `update_backlinks: true` (default), every note that wikilinks to `from` is rewritten to point at `to`. " +
-        "Links inside records (a note with `record: true`, or under a JD `NN.09 Archive` folder in any area, 03.04 Records, 03.16 Cross-session log or 03.20 Imported chats) are never rewritten, and a moved record keeps its own links as written; each link left that no longer reaches its target is listed in `records_left` (at most 100 notes; `records_left_total` counts all), which is not damage. " +
+        "On the live Obsidian server, links inside records (a note with `record: true`, or under a JD `NN.09 Archive` folder in any area, 03.04 Records, 03.16 Cross-session log or 03.20 Imported chats) are never rewritten, and a moved record keeps its own links as written; each link left that no longer reaches its target is listed in `records_left` (at most 100 notes; `records_left_total` counts all), which is not damage. " +
       "Resolution uses the vault index: only refs that currently resolve to `from` are touched; ambiguous basename matches are left alone. " +
       "Ref *shape* is preserved across the rewrite — bare basename refs (`[[from-basename]]`) get the new basename, full-path refs get the new full path. `|alias` and `#fragment` suffixes are kept verbatim. " +
       "Refuses if `to` already exists unless `overwrite: true`. Parent folders of `to` are created as needed. " +

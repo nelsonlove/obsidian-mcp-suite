@@ -28,9 +28,17 @@ const ARCHIVE_SEGMENT = /^\d\d(?:\.\d\d)*\.09 Archive(?: |$)/;
 /** Is `path` a record? `text`, when given, is the note's current text: its frontmatter is read from it, so a note written moments ago (its cache still stale) is judged by what it says now. */
 export type IsRecord = (path: string, text?: string) => boolean;
 
-/** True when `path` lies in a record folder (the fallback, by path alone). */
+/**
+ * True when `path` lies in a record folder (the fallback, by path alone). A
+ * folder's own folder note (`03.04 Records/03.04 Records.md`, `41.09 Archive for
+ * …/41.09 Archive for ….md`) is the folder's living index, not a record.
+ */
 export function inRecordFolder(path: string): boolean {
-  if (path.split("/").slice(0, -1).some((seg) => ARCHIVE_SEGMENT.test(seg))) return true;
+  const segs = path.split("/");
+  const folders = segs.slice(0, -1);
+  const base = segs[segs.length - 1].replace(/\.md$/i, "");
+  if (folders.length > 0 && folders[folders.length - 1] === base) return false;
+  if (folders.some((seg) => ARCHIVE_SEGMENT.test(seg))) return true;
   return RECORD_FOLDERS.some((d) => path.startsWith(d + "/"));
 }
 
@@ -39,7 +47,8 @@ const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 /** `record: true` in the frontmatter of `text`. */
 export function keyedRecord(text: string): boolean {
   const fm = FRONTMATTER.exec(text);
-  return !!fm && /^record:[ \t]*true[ \t]*$/m.test(fm[1]);
+  // YAML 1.2 core booleans, optionally quoted-free and followed by a comment: as Obsidian's parser reads them.
+  return !!fm && /^record:[ \t]*(?:true|True|TRUE)[ \t]*(?:#.*)?$/m.test(fm[1]);
 }
 
 export function recordTest(app: App): IsRecord {
