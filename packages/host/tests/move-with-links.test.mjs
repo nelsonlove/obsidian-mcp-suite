@@ -407,4 +407,12 @@ describe("moveWithLinks — names Obsidian Sync refuses", () => {
     await moveWithLinks(app, app.vault.getAbstractFileByPath("B/Q: old.md"), "B/Q - old.md");
     assert.deepEqual(calls.vaultRename, [["A/Q: old.md", "B/Q: old.md"], ["B/Q: old.md", "B/Q - old.md"]]);
   });
+
+  test("brackets: a move into a JD archive may add them for a note nothing links to, never for a linked one", async () => {
+    const ARCH = "00-09 System/00 System management/00.09 Archive";
+    const { app, calls } = fakeApp({ "A/Lonely.md": "x\n", "A/Cited.md": "y\n", "S/L.md": "[[Cited]]\n" });
+    await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Lonely.md"), `${ARCH}/[superseded] Lonely.md`);
+    await assert.rejects(moveWithLinks(app, app.vault.getAbstractFileByPath("A/Cited.md"), `${ARCH}/[superseded] Cited.md`), (e) => e.code === "unsafe_name" && /no other note links to/.test(e.message));
+    assert.deepEqual(calls.vaultRename, [["A/Lonely.md", `${ARCH}/[superseded] Lonely.md`]]);
+  });
 });

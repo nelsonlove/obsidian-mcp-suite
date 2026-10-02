@@ -54,7 +54,7 @@ export {
   noteLengthFrom,
   cutReadError,
 } from "./truncation.js";
-export { SYNC_UNSAFE_CHARS, UnsafeNameError, syncUnsafeChars, assertSyncSafeName, assertSyncSafeMove } from "./sync-names.js";
+export { SYNC_UNSAFE_CHARS, UnsafeNameError, syncUnsafeChars, assertSyncSafeName, assertSyncSafeMove, inJdArchive, hasInboundLinks } from "./sync-names.js";
 export {
   SHARED_ANNOTATIONS,
   FS_TOOLS,
