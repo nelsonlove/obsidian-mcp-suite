@@ -372,14 +372,15 @@ export function registerSchemeWriteTools(server: McpServer, app: App, ctx: Schem
         const hidden = firstHidden(computedPaths);
         if (hidden) return computedOutOfAllowlist(hidden);
 
+        // One read of the vault's text for the whole renumber, the name checks included, as obsidian_move_notes does (see TextCache).
+        const texts = new TextCache(app);
         // Every step's name is checked before ANY step runs (and before a dry run answers): a refusal on step 2 must
         // not come after step 1 has already moved the occupant away.
-        for (const st of result.steps) await assertMoveName(app, st.from, st.to);
+        for (const st of result.steps) await assertMoveName(app, st.from, st.to, false, texts);
         if (dry_run) return ok({ dry_run: true, address, moves: result.steps, displaced: result.displaced });
 
         const completed: MoveStep[] = [];
-        // One read of the vault's text and one record test for the whole renumber, as obsidian_move_notes does (see TextCache).
-        const texts = new TextCache(app);
+        // One record test for the whole renumber.
         const isRecord = recordTest(ctx.recordIdentification);
         for (const step of result.steps) {
           try {
