@@ -8,8 +8,8 @@
 // So every host road that asks the index who links a note asks here, and no
 // host source calls `getBacklinksForFile` (pinned in read-boundary.test.mjs).
 // `obsidian_get_backlinks` answers from this alone, so it refuses until the
-// index is ready (linkIndexReady). The fast move finds links from note TEXT and
-// uses this only as a cross-check, so it does not wait for readiness.
+// index covers every note (linkIndexReady). The fast move finds links from
+// note TEXT and uses this only as a cross-check, so it does not wait for that.
 //
 // What the index does not hold: links from `.canvas` files (native backlinks
 // never listed them; Advanced Metadata Cache adds them), and links in a note
@@ -35,72 +35,56 @@ export function indexedLinkers(app: App, target: string): IndexedLinker[] {
 
 interface CacheInternals {
   initialized?: boolean;
-  linkResolverQueue?: { items?: unknown[]; runnable?: { isRunning?: () => boolean } };
-  isCacheClean?: () => boolean;
-  onCleanCache?: (cb: () => void) => void;
-  on?: (name: string, cb: (...args: unknown[]) => unknown) => unknown;
+  inProgressTaskCount?: number;
 }
 
-const readyOnce = new WeakMap<object, boolean>();
+const ready = new WeakSet<object>();
 
 /**
- * False until Obsidian has finished its first full link resolution after a
- * start. Before that, `resolvedLinks` holds only some sources and a backlink
- * answer would be short with no sign of it. `initialized` (file caches loaded)
- * is not enough: the link resolver fills `resolvedLinks` after it, so an
- * explicit `initialized === false` is always not ready.
+ * False until `resolvedLinks` covers every markdown note after a start. Before
+ * that a backlink answer would be short with no sign of it.
  *
- * Why not `isCacheClean()`: it also needs `inProgressTaskCount === 0`, and every
- * write bumps that count. Under heavy fleet write load the cache can stay dirty
- * for 1 to 25 minutes (the wait `app.fileManager.renameFile` has, see
- * docs/reference.md), so a backlinks call would refuse that long after each
- * start although `resolvedLinks` was complete long before. The signal that
- * matters is the LINK RESOLVER alone, so ready latches the first time either:
- * (a) `initialized` is true and the resolver queue is empty and idle
- * (`linkResolverQueue.items.length === 0 && !runnable.isRunning()`), whatever
- * `inProgressTaskCount` says; or (b) a metadataCache `'resolved'` event fires
- * while `initialized` is true (Obsidian fires it when link resolution finishes;
- * the listener is registered once, lazily, on the first not-ready call).
- * Once ready, always ready for that app, so later resolver work after a write
- * never turns into a refusal.
+ * What Obsidian (1.13.7, app.js) does: `resolvedLinks` starts empty on every
+ * start and is not persisted. The link resolver calls `resolveLinks(path)` for
+ * each note it takes from its queue, and that writes `resolvedLinks[path]`,
+ * an empty `{}` when the note links nothing, for every note that has a parsed
+ * cache. `initialized` turns true once the file caches are loaded, which is
+ * BEFORE the resolver has run, and notes whose cache was stale are re-read
+ * (`computeFileMetadataAsync`, counted in `inProgressTaskCount`) and join the
+ * queue only later; the queue can drain, and fire `'resolved'`, in between.
+ * So neither `initialized`, nor an idle queue, nor a `'resolved'` event means
+ * the map is complete. `isCacheClean()` would, but it also waits for every
+ * write's re-index, and under heavy fleet write load the cache can stay dirty
+ * for minutes.
  *
- * All these members are internal (absent from the public types). When the
- * resolver queue is missing, `isCacheClean()` / `onCleanCache` stand in (the
- * stricter old signal); when those are missing too, only an explicit
- * `initialized === false` counts as not ready.
+ * The check is therefore on the map itself: ready when `initialized` is not
+ * false and every `vault.getMarkdownFiles()` path has a key in `resolvedLinks`.
+ * One exception: a note whose metadata failed to parse ("Metadata failed to
+ * parse") has no cache and never gets a key. A note with no key and no cache
+ * is either that or a note still being read for the first time, and the two
+ * look alike, so such notes are let through only when `inProgressTaskCount`
+ * is 0 (nothing is still being read). Notes without a cache then wait for a
+ * quiet moment; notes with one never do.
+ *
+ * Ready LATCHES per metadataCache: once ready, always ready, so a note created
+ * or changed later (no key until the resolver reaches it) never turns into a
+ * refusal, and the pass over the notes runs only until the latch.
  */
 export function linkIndexReady(app: App): boolean {
-  const mc = app.metadataCache as unknown as CacheInternals;
-  if (readyOnce.get(mc) === true) return true;
-  if (mc.initialized === false) {
-    listenOnce(mc);
-    return false;
+  const mc = app.metadataCache;
+  if (ready.has(mc)) return true;
+  const internals = mc as unknown as CacheInternals;
+  if (internals.initialized === false) return false;
+  const resolved = mc.resolvedLinks ?? {};
+  let uncached = false;
+  for (const file of app.vault.getMarkdownFiles()) {
+    if (Object.prototype.hasOwnProperty.call(resolved, file.path)) continue;
+    if (mc.getFileCache(file)) return false;
+    uncached = true;
   }
-  const q = mc.linkResolverQueue;
-  let idle: boolean;
-  if (q && Array.isArray(q.items) && typeof q.runnable?.isRunning === "function") {
-    idle = q.items.length === 0 && !q.runnable.isRunning();
-  } else if (typeof mc.isCacheClean === "function") {
-    idle = mc.isCacheClean();
-  } else {
-    idle = true;
-  }
-  if (idle) {
-    readyOnce.set(mc, true);
-    return true;
-  }
-  listenOnce(mc);
-  return false;
-}
-
-function listenOnce(mc: CacheInternals): void {
-  if (readyOnce.has(mc)) return;
-  readyOnce.set(mc, false);
-  const latch = () => {
-    if (mc.initialized !== false) readyOnce.set(mc, true);
-  };
-  mc.on?.("resolved", latch);
-  if (!mc.linkResolverQueue) mc.onCleanCache?.(latch);
+  if (uncached && (internals.inProgressTaskCount ?? 0) > 0) return false;
+  ready.add(mc);
+  return true;
 }
 
 /** The typed refusal `obsidian_get_backlinks` gives while the index is not ready: retryable. */
