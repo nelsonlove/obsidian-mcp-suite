@@ -35,12 +35,20 @@ export function syncUnsafeChars(relPath: string): string[] | null {
   return found.size > 0 ? [...found] : null;
 }
 
-/** A JD archive folder: `00.09 Archive`, `41.09 Archive for 41 Banking & accounts`, `06.37.09 Archive for …`. */
-const ARCHIVE_SEGMENT = /^\d\d(?:\.\d\d)*\.09 Archive(?: |$)/;
+/** A JD archive folder: `00.09 Archive`, `41.09 Archive for 41 Banking & accounts`, `06.37.09 Archive for …`; never one whose own name holds a bracket. */
+const ARCHIVE_SEGMENT = /^\d\d(?:\.\d\d)*\.09 Archive(?: [^[\]]*)?$/;
 
-/** True when a folder of `relPath` is a JD archive folder. */
+/** The path of the deepest JD archive folder `relPath` lies under, or null. */
+export function jdArchiveFolder(relPath: string): string | null {
+  const segs = relPath.split("/");
+  let found: string | null = null;
+  for (let i = 0; i < segs.length - 1; i++) if (ARCHIVE_SEGMENT.test(segs[i])) found = segs.slice(0, i + 1).join("/");
+  return found;
+}
+
+/** True when a folder of `relPath` is named as a JD archive folder (whether it exists is the caller's to check). */
 export function inJdArchive(relPath: string): boolean {
-  return relPath.split("/").slice(0, -1).some((seg) => ARCHIVE_SEGMENT.test(seg));
+  return jdArchiveFolder(relPath) !== null;
 }
 
 /** True when any note other than `path` links to it, per a source → target → count map (Obsidian's `resolvedLinks`). */
@@ -49,12 +57,25 @@ export function hasInboundLinks(resolvedLinks: Record<string, Record<string, num
   return false;
 }
 
-const BRACKETS = new Set(["[", "]"]);
-const BRACKET_RULE = "[ ] are allowed only for a note under a JD archive folder (NN.09 Archive…) that no other note links to.";
+/**
+ * What the bracket rule needs from the caller. Without it, brackets are refused.
+ * `linked`: whether any other note links to the note, or would once it exists
+ * (unknown: true). `folderExists`: whether a folder exists now; an archive
+ * folder the call would create does not count.
+ */
+export interface BracketContext {
+  linked: boolean;
+  folderExists: (folderPath: string) => boolean;
+}
 
-/** The refused characters left once Nelson's bracket rule is applied to a note at `relPath`. */
-function refused(chars: string[], relPath: string, linked: boolean): string[] {
-  return inJdArchive(relPath) && !linked ? chars.filter((c) => !BRACKETS.has(c)) : chars;
+const BRACKETS = new Set(["[", "]"]);
+const BRACKET_RULE =
+  "[ ] are allowed only in the name of a note under an existing JD archive folder (NN.09 Archive…) that no other note links to, never in a folder name";
+
+/** True when `relPath` lies under a JD archive folder that exists now. */
+function inExistingArchive(relPath: string, ctx: BracketContext | undefined): boolean {
+  const arch = jdArchiveFolder(relPath);
+  return arch !== null && !!ctx && ctx.folderExists(arch);
 }
 
 function unsafeMessage(subject: string, chars: string[], verb: string, nothing: string): string {
@@ -67,25 +88,47 @@ function unsafeMessage(subject: string, chars: string[], verb: string, nothing: 
 
 /**
  * Throw `unsafe_name` when `relPath` holds a character Obsidian Sync refuses or
- * one that breaks links. `linked`: whether any other note links to it (a new
- * note: false). Unknown counts as linked, so brackets are refused.
+ * one that breaks links, in any folder or in the note's name. Brackets in the
+ * note's name pass only under the bracket rule (`ctx`).
  */
-export function assertSyncSafeName(relPath: string, linked = true): void {
-  const chars = refused(syncUnsafeChars(relPath) ?? [], relPath, linked);
-  if (chars.length === 0) return;
-  throw new UnsafeNameError(unsafeMessage(`'${relPath}'`, chars, "holds", "Nothing was written."));
+export function assertSyncSafeName(relPath: string, ctx?: BracketContext): void {
+  const segs = relPath.split("/");
+  const freeBrackets = !!ctx && !ctx.linked && inExistingArchive(relPath, ctx);
+  const chars = new Set<string>();
+  segs.forEach((seg, i) => {
+    for (const c of syncUnsafeChars(seg) ?? []) if (!(i === segs.length - 1 && freeBrackets && BRACKETS.has(c))) chars.add(c);
+  });
+  if (chars.size === 0) return;
+  throw new UnsafeNameError(unsafeMessage(`'${relPath}'`, [...chars], "holds", "Nothing was written."));
 }
 
 /**
  * Throw `unsafe_name` when a move or rename to `to` would ADD a name holding a
- * refused character: judged per segment, so a folder or file name `from`
- * already has may be kept as it is, but any NEW segment (a new file name, a
- * folder the note was not in) must be clean. `linked`: whether any other note
- * links to the note (unknown counts as linked, so brackets are refused).
+ * refused character. What may be KEPT: a folder the note is already in (the
+ * same folder, by its whole path), and the note's own name. Anything new (a
+ * new name, a folder it was not in) must be clean. Brackets: a new name may
+ * hold them only under the bracket rule (`ctx`), and a kept name that holds
+ * them may only stay under an existing JD archive folder.
  */
-export function assertSyncSafeMove(from: string, to: string, linked = true): void {
-  const had = new Set(from.split("/"));
-  const added = refused([...new Set(to.split("/").filter((seg) => !had.has(seg)).flatMap((seg) => syncUnsafeChars(seg) ?? []))], to, linked);
-  if (added.length === 0) return;
-  throw new UnsafeNameError(unsafeMessage(`'${to}'`, added, "adds", "Nothing was moved."));
+export function assertSyncSafeMove(from: string, to: string, ctx?: BracketContext): void {
+  const fromSegs = from.split("/");
+  const toSegs = to.split("/");
+  const keptFolders = new Set(fromSegs.slice(0, -1).map((_, i) => fromSegs.slice(0, i + 1).join("/")));
+  const chars = new Set<string>();
+  let verb = "adds";
+  for (let i = 0; i < toSegs.length - 1; i++) {
+    if (keptFolders.has(toSegs.slice(0, i + 1).join("/"))) continue;
+    for (const c of syncUnsafeChars(toSegs[i]) ?? []) chars.add(c);
+  }
+  const name = toSegs[toSegs.length - 1];
+  const nameChars = syncUnsafeChars(name) ?? [];
+  if (name === fromSegs[fromSegs.length - 1]) {
+    // The note keeps its name: only brackets matter, and only outside an existing archive.
+    if (!inExistingArchive(to, ctx)) for (const c of nameChars) if (BRACKETS.has(c)) { chars.add(c); verb = "keeps"; }
+  } else {
+    const freeBrackets = !!ctx && !ctx.linked && inExistingArchive(to, ctx);
+    for (const c of nameChars) if (!(freeBrackets && BRACKETS.has(c))) chars.add(c);
+  }
+  if (chars.size === 0) return;
+  throw new UnsafeNameError(unsafeMessage(`'${to}'`, [...chars], verb, "Nothing was moved."));
 }

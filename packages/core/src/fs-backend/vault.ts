@@ -1,4 +1,4 @@
-import { promises as fs, realpathSync } from "node:fs";
+import { promises as fs, existsSync, realpathSync } from "node:fs";
 import { assertSyncSafeName, assertSyncSafeMove } from "../sync-names.js";
 import path from "node:path";
 import type {
@@ -504,8 +504,9 @@ class VaultImpl {
     if (existed && !overwrite) {
       throw new Error(`Note already exists: '${relPath}'. Set overwrite=true to replace it.`);
     }
-    // A new note may not take a name Obsidian Sync refuses; an existing one stays writable in place. A new note has no linkers.
-    if (!existed) assertSyncSafeName(relPath, false);
+    // A new note may not take a name Obsidian Sync refuses; an existing one stays writable in place.
+    // No bracket context: this server cannot know for sure that no note links the new name, so brackets stay refused.
+    if (!existed) assertSyncSafeName(relPath);
     await fs.mkdir(path.dirname(abs), { recursive: true });
     await fs.writeFile(abs, content, "utf8");
     return { path: this.toRelative(abs), created: !existed };
@@ -531,7 +532,7 @@ class VaultImpl {
     // — EXCEPT when the note is new/empty, where the appended leading `---`
     // fence becomes the note's real frontmatter. Guard the FINAL content
     // (existing + appended, matching the "\n" prefix used below) uniformly.
-    if (!existed) assertSyncSafeName(relPath, false);
+    if (!existed) assertSyncSafeName(relPath);
     const existingContent = existed ? await this.diskContentSafe(relPath) : null;
     const resultingContent = existingContent === null ? content : `${existingContent}\n${content}`;
     await this.guardWrittenContent(relPath, resultingContent);
@@ -831,7 +832,12 @@ class VaultImpl {
     if (absFrom === absTo) {
       throw new Error("'from' and 'to' resolve to the same path");
     }
-    assertSyncSafeMove(fromRel, toRel, options.backlinks_provider(fromRel).some((p) => p !== fromRel));
+    // linked: true always (this server's index cannot vouch that nothing links the note, e.g. while it builds),
+    // so it never gives a note a NEW bracket name; an archived note may keep its bracket name inside an archive.
+    assertSyncSafeMove(this.toRelative(absFrom), this.toRelative(absTo), {
+      linked: true,
+      folderExists: (p) => existsSync(path.join(this.root, p)),
+    });
 
     let toExists = true;
     try {

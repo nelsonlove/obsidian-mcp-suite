@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FilesystemBackend } from "../src/fs-backend/filesystem-backend.ts";
 import { registerFsTools } from "../src/register-fs-tools.ts";
-import { SYNC_UNSAFE_CHARS, syncUnsafeChars, assertSyncSafeName, assertSyncSafeMove, UnsafeNameError, inJdArchive, hasInboundLinks } from "../src/index.ts";
+import { SYNC_UNSAFE_CHARS, syncUnsafeChars, assertSyncSafeName, assertSyncSafeMove, UnsafeNameError, inJdArchive, jdArchiveFolder, hasInboundLinks } from "../src/index.ts";
 
 async function fsHarness(files) {
   const root = await mkdtemp(join(tmpdir(), "sync-names-"));
@@ -33,15 +33,15 @@ describe("sync-unsafe names", () => {
     assert.doesNotThrow(() => assertSyncSafeName("A/Q - why.md"));
   });
 
-  test("a move may keep a refused character the note already had, never add one", () => {
+  test("a move may keep the note's own name and the folders it is already in (by whole path); anything new must be clean", () => {
     assert.doesNotThrow(() => assertSyncSafeMove("A/Q: x.md", "B/Q: x.md"), "a folder move keeps the old name");
     assert.doesNotThrow(() => assertSyncSafeMove("A/Q: x.md", "B/Q - x.md"), "a fix");
     assert.throws(() => assertSyncSafeMove("A/Q x.md", "B/Q: x.md"), /adds ':'/);
-    assert.throws(() => assertSyncSafeMove("A/Q: x.md", "B/[old] Q: x.md"), /adds '\[', '\]'/);
-    // Per segment: a refused character elsewhere in the old path does not license a NEW name or folder.
+    assert.throws(() => assertSyncSafeMove("A/Q: x.md", "A/Q: y.md"), /adds ':'/, "a NEW name must be clean, even if the old one was not");
     assert.throws(() => assertSyncSafeMove("Inbox: misc/plain.md", "Inbox: misc/Q: why.md"), /adds ':'/);
     assert.throws(() => assertSyncSafeMove("A/Q: x.md", "New: dir/Q: x.md"), /adds ':'/);
     assert.doesNotThrow(() => assertSyncSafeMove("Inbox: misc/plain.md", "Inbox: misc/Sub/plain.md"), "the folder it is already in may stay");
+    assert.throws(() => assertSyncSafeMove("Inbox: misc/plain.md", "Other/Inbox: misc/plain.md"), /adds ':'/, "a NEW folder that reuses an old folder's name is new");
   });
 
   test("filesystem server: write_note refuses a NEW such name and writes nothing; an existing one is written in place", async () => {
@@ -68,22 +68,31 @@ describe("sync-unsafe names", () => {
     assert.deepEqual(await readdir(join(h.root, "A")), ["Plain.md"]);
   });
 
-  test("brackets (Nelson, 2026-10-02): only under a JD archive folder, and only for a note no other note links to", () => {
+  test("brackets (Nelson, 2026-10-02): only in the name of a note under an EXISTING JD archive folder that no other note links to", () => {
     const ARCH = "00-09 System/00 System management/00.09 Archive";
+    const real = new Set([ARCH, "40-49 Financial/41 Banking/41.09 Archive for 41 Banking"]);
+    const ctx = (linked) => ({ linked, folderExists: (p) => real.has(p) });
     assert.equal(inJdArchive(`${ARCH}/x.md`), true);
-    assert.equal(inJdArchive("40-49 Financial/41 Banking/41.09 Archive for 41 Banking/x.md"), true);
     assert.equal(inJdArchive("06 Repos/06.37.09 Archive for plugins/x.md"), true);
     assert.equal(inJdArchive("Projects/Archive/x.md"), false);
     assert.equal(inJdArchive("00.09 Archive.md"), false, "a note named like an archive is not in one");
-    // a new note in an archive has no linkers
-    assert.doesNotThrow(() => assertSyncSafeName(`${ARCH}/[superseded] Plan.md`, false));
-    assert.throws(() => assertSyncSafeName(`${ARCH}/[superseded] Plan.md`), /allowed only for a note under a JD archive folder/, "unknown linkers count as linked");
-    assert.throws(() => assertSyncSafeName("Projects/[draft] Plan.md", false), /'\[', '\]'/, "outside an archive, refused");
-    assert.throws(() => assertSyncSafeName(`${ARCH}/Plan #2.md`, false), /'#'/, "only [ ] are freed, never # ^ or the Sync set");
-    // a move into an archive, unlinked: allowed; linked: refused
-    assert.doesNotThrow(() => assertSyncSafeMove("Projects/Plan.md", `${ARCH}/[superseded] Plan.md`, false));
-    assert.throws(() => assertSyncSafeMove("Projects/Plan.md", `${ARCH}/[superseded] Plan.md`, true), /no other note links to/);
-    assert.throws(() => assertSyncSafeMove("Projects/Plan.md", "Projects/[old] Plan.md", false), /'\[', '\]'/);
+    assert.equal(inJdArchive("X/00.09 Archive [tmp]/n.md"), false, "a bracketed folder is never an archive");
+    assert.equal(jdArchiveFolder(`${ARCH}/Sub/x.md`), ARCH);
+    // creates
+    assert.doesNotThrow(() => assertSyncSafeName(`${ARCH}/[superseded] Plan.md`, ctx(false)));
+    assert.throws(() => assertSyncSafeName(`${ARCH}/[superseded] Plan.md`), /never in a folder name/, "no context: refused");
+    assert.throws(() => assertSyncSafeName(`${ARCH}/[superseded] Plan.md`, ctx(true)), /'\[', '\]'/, "linked: refused");
+    assert.throws(() => assertSyncSafeName("Projects/99.09 Archive/[draft] Plan.md", ctx(false)), /'\[', '\]'/, "an archive the call would create does not count");
+    assert.throws(() => assertSyncSafeName(`${ARCH}/[old stuff]/Plan.md`, ctx(false)), /'\[', '\]'/, "never in a folder name");
+    assert.throws(() => assertSyncSafeName(`${ARCH}/Plan #2.md`, ctx(false)), /'#'/, "only [ ] are freed, never # ^ or the Sync set");
+    assert.throws(() => assertSyncSafeName("Projects/[draft] Plan.md", ctx(false)), /'\[', '\]'/, "outside an archive, refused");
+    // moves
+    assert.doesNotThrow(() => assertSyncSafeMove("Projects/Plan.md", `${ARCH}/[superseded] Plan.md`, ctx(false)));
+    assert.throws(() => assertSyncSafeMove("Projects/Plan.md", `${ARCH}/[superseded] Plan.md`, ctx(true)), /'\[', '\]'/);
+    assert.throws(() => assertSyncSafeMove("Projects/Plan.md", "Projects/[old] Plan.md", ctx(false)), /'\[', '\]'/);
+    // a kept bracket name may stay inside an archive (linked or not), never leave it
+    assert.doesNotThrow(() => assertSyncSafeMove(`${ARCH}/[x] Plan.md`, "40-49 Financial/41 Banking/41.09 Archive for 41 Banking/[x] Plan.md", ctx(true)));
+    assert.throws(() => assertSyncSafeMove(`${ARCH}/[x] Plan.md`, "Projects/[x] Plan.md", ctx(false)), /keeps '\[', '\]'/);
     // the linker test: self-links do not count
     const idx = { "A.md": { "A.md": 1 }, "B.md": { "C.md": 2 } };
     assert.equal(hasInboundLinks(idx, "A.md"), false);

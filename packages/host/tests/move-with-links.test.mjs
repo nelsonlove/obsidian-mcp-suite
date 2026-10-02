@@ -11,7 +11,7 @@
  */
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { installObsidianStub, TFile } from "./obsidian-stub.mjs";
+import { installObsidianStub, TFile, TFolder } from "./obsidian-stub.mjs";
 import { parseLinks, rewriteLink, relativePath } from "../src/mcp/link-rewrite.ts";
 
 installObsidianStub();
@@ -397,22 +397,54 @@ describe("moveWithLinks", () => {
   });
 });
 
-describe("moveWithLinks — names Obsidian Sync refuses", () => {
-  test("a rename that adds a refused character is refused before anything moves; one that keeps or removes it moves", async () => {
-    const { app, text, calls } = fakeApp({ "A/Plain.md": "x\n", "A/Q: old.md": "y\n", "S/L.md": "[[Plain]]\n" });
-    await assert.rejects(moveWithLinks(app, app.vault.getAbstractFileByPath("A/Plain.md"), "A/Plain: v2.md"), (e) => e.code === "unsafe_name");
-    assert.deepEqual(calls.vaultRename, []);
-    assert.equal(text.get("S/L.md"), "[[Plain]]\n");
-    await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Q: old.md"), "B/Q: old.md");
-    await moveWithLinks(app, app.vault.getAbstractFileByPath("B/Q: old.md"), "B/Q - old.md");
-    assert.deepEqual(calls.vaultRename, [["A/Q: old.md", "B/Q: old.md"], ["B/Q: old.md", "B/Q - old.md"]]);
+describe("name checks at the live host's create and move sites (Nelson's bracket rule)", async () => {
+  const { assertCreateName, assertMoveName } = await import("../src/mcp/name-checks.ts");
+  const ARCH = "00-09 System/00 System management/00.09 Archive";
+  // fakeApp knows files only: give it the archive folder, and unresolved links.
+  function withFolders(made, folders, unresolved = {}) {
+    const get = made.app.vault.getAbstractFileByPath;
+    made.app.vault.getAbstractFileByPath = (p) => get(p) ?? (folders.includes(p) ? Object.assign(new TFolder(), { path: p }) : null);
+    made.app.metadataCache.unresolvedLinks = unresolved;
+    return made;
+  }
+
+  test("a move into an existing archive may add brackets for a note nothing links to", async () => {
+    const { app } = withFolders(fakeApp({ "A/Lonely.md": "x\n" }), [ARCH]);
+    await assertMoveName(app, "A/Lonely.md", `${ARCH}/[superseded] Lonely.md`);
   });
 
-  test("brackets: a move into a JD archive may add them for a note nothing links to, never for a linked one", async () => {
-    const ARCH = "00-09 System/00 System management/00.09 Archive";
-    const { app, calls } = fakeApp({ "A/Lonely.md": "x\n", "A/Cited.md": "y\n", "S/L.md": "[[Cited]]\n" });
-    await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Lonely.md"), `${ARCH}/[superseded] Lonely.md`);
-    await assert.rejects(moveWithLinks(app, app.vault.getAbstractFileByPath("A/Cited.md"), `${ARCH}/[superseded] Cited.md`), (e) => e.code === "unsafe_name" && /no other note links to/.test(e.message));
-    assert.deepEqual(calls.vaultRename, [["A/Lonely.md", `${ARCH}/[superseded] Lonely.md`]]);
+  test("a link in a note's CURRENT text counts, though Obsidian's index has not seen it", async () => {
+    const { app } = withFolders(fakeApp({ "A/Cited.md": "x\n", "S/L.md": "nothing\n" }, { stale: { "S/L.md": "now [[Cited]]\n" } }), [ARCH]);
+    assert.deepEqual(Object.keys(app.metadataCache.resolvedLinks["S/L.md"]), [], "the index has no link yet");
+    await assert.rejects(assertMoveName(app, "A/Cited.md", `${ARCH}/[superseded] Cited.md`), (e) => e.code === "unsafe_name");
+  });
+
+  test("with overwrite, links to the replaced destination count", async () => {
+    const { app } = withFolders(fakeApp({ "D/Plan.md": "x\n", [`${ARCH}/[v1] Plan.md`]: "old\n", "S/L.md": "[[[v1] Plan]]\n" }), [ARCH]);
+    await assert.rejects(assertMoveName(app, "D/Plan.md", `${ARCH}/[v1] Plan.md`, true), (e) => e.code === "unsafe_name");
+  });
+
+  test("an unresolved link that the new name would answer counts, for a create and a move", async () => {
+    const made = withFolders(fakeApp({ "A/Lonely.md": "x\n" }), [ARCH], { "S/L.md": { "[old] Plan": 1 } });
+    assert.throws(() => assertCreateName(made.app, `${ARCH}/[old] Plan.md`), (e) => e.code === "unsafe_name");
+    assert.doesNotThrow(() => assertCreateName(made.app, `${ARCH}/[new] Plan.md`));
+    await assert.rejects(assertMoveName(made.app, "A/Lonely.md", `${ARCH}/[old] Plan.md`), (e) => e.code === "unsafe_name");
+  });
+
+  test("an archive folder that does not exist yet does not free brackets", async () => {
+    const { app } = withFolders(fakeApp({ "A/Lonely.md": "x\n" }), []);
+    await assert.rejects(assertMoveName(app, "A/Lonely.md", "Projects/99.09 Archive/[x] Lonely.md"), (e) => e.code === "unsafe_name");
+    assert.throws(() => assertCreateName(app, "Projects/99.09 Archive/[x] New.md"), (e) => e.code === "unsafe_name");
+  });
+
+  test("the vault is read only when brackets decide it", async () => {
+    const made = withFolders(fakeApp({ "A/Plain.md": "x\n", "S/L.md": "[[Plain]]\n" }), [ARCH]);
+    let reads = 0;
+    const r = made.app.vault.cachedRead;
+    made.app.vault.cachedRead = async (f) => { reads++; return r(f); };
+    made.app.vault.read = async (f) => { reads++; return r(f); };
+    await assertMoveName(made.app, "A/Plain.md", "B/Plain v2.md");
+    await assert.rejects(assertMoveName(made.app, "A/Plain.md", "B/Plain: v2.md"), (e) => e.code === "unsafe_name");
+    assert.equal(reads, 0);
   });
 });
