@@ -347,16 +347,70 @@ describe("link resolution fails closed", () => {
     assert.equal(res.isError, true);
     assert.match(res.content[0].text, /^Error \[index_loading\]: .*still loading its link index/, "a typed, retryable refusal");
 
-    // Caches loaded but the link resolver not done: still not ready.
+    // Caches loaded but the link resolver has work queued: still not ready.
+    app.metadataCache.initialized = true;
+    const queue = { items: ["Projects/Beta.md"], running: false };
+    app.metadataCache.linkResolverQueue = { items: queue.items, runnable: { isRunning: () => queue.running } };
+    app.metadataCache.inProgressTaskCount = 3;
+    app.metadataCache.isCacheClean = () => false;
+    const mid = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
+    assert.match(mid.content[0].text, /^Error \[index_loading\]: .*retry shortly$/, "initialized alone is not ready, and the refusal promises no time");
+
+    // Queue drained but the resolver still running: not ready.
+    queue.items.length = 0;
+    queue.running = true;
+    const running = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
+    assert.match(running.content[0].text, /^Error \[index_loading\]/, "a running resolver is not ready");
+
+    // Queue empty and idle: ready, although other cache work (every write bumps
+    // inProgressTaskCount) keeps isCacheClean() false.
+    queue.running = false;
+    const ok = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
+    assert.deepEqual(ok.structuredContent.backlinks, ["Archive/Payroll/Salaries.md"]);
+
+    // Latched: later resolver work (after a write) never refuses.
+    queue.items.push("Projects/Beta.md");
+    queue.running = true;
+    const later = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
+    assert.deepEqual(later.structuredContent.backlinks, ["Archive/Payroll/Salaries.md"]);
+  });
+
+  test("obsidian_get_backlinks becomes ready on a metadataCache 'resolved' event after initialized, and stays ready", async () => {
+    const app = fakeApp();
+    const listeners = {};
+    app.metadataCache.on = (name, cb) => ((listeners[name] ??= []).push(cb), { name });
+    app.metadataCache.initialized = false;
+    app.metadataCache.linkResolverQueue = { items: ["Projects/Beta.md"], runnable: { isRunning: () => true } };
+    const before = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
+    assert.match(before.content[0].text, /^Error \[index_loading\]/);
+    assert.equal(listeners.resolved?.length, 1, "a 'resolved' listener is registered once");
+
+    // A 'resolved' before initialized does not count.
+    for (const cb of listeners.resolved) cb();
+    const early = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
+    assert.match(early.content[0].text, /^Error \[index_loading\]/, "'resolved' before initialized is not ready");
+
+    // After initialized, 'resolved' latches ready even though the queue is busy again.
+    app.metadataCache.initialized = true;
+    const busy = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
+    assert.match(busy.content[0].text, /^Error \[index_loading\]/);
+    assert.equal(listeners.resolved.length, 1, "not registered twice");
+    for (const cb of listeners.resolved) cb();
+    const ok = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
+    assert.deepEqual(ok.structuredContent.backlinks, ["Archive/Payroll/Salaries.md"]);
+    const again = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
+    assert.deepEqual(again.structuredContent.backlinks, ["Archive/Payroll/Salaries.md"], "latched");
+  });
+
+  test("obsidian_get_backlinks falls back to isCacheClean/onCleanCache when the resolver queue is missing", async () => {
+    const app = fakeApp();
     app.metadataCache.initialized = true;
     let clean = false;
     const waiting = [];
     app.metadataCache.isCacheClean = () => clean;
     app.metadataCache.onCleanCache = (cb) => (clean ? cb() : waiting.push(cb));
     const mid = await fsServer(app, []).call("obsidian_get_backlinks", { path: "Projects/Alpha.md" });
-    assert.match(mid.content[0].text, /^Error \[index_loading\]/, "initialized alone is not ready");
-
-    // The first clean moment latches ready: later dirty moments (every write) never refuse.
+    assert.match(mid.content[0].text, /^Error \[index_loading\]/);
     clean = true;
     for (const cb of waiting) cb();
     clean = false;
