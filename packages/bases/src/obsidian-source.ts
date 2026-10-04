@@ -62,6 +62,7 @@
 
 import { NullValue, Plugin, TFile, WorkspaceLeaf, parseYaml, type App } from "obsidian";
 import {
+  BaseTimeoutError,
   captureWithCleanup,
   normalizePropertyId,
   type CapturedRow,
@@ -89,8 +90,95 @@ interface BasesViewLike {
   data?: BasesQueryResultLike;
 }
 
+/**
+ * #487 — Obsidian's own `base:query` evaluator. The Bases core plugin registers
+ * it as a CLI handler on `app.cli.handlers` (a Map of {handler, flags}); the
+ * handler reads the .base, builds the filter and runs one synchronous pass over
+ * the Markdown files' metadata — no view, no DOM, no timers, so it neither
+ * waits on a shown container nor is throttled in a hidden window. Measured
+ * 0.39 s on the live vault for a view the hidden leaf took 100 s to 18 minutes
+ * on. Not in obsidian.d.ts: every hop is feature-checked, and a missing shape
+ * makes the source report it unreachable, so `auto` falls back to the leaf.
+ * Read from Obsidian 1.13.7's bundle (2026-10-04); the minified internals
+ * behind it are never touched.
+ */
+interface CliHandlerEntry {
+  handler: (args: Record<string, string>) => Promise<string> | string;
+  flags?: Record<string, unknown>;
+}
+function baseQueryHandler(app: App): CliHandlerEntry | null {
+  const handlers = (app as unknown as { cli?: { handlers?: unknown } }).cli?.handlers;
+  if (!(handlers instanceof Map)) return null;
+  const entry = handlers.get("base:query") as Partial<CliHandlerEntry> | undefined;
+  if (!entry || typeof entry.handler !== "function") return null;
+  if (entry.flags && typeof entry.flags === "object" && !("view" in entry.flags)) return null;
+  return entry as CliHandlerEntry;
+}
+
+/** The handler reads frontmatter from the metadata cache: wait until it has resolved, within the deadline. */
+function metadataResolved(app: App, timeoutMs: number): Promise<void> {
+  const mc = app.metadataCache as unknown as {
+    resolved?: unknown;
+    on?: (name: string, cb: () => void) => unknown;
+    offref?: (ref: unknown) => void;
+  };
+  if (mc.resolved !== false || typeof mc.on !== "function") return Promise.resolve();
+  return new Promise<void>((resolve, reject) => {
+    let ref: unknown;
+    const timer = setTimeout(() => {
+      if (ref !== undefined) mc.offref?.(ref);
+      reject(new BaseTimeoutError(timeoutMs));
+    }, timeoutMs);
+    ref = mc.on!("resolved", () => {
+      clearTimeout(timer);
+      mc.offref?.(ref);
+      resolve();
+    });
+  });
+}
+
 export function obsidianBasesSource(app: App): BasesSource {
   return {
+    engineQueryAvailable: () => baseQueryHandler(app) !== null,
+
+    engineQuery: async (path, viewName, timeoutMs) => {
+      const entry = baseQueryHandler(app);
+      if (!entry) throw new Error("base:query is not registered (the Bases core plugin is off)");
+      await metadataResolved(app, timeoutMs);
+      let out: unknown;
+      try {
+        out = await entry.handler({ path, view: viewName, format: "json" });
+      } catch (e) {
+        // The handler refuses with a thrown STRING, not an Error.
+        throw new Error(typeof e === "string" ? e : e instanceof Error ? e.message : String(e));
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(String(out));
+      } catch {
+        throw new Error(`base:query returned text that is not JSON: ${String(out).slice(0, 200)}`);
+      }
+      if (!Array.isArray(parsed)) throw new Error("base:query returned JSON that is not an array of rows");
+      const columns: string[] = [];
+      for (const row of parsed) {
+        if (row && typeof row === "object") {
+          for (const k of Object.keys(row)) if (k !== "path" && !columns.includes(k)) columns.push(k);
+        }
+      }
+      const rows: CapturedRow[] = parsed.map((row) => {
+        const r = (row && typeof row === "object" ? row : {}) as Record<string, unknown>;
+        const values: Record<string, string | null> = {};
+        for (const col of columns) {
+          const v = r[col];
+          values[col] = v === null || v === undefined ? null : String(v);
+        }
+        return { path: typeof r.path === "string" ? r.path : "", values };
+      });
+      return { columns, rows };
+    },
+
+    windowHidden: () => typeof document !== "undefined" && document.hidden === true,
+
     available: () => {
       // The canonical 1.10+ marker per #243: the public registration hook on
       // the Plugin prototype (probed, never called — see finding 3 above for
