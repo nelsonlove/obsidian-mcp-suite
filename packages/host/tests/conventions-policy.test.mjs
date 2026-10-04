@@ -6,16 +6,23 @@
  * supplies the value, because "threaded but never read" is this repository's
  * recurring defect and a thunk nobody passes is exactly that.
  */
-import { test, describe } from "node:test";
+import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { conventionsOnLoad, CONVENTION_FIELDS, conventionFieldValue, commitConvention } from "../src/conventions-policy.ts";
-import { deadConventionPaths, withBaselineSeed, conventionsFromEnv, CONVENTIONS_ENV } from "../src/conformance/vault-conventions.ts";
+import { conventionsOnLoad, CONVENTION_FIELDS, conventionFieldValue, commitConvention, withBaselineSeed } from "../src/conventions-policy.ts";
+import { deadConventionPaths, conventionsFromEnv, CONVENTIONS_ENV } from "../src/conformance/vault-conventions.ts";
 import { EMPTY_VAULT_CONVENTIONS, LEGACY_CONVENTIONS_SEED } from "../src/conformance/vault-conventions.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+
+// withBaselineSeed (used by conventionsOnLoad) prefers the BASELINE_REL env
+// override, so the suite clears both spellings for its whole run.
+const BASELINE_ENV = ["GOVERNOR_BASELINE_REL", "ASSENT_BASELINE_REL"];
+const savedBaselineEnv = BASELINE_ENV.map((k) => [k, process.env[k]]);
+before(() => { for (const k of BASELINE_ENV) delete process.env[k]; });
+after(() => { for (const [k, v] of savedBaselineEnv) if (v !== undefined) process.env[k] = v; else delete process.env[k]; });
 const src = (rel) => fs.readFileSync(path.join(HERE, "..", "src", rel), "utf8");
 
 describe("conventionsOnLoad — seed once, fresh empty, present kept", () => {
@@ -43,29 +50,45 @@ describe("conventionsOnLoad — seed once, fresh empty, present kept", () => {
     assert.deepEqual(conventionsOnLoad({ vaultConventions: r.conventions }), { conventions: r.conventions, persist: false });
   });
   test("withBaselineSeed: an upgraded record (some other key set) is seeded; an all-blank one is not; a present key is kept", () => {
+    const seedNoEnv = (stored) => withBaselineSeed(stored, {});
     const seed = LEGACY_CONVENTIONS_SEED.baselineRel;
-    assert.equal(withBaselineSeed({ registriesRoot: "R" }).baselineRel, seed, "registriesRoot set");
-    assert.equal(withBaselineSeed({ systemRoot: "S" }).baselineRel, seed, "systemRoot set");
-    assert.equal(withBaselineSeed({ ungovernedRoots: ["U"] }).baselineRel, seed, "a non-empty ungovernedRoots");
-    assert.deepEqual(withBaselineSeed({ registriesRoot: " R ", ungovernedRoots: ["U", " "] }), { registriesRoot: "R", systemRoot: "", ungovernedRoots: ["U"], baselineRel: seed }, "only baselineRel is added; the rest is coerced as stored");
+    assert.equal(seedNoEnv({ registriesRoot: "R" }).baselineRel, seed, "registriesRoot set");
+    assert.equal(seedNoEnv({ systemRoot: "S" }).baselineRel, seed, "systemRoot set");
+    assert.equal(seedNoEnv({ ungovernedRoots: ["U"] }).baselineRel, seed, "a non-empty ungovernedRoots");
+    assert.deepEqual(seedNoEnv({ registriesRoot: " R ", ungovernedRoots: ["U", " "] }), { registriesRoot: "R", systemRoot: "", ungovernedRoots: ["U"], baselineRel: seed }, "only baselineRel is added; the rest is coerced as stored");
     for (const blank of [{}, { registriesRoot: "  ", systemRoot: "", ungovernedRoots: [] }, { ungovernedRoots: ["", " "] }]) {
-      assert.deepEqual(withBaselineSeed(blank), EMPTY_VAULT_CONVENTIONS, JSON.stringify(blank));
+      assert.deepEqual(seedNoEnv(blank), EMPTY_VAULT_CONVENTIONS, JSON.stringify(blank));
     }
-    assert.equal(withBaselineSeed({ registriesRoot: "R", baselineRel: "" }).baselineRel, "", "a present blank key is kept");
-    assert.equal(withBaselineSeed({ registriesRoot: "R", baselineRel: " Mine.md " }).baselineRel, "Mine.md", "a present key is kept, trimmed");
-    for (const junk of [null, undefined, "garbage", ["R"]]) assert.deepEqual(withBaselineSeed(junk), EMPTY_VAULT_CONVENTIONS, String(junk));
+    assert.equal(seedNoEnv({ registriesRoot: "R", baselineRel: "" }).baselineRel, "", "a present blank key is kept");
+    assert.equal(seedNoEnv({ registriesRoot: "R", baselineRel: " Mine.md " }).baselineRel, "Mine.md", "a present key is kept, trimmed");
+    for (const junk of [null, undefined, "garbage", ["R"]]) assert.deepEqual(seedNoEnv(junk), EMPTY_VAULT_CONVENTIONS, String(junk));
   });
 
-  test("the CLI env path (VAULT_MCP_CONVENTIONS) is seeded the same way", () => {
+  test("withBaselineSeed: an upgraded record takes the BASELINE_REL env override when set, else the legacy seed", () => {
     const seed = LEGACY_CONVENTIONS_SEED.baselineRel;
+    assert.equal(withBaselineSeed({ registriesRoot: "R" }, { GOVERNOR_BASELINE_REL: " Env/B.md " }).baselineRel, "Env/B.md", "the override, trimmed");
+    assert.equal(withBaselineSeed({ registriesRoot: "R" }, { ASSENT_BASELINE_REL: "Old/B.md" }).baselineRel, "Old/B.md", "the legacy spelling");
+    assert.equal(withBaselineSeed({ registriesRoot: "R" }, { GOVERNOR_BASELINE_REL: "  " }).baselineRel, seed, "a blank override: the seed");
+    assert.equal(withBaselineSeed({ registriesRoot: "R" }, {}).baselineRel, seed);
+    assert.equal(withBaselineSeed({}, { GOVERNOR_BASELINE_REL: "Env/B.md" }).baselineRel, "", "an all-blank record is not seeded, override or not");
+    assert.equal(withBaselineSeed({ registriesRoot: "R", baselineRel: "" }, { GOVERNOR_BASELINE_REL: "Env/B.md" }).baselineRel, "", "a present key is kept");
+    // The default env is process.env.
+    process.env.GOVERNOR_BASELINE_REL = "Proc/B.md";
+    try {
+      assert.equal(withBaselineSeed({ systemRoot: "S" }).baselineRel, "Proc/B.md");
+      assert.equal(conventionsOnLoad({ vaultConventions: { systemRoot: "S" } }).conventions.baselineRel, "Proc/B.md", "conventionsOnLoad seeds through it");
+    } finally {
+      delete process.env.GOVERNOR_BASELINE_REL;
+    }
+  });
+
+  test("the CLI env path (VAULT_MCP_CONVENTIONS) is NOT seeded: a record lacking baselineRel reads blank (the CLI falls back to the plugin's data.json instead)", () => {
     const env = (o) => conventionsFromEnv({ [CONVENTIONS_ENV]: JSON.stringify(o) }, () => {});
-    assert.equal(env({ registriesRoot: "R" }).baselineRel, seed, "an upgraded record lacking the key");
-    assert.equal(env({ ungovernedRoots: ["U"] }).baselineRel, seed);
-    assert.equal(env({}).baselineRel, "", "an all-blank record stays blank");
-    assert.equal(env({ registriesRoot: "R", baselineRel: "" }).baselineRel, "", "a present blank key is kept");
-    assert.equal(env({ registriesRoot: "R", baselineRel: "Mine.md" }).baselineRel, "Mine.md");
-    assert.equal(conventionsFromEnv({ GOVERNOR_VAULT_CONVENTIONS: JSON.stringify({ systemRoot: "S" }) }, () => {}).baselineRel, seed, "the legacy spelling too");
-    assert.equal(conventionsFromEnv({}, () => {}).baselineRel, "", "unset: none");
+    assert.equal(env({ registriesRoot: "R" }).baselineRel, "", "an upgraded record lacking the key");
+    assert.equal(env({ ungovernedRoots: ["U"] }).baselineRel, "");
+    assert.equal(env({}).baselineRel, "");
+    assert.equal(env({ registriesRoot: "R", baselineRel: " Mine.md " }).baselineRel, "Mine.md", "a present key is read, trimmed");
+    assert.equal(conventionsFromEnv({ GOVERNOR_VAULT_CONVENTIONS: JSON.stringify({ systemRoot: "S" }) }, () => {}).baselineRel, "", "the legacy spelling too");
   });
 
   test("#493: a STORED blank baselineRel is kept blank — the operator cleared it; it is not re-seeded", () => {
@@ -175,9 +198,10 @@ describe("who supplies the conventions — source-scan pins against 'threaded bu
     const cli = src("conformance/cli.ts");
     assert.ok(!/vaultConventionsFrom|GOVERNOR_VAULT_CONVENTIONS/.test(cli), "the old reader and the old knob are gone from the runner");
     assert.match(cli, /const conventions = conventionsFromEnv\(process\.env\);/, "runCli reads the conventions from the environment ONCE");
-    assert.match(cli, /const baselineRel = baselineRelFrom\(process\.env, conventions\);/, "…and the baseline path from that same read (#493)");
+    assert.match(cli, /const baselineRel = baselineRelFrom\(process\.env, conventions\) \|\| pluginRel;/, "…and the baseline path from that same read, the plugin's data.json as the fallback (#493)");
+    assert.match(cli, /rebaselineTargetRefusal\(baselinePath, root, \[baselineRel, pluginRel\]\)/, "--rebaseline guards BOTH live paths: the invocation's and the plugin's");
     assert.match(cli, /^\s*conventions,\s*$/m, "…and fills the runner's option with that same read");
-    assert.equal((cli.match(/conventionsFromEnv\(process\.env\)/g) ?? []).length, 2, "one read in runCli, one as rebaselineTargetRefusal's default liveRel — no third");
+    assert.equal((cli.match(/conventionsFromEnv\(process\.env\)/g) ?? []).length, 1, "one read, in runCli — no second");
     assert.match(cli, /const conv = opts\.conventions;/, "the runner reads the option, nothing else");
   });
   test("the in-app sources are handed a per-call conventions thunk from the live settings", () => {

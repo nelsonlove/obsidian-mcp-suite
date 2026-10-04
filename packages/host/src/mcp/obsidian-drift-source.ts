@@ -46,7 +46,6 @@ import {
   inAppBaselineRel,
   inAppBaselineRefusal,
   excludedRootsFrom,
-  baselineMissingRefusal,
   excludedRootRefusal,
   coverageRefusal,
   baselinePackIds,
@@ -85,11 +84,10 @@ export function obsidianDriftSource(app: App, territories?: () => readonly strin
     async scan(): Promise<DriftGroup[]> {
       // Per call, from the live setting (#493). None configured reads as missing: the pane says so.
       const rel = inAppBaselineRel(conventions?.());
-      const noneRefusal = inAppBaselineRefusal(rel, true);
-      if (noneRefusal) throw new Error(noneRefusal);
-      const baselinePath = join(root, rel);
-      const missing = baselineMissingRefusal(baselinePath, existsSync(baselinePath), false);
-      if (missing) throw new Error(missing);
+      // One in-app message for none configured and for a missing note, as the debt tools give.
+      const baselinePath = rel ? join(root, rel) : "";
+      const refusal = inAppBaselineRefusal(rel, rel !== "" && existsSync(baselinePath));
+      if (refusal) throw new Error(refusal);
       const baselineText = await readFile(baselinePath, "utf8");
 
       const strand = excludedRootRefusal(parseBaseline(baselineText), excludedRoots);

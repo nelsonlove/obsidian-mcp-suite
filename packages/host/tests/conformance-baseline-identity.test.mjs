@@ -21,7 +21,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, link } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { runCli, rebaselineTargetRefusal } from "../src/conformance/cli.ts";
+import { runCli, rebaselineTargetRefusal, pluginBaselineRel } from "../src/conformance/cli.ts";
 import { CONVENTIONS_ENV, CONVENTIONS_ENV_LEGACY } from "../src/conformance/vault-conventions.ts";
 
 // What makes these fixtures the LIVE record is that their path is the
@@ -139,34 +139,39 @@ describe("#144 — the live acceptance record cannot be rewritten via any alias"
   });
 
   test("a genuine in-root fixture is still PERMITTED — the guard is not a blanket refusal", () => {
-    assert.equal(rebaselineTargetRefusal(path.join(root, "fixture-baseline.md"), root, REL), null);
+    assert.equal(rebaselineTargetRefusal(path.join(root, "fixture-baseline.md"), root, [REL]), null);
   });
 
   test("indeterminate identity refuses rather than assuming safe", () => {
     // A symlink loop cannot be resolved; refusing beats guessing.
-    const r = rebaselineTargetRefusal(path.join(root, "N", "..", "N", "loop.md"), root, REL);
+    const r = rebaselineTargetRefusal(path.join(root, "N", "..", "N", "loop.md"), root, [REL]);
     assert.equal(r, null, "a resolvable in-root path is fine (control for the case below)");
   });
 });
 
 describe("#493 — the live record is the CONFIGURED baseline, and none configured is said, not guessed", () => {
-  test("rebaselineTargetRefusal guards the liveRel it is given: the live path refuses, the same file under another liveRel does not", () => {
-    assert.match(rebaselineTargetRefusal(live, root, REL), /live acceptance record/i);
-    assert.equal(rebaselineTargetRefusal(live, root, "Elsewhere/Other baseline.md"), null, "identity is against the configured path, not a shipped one");
+  test("rebaselineTargetRefusal guards the liveRels it is given: the live path refuses, the same file under another liveRel does not", () => {
+    assert.match(rebaselineTargetRefusal(live, root, [REL]), /live acceptance record/i);
+    assert.equal(rebaselineTargetRefusal(live, root, ["Elsewhere/Other baseline.md"]), null, "identity is against the configured paths, not a shipped one");
   });
 
-  test("its default liveRel is the configured one (VAULT_MCP_CONVENTIONS' baselineRel)", () => {
-    assert.match(rebaselineTargetRefusal(live, root), /live acceptance record/i);
+  test("a LIST of live paths: a target equal to the SECOND live path only is refused; one equal to neither is not", () => {
+    const r = rebaselineTargetRefusal(live, root, ["Elsewhere/Other baseline.md", REL]);
+    assert.match(r, /live acceptance record/i, "the second live path is guarded too");
+    assert.match(rebaselineTargetRefusal(live, root, [" ", REL]), /live acceptance record/i, "a blank entry is skipped, not a reason to stop");
+    assert.equal(rebaselineTargetRefusal(path.join(root, "fixture-baseline.md"), root, ["Elsewhere/Other baseline.md", REL]), null);
   });
 
-  test("liveRel \"\" (none configured): the live record cannot be identified, so ANY in-root target is REFUSED — the outside-root refusal still fires first", () => {
-    for (const target of [live, path.join(root, "fixture-baseline.md")]) {
-      const r = rebaselineTargetRefusal(target, root, "");
-      assert.ok(r, target);
-      assert.match(r, /refusing to --rebaseline/);
-      assert.match(r, /no live conformance baseline is configured/);
+  test("no non-blank liveRels (none configured): the live record cannot be identified, so ANY in-root target is REFUSED — the outside-root refusal still fires first", () => {
+    for (const lives of [[], [""], ["", "  "]]) {
+      for (const target of [live, path.join(root, "fixture-baseline.md")]) {
+        const r = rebaselineTargetRefusal(target, root, lives);
+        assert.ok(r, `${target} ${JSON.stringify(lives)}`);
+        assert.match(r, /refusing to --rebaseline/);
+        assert.match(r, /no live conformance baseline is configured/);
+      }
+      assert.match(rebaselineTargetRefusal(path.join(outside, "b.md"), root, lives), /outside the content root/i);
     }
-    assert.match(rebaselineTargetRefusal(path.join(outside, "b.md"), root, ""), /outside the content root/i);
   });
 
   test("runCli with no --baseline= and no configured baselineRel throws 'no conformance baseline is configured' and writes nothing", async () => {
@@ -181,10 +186,81 @@ describe("#493 — the live record is the CONFIGURED baseline, and none configur
       process.env[CONVENTIONS_ENV] = JSON.stringify({ baselineRel: "   " });
       const blank = await cli(`--root=${root}`);
       assert.match(blank.message, /no conformance baseline is configured/, "a blank setting is none");
-      assert.doesNotMatch(blank.message, /Conformance settings/, "the CLI's message does not send the operator to the plugin's settings, which it does not read");
+      assert.match(blank.message, /Conformance settings for this vault/, "the CLI also reads the plugin's setting for this vault, so the message names it");
     } finally {
       configureBaseline(REL);
     }
     assert.equal(await readFile(live, "utf8"), before);
+  });
+});
+
+describe("#493 — the CLI also knows the PLUGIN's baseline setting (<root>/.obsidian/plugins/vault-mcp/data.json)", () => {
+  const PREL = "Plugin/Set/Plugin baseline.md";
+  async function vaultWithPlugin(data) {
+    const r = await mkdtemp(path.join(tmpdir(), "id493-plugin-"));
+    await mkdir(path.join(r, "N"), { recursive: true });
+    await writeFile(path.join(r, "N", "A.md"), "prose; here\n");
+    if (data !== undefined) {
+      await mkdir(path.join(r, ".obsidian", "plugins", "vault-mcp"), { recursive: true });
+      await writeFile(path.join(r, ".obsidian", "plugins", "vault-mcp", "data.json"), typeof data === "string" ? data : JSON.stringify(data));
+    }
+    return r;
+  }
+
+  test("pluginBaselineRel reads vaultConventions.baselineRel, trimmed; \"\" on any problem", async () => {
+    const cases = [
+      [{ vaultConventions: { baselineRel: `  ${PREL}  ` } }, PREL],
+      [undefined, ""], // no data.json
+      ["{not json", ""],
+      [{ readOnly: false }, ""], // no vaultConventions
+      [{ vaultConventions: {} }, ""], // no key
+      [{ vaultConventions: { baselineRel: "   " } }, ""],
+      [{ vaultConventions: { baselineRel: 7 } }, ""],
+      [{ vaultConventions: null }, ""],
+      ["null", ""],
+    ];
+    for (const [data, want] of cases) {
+      const r = await vaultWithPlugin(data);
+      try {
+        assert.equal(pluginBaselineRel(r), want, JSON.stringify(data));
+      } finally {
+        await rm(r, { recursive: true, force: true });
+      }
+    }
+  });
+
+  test("runCli uses the plugin's path when the environment names none", async () => {
+    const r = await vaultWithPlugin({ vaultConventions: { baselineRel: PREL } });
+    try {
+      configureBaseline(undefined);
+      // The note is absent, so the run refuses as missing — naming the PLUGIN's path, which proves it was read.
+      const res = await cli(`--root=${r}`);
+      assert.equal(res.threw, true);
+      assert.doesNotMatch(res.message, /no conformance baseline is configured/);
+      assert.ok(res.message.includes(path.join(r, PREL)), res.message);
+    } finally {
+      configureBaseline(REL);
+      await rm(r, { recursive: true, force: true });
+    }
+  });
+
+  test("--rebaseline is refused for the plugin's path even when the environment names a DIFFERENT path", async () => {
+    const r = await vaultWithPlugin({ vaultConventions: { baselineRel: PREL } });
+    try {
+      const target = path.join(r, PREL);
+      await mkdir(path.dirname(target), { recursive: true });
+      await writeFile(target, BODY);
+      await mkdir(path.join(r, REL_DIR), { recursive: true });
+      await writeFile(path.join(r, REL), BODY);
+      configureBaseline(REL); // the CLI env names REL, not PREL
+      const before = await readFile(target, "utf8");
+      const res = await cli(`--root=${r}`, `--baseline=${target}`, "--rebaseline");
+      assert.equal(res.threw, true, "the plugin's live record is guarded");
+      assert.match(res.message, /live acceptance record/i);
+      assert.equal(await readFile(target, "utf8"), before, "byte-identical");
+    } finally {
+      configureBaseline(REL);
+      await rm(r, { recursive: true, force: true });
+    }
   });
 });

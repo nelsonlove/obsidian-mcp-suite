@@ -84,7 +84,7 @@ describe("obsidianDriftSource — #493: the baseline path is the live setting", 
     const root = await withBaseline("x", "Elsewhere/b.md");
     try {
       await withoutEnvOverride(async () => {
-        await assert.rejects(() => obsidianDriftSource(app(root), () => [], () => withRel(SEED)).scan(), /Records\/Conformance baseline\.md/);
+        await assert.rejects(() => obsidianDriftSource(app(root), () => [], () => withRel(SEED)).scan(), /the conformance baseline note is missing: '00-09 System\/Records\/Conformance baseline\.md'/, "the same in-app refusal the debt tools give");
       });
     } finally {
       await rm(root, { recursive: true, force: true });

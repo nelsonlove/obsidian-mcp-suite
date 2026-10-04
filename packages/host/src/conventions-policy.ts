@@ -14,11 +14,11 @@
 //     help, kind), so the tab renders a list rather than hand-written
 //     blocks, and a test can pin that every key of the record has a field.
 
+import { envAliased } from "./env-alias.js";
 import {
   EMPTY_VAULT_CONVENTIONS,
   LEGACY_CONVENTIONS_SEED,
   resolveConventions,
-  withBaselineSeed,
   type VaultConventions,
 } from "./conformance/vault-conventions.js";
 
@@ -26,6 +26,26 @@ export interface ConventionsOnLoad {
   conventions: VaultConventions;
   /** True when the key was absent (seeded or fresh): write it now so this branch never runs again. */
   persist: boolean;
+}
+
+/**
+ * #493: the baseline path joined the conventions after they shipped. A stored
+ * record that LACKS the key and belongs to an upgraded install (some other key
+ * set) takes, once, the path that install was reading: the process-environment
+ * override (GOVERNOR_BASELINE_REL / ASSENT_BASELINE_REL) when one is set, else
+ * the path the old constant held. A record whose keys are all blank is a fresh
+ * install's (#403 shipped it empty): it stays without a baseline, so no
+ * operator's folder name lands in a stranger's settings. A record that HAS the
+ * key keeps it, even blank. This file is the seed's one reader.
+ */
+export function withBaselineSeed(stored: unknown, env: Record<string, string | undefined> = process.env): VaultConventions {
+  const resolved = resolveConventions(stored);
+  const o = stored && typeof stored === "object" && !Array.isArray(stored) ? (stored as Record<string, unknown>) : null;
+  if (!o || Object.prototype.hasOwnProperty.call(o, "baselineRel")) return resolved;
+  const upgraded = resolved.registriesRoot !== "" || resolved.systemRoot !== "" || resolved.ungovernedRoots.length > 0;
+  if (!upgraded) return resolved;
+  const override = (envAliased(env, "BASELINE_REL") ?? "").trim();
+  return { ...resolved, baselineRel: override || LEGACY_CONVENTIONS_SEED.baselineRel };
 }
 
 export function conventionsOnLoad(own: unknown, adopted?: unknown): ConventionsOnLoad {
@@ -67,7 +87,7 @@ export const CONVENTION_FIELDS: readonly ConventionField[] = [
   { key: "registriesRoot", label: "Registries root", kind: "path", help: "Folder under which the structure check's blueprint registry lives. Feeds conformance_check. Blank = not measured." },
   { key: "systemRoot", label: "System root", kind: "path", help: "The governed system spine's root folder (the drift check's category-number scan). Feeds drift_audit. Blank = not measured." },
   { key: "ungovernedRoots", label: "Ungoverned roots", kind: "paths", help: "One folder per line the structure check never treats as governed content. Empty = everything under the root is governed." },
-  { key: "baselineRel", label: "Conformance baseline note", kind: "path", help: "The accepted-debt baseline note (vault-relative path, ending in .md), read by the conformance debt tools and the drift pane on every run. Blank = no baseline configured: the debt tools read no accepted debt and the drift pane refuses." },
+  { key: "baselineRel", label: "Conformance baseline note", kind: "path", help: "The accepted-debt baseline note (vault-relative path, ending in .md), read by the conformance debt tools and the drift pane on every run. Blank = no baseline configured (unless the GOVERNOR_BASELINE_REL environment variable names one): the debt tools and the drift pane refuse until it is set." },
 ];
 
 /** The value a settings-tab field commits for `key`, from the raw text the

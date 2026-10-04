@@ -12,7 +12,7 @@
 // opts out (the rationale is on `RunOpts.legacyPacks` below, issue #116).
 
 import { readFile, writeFile } from "node:fs/promises";
-import { existsSync, realpathSync, lstatSync, readlinkSync, statSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, lstatSync, readlinkSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 // The vocabulary kernel lives in @vault-mcp/core since the read-tier satellite
 // extraction (suite split, S7) — this rail is one of its two consumers, the
@@ -558,8 +558,9 @@ export function coverageRefusal(
 export function rebaselineTargetRefusal(
   baselinePath: string,
   root: string,
-  // The LIVE record's vault-relative path (the configured baseline); "" when none is configured.
-  liveRel: string = baselineRelFrom(process.env, conventionsFromEnv(process.env)),
+  // The LIVE records' vault-relative paths: what this invocation configures AND what the plugin's own
+  // settings in this vault name (#494 review: the two can differ). Empty when none is known.
+  liveRels: readonly string[],
 ): string | null {
   // 1. Outside the content root ⇒ refuse outright, rather than "not live".
   //    This is what closes the decoupled-root bypass: if --root points
@@ -573,14 +574,24 @@ export function rebaselineTargetRefusal(
     );
   }
 
-  // No baseline configured: the live record cannot be identified, so nothing can be
-  // shown NOT to be it. Refuse, rather than let --baseline= rewrite it unchecked (#144).
-  if (!liveRel) {
+  // No live record known: nothing can be shown NOT to be it. Refuse, rather than let
+  // --baseline= rewrite it unchecked (#144).
+  const lives = [...new Set(liveRels.map((r) => r.trim()).filter(Boolean))];
+  if (lives.length === 0) {
     return (
       `refusing to --rebaseline ${baselinePath}: no live conformance baseline is configured, so this target ` +
       `cannot be checked against it. Set GOVERNOR_BASELINE_REL or baselineRel in ${CONVENTIONS_ENV}.`
     );
   }
+  for (const liveRel of lives) {
+    const r = liveTargetRefusal(baselinePath, root, liveRel);
+    if (r) return r;
+  }
+  return null;
+}
+
+/** Checks 2–4 against ONE live record. */
+function liveTargetRefusal(baselinePath: string, root: string, liveRel: string): string | null {
   const livePath = join(resolve(root), liveRel);
 
   // 2. Same name.
@@ -742,6 +753,24 @@ function renderReport(
 }
 
 // ── thin process entry (not unit-tested; the wiring above is) ─────────────────
+
+/**
+ * The baseline path the vault-mcp PLUGIN in this vault is set to read (its
+ * data.json's vault conventions, #493), or "" when there is no such plugin
+ * settings file or it names none. The CLI cannot see the plugin's live settings
+ * any other way, and it needs them twice: as its own path when its environment
+ * names none (an upgraded caller's VAULT_MCP_CONVENTIONS predates the key), and
+ * as a live record --rebaseline must never rewrite. Read-only; never throws.
+ */
+export function pluginBaselineRel(root: string): string {
+  try {
+    const data = JSON.parse(readFileSync(join(resolve(root), ".obsidian", "plugins", "vault-mcp", "data.json"), "utf8"));
+    const rel = data && typeof data === "object" ? (data.vaultConventions?.baselineRel ?? "") : "";
+    return typeof rel === "string" ? rel.trim() : "";
+  } catch {
+    return "";
+  }
+}
 
 /**
  * The baseline path the IN-APP sources read (#493): the plugin's own setting
@@ -924,11 +953,14 @@ export async function runCli(argv: string[]): Promise<void> {
   }
   const baselineArg = argv.find((a) => a.startsWith("--baseline="))?.slice("--baseline=".length);
   const conventions = conventionsFromEnv(process.env);
-  const baselineRel = baselineRelFrom(process.env, conventions);
+  // The plugin's own setting in this vault (#494 review): the CLI's path when its environment names none,
+  // and always a live record --rebaseline must not rewrite.
+  const pluginRel = pluginBaselineRel(root);
+  const baselineRel = baselineRelFrom(process.env, conventions) || pluginRel;
   if (!baselineArg && !baselineRel) {
     throw new Error(
-      `no conformance baseline is configured: set baselineRel in ${CONVENTIONS_ENV}, ` +
-        "set GOVERNOR_BASELINE_REL, or pass --baseline=<path> (the CLI does not read the plugin's settings)"
+      `no conformance baseline is configured: set baselineRel in ${CONVENTIONS_ENV} or in the vault-mcp plugin's ` +
+        "Conformance settings for this vault, set GOVERNOR_BASELINE_REL, or pass --baseline=<path>"
     );
   }
   const baselinePath = baselineArg ? resolve(baselineArg) : join(root, baselineRel);
@@ -1057,7 +1089,7 @@ export async function runCli(argv: string[]): Promise<void> {
     // accepted debt exactly as it was.
     // Identity first: whether this write lands on the live acceptance record is
     // decided by the filesystem, before any coverage reasoning (#144).
-    const targetRefusal = rebaselineTargetRefusal(baselinePath, root, baselineRel);
+    const targetRefusal = rebaselineTargetRefusal(baselinePath, root, [baselineRel, pluginRel]);
     if (targetRefusal) throw new Error(targetRefusal);
     const refusal = rebaselineRefusal({
       targetsLiveBaseline: false, // established above; a live target already threw
