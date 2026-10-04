@@ -1,8 +1,8 @@
 # Vault Bases (plugin id `vaultmcp-bases`)
 
-Obsidian's Bases engine, given an agent surface: enumerate the vault's `.base` files with their declared views, and evaluate a view — filters, formulas, sort and the view's own limit all computed by Obsidian itself, in a background leaf the human never sees. Like the triage and cross-session satellites and unlike the skills one, this plugin has no human surface at all — no pane, no palette command, no ribbon. Its entire surface is two MCP tools published to the Governor host through `vault-mcp-api`, plus a settings tab for the human who tunes the timeout and the row cap.
+Obsidian's Bases engine, given an agent surface: enumerate the vault's `.base` files with their declared views, and evaluate a view — filters, formulas, sort and the view's own limit all computed by Obsidian itself. Two evaluators answer a query: `fast` (the default when reachable) calls Obsidian's own `base:query` handler, a metadata pass with no leaf; `view` renders the base in a hidden background leaf the human never sees, with full fidelity, but it refuses while the window is hidden unless `allow_hidden: true`. The query tool takes `engine` (`auto`, `fast` or `view`) and `allow_hidden`, and its result says which evaluator answered; docs/bases.md "Two evaluators" has the differences. Like the triage and cross-session satellites and unlike the skills one, this plugin has no human surface at all — no pane, no palette command, no ribbon. Its entire surface is two MCP tools published to the Governor host through `vault-mcp-api`, plus a settings tab for the human who tunes the timeout and the row cap.
 
-The user-facing deep reference — the capture mechanism, the live findings behind it, the refusal vocabulary — is `docs/bases.md` at the repo root. This file is about the plugin: what is in the package, how it relates to the host, and the four things the extraction changed.
+The user-facing deep reference — the two evaluators, the capture mechanism, the live findings behind it, the refusal vocabulary — is `docs/bases.md` at the repo root. This file is about the plugin: what is in the package, how it relates to the host, and the four things the extraction changed.
 
 ## Lineage
 
@@ -19,7 +19,7 @@ packages/bases/
 │   ├── settings.ts        settings shape, the 2 field definitions, one-shot host config adoption (pure)
 │   ├── settings-tab.ts    the plugin's own settings tab
 │   ├── tools.ts           the two tool specs, the shared queryBaseRows seam, the injected BasesSource, the ctx
-│   ├── obsidian-source.ts the live adapter — the hidden capture leaf and the engine's own result set
+│   ├── obsidian-source.ts the live adapter — the fast `base:query` road, and the hidden capture leaf (view)
 │   └── kernel/
 │       └── index.ts       the pure core — Obsidian-free: `.base` interpretation, propertyId normalization,
 │                          row bounding, the capture lifecycle scaffold, the serializer, the config
