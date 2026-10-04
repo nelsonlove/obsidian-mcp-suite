@@ -11,7 +11,7 @@
 // changing a path meant a release.
 //
 // So the keys are named and discoverable in one file. Where they point is the
-// operator's: the three keys are a host setting (settings tab, Conformance),
+// operator's: the keys are a host setting (settings tab, Conformance),
 // read live per call by the in-app debt and drift sources, and the standalone
 // CLI takes them from `VAULT_MCP_CONVENTIONS` (a JSON object; the old spellings
 // `GOVERNOR_VAULT_CONVENTIONS` and `ASSENT_VAULT_CONVENTIONS` are accepted as
@@ -21,7 +21,8 @@
 // `LEGACY_CONVENTIONS_SEED`, written ONCE into an install whose data.json
 // predates the setting, by exactly one reader (`conventions-policy.ts`).
 //
-// THREE keys since #412 (ruled 2026-09-27). The record had six; the other
+// THREE folder keys since #412 (ruled 2026-09-27), plus `baselineRel` since #493
+// (the baseline note, not a pack convention). The record had six; the other
 // three (`artifactsRoot`, `pluginStackPath`, `uidExemptPaths`) named a vault
 // shape the rebuilt vault no longer has, and their only readers were the
 // drift checks #412 retired. A key nobody reads is a setting that lies, so
@@ -44,13 +45,13 @@ export interface VaultConventions {
   /**
    * The accepted-debt baseline note (vault-relative), read by the in-app debt
    * and drift sources and the CLI (#493). Not a pack convention: a blank one is
-   * not "dead", it means no baseline is configured (the debt tools read no
-   * accepted debt; the drift pane and the CLI refuse, as for a missing file).
+   * not "dead", it means no baseline is configured, and the debt tools, the
+   * drift pane and the CLI refuse (as for a missing note).
    */
   baselineRel: string;
 }
 
-/** The three keys, EMPTY: what the plugin ships. Every scalar key empty reads
+/** The four keys, EMPTY: what the plugin ships. Every scalar folder key empty reads
  *  as dead (its packs are not measured); the list key empty reads as "none",
  *  a legitimate configuration (nothing ungoverned). */
 export const EMPTY_VAULT_CONVENTIONS: VaultConventions = Object.freeze({
@@ -76,7 +77,7 @@ export function resolveConventions(raw: unknown): VaultConventions {
     const arr = Array.isArray(v) ? v : typeof v === "string" ? v.split("\n") : [];
     return arr.map((x) => (typeof x === "string" ? x.trim() : "")).filter(Boolean);
   };
-  // Only the three live keys are read: a stale key from a pre-#412 data.json
+  // Only the four live keys are read: a stale key from a pre-#412 data.json
   // (`artifactsRoot`, `pluginStackPath`, `uidExemptPaths`) is dropped here.
   return {
     registriesRoot: str(o.registriesRoot),
@@ -127,23 +128,6 @@ export const CONVENTIONS_ENV_LEGACY = ["GOVERNOR_VAULT_CONVENTIONS", "ASSENT_VAU
  * loud in the report (every convention dead), never a silent default, and
  * never a throw that takes the rail down.
  */
-/**
- * #493: the baseline path joined the conventions after they shipped. A stored
- * record (data.json, or the CLI's VAULT_MCP_CONVENTIONS) that LACKS the key and
- * is an upgraded install's (some other key set) takes the path the old constant
- * held, once, so an upgrade changes nothing. A record whose keys are all blank
- * is a fresh install's (#403 shipped it empty): it stays without a baseline, so
- * no operator's folder name lands in a stranger's settings. A record that HAS
- * the key keeps it, even blank.
- */
-export function withBaselineSeed(stored: unknown): VaultConventions {
-  const resolved = resolveConventions(stored);
-  const o = stored && typeof stored === "object" && !Array.isArray(stored) ? (stored as Record<string, unknown>) : null;
-  if (!o || Object.prototype.hasOwnProperty.call(o, "baselineRel")) return resolved;
-  const upgraded = resolved.registriesRoot !== "" || resolved.systemRoot !== "" || resolved.ungovernedRoots.length > 0;
-  return upgraded ? { ...resolved, baselineRel: LEGACY_CONVENTIONS_SEED.baselineRel } : resolved;
-}
-
 export function conventionsFromEnv(
   env: Record<string, string | undefined>,
   warn: (msg: string) => void = (msg) => console.error(msg),
@@ -160,7 +144,7 @@ export function conventionsFromEnv(
   }
   if (raw === undefined || raw.trim() === "") return { ...EMPTY_VAULT_CONVENTIONS, ungovernedRoots: [] };
   try {
-    return withBaselineSeed(JSON.parse(raw));
+    return resolveConventions(JSON.parse(raw));
   } catch (e) {
     warn(`conformance: ${CONVENTIONS_ENV} is not valid JSON — every convention reads as EMPTY (dead) for this run. ${e instanceof Error ? e.message : String(e)}`);
     return { ...EMPTY_VAULT_CONVENTIONS, ungovernedRoots: [] };
