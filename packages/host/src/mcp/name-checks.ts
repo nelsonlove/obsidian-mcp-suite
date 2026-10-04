@@ -10,10 +10,27 @@
 // outcome.
 
 import { TFile, TFolder, type App } from "obsidian";
-import { assertSyncSafeName, assertSyncSafeMove, hasInboundLinks, type BracketContext } from "@vault-mcp/core";
+import { assertSyncSafeName, assertSyncSafeMove, hasInboundLinks, type ArchiveMatcher, type BracketContext } from "@vault-mcp/core";
 import { hasTextLinkers, TextCache } from "./move-with-links.js";
 
 const stripMd = (p: string) => p.replace(/\.md$/i, "").toLowerCase();
+
+/**
+ * Which folder names are archives, for Nelson's bracket rule: the operator's
+ * archive pattern (#482), set by server.ts; null while "Records by folder" is
+ * off. Unset (a caller outside the live server, e.g. a test): no archives, as
+ * core decides without a matcher. A pattern that is empty or does not compile
+ * matches nothing, so brackets are then never freed.
+ */
+let archivePattern: (() => RegExp | null) | undefined;
+export function configureArchiveFolders(getter: (() => RegExp | null) | undefined): void {
+  archivePattern = getter;
+}
+function isArchive(): ArchiveMatcher | undefined {
+  if (!archivePattern) return undefined;
+  const re = archivePattern(); // read and compiled once per check, not once per folder name
+  return (name) => !!re && re.test(name);
+}
 
 function folderExists(app: App): (p: string) => boolean {
   return (p) => app.vault.getAbstractFileByPath(p) instanceof TFolder;
@@ -34,7 +51,7 @@ export function unresolvedNames(app: App, path: string): boolean {
 
 /** For a NEW note at `path`: refuses a name Obsidian Sync refuses; brackets only under the rule. */
 export function assertCreateName(app: App, path: string): void {
-  assertSyncSafeName(path, { linked: unresolvedNames(app, path), folderExists: folderExists(app) });
+  assertSyncSafeName(path, { linked: unresolvedNames(app, path), folderExists: folderExists(app), isArchive: isArchive() });
 }
 
 /**
@@ -44,7 +61,8 @@ export function assertCreateName(app: App, path: string): void {
  */
 export async function assertMoveName(app: App, from: string, to: string, overwrite = false, texts?: TextCache): Promise<void> {
   const fe = folderExists(app);
-  const at = (linked: boolean): BracketContext => ({ linked, folderExists: fe });
+  const arch = isArchive();
+  const at = (linked: boolean): BracketContext => ({ linked, folderExists: fe, isArchive: arch });
   assertSyncSafeMove(from, to, at(false)); // refused even if unlinked: refused
   try {
     assertSyncSafeMove(from, to, at(true)); // allowed even if linked: allowed

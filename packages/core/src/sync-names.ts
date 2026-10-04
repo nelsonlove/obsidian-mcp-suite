@@ -12,9 +12,10 @@
 //
 // Brackets: Nelson, 2026-10-02: "Brackets should only be permissible on
 // archived notes that no other note links to." So `[` and `]` (and only those)
-// pass when the note's path lies under a JD archive folder (`NN.09 Archive…`,
-// any area, dotted IDs too) AND no other note links to it. A new note has no
-// linkers; for a move the caller says whether the note has any.
+// pass when the note's path lies under an existing archive folder (the
+// caller's archive matcher decides which folder names are archives: on the live
+// host, the operator's archive pattern, #482) AND no other note links to it. A
+// new note has no linkers; for a move the caller says whether the note has any.
 
 /** The refused set: one character of it. Not global, so `.test` is safe to reuse. */
 export const SYNC_UNSAFE_CHARS = /[\\:*?"<>|#^[\]]/;
@@ -35,20 +36,27 @@ export function syncUnsafeChars(relPath: string): string[] | null {
   return found.size > 0 ? [...found] : null;
 }
 
-/** A JD archive folder: `00.09 Archive`, `41.09 Archive for 41 Banking & accounts`, `06.37.09 Archive for …`; never one whose own name holds a bracket. */
-const ARCHIVE_SEGMENT = /^\d\d(?:\.\d\d)*\.09 Archive(?: [^[\]]*)?$/;
+/**
+ * Which folder NAMES are archives. The caller passes its own matcher (the host:
+ * the operator's archive pattern, #482). Without one, no folder is an archive:
+ * the plugin ships no folder names (Nelson, 2026-10-03: "No folder names are
+ * ever in the live code"). A folder whose own name holds a bracket is never an
+ * archive, whatever the matcher says.
+ */
+export type ArchiveMatcher = (folderName: string) => boolean;
+const noArchive: ArchiveMatcher = () => false;
 
-/** The path of the deepest JD archive folder `relPath` lies under, or null. */
-export function jdArchiveFolder(relPath: string): string | null {
+/** The path of the deepest archive folder `relPath` lies under, or null. */
+export function jdArchiveFolder(relPath: string, isArchive: ArchiveMatcher = noArchive): string | null {
   const segs = relPath.split("/");
   let found: string | null = null;
-  for (let i = 0; i < segs.length - 1; i++) if (ARCHIVE_SEGMENT.test(segs[i])) found = segs.slice(0, i + 1).join("/");
+  for (let i = 0; i < segs.length - 1; i++) if (!/[[\]]/.test(segs[i]) && isArchive(segs[i])) found = segs.slice(0, i + 1).join("/");
   return found;
 }
 
-/** True when a folder of `relPath` is named as a JD archive folder (whether it exists is the caller's to check). */
-export function inJdArchive(relPath: string): boolean {
-  return jdArchiveFolder(relPath) !== null;
+/** True when a folder of `relPath` is named as an archive folder (whether it exists is the caller's to check). */
+export function inJdArchive(relPath: string, isArchive: ArchiveMatcher = noArchive): boolean {
+  return jdArchiveFolder(relPath, isArchive) !== null;
 }
 
 /** True when any note other than `path` links to it, per a source → target → count map (Obsidian's `resolvedLinks`). */
@@ -66,15 +74,17 @@ export function hasInboundLinks(resolvedLinks: Record<string, Record<string, num
 export interface BracketContext {
   linked: boolean;
   folderExists: (folderPath: string) => boolean;
+  /** Which folder names are archives (#482: the operator's archive pattern). Absent ⇒ NO folder is an archive: a caller without the operator's settings (the filesystem server, triage) never frees brackets and never lets a bracket name stay. */
+  isArchive?: ArchiveMatcher;
 }
 
 const BRACKETS = new Set(["[", "]"]);
 const BRACKET_RULE =
-  "[ ] are allowed only in the name of a note under an existing JD archive folder (NN.09 Archive…) that no other note links to, never in a folder name";
+  "[ ] are allowed only in the name of a note under an existing archive folder (one the plugin's archive pattern names) that no other note links to, never in a folder name";
 
-/** True when `relPath` lies under a JD archive folder that exists now. */
+/** True when `relPath` lies under an archive folder (per ctx.isArchive) that exists now. */
 function inExistingArchive(relPath: string, ctx: BracketContext | undefined): boolean {
-  const arch = jdArchiveFolder(relPath);
+  const arch = jdArchiveFolder(relPath, ctx?.isArchive);
   return arch !== null && !!ctx && ctx.folderExists(arch);
 }
 
@@ -108,7 +118,7 @@ export function assertSyncSafeName(relPath: string, ctx?: BracketContext): void 
  * same folder, by its whole path), and the note's own name. Anything new (a
  * new name, a folder it was not in) must be clean. Brackets: a new name may
  * hold them only under the bracket rule (`ctx`), and a kept name that holds
- * them may only stay under an existing JD archive folder.
+ * them may only stay under an existing archive folder (per ctx.isArchive; none without one).
  */
 export function assertSyncSafeMove(from: string, to: string, ctx?: BracketContext): void {
   const fromSegs = from.split("/");

@@ -86,6 +86,8 @@ export interface ServerCtx {
    */
   enforceRecordImmutability?: () => boolean;
   recordIdentification?: () => unknown;
+  /** `recordFolders` (#482): the folder indicator; coerced through `normalizeRecordFolders`, absent ⇒ today's defaults. */
+  recordFolders?: () => unknown;
   // `getVocabularies` was here until the read-tier satellite extraction (suite
   // split, S7). It carried `settings.vocabularies` to the vocab module's tool
   // layer; that module is now the `vaultmcp-vocab` plugin, which owns its own

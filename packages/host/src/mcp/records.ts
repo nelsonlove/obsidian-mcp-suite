@@ -12,13 +12,11 @@
 //      obsidian_rename_heading use; this module only gathers the evidence, from
 //      the note's current TEXT, never the metadata cache (so a note written
 //      moments ago, its cache still stale, is judged by what it says now); OR
-//   2. it lies in a record folder: the fallback, by path alone, while the key's
-//      coverage is partial. The folders are the agent record folders and every
-//      JD archive in any area (`NN.09 Archive…`, and the dotted form
-//      `NN.NN.09 Archive…`), as the rear admiral's brief for this fix asked. This
-//      is WIDER than `dangling-links` in 00.13 Scripts, whose fallback list names
-//      only `00.09 Archive` among the archives; the two lists are kept by hand in
-//      two places until the key covers every record.
+//   2. it lies in a record folder, per the operator's FOLDER indicator (#482, a
+//      plugin setting: a list of folder paths, and a pattern for archive folder
+//      names; each indicator has its own on/off switch). The plugin ships both
+//      empty; an install that predates the setting is seeded once with what
+//      #455 hard-coded (record-folders-policy.ts).
 //
 // Archiving is the moment a note becomes a record. A LIVING note moved INTO a
 // record folder is judged living for that move (a record by folder only when
@@ -38,38 +36,42 @@ import { leadingFrontmatterBlock, stripLeadingFrontmatter } from "@vault-mcp/cor
 import { unindexedSpans } from "./link-rewrite.js";
 import {
   DEFAULT_RECORD_IDENTIFICATION,
+  DEFAULT_RECORD_FOLDERS,
+  archivePatternRegExp,
   identifiesRecord,
+  type RecordFolders,
   type RecordEvidence,
   type RecordIdentification,
 } from "../kernel/record-guard.js";
 
-/** Folders whose notes are records wherever the key is missing. */
-export const RECORD_FOLDERS = [
-  "00-09 System/03 Agents/03.04 Records",
-  "00-09 System/03 Agents/03.20 Imported chats",
-  "00-09 System/03 Agents/03.16 Cross-session log",
-];
-
-/** A JD archive folder: `00.09 Archive`, `41.09 Archive for 41 Banking & accounts`, `06.37.09 Archive for …`. */
-const ARCHIVE_SEGMENT = /^\d\d(?:\.\d\d)*\.09 Archive(?: |$)/;
-
 /** Is `path` a record? `text` is the note's current text: the record identification is read from it, so a note written moments ago (its cache still stale) is judged by what it says now. */
 export type IsRecord = (path: string, text: string) => boolean;
 
+/** The note indicator and the folder indicator together, as server.ts hands them to the moves (#482). */
+export type RecordRules = RecordIdentification & { folders: RecordFolders };
+
 /**
- * True when `path` lies in a record folder (the fallback, by path alone). The
- * folder note of the record ROOT (the outermost archive folder or RECORD_FOLDERS
- * entry on the path: `03.04 Records/03.04 Records.md`, `41.09 Archive for
- * …/41.09 Archive for ….md`) is that folder's living index, not a record. A
- * folder note nested deeper inside a record folder is a record like its siblings.
+ * True when `path` lies in a record folder, per the folder indicator (#482):
+ * a folder on the path that is one of `folders` (by its whole vault path) or
+ * whose name matches `archivePattern`. Off, or nothing configured: false. The
+ * folder note of the record ROOT (the outermost such folder on the path:
+ * `03.04 Records/03.04 Records.md`, `41.09 Archive for …/41.09 Archive for
+ * ….md`) is that folder's living index, not a record. A folder note nested
+ * deeper inside a record folder is a record like its siblings.
  */
-export function inRecordFolder(path: string): boolean {
+export function inRecordFolder(
+  path: string,
+  cfg: RecordFolders = DEFAULT_RECORD_FOLDERS,
+  // The compiled archive pattern, when the caller has it (recordTest compiles once per move).
+  archive: RegExp | null = archivePatternRegExp(cfg.archivePattern),
+): boolean {
+  if (cfg.enabled === false) return false;
   const segs = path.split("/");
   const folders = segs.slice(0, -1);
   const base = segs[segs.length - 1].replace(/\.md$/i, "");
   let root = -1;
   for (let i = 0; i < folders.length && root < 0; i++) {
-    if (ARCHIVE_SEGMENT.test(folders[i]) || RECORD_FOLDERS.includes(folders.slice(0, i + 1).join("/"))) root = i;
+    if ((archive && archive.test(folders[i])) || cfg.folders.includes(folders.slice(0, i + 1).join("/"))) root = i;
   }
   if (root < 0) return false;
   return !(root === folders.length - 1 && folders[root] === base);
@@ -154,10 +156,20 @@ export function recordEvidenceFromText(text: string): RecordEvidence {
  * call; absent ⇒ the shipped default `record: true`), judged on the note's
  * current `text`, OR the record-folder fallback.
  */
-export function recordTest(identification?: () => RecordIdentification): IsRecord {
+export function recordTest(identification?: () => RecordRules): IsRecord {
+  // Read once, on first use: one move (or one batch, one renumber) is judged under
+  // one set of settings, and the pattern is compiled once, not once per note.
+  let rules: RecordRules | undefined;
+  let archive: RegExp | null = null;
   return (path, text) => {
-    if (inRecordFolder(path)) return true;
-    const id = identification?.() ?? DEFAULT_RECORD_IDENTIFICATION;
+    if (!rules) {
+      const got = identification?.() ?? { ...DEFAULT_RECORD_IDENTIFICATION, folders: DEFAULT_RECORD_FOLDERS };
+      // Rules without the folder half (an untyped caller) get the shipped EMPTY folder indicator: never wider.
+      rules = { ...got, folders: got.folders ?? DEFAULT_RECORD_FOLDERS };
+      archive = archivePatternRegExp(rules.folders.archivePattern);
+    }
+    const id = rules;
+    if (inRecordFolder(path, id.folders, archive)) return true;
     return identifiesRecord(id, recordEvidenceFromText(text)) === true;
   };
 }

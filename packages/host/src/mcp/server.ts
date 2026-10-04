@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { inRecordFolder } from "./records.js";
 import { TFile, stringifyYaml, parseYaml, type App } from "obsidian";
 import { registerFsTools, ok,
   CHARACTER_LIMIT,
@@ -31,7 +32,8 @@ import { sealUnguardedRegistration } from "./seal-registration.js";
 import { visiblePaths } from "../guard.js";
 import type { JournalActor } from "../kernel/index.js";
 import { obsidianProbe } from "../kernel/obsidian-probe.js";
-import { normalizeRecordIdentification } from "../kernel/record-guard.js";
+import { normalizeRecordIdentification, normalizeRecordFolders, archivePatternRegExp } from "../kernel/record-guard.js";
+import { configureArchiveFolders } from "./name-checks.js";
 import { ObsidianBackend } from "./obsidian-backend.js";
 import { registerWriteNotesTool, batchItemWriter, type GuardedWrite } from "./tools-write-notes.js";
 import { uuidv7, formatLocalTimestamp } from "./write-notes-compose.js";
@@ -396,8 +398,21 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   // `.record()` is obsidian_rename_heading's record skip; the moves' own record
   // test (records.ts) takes the same identification, so a move, a heading rename
   // and the kernel's guard judge a record the same way (#397).
-  const recordIdentification = () => normalizeRecordIdentification(ctx.recordIdentification?.());
-  const probe = obsidianProbe(app, () => ctx.enforceRecordImmutability?.() !== false, recordIdentification);
+  // The note indicator and the folder indicator (#482) travel together: every
+  // move's record test reads both from this one getter (records.ts RecordRules);
+  // the guard's probe reads only the note indicator from it.
+  const recordIdentification = () => ({
+    ...normalizeRecordIdentification(ctx.recordIdentification?.()),
+    folders: normalizeRecordFolders(ctx.recordFolders?.()),
+  });
+  // Nelson's bracket rule asks the same archive pattern which folders are archives;
+  // with "Records by folder" off, no folder is an archive for it either.
+  configureArchiveFolders(() => {
+    const f = normalizeRecordFolders(ctx.recordFolders?.());
+    return f.enabled ? archivePatternRegExp(f.archivePattern) : null;
+  });
+  // The guard's probe reads only the note marker: no folder settings built on its hot path.
+  const probe = obsidianProbe(app, () => ctx.enforceRecordImmutability?.() !== false, () => normalizeRecordIdentification(ctx.recordIdentification?.()));
   const visible = (paths: string[]) => visiblePaths(paths, ctx.getSettings());
   // Hoisted so obsidian_write_notes can drive the same backend writeNote through
   // its own per-item guarded dispatch (see the write-notes block below).
@@ -416,7 +431,13 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   // argument-level check can see a set the handler discovers.
   // isRecord: obsidian_rename_heading rewrites links in notes it discovers,
   // which the kernel's record check (paths an operation NAMES) cannot see.
-  registerVaultWriteTools(server, app, { getSettings: () => ctx.getSettings(), isRecord: (p) => probe.record?.(p) === true, recordIdentification });
+  // A heading rename leaves a record's links as written, judged as a move judges it: the note marker (the
+  // guard's probe) OR the record folders (#482 round 4: it used to read the marker only).
+  const isRecordForRename = (p: string): boolean => {
+    if (probe.record?.(p) === true) return true;
+    return inRecordFolder(p, normalizeRecordFolders(ctx.recordFolders?.()));
+  };
+  registerVaultWriteTools(server, app, { getSettings: () => ctx.getSettings(), isRecord: isRecordForRename, recordIdentification });
   // ── scope-provider write surface: assign/refile/renumber address ───────────
   // Cannot go through mountModules below: that host's registerAll gate refuses
   // any tool whose readOnlyHint !== true (its own header comment), and these

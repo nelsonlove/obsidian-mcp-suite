@@ -9,7 +9,7 @@
  * positions and a per-file mtime/size, a stale cache entry is possible, and
  * `vault.rename` does NOT update `resolvedLinks` (the index lags).
  */
-import { test, describe } from "node:test";
+import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { installObsidianStub, TFile, TFolder, parseYaml } from "./obsidian-stub.mjs";
 import { parseLinks, rewriteLink, relativePath } from "../src/mcp/link-rewrite.ts";
@@ -17,6 +17,10 @@ import { parseLinks, rewriteLink, relativePath } from "../src/mcp/link-rewrite.t
 installObsidianStub();
 const { moveWithLinks, TextCache } = await import("../src/mcp/move-with-links.ts");
 const { recordTest } = await import("../src/mcp/records.ts");
+const { LEGACY_RECORD_FOLDERS_SEED } = await import("../src/record-folders-policy.ts");
+const { DEFAULT_RECORD_IDENTIFICATION: SEED_ID } = await import("../src/kernel/record-guard.ts");
+// The record rules this vault was seeded with (#482): the plugin itself ships no record folders.
+const SEEDED = () => ({ ...SEED_ID, folders: LEGACY_RECORD_FOLDERS_SEED });
 const { RECORDS_LEFT_CAP } = await import("../src/mcp/move-with-links.ts");
 
 const stripMd = (s) => s.replace(/\.md$/i, "");
@@ -410,7 +414,7 @@ describe("records are never rewritten (01.44 rule 8)", () => {
       "Live/Keyed.md": "---\nrecord: true\n---\nx\n",
       "Live/Plain.md": "---\nrecord: false\n---\nx\n",
     });
-    const is0 = recordTest();
+    const is0 = recordTest(SEEDED);
     const is = (p) => is0(p, ""); // by folder alone: a note with no key
     const keyed = (p) => is0(p, p === "Live/Keyed.md" ? "---\nrecord: true\n---\nx\n" : p === "Live/Plain.md" ? "---\nrecord: false\n---\nx\n" : "");
     assert.equal(is(`${ARCH}/Old plan.md`), true);
@@ -435,7 +439,7 @@ describe("records are never rewritten (01.44 rule 8)", () => {
       [`${ARCH}/Plan.md`]: "cited [[Old]] and [md](../../../A/Old.md)\n",
       "Live/Keyed.md": "---\nrecord: true\n---\nalso [[Old]]\n",
     });
-    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md");
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md", { isRecord: recordTest(SEEDED) });
     assert.equal(text.get("S/Live.md"), "see [[New]]\n", "a living note is rewritten as before");
     assert.equal(text.get(`${ARCH}/Plan.md`), "cited [[Old]] and [md](../../../A/Old.md)\n", "the record's bytes are untouched");
     assert.equal(text.get("Live/Keyed.md"), "---\nrecord: true\n---\nalso [[Old]]\n");
@@ -458,7 +462,7 @@ describe("records are never rewritten (01.44 rule 8)", () => {
       [`00-09 System/00 System management/Other.md`]: "x\n",
       "S/Live.md": "see [[Old]]\n",
     });
-    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath(`${ARCH}/Old.md`), `${ARCH}/Deeper/New.md`);
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath(`${ARCH}/Old.md`), `${ARCH}/Deeper/New.md`, { isRecord: recordTest(SEEDED) });
     assert.equal(text.get(`${ARCH}/Deeper/New.md`), "[o](../Other.md) and [[Other]]\n", "a record's own text is untouched");
     assert.equal(text.get("S/Live.md"), "see [[New]]\n");
     assert.deepEqual(r.records_left, [{ path: `${ARCH}/Deeper/New.md`, links: ["[o](../Other.md)"] }]);
@@ -468,7 +472,7 @@ describe("records are never rewritten (01.44 rule 8)", () => {
 
   test("records_left names only what the caller may see; the rest are counted in hidden", async () => {
     const { app } = fakeApp({ "A/Old.md": "x\n", [`${ARCH}/Plan.md`]: "cited [[Old]]\n" });
-    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md", { visible: (p) => !p.startsWith("00-09") });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md", { isRecord: recordTest(SEEDED), visible: (p) => !p.startsWith("00-09") });
     assert.deepEqual(r.records_left, []);
     assert.equal(r.hidden, 1);
     assert.equal(r.ok, true);
@@ -486,7 +490,7 @@ describe("records are never rewritten (01.44 rule 8)", () => {
       [`${ARCH}/Plan.md`]: "[o](../Other.md)\n",
       "00-09 System/00 System management/Other.md": "x\n",
     });
-    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath(`${ARCH}/Plan.md`), "00-09 System/01 Live/Sub/Plan.md");
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath(`${ARCH}/Plan.md`), "00-09 System/01 Live/Sub/Plan.md", { isRecord: recordTest(SEEDED) });
     assert.equal(text.get("00-09 System/01 Live/Sub/Plan.md"), "[o](../../00%20System%20management/Other.md)\n");
     assert.deepEqual(r.records_left, []);
     assert.deepEqual(r.own_links_broken, []);
@@ -495,7 +499,7 @@ describe("records are never rewritten (01.44 rule 8)", () => {
 
   test("a folder-only move leaves a record's [[Old]] working, so nothing is listed", async () => {
     const { app, text } = fakeApp({ "A/Old.md": "x\n", [`${ARCH}/Plan.md`]: "cited [[Old]]\n" });
-    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/Old.md");
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/Old.md", { isRecord: recordTest(SEEDED) });
     assert.equal(text.get(`${ARCH}/Plan.md`), "cited [[Old]]\n");
     assert.deepEqual(r.records_left, []);
     assert.equal(r.records_left_total, 0);
@@ -506,14 +510,14 @@ describe("records are never rewritten (01.44 rule 8)", () => {
       { "A/Old.md": "x\n", "S/New record.md": "nothing yet\n" },
       { stale: { "S/New record.md": "---\nrecord: true\n---\ncited [[Old]]\n" } }
     );
-    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md");
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md", { isRecord: recordTest(SEEDED) });
     assert.equal(text.get("S/New record.md"), "---\nrecord: true\n---\ncited [[Old]]\n");
     assert.deepEqual(r.records_left, [{ path: "S/New record.md", links: ["[[Old]]"] }]);
   });
 
   test("a moved record that links itself is listed once, under its new path", async () => {
     const { app, text } = fakeApp({ [`${ARCH}/Old.md`]: "see [[Old]]\n" });
-    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath(`${ARCH}/Old.md`), `${ARCH}/New.md`);
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath(`${ARCH}/Old.md`), `${ARCH}/New.md`, { isRecord: recordTest(SEEDED) });
     assert.equal(text.get(`${ARCH}/New.md`), "see [[Old]]\n");
     assert.deepEqual(r.records_left, [{ path: `${ARCH}/New.md`, links: ["[[Old]]"] }]);
   });
@@ -523,7 +527,7 @@ describe("records are never rewritten (01.44 rule 8)", () => {
       { "A/Old.md": "x\n", [`${ARCH}/Plan.md`]: "cited [[Old]]\n" },
       { stale: { [`${ARCH}/Plan.md`]: "the link is gone from the text\n" } }
     );
-    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md");
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md", { isRecord: recordTest(SEEDED) });
     assert.deepEqual(r.records_left, [{ path: `${ARCH}/Plan.md`, links: [], index_only: true }]);
     assert.deepEqual(r.index_only, []);
   });
@@ -532,7 +536,7 @@ describe("records are never rewritten (01.44 rule 8)", () => {
     const files = { "A/Old.md": "x\n" };
     for (let i = 0; i < RECORDS_LEFT_CAP + 5; i++) files[`${ARCH}/R${i}.md`] = "cited [[Old]]\n";
     const { app } = fakeApp(files);
-    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md");
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md", { isRecord: recordTest(SEEDED) });
     assert.equal(r.records_left.length, RECORDS_LEFT_CAP);
     assert.equal(r.records_left_total, RECORDS_LEFT_CAP + 5);
     assert.equal(r.ok, true);
@@ -545,10 +549,10 @@ describe("records are never rewritten (01.44 rule 8)", () => {
       [`${R}/03.04 Records.md`]: "see [[00-09 System/03 Agents/03.04 Records/Agent friction log]]\n",
       [`${ARCH}/00.09 Archive.md`]: "index [[Agent friction log]]\n",
     });
-    const is = (p) => recordTest()(p, "");
+    const is = (p) => recordTest(SEEDED)(p, "");
     assert.equal(is(`${R}/03.04 Records.md`), false);
     assert.equal(is(`${ARCH}/00.09 Archive.md`), false);
-    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath(`${R}/Agent friction log.md`), `${R}/Friction log.md`);
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath(`${R}/Agent friction log.md`), `${R}/Friction log.md`, { isRecord: recordTest(SEEDED) });
     assert.equal(text.get(`${R}/03.04 Records.md`), "see [[Friction log]]\n");
     assert.equal(text.get(`${ARCH}/00.09 Archive.md`), "index [[Friction log]]\n");
     assert.deepEqual(r.records_left, []);
@@ -557,7 +561,7 @@ describe("records are never rewritten (01.44 rule 8)", () => {
 
   test("record: True and record: true with a comment are records, read from text as from the cache", async () => {
     const { app } = fakeApp({ "S/A.md": "---\nrecord: True\n---\n", "S/B.md": "---\nrecord: true  # since 2026-09\n---\n", "S/C.md": "---\nrecord: truthy\n---\n" });
-    const is = recordTest();
+    const is = recordTest(SEEDED);
     assert.equal(is("S/A.md", "---\nrecord: True\n---\n"), true);
     assert.equal(is("S/B.md", "---\nrecord: true  # since 2026-09\n---\n"), true);
     assert.equal(is("S/C.md", "---\nrecord: truthy\n---\n"), false);
@@ -568,7 +572,7 @@ describe("records are never rewritten (01.44 rule 8)", () => {
       { "A/Old.md": "x\n", "S/Live.md": "see [[Old]]\n" },
       { changeBeforeProcess: { "S/Live.md": "---\nrecord: true\n---\nsee [[Old]]\n" } }
     );
-    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md");
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md", { isRecord: recordTest(SEEDED) });
     assert.equal(text.get("S/Live.md"), "---\nrecord: true\n---\nsee [[Old]]\n");
     assert.deepEqual(r.records_left, [{ path: "S/Live.md", links: ["[[Old]]"] }]);
     assert.deepEqual(r.not_reaching_new, []);
@@ -577,7 +581,7 @@ describe("records are never rewritten (01.44 rule 8)", () => {
 
   test("records_left_total counts hidden records too", async () => {
     const { app } = fakeApp({ "A/Old.md": "x\n", [`${ARCH}/P.md`]: "cited [[Old]]\n", "Z/R.md": "---\nrecord: true\n---\n[[Old]]\n" });
-    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md", { visible: (p) => !p.startsWith("00-09") });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md", { isRecord: recordTest(SEEDED), visible: (p) => !p.startsWith("00-09") });
     assert.equal(r.records_left_total, 2);
     assert.deepEqual(r.records_left.map((x) => x.path), ["Z/R.md"]);
     assert.equal(r.hidden, 1);
@@ -592,7 +596,7 @@ describe("records are never rewritten (01.44 rule 8)", () => {
       "S/Code.md": "`#historical` [[Old]]\n",
       "S/Keyed.md": "---\nrecord: true\n---\n[[Old]]\n",
     });
-    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md", { isRecord: recordTest(() => tagId) });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md", { isRecord: recordTest(() => ({ folders: LEGACY_RECORD_FOLDERS_SEED, ...tagId })) });
     assert.equal(text.get("S/Fm.md"), "---\ntags: [historical, x]\n---\nsee [[Old]]\n");
     assert.equal(text.get("S/Inline.md"), "cited [[Old]] #historical\n");
     assert.equal(text.get("S/Code.md"), "`#historical` [[New]]\n", "a tag inside code is no tag");
@@ -603,14 +607,14 @@ describe("records are never rewritten (01.44 rule 8)", () => {
 
   test("the operator's own property and value (#397) mark a record, judged on the text", () => {
     const id = { method: "property", property: "kind", value: "Record", tag: "record" };
-    const is = recordTest(() => id);
+    const is = recordTest(() => ({ folders: LEGACY_RECORD_FOLDERS_SEED, ...id }));
     assert.equal(is("S/K.md", "---\nkind: record\n---\n"), true);
     assert.equal(is("S/R.md", "---\nrecord: true\n---\n"), false);
   });
 
   test("record: \"true\" counts, as the kernel's isRecordFlag counts it; record: true#x is a string and does not", async () => {
     const { app, text } = fakeApp({ "A/Old.md": "x\n", "S/Q.md": "---\nrecord: \"true\"\n---\n[[Old]]\n", "S/H.md": "---\nrecord: true#x\n---\n[[Old]]\n" });
-    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md");
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md", { isRecord: recordTest(SEEDED) });
     assert.equal(text.get("S/Q.md"), "---\nrecord: \"true\"\n---\n[[Old]]\n");
     assert.equal(text.get("S/H.md"), "---\nrecord: true#x\n---\n[[New]]\n");
     assert.deepEqual(r.records_left, [{ path: "S/Q.md", links: ["[[Old]]"] }]);
@@ -618,7 +622,7 @@ describe("records are never rewritten (01.44 rule 8)", () => {
 
   test("only the record ROOT's folder note is living: a folder note nested inside a record folder is a record", () => {
     const { app } = fakeApp({ "x.md": "x\n" });
-    const is = (p) => recordTest()(p, "");
+    const is = (p) => recordTest(SEEDED)(p, "");
     assert.equal(is(`${ARCH}/00.09 Archive.md`), false);
     assert.equal(is(`${ARCH}/Old project/Old project.md`), true);
     assert.equal(is("00-09 System/03 Agents/03.04 Records/03.04 Records.md"), false);
@@ -653,10 +657,10 @@ describe("records are never rewritten (01.44 rule 8)", () => {
       [`${ARCH}/F.md`]: "[o](../Other.md)\n",
       "00-09 System/00 System management/Other.md": "x\n",
     });
-    const k = await moveWithLinks(app, app.vault.getAbstractFileByPath(`${ARCH}/K.md`), "Live/Sub/K.md");
+    const k = await moveWithLinks(app, app.vault.getAbstractFileByPath(`${ARCH}/K.md`), "Live/Sub/K.md", { isRecord: recordTest(SEEDED) });
     assert.equal(text.get("Live/Sub/K.md"), "---\nrecord: true\n---\n[o](../Other.md)\n");
     assert.deepEqual(k.records_left, [{ path: "Live/Sub/K.md", links: ["[o](../Other.md)"] }]);
-    await moveWithLinks(app, app.vault.getAbstractFileByPath(`${ARCH}/F.md`), "Live/Sub/F.md");
+    await moveWithLinks(app, app.vault.getAbstractFileByPath(`${ARCH}/F.md`), "Live/Sub/F.md", { isRecord: recordTest(SEEDED) });
     assert.equal(text.get("Live/Sub/F.md"), "[o](../../00-09%20System/00%20System%20management/Other.md)\n");
   });
 
@@ -691,17 +695,18 @@ describe("records are never rewritten (01.44 rule 8)", () => {
     const main = fs.readFileSync(new URL("../src/main.ts", import.meta.url), "utf8");
     assert.match(main, /enforceRecordImmutability:\s*\(\)\s*=>\s*this\.settings\.enforceRecordImmutability,/);
     assert.match(main, /recordIdentification:\s*\(\)\s*=>\s*this\.settings\.recordIdentification,/);
+    assert.match(main, /recordFolders:\s*\(\)\s*=>\s*this\.settings\.recordFolders,/);
     const server = fs.readFileSync(new URL("../src/mcp/server.ts", import.meta.url), "utf8");
     assert.match(server, /normalizeRecordIdentification\(ctx\.recordIdentification\?\.\(\)\)/);
     assert.match(server, /ctx\.enforceRecordImmutability\?\.\(\)\s*!==\s*false/);
     for (const f of fs.readdirSync(new URL("../src/mcp/", import.meta.url)).filter((n) => n.endsWith(".ts"))) {
       const src = fs.readFileSync(new URL(`../src/mcp/${f}`, import.meta.url), "utf8");
-      assert.doesNotMatch(src, /getSettings\(\)\??\.(?:recordIdentification|enforceRecordImmutability)\b/, `${f} reads a withheld record setting through getSettings`);
+      assert.doesNotMatch(src, /getSettings\(\)\??\.(?:recordIdentification|enforceRecordImmutability|recordFolders)\b/, `${f} reads a withheld record setting through getSettings`);
     }
   });
 
   test("frontmatter is found as core's recognizer finds it: a BOM, blanks after ---, CRLF, a lone CR, text after the closing --- (finding 2)", () => {
-    const is = recordTest();
+    const is = recordTest(SEEDED);
     for (const t of [
       "\uFEFF---\nrecord: true\n---\n",
       "---  \nrecord: true\n---\n",
@@ -714,7 +719,7 @@ describe("records are never rewritten (01.44 rule 8)", () => {
 
   test("a tag inside code is judged as Obsidian's index delimits code: quoted and listed fences, an unclosed fence, multi-line spans, escaped backticks (finding 3)", () => {
     const tagId = { method: "tag", property: "record", value: "true", tag: "historical" };
-    const is = recordTest(() => tagId);
+    const is = recordTest(() => ({ folders: LEGACY_RECORD_FOLDERS_SEED, ...tagId }));
     assert.equal(is("S/N.md", "> ```\n> #historical\n> ```\n"), false, "a fence inside a quote");
     assert.equal(is("S/N.md", "- ```\n  #historical\n  ```\n"), false, "a fence on a list item");
     assert.equal(is("S/N.md", "```\n#historical\n"), false, "an unclosed fence runs to the end");
@@ -725,7 +730,7 @@ describe("records are never rewritten (01.44 rule 8)", () => {
 
   test("tags are gathered as Obsidian's getAllTags gathers them: Tags: any case, tag: not at all, a string is one tag, **#tag** inline (finding 4)", () => {
     const tagId = { method: "tag", property: "record", value: "true", tag: "historical" };
-    const is = recordTest(() => tagId);
+    const is = recordTest(() => ({ folders: LEGACY_RECORD_FOLDERS_SEED, ...tagId }));
     assert.equal(is("S/N.md", "---\nTags: [historical]\n---\n"), true, "the key matches /^tags$/i");
     assert.equal(is("S/N.md", "---\nTAGS: historical\n---\n"), true, "a string value is one tag");
     assert.equal(is("S/N.md", "---\ntag: historical\n---\n"), false, "Obsidian 1.13 reads tags only, not tag");
@@ -742,11 +747,11 @@ describe("records are never rewritten (01.44 rule 8)", () => {
       "Live/Sub/Plan.md": "[o](../Other.md)\n",
       "Live/Other.md": "x\n",
     });
-    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("Live/Sub/Plan.md"), `${ARCH}/Plan.md`);
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("Live/Sub/Plan.md"), `${ARCH}/Plan.md`, { isRecord: recordTest(SEEDED) });
     assert.equal(text.get(`${ARCH}/Plan.md`), "[o](../../../Live/Other.md)\n", "healed: the record cites a working target as of its archiving");
     assert.deepEqual(r.records_left, []);
     assert.equal(r.ok, true, JSON.stringify(r));
-    const r2 = await moveWithLinks(app, app.vault.getAbstractFileByPath(`${ARCH}/Plan.md`), `${ARCH}/Deeper/Plan.md`);
+    const r2 = await moveWithLinks(app, app.vault.getAbstractFileByPath(`${ARCH}/Plan.md`), `${ARCH}/Deeper/Plan.md`, { isRecord: recordTest(SEEDED) });
     assert.equal(text.get(`${ARCH}/Deeper/Plan.md`), "[o](../../../Live/Other.md)\n", "a record now: left as written");
     assert.deepEqual(r2.records_left, [{ path: `${ARCH}/Deeper/Plan.md`, links: ["[o](../../../Live/Other.md)"] }]);
   });
@@ -772,13 +777,16 @@ describe("records are never rewritten (01.44 rule 8)", () => {
     const read = app.vault.cachedRead;
     app.vault.cachedRead = async (f) => { reads++; return read(f); };
     app.vault.read = async (f) => { reads++; return read(f); };
-    await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md", { updateBacklinks: false });
+    await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md", { isRecord: recordTest(SEEDED), updateBacklinks: false });
     assert.equal(reads, 0);
   });
 });
 
 describe("name checks at the live host's create and move sites (Nelson's bracket rule)", async () => {
-  const { assertCreateName, assertMoveName } = await import("../src/mcp/name-checks.ts");
+  const { assertCreateName, assertMoveName, configureArchiveFolders } = await import("../src/mcp/name-checks.ts");
+  // The archives this vault was seeded with (#482): the plugin ships none.
+  before(() => configureArchiveFolders(() => new RegExp(LEGACY_RECORD_FOLDERS_SEED.archivePattern)));
+  after(() => configureArchiveFolders(undefined));
   const ARCH = "00-09 System/00 System management/00.09 Archive";
   // fakeApp knows files only: give it the archive folder, and unresolved links.
   function withFolders(made, folders, unresolved = {}) {
@@ -826,5 +834,62 @@ describe("name checks at the live host's create and move sites (Nelson's bracket
     await assertMoveName(made.app, "A/Plain.md", "B/Plain v2.md");
     await assert.rejects(assertMoveName(made.app, "A/Plain.md", "B/Plain: v2.md"), (e) => e.code === "unsafe_name");
     assert.equal(reads, 0);
+  });
+});
+
+describe("the folder indicator is a setting (#482)", async () => {
+  const { inRecordFolder, recordTest } = await import("../src/mcp/records.ts");
+  const { DEFAULT_RECORD_IDENTIFICATION, DEFAULT_RECORD_FOLDERS } = await import("../src/kernel/record-guard.ts");
+  const custom = { enabled: true, folders: ["Journal/Logs"], archivePattern: "^Old " };
+
+  test("a configured folder list and archive pattern replace the defaults", () => {
+    assert.equal(inRecordFolder("Journal/Logs/2026/a.md", custom), true);
+    assert.equal(inRecordFolder("X/Old stuff/a.md", custom), true);
+    assert.equal(inRecordFolder("00-09 System/00 System management/00.09 Archive/a.md", custom), false, "the JD default no longer applies");
+    assert.equal(inRecordFolder("00-09 System/03 Agents/03.04 Records/a.md", custom), false);
+    assert.equal(inRecordFolder("Journal/Logs/Logs.md", custom), false, "the root's own index note is living");
+  });
+
+  test("the folder indicator off: no note is a record by folder; an empty pattern: no archive", () => {
+    assert.equal(inRecordFolder("00-09 System/03 Agents/03.04 Records/a.md", { ...DEFAULT_RECORD_FOLDERS, enabled: false }), false);
+    assert.equal(inRecordFolder("A/00.09 Archive/a.md", { ...DEFAULT_RECORD_FOLDERS, archivePattern: "" }), false);
+  });
+
+  test("recordTest reads both indicators from the one getter; each switch works alone", () => {
+    const keyed = "---\nrecord: true\n---\nx\n";
+    const rules = (id, folders) => () => ({ ...DEFAULT_RECORD_IDENTIFICATION, ...id, folders: { ...LEGACY_RECORD_FOLDERS_SEED, ...folders } });
+    assert.equal(recordTest(rules({}, custom))("Journal/Logs/a.md", "x"), true);
+    assert.equal(recordTest(rules({}, { enabled: false }))("00-09 System/03 Agents/03.04 Records/a.md", "x"), false);
+    assert.equal(recordTest(rules({ enabled: false }, {}))("Live/a.md", keyed), false, "note marker off");
+    assert.equal(recordTest(rules({ enabled: false }, {}))("00-09 System/03 Agents/03.04 Records/a.md", "x"), true, "the folder rule still works");
+  });
+
+  test("a move honours a configured folder list", async () => {
+    const { app, text } = fakeApp({ "A/Old.md": "x\n", "Journal/Logs/r.md": "cited [[Old]]\n", "S/L.md": "[[Old]]\n" });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md", {
+      isRecord: recordTest(() => ({ ...DEFAULT_RECORD_IDENTIFICATION, folders: custom })),
+    });
+    assert.equal(text.get("Journal/Logs/r.md"), "cited [[Old]]\n");
+    assert.equal(text.get("S/L.md"), "[[New]]\n");
+    assert.deepEqual(r.records_left.map((x) => x.path), ["Journal/Logs/r.md"]);
+  });
+});
+
+describe("the bracket rule takes its archives from the operator's pattern (#482)", async () => {
+  const { assertCreateName, configureArchiveFolders } = await import("../src/mcp/name-checks.ts");
+  test("a configured pattern decides which existing folder is an archive", () => {
+    const made = fakeApp({ "Old stuff/x.md": "x\n" });
+    const get = made.app.vault.getAbstractFileByPath;
+    made.app.vault.getAbstractFileByPath = (p) => get(p) ?? (p === "Old stuff" || p === "00.09 Archive" ? Object.assign(new TFolder(), { path: p }) : null);
+    made.app.metadataCache.unresolvedLinks = {};
+    try {
+      configureArchiveFolders(() => /^Old /);
+      assert.doesNotThrow(() => assertCreateName(made.app, "Old stuff/[v1] Plan.md"));
+      assert.throws(() => assertCreateName(made.app, "00.09 Archive/[v1] Plan.md"), (e) => e.code === "unsafe_name");
+      configureArchiveFolders(() => null);
+      assert.throws(() => assertCreateName(made.app, "Old stuff/[v1] Plan.md"), (e) => e.code === "unsafe_name", "an empty pattern: no archives");
+    } finally {
+      configureArchiveFolders(undefined);
+    }
   });
 });
