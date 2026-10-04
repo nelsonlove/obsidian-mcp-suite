@@ -11,7 +11,7 @@
 // changing a path meant a release.
 //
 // So the keys are named and discoverable in one file. Where they point is the
-// operator's: the three keys are a host setting (settings tab, Conformance),
+// operator's: the keys are a host setting (settings tab, Conformance),
 // read live per call by the in-app debt and drift sources, and the standalone
 // CLI takes them from `VAULT_MCP_CONVENTIONS` (a JSON object; the old spellings
 // `GOVERNOR_VAULT_CONVENTIONS` and `ASSENT_VAULT_CONVENTIONS` are accepted as
@@ -21,7 +21,8 @@
 // `LEGACY_CONVENTIONS_SEED`, written ONCE into an install whose data.json
 // predates the setting, by exactly one reader (`conventions-policy.ts`).
 //
-// THREE keys since #412 (ruled 2026-09-27). The record had six; the other
+// THREE folder keys since #412 (ruled 2026-09-27), plus `baselineRel` since #493
+// (the baseline note, not a pack convention). The record had six; the other
 // three (`artifactsRoot`, `pluginStackPath`, `uidExemptPaths`) named a vault
 // shape the rebuilt vault no longer has, and their only readers were the
 // drift checks #412 retired. A key nobody reads is a setting that lies, so
@@ -41,15 +42,23 @@ export interface VaultConventions {
   systemRoot: string;
   /** Roots the structure pack never treats as governed content. */
   ungovernedRoots: string[];
+  /**
+   * The accepted-debt baseline note (vault-relative), read by the in-app debt
+   * and drift sources and the CLI (#493). Not a pack convention: a blank one is
+   * not "dead", it means no baseline is configured, and the debt tools, the
+   * drift pane and the CLI refuse (as for a missing note).
+   */
+  baselineRel: string;
 }
 
-/** The three keys, EMPTY: what the plugin ships. Every scalar key empty reads
+/** The four keys, EMPTY: what the plugin ships. Every scalar folder key empty reads
  *  as dead (its packs are not measured); the list key empty reads as "none",
  *  a legitimate configuration (nothing ungoverned). */
 export const EMPTY_VAULT_CONVENTIONS: VaultConventions = Object.freeze({
   registriesRoot: "",
   systemRoot: "",
   ungovernedRoots: [],
+  baselineRel: "",
 }) as VaultConventions;
 
 /** The keys whose value is one path (a blank one is a DEAD convention). */
@@ -68,12 +77,13 @@ export function resolveConventions(raw: unknown): VaultConventions {
     const arr = Array.isArray(v) ? v : typeof v === "string" ? v.split("\n") : [];
     return arr.map((x) => (typeof x === "string" ? x.trim() : "")).filter(Boolean);
   };
-  // Only the three live keys are read: a stale key from a pre-#412 data.json
+  // Only the four live keys are read: a stale key from a pre-#412 data.json
   // (`artifactsRoot`, `pluginStackPath`, `uidExemptPaths`) is dropped here.
   return {
     registriesRoot: str(o.registriesRoot),
     systemRoot: str(o.systemRoot),
     ungovernedRoots: list(o.ungovernedRoots),
+    baselineRel: str(o.baselineRel),
   };
 }
 
@@ -98,6 +108,8 @@ export const LEGACY_CONVENTIONS_SEED: VaultConventions = {
   // Renamed again to `obsidian-mcp-suite` with the repo (2026-09-22); the
   // path is a fact about the vault, corrected as one.
   ungovernedRoots: ["00-09 System/00 System management/00.89 obsidian-mcp-suite"],
+  // Where the baseline lived while its path was a constant in cli.ts (#493).
+  baselineRel: "00-09 System/00 System management/00.89 obsidian-mcp-suite/Archive/Build/Conformance baseline.md",
 };
 
 /** The CLI's environment knob for the conventions, and its two legacy spellings. */
@@ -179,6 +191,8 @@ export const CONVENTION_PACKS: Record<ConventionPathKey, readonly string[]> = {
   registriesRoot: ["conformance_check"],
   systemRoot: ["drift_audit"],
   ungovernedRoots: ["conformance_check"],
+  // The baseline note is read by the debt and drift sources and the CLI, not by a pack (#493).
+  baselineRel: [],
 };
 
 function underAny(path: string, roots: readonly string[]): boolean {
@@ -236,7 +250,8 @@ export function deadConventionPaths(
     // with their checks); a file at the path is not the folder.
     if (!dirs.has(path)) dead.push({ key, path });
   };
-  for (const key of Object.keys(CONVENTION_PACKS) as ConventionPathKey[]) {
+  // The FOLDER conventions only: baselineRel names a note, not a folder, and a blank one is not "dead" (#493).
+  for (const key of [...SCALAR_CONVENTION_KEYS, ...LIST_CONVENTION_KEYS] as ConventionPathKey[]) {
     const v = conv[key];
     // A list key: each named entry is checked; an EMPTY list is "none", not dead.
     if (Array.isArray(v)) for (const entry of v) { if (entry.trim()) check(key, entry); }

@@ -6,7 +6,9 @@
  * Since #412 the record has THREE keys: `registriesRoot` (structure's
  * blueprint registry), `systemRoot` (drift's J) and `ungovernedRoots`
  * (structure); the three keys whose only readers were the retired drift
- * checks are gone, not blank.
+ * checks are gone, not blank. #493 added a fourth key, `baselineRel` (the
+ * accepted-debt baseline note): a setting no pack reads, so it is never a dead
+ * convention.
  */
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
@@ -64,7 +66,8 @@ describe("deadConventionPaths", () => {
     assert.deepEqual(Object.keys(CONVENTION_PACKS).sort(), Object.keys(LEGACY_CONVENTIONS_SEED).sort());
     for (const v of Object.values(CONVENTION_PACKS)) for (const id of v) assert.ok(["drift_audit", "conformance_check", "port_lint", "ste_lint"].includes(id), id);
     // structure.ts reads conv.registriesRoot (blueprint registry) and conv.ungovernedRoots; drift.ts reads conv.systemRoot and nothing else (#412).
-    assert.deepEqual(CONVENTION_PACKS, { registriesRoot: ["conformance_check"], systemRoot: ["drift_audit"], ungovernedRoots: ["conformance_check"] });
+    // baselineRel (#493) is read by the debt/drift sources and the CLI, not by a pack: it feeds none.
+    assert.deepEqual(CONVENTION_PACKS, { registriesRoot: ["conformance_check"], systemRoot: ["drift_audit"], ungovernedRoots: ["conformance_check"], baselineRel: [] });
     const HERE = path.dirname(fileURLToPath(import.meta.url));
     const read = (rel) => fs.readFileSync(path.join(HERE, "..", "src", "conformance", "packs", rel), "utf8");
     const drift = read("drift.ts"), structure = read("structure.ts");
@@ -82,9 +85,9 @@ describe("deadConventionPaths", () => {
       assert.ok(!(key in LEGACY_CONVENTIONS_SEED), key);
       assert.ok(!(key in CONVENTION_PACKS), key);
     }
-    // A data.json that still carries them (written by a build before #412) coerces to the three-key record: the stale keys are dropped, not kept.
+    // A data.json that still carries them (written by a build before #412) coerces to the record: the stale keys are dropped, not kept (baselineRel, absent here, coerces to "").
     const stale = { ...conv, artifactsRoot: "Sys/Artifacts", pluginStackPath: "Sys/Plugin stack.md", uidExemptPaths: ["Sys/T/Daily.md"] };
-    assert.deepEqual(resolveConventions(stale), conv);
+    assert.deepEqual(resolveConventions(stale), { ...conv, baselineRel: "" });
   });
 });
 
@@ -94,7 +97,8 @@ describe("#403 — EMPTY is what ships; blank scalar = dead, empty list = none; 
     assert.deepEqual(dead.map((d) => d.key).sort(), [...SCALAR_CONVENTION_KEYS].sort());
     assert.deepEqual([...SCALAR_CONVENTION_KEYS].sort(), ["registriesRoot", "systemRoot"]);
     assert.ok(dead.every((d) => d.path === ""));
-    assert.deepEqual([...SCALAR_CONVENTION_KEYS, ...LIST_CONVENTION_KEYS].sort(), Object.keys(EMPTY_VAULT_CONVENTIONS).sort(), "the two key lists cover the record exactly");
+    assert.deepEqual([...SCALAR_CONVENTION_KEYS, ...LIST_CONVENTION_KEYS, "baselineRel"].sort(), Object.keys(EMPTY_VAULT_CONVENTIONS).sort(), "the two key lists cover the record exactly, beside baselineRel (#493)");
+    assert.ok(![...SCALAR_CONVENTION_KEYS, ...LIST_CONVENTION_KEYS].includes("baselineRel"), "baselineRel is in neither list: a blank one is none configured, not a dead convention");
   });
 
   test("a blank ENTRY inside a list key is skipped, not dead; a named entry that is absent is dead", () => {
