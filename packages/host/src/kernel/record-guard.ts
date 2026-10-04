@@ -164,6 +164,8 @@ export function recordImmutableRefusal(
 
 /** Mirrors TaskNotes' `taskIdentificationMethod` / `taskTag` shape on purpose — one convention. */
 export interface RecordIdentification {
+  /** The NOTE indicator on or off (#482). Off: no note is a record by its frontmatter or tags (the folder indicator, if on, still applies to moves). */
+  enabled: boolean;
   method: "property" | "tag";
   /** Frontmatter key, when `method` is "property". */
   property: string;
@@ -175,6 +177,7 @@ export interface RecordIdentification {
 
 /** The shipped default — the spelling every existing record note was written in. */
 export const DEFAULT_RECORD_IDENTIFICATION: Readonly<RecordIdentification> = Object.freeze({
+  enabled: true,
   method: "property",
   property: "record",
   value: "true",
@@ -191,6 +194,7 @@ export function normalizeRecordIdentification(raw: unknown): RecordIdentificatio
   const ri = (raw && typeof raw === "object" ? raw : {}) as Partial<Record<keyof RecordIdentification, unknown>>;
   const str = (v: unknown, fallback: string): string => (typeof v === "string" && v.trim() ? v.trim() : fallback);
   return {
+    enabled: ri.enabled !== false,
     method: ri.method === "tag" ? "tag" : "property",
     property: str(ri.property, DEFAULT_RECORD_IDENTIFICATION.property),
     value: str(ri.value, DEFAULT_RECORD_IDENTIFICATION.value),
@@ -214,6 +218,7 @@ export interface RecordEvidence {
  * because an absent tag is a plain "no".
  */
 export function identifiesRecord(id: RecordIdentification, note: RecordEvidence): boolean | undefined {
+  if (id.enabled === false) return false;
   if (id.method === "tag") {
     const want = id.tag.replace(/^#/, "").trim().toLowerCase();
     if (!want) return false;
@@ -222,4 +227,62 @@ export function identifiesRecord(id: RecordIdentification, note: RecordEvidence)
   const fm = note.frontmatter;
   if (!fm || !Object.prototype.hasOwnProperty.call(fm, id.property)) return undefined;
   return isRecordFlag(fm[id.property], id.value);
+}
+
+// ── the FOLDER indicator (#482) ─────────────────────────────────────────────
+// Nelson, 2026-10-02: "we need to make the indicator that a folder contains
+// records — or that a note is a record — both configurable as a constant from
+// the plugin settings as well as the setting itself gets an enable/disable
+// toggle". A note lies in a record folder when a folder on its path is one of
+// `folders` (by its whole vault path) or its name matches `archivePattern`.
+// Used by the moves (records.ts), never by the write guard, which judges a
+// record by the note indicator only.
+
+export interface RecordFolders {
+  /** The FOLDER indicator on or off. */
+  enabled: boolean;
+  /** Vault-relative folder paths whose notes are records. */
+  folders: string[];
+  /** A regular expression (source text) matched against each folder NAME on a path; a match makes the folder a record folder. Empty: none. */
+  archivePattern: string;
+}
+
+/** The shipped default: the agent record folders, and every JD archive (`NN.09 Archive…`, dotted IDs too). */
+export const DEFAULT_RECORD_FOLDERS: Readonly<RecordFolders> = Object.freeze({
+  enabled: true,
+  folders: Object.freeze([
+    "00-09 System/03 Agents/03.04 Records",
+    "00-09 System/03 Agents/03.20 Imported chats",
+    "00-09 System/03 Agents/03.16 Cross-session log",
+  ]) as unknown as string[],
+  archivePattern: "^\\d\\d(?:\\.\\d\\d)*\\.09 Archive(?: |$)",
+});
+
+/**
+ * Coerce a stored value to a complete folder indicator, never throwing: a
+ * non-array list takes the default; entries are trimmed, stripped of a leading
+ * or trailing `/`, and blanks dropped; a pattern that is not a string takes the
+ * default, and one that does not compile is kept as written but matches nothing
+ * (compileRecordFolders), so a typo never widens what counts as a record.
+ */
+export function normalizeRecordFolders(raw: unknown): RecordFolders {
+  const rf = (raw && typeof raw === "object" ? raw : {}) as Partial<Record<keyof RecordFolders, unknown>>;
+  const folders = Array.isArray(rf.folders)
+    ? rf.folders.filter((f): f is string => typeof f === "string").map((f) => f.trim().replace(/^\/+|\/+$/g, "")).filter(Boolean)
+    : [...DEFAULT_RECORD_FOLDERS.folders];
+  return {
+    enabled: rf.enabled !== false,
+    folders,
+    archivePattern: typeof rf.archivePattern === "string" ? rf.archivePattern : DEFAULT_RECORD_FOLDERS.archivePattern,
+  };
+}
+
+/** The archive pattern as a RegExp, or null when it is empty or does not compile. */
+export function archivePatternRegExp(pattern: string): RegExp | null {
+  if (!pattern.trim()) return null;
+  try {
+    return new RegExp(pattern);
+  } catch {
+    return null;
+  }
 }
