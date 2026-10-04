@@ -380,6 +380,7 @@ describe("obsidian_conformance_debt_render tool", () => {
 const ENV_KEYS = [
   "ASSENT_CONTENT_ROOT",
   "ASSENT_BASELINE_REL",
+  "GOVERNOR_BASELINE_REL",
   "ASSENT_EXCLUDED_ROOTS",
   "ASSENT_ACCEPTED_BY",
   "ASSENT_DEBT_BUDGET",
@@ -389,6 +390,9 @@ const ENV_KEYS = [
 function withCleanEnv(fn) {
   const saved = {};
   for (const k of ENV_KEYS) { saved[k] = process.env[k]; delete process.env[k]; }
+  // #493: --rebaseline refuses when no live record is configured, so name one —
+  // a path these fixtures never use, so each fixture baseline is NOT the live record.
+  process.env.GOVERNOR_BASELINE_REL = "Live/Conformance baseline.md";
   return Promise.resolve()
     .then(fn)
     .finally(() => { for (const k of ENV_KEYS) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; } });

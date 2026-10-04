@@ -458,7 +458,7 @@ export class VaultMcpSettingTab extends PluginSettingTab {
     containerEl.createEl("p", {
       cls: "setting-item-description",
       text:
-        "Where the conformance rail's legacy checks look. There is no built-in layout: a blank path means that convention is DEAD — the checks that read it register, are not measured, and the report says so — until you point it at your vault. The in-app debt and drift views read these live; the standalone CLI reads VAULT_MCP_CONVENTIONS instead.",
+        "Where the conformance rail's legacy checks look. There is no built-in layout: a blank folder path means that convention is DEAD — the checks that read it register, are not measured, and the report says so — until you point it at your vault. The baseline note is different: blank means no baseline, and the debt and drift views refuse until you name it. The in-app debt and drift views read these live; the standalone CLI reads VAULT_MCP_CONVENTIONS instead.",
     });
     for (const field of CONVENTION_FIELDS) {
       const current = resolveConventions(this.plugin.settings.vaultConventions)[field.key];
@@ -476,7 +476,7 @@ export class VaultMcpSettingTab extends PluginSettingTab {
         });
       } else {
         setting.addText((t) => {
-          t.setValue(shown).setPlaceholder("blank = not measured");
+          t.setValue(shown).setPlaceholder(field.key === "baselineRel" ? "blank = no baseline (the debt views refuse)" : "blank = not measured");
           t.inputEl.addEventListener("blur", () => commit(t.inputEl.value));
         });
       }

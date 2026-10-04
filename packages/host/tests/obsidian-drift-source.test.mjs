@@ -80,6 +80,31 @@ describe("obsidianDriftSource — #493: the baseline path is the live setting", 
     }
   });
 
+  test("a configured note that is missing → scan() refuses, naming the path", async () => {
+    const root = await withBaseline("x", "Elsewhere/b.md");
+    try {
+      await withoutEnvOverride(async () => {
+        await assert.rejects(() => obsidianDriftSource(app(root), () => [], () => withRel(SEED)).scan(), /Records\/Conformance baseline\.md/);
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("the SETTING beats the env override; the env override is read only when the setting is blank", async () => {
+    // Only the setting's note is a valid baseline; the env one names a missing note.
+    const root = await withBaseline("```ratchet-baseline\nste_lint|editable|Notes/A.md|x\n```\n");
+    try {
+      await withoutEnvOverride(async () => {
+        process.env.GOVERNOR_BASELINE_REL = "Env/Missing baseline.md";
+        assert.ok(Array.isArray(await obsidianDriftSource(app(root), () => [], () => withRel(SEED)).scan()), "the setting is read, not the env");
+        await assert.rejects(() => obsidianDriftSource(app(root), () => [], () => withRel(SEED, "")).scan(), /Env\/Missing baseline\.md/, "blank setting: the env override is read");
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("scan() reads the path per call: changing the setting between two scans makes the second scan use the new path", async () => {
     // Only B exists. The first scan names A (absent) and refuses as missing; the
     // second names B and completes — the same source object, no reload.

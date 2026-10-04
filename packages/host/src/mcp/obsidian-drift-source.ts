@@ -43,7 +43,8 @@ import { join } from "node:path";
 import type { App } from "obsidian";
 import {
   runConformance,
-  baselineRelFrom,
+  inAppBaselineRel,
+  inAppBaselineRefusal,
   excludedRootsFrom,
   baselineMissingRefusal,
   excludedRootRefusal,
@@ -83,8 +84,9 @@ export function obsidianDriftSource(app: App, territories?: () => readonly strin
   return {
     async scan(): Promise<DriftGroup[]> {
       // Per call, from the live setting (#493). None configured reads as missing: the pane says so.
-      const rel = baselineRelFrom(process.env, conventions?.());
-      if (!rel) throw new Error("no conformance baseline is configured: set the baseline note in vault-mcp's Conformance settings (vault conventions, baselineRel)");
+      const rel = inAppBaselineRel(conventions?.());
+      const noneRefusal = inAppBaselineRefusal(rel, true);
+      if (noneRefusal) throw new Error(noneRefusal);
       const baselinePath = join(root, rel);
       const missing = baselineMissingRefusal(baselinePath, existsSync(baselinePath), false);
       if (missing) throw new Error(missing);

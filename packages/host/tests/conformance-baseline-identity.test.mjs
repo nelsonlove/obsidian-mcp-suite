@@ -159,8 +159,13 @@ describe("#493 — the live record is the CONFIGURED baseline, and none configur
     assert.match(rebaselineTargetRefusal(live, root), /live acceptance record/i);
   });
 
-  test("liveRel \"\" (none configured): no live record to protect — null, but the outside-root refusal still fires first", () => {
-    assert.equal(rebaselineTargetRefusal(live, root, ""), null);
+  test("liveRel \"\" (none configured): the live record cannot be identified, so ANY in-root target is REFUSED — the outside-root refusal still fires first", () => {
+    for (const target of [live, path.join(root, "fixture-baseline.md")]) {
+      const r = rebaselineTargetRefusal(target, root, "");
+      assert.ok(r, target);
+      assert.match(r, /refusing to --rebaseline/);
+      assert.match(r, /no live conformance baseline is configured/);
+    }
     assert.match(rebaselineTargetRefusal(path.join(outside, "b.md"), root, ""), /outside the content root/i);
   });
 
@@ -174,7 +179,9 @@ describe("#493 — the live record is the CONFIGURED baseline, and none configur
         assert.match(r.message, /no conformance baseline is configured/, argv.join(" "));
       }
       process.env[CONVENTIONS_ENV] = JSON.stringify({ baselineRel: "   " });
-      assert.match((await cli(`--root=${root}`)).message, /no conformance baseline is configured/, "a blank setting is none");
+      const blank = await cli(`--root=${root}`);
+      assert.match(blank.message, /no conformance baseline is configured/, "a blank setting is none");
+      assert.doesNotMatch(blank.message, /Conformance settings/, "the CLI's message does not send the operator to the plugin's settings, which it does not read");
     } finally {
       configureBaseline(REL);
     }

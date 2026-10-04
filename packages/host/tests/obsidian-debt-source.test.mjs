@@ -70,6 +70,9 @@ describe("obsidianDebtSource — #398 reaches the in-app tool", () => {
     const root = await fixture();
     try {
       await withoutEnvOverride(async () => {
+        // An empty baseline note: the source refuses a missing one (#494 review).
+        await mkdir(path.dirname(path.join(root, REL)), { recursive: true });
+        await writeFile(path.join(root, REL), "```ratchet-baseline\n```\n");
         const src = obsidianDebtSource(app(root), () => ["80-89"], () => withRel(SEED));
         const findings = await src.liveFindings();
         assert.deepEqual(src.skippedTerritories(), [{ path: "80-89 Legal", territory: "80-89" }]);
@@ -129,17 +132,56 @@ describe("obsidianDebtSource — #493: the baseline path is the live setting, re
     }
   });
 
-  test("no baseline configured ⇒ empty baseline text and an empty sidecar (no file is read)", async () => {
+  test("no baseline configured ⇒ baselineText() and liveFindings() REFUSE, never read as 'no accepted debt'; the render source refuses too", async () => {
     const root = await fixture();
     try {
       await withoutEnvOverride(async () => {
-        const src = obsidianDebtRenderSource(app(root), () => [], () => withRel(SEED, ""));
-        assert.equal(await src.baselineText(), "");
-        assert.deepEqual(await src.sidecar(), emptySidecar());
-        assert.equal(src.baselineNotePath(), "");
-        assert.equal(src.defaultRegisterDir(), "", "no baseline: the register goes to the vault root, not to a shipped folder");
-        const bare = obsidianDebtSource(app(root));
-        assert.equal(await bare.baselineText(), "", "no conventions thunk at all: none configured either");
+        const none = /no conformance baseline is configured/;
+        for (const conv of [() => withRel(SEED, ""), () => withRel(SEED, "   "), undefined]) {
+          const src = obsidianDebtSource(app(root), () => [], conv);
+          await assert.rejects(() => src.baselineText(), none);
+          await assert.rejects(() => src.liveFindings(), none);
+        }
+        const render = obsidianDebtRenderSource(app(root), () => [], () => withRel(SEED, ""));
+        await assert.rejects(() => render.baselineText(), none);
+        await assert.rejects(() => render.liveFindings(), none);
+        assert.equal(render.baselineNotePath(), "");
+        assert.equal(render.defaultRegisterDir(), "", "no baseline: the register goes to the vault root, not to a shipped folder");
+        assert.deepEqual(await render.sidecar(), emptySidecar(), "no path: no sidecar is read");
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a configured baseline note that is MISSING ⇒ the debt tool and the render source refuse, naming the path", async () => {
+    const root = await fixture();
+    try {
+      await withoutEnvOverride(async () => {
+        const missing = /the conformance baseline note is missing: '00-09 System\/Records\/Conformance baseline\.md'/;
+        const src = obsidianDebtSource(app(root), () => [], () => withRel(SEED));
+        await assert.rejects(() => src.baselineText(), missing);
+        await assert.rejects(() => src.liveFindings(), missing);
+        const render = obsidianDebtRenderSource(app(root), () => [], () => withRel(SEED));
+        await assert.rejects(() => render.liveFindings(), missing);
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("in-app, the SETTING beats the env override; the env override is read only when the setting is blank", async () => {
+    const root = await fixture();
+    try {
+      await withoutEnvOverride(async () => {
+        for (const [rel, body] of [["Set/Conformance baseline.md", "SETTING"], ["Env/Conformance baseline.md", "ENV"]]) {
+          await mkdir(path.join(root, path.dirname(rel)), { recursive: true });
+          await writeFile(path.join(root, rel), body);
+        }
+        process.env.GOVERNOR_BASELINE_REL = "Env/Conformance baseline.md";
+        assert.equal(await obsidianDebtSource(app(root), () => [], () => withRel(SEED, "Set/Conformance baseline.md")).baselineText(), "SETTING");
+        assert.equal(await obsidianDebtSource(app(root), () => [], () => withRel(SEED, "")).baselineText(), "ENV");
+        assert.equal(obsidianDebtRenderSource(app(root), () => [], () => withRel(SEED, "")).baselineNotePath(), "Env/Conformance baseline.md");
       });
     } finally {
       await rm(root, { recursive: true, force: true });

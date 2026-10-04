@@ -12,7 +12,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { conventionsOnLoad, CONVENTION_FIELDS, conventionFieldValue, commitConvention } from "../src/conventions-policy.ts";
-import { deadConventionPaths } from "../src/conformance/vault-conventions.ts";
+import { deadConventionPaths, withBaselineSeed, conventionsFromEnv, CONVENTIONS_ENV } from "../src/conformance/vault-conventions.ts";
 import { EMPTY_VAULT_CONVENTIONS, LEGACY_CONVENTIONS_SEED } from "../src/conformance/vault-conventions.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -38,10 +38,36 @@ describe("conventionsOnLoad — seed once, fresh empty, present kept", () => {
   test("#493: stored conventions that LACK baselineRel take the former constant's path ONCE (and persist); only that key is seeded", () => {
     const r = conventionsOnLoad({ vaultConventions: { registriesRoot: " R ", systemRoot: "", ungovernedRoots: ["U"] } });
     assert.deepEqual(r, { conventions: { registriesRoot: "R", systemRoot: "", ungovernedRoots: ["U"], baselineRel: LEGACY_CONVENTIONS_SEED.baselineRel }, persist: true }, "the other keys are kept as stored, not re-seeded");
-    assert.deepEqual(conventionsOnLoad({ vaultConventions: {} }), { conventions: { ...EMPTY_VAULT_CONVENTIONS, baselineRel: LEGACY_CONVENTIONS_SEED.baselineRel }, persist: true });
+    assert.deepEqual(conventionsOnLoad({ vaultConventions: {} }), { conventions: EMPTY_VAULT_CONVENTIONS, persist: true }, "an all-blank record lacking the key stays blank (nothing says it was the seeded vault); the key is still persisted");
     // Once persisted, the next load has the key and keeps it: seeded once, not every load.
     assert.deepEqual(conventionsOnLoad({ vaultConventions: r.conventions }), { conventions: r.conventions, persist: false });
   });
+  test("withBaselineSeed: an upgraded record (some other key set) is seeded; an all-blank one is not; a present key is kept", () => {
+    const seed = LEGACY_CONVENTIONS_SEED.baselineRel;
+    assert.equal(withBaselineSeed({ registriesRoot: "R" }).baselineRel, seed, "registriesRoot set");
+    assert.equal(withBaselineSeed({ systemRoot: "S" }).baselineRel, seed, "systemRoot set");
+    assert.equal(withBaselineSeed({ ungovernedRoots: ["U"] }).baselineRel, seed, "a non-empty ungovernedRoots");
+    assert.deepEqual(withBaselineSeed({ registriesRoot: " R ", ungovernedRoots: ["U", " "] }), { registriesRoot: "R", systemRoot: "", ungovernedRoots: ["U"], baselineRel: seed }, "only baselineRel is added; the rest is coerced as stored");
+    for (const blank of [{}, { registriesRoot: "  ", systemRoot: "", ungovernedRoots: [] }, { ungovernedRoots: ["", " "] }]) {
+      assert.deepEqual(withBaselineSeed(blank), EMPTY_VAULT_CONVENTIONS, JSON.stringify(blank));
+    }
+    assert.equal(withBaselineSeed({ registriesRoot: "R", baselineRel: "" }).baselineRel, "", "a present blank key is kept");
+    assert.equal(withBaselineSeed({ registriesRoot: "R", baselineRel: " Mine.md " }).baselineRel, "Mine.md", "a present key is kept, trimmed");
+    for (const junk of [null, undefined, "garbage", ["R"]]) assert.deepEqual(withBaselineSeed(junk), EMPTY_VAULT_CONVENTIONS, String(junk));
+  });
+
+  test("the CLI env path (VAULT_MCP_CONVENTIONS) is seeded the same way", () => {
+    const seed = LEGACY_CONVENTIONS_SEED.baselineRel;
+    const env = (o) => conventionsFromEnv({ [CONVENTIONS_ENV]: JSON.stringify(o) }, () => {});
+    assert.equal(env({ registriesRoot: "R" }).baselineRel, seed, "an upgraded record lacking the key");
+    assert.equal(env({ ungovernedRoots: ["U"] }).baselineRel, seed);
+    assert.equal(env({}).baselineRel, "", "an all-blank record stays blank");
+    assert.equal(env({ registriesRoot: "R", baselineRel: "" }).baselineRel, "", "a present blank key is kept");
+    assert.equal(env({ registriesRoot: "R", baselineRel: "Mine.md" }).baselineRel, "Mine.md");
+    assert.equal(conventionsFromEnv({ GOVERNOR_VAULT_CONVENTIONS: JSON.stringify({ systemRoot: "S" }) }, () => {}).baselineRel, seed, "the legacy spelling too");
+    assert.equal(conventionsFromEnv({}, () => {}).baselineRel, "", "unset: none");
+  });
+
   test("#493: a STORED blank baselineRel is kept blank — the operator cleared it; it is not re-seeded", () => {
     assert.deepEqual(conventionsOnLoad({ vaultConventions: { registriesRoot: "R", baselineRel: "" } }), { conventions: { ...EMPTY_VAULT_CONVENTIONS, registriesRoot: "R" }, persist: false });
     assert.deepEqual(conventionsOnLoad({ vaultConventions: { baselineRel: "   " } }).conventions.baselineRel, "");

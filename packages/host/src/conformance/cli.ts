@@ -573,8 +573,14 @@ export function rebaselineTargetRefusal(
     );
   }
 
-  // No baseline configured: there is no live record to protect by name or inode.
-  if (!liveRel) return null;
+  // No baseline configured: the live record cannot be identified, so nothing can be
+  // shown NOT to be it. Refuse, rather than let --baseline= rewrite it unchecked (#144).
+  if (!liveRel) {
+    return (
+      `refusing to --rebaseline ${baselinePath}: no live conformance baseline is configured, so this target ` +
+      `cannot be checked against it. Set GOVERNOR_BASELINE_REL or baselineRel in ${CONVENTIONS_ENV}.`
+    );
+  }
   const livePath = join(resolve(root), liveRel);
 
   // 2. Same name.
@@ -736,6 +742,22 @@ function renderReport(
 }
 
 // ── thin process entry (not unit-tested; the wiring above is) ─────────────────
+
+/**
+ * The baseline path the IN-APP sources read (#493): the plugin's own setting
+ * first, so an edit in Settings always takes effect; the process-environment
+ * override only when the setting is blank. ("" ⇒ none configured.)
+ */
+export function inAppBaselineRel(conventions?: Pick<VaultConventions, "baselineRel"> | null): string {
+  return (conventions?.baselineRel ?? "").trim() || baselineRelFrom(process.env);
+}
+
+/** The in-app refusal when no baseline is configured, or the configured note is missing. */
+export function inAppBaselineRefusal(rel: string, exists: boolean): string | null {
+  if (!rel) return "no conformance baseline is configured: set the baseline note in vault-mcp's Conformance settings (vault conventions, baselineRel)";
+  if (!exists) return `the conformance baseline note is missing: '${rel}' (vault-mcp's Conformance settings name it) — refusing to report every finding as NEW against an empty baseline`;
+  return null;
+}
 
 /**
  * The baseline's vault-relative path for this invocation: the `BASELINE_REL`
@@ -905,8 +927,8 @@ export async function runCli(argv: string[]): Promise<void> {
   const baselineRel = baselineRelFrom(process.env, conventions);
   if (!baselineArg && !baselineRel) {
     throw new Error(
-      "no conformance baseline is configured: set baselineRel in the vault conventions " +
-        `(${CONVENTIONS_ENV}, or the plugin's Conformance settings), set GOVERNOR_BASELINE_REL, or pass --baseline=<path>`
+      `no conformance baseline is configured: set baselineRel in ${CONVENTIONS_ENV}, ` +
+        "set GOVERNOR_BASELINE_REL, or pass --baseline=<path> (the CLI does not read the plugin's settings)"
     );
   }
   const baselinePath = baselineArg ? resolve(baselineArg) : join(root, baselineRel);
