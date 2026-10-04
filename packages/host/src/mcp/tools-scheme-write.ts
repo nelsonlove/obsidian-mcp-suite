@@ -50,7 +50,7 @@ import { visiblePaths, isVisible, type GuardSettings } from "../guard.js";
 import { pickInstance, parseScopeToken } from "./tools-scheme.js";
 import { moveOne, RW } from "./tools-vault-write.js";
 import { TextCache } from "./move-with-links.js";
-import { recordTest } from "./records.js";
+import { recordTest, type RecordRules } from "./records.js";
 import type { RecordIdentification } from "../kernel/record-guard.js";
 import { planAssign, planRefile, planRenumber, type MoveStep, type OnOccupied } from "../kernel/scheme/mutate.js";
 import type { Address } from "../kernel/scheme/provider.js";
@@ -63,7 +63,7 @@ export interface SchemeWriteToolsCtx {
   notes: () => string[];
   getSettings?: () => GuardSettings & { schemes?: SchemeInstanceConfig[] };
   /** The operator's record identification (#397), for the moves' record test (records.ts). Absent ⇒ the default `record: true`. */
-  recordIdentification?: () => RecordIdentification;
+  recordIdentification?: () => RecordRules;
 }
 
 // Intentionally-duplicated one-liner: `@vault-mcp/core`'s `fail()` does this

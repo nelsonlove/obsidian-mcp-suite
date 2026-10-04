@@ -414,25 +414,55 @@ describe("the note indicator's switch and the folder indicator (#482)", () => {
     assert.equal(normalizeRecordIdentification(undefined).enabled, true);
   });
 
-  test("normalizeRecordFolders: defaults are today's values; lists are cleaned; a bad value never widens the set", () => {
+  test("normalizeRecordFolders: the shipped default is EMPTY; lists are cleaned; a bad value never widens the set", () => {
     for (const raw of [undefined, null, 42, "x", [], {}]) {
-      assert.deepEqual(normalizeRecordFolders(raw), { ...DEFAULT_RECORD_FOLDERS, folders: [...DEFAULT_RECORD_FOLDERS.folders] }, JSON.stringify(raw));
+      assert.deepEqual(normalizeRecordFolders(raw), { enabled: true, folders: [], archivePattern: "" }, JSON.stringify(raw));
     }
-    assert.deepEqual(DEFAULT_RECORD_FOLDERS.folders, [
+    assert.deepEqual(DEFAULT_RECORD_FOLDERS, { enabled: true, folders: [], archivePattern: "" }, "no folder names ship in the plugin");
+    assert.deepEqual(normalizeRecordFolders({ folders: [" /A/B/ ", "", 7, "C"] }).folders, ["A/B", "C"]);
+    assert.equal(normalizeRecordFolders({ enabled: false }).enabled, false);
+  });
+
+  test("recordFoldersOnLoad: a fresh install starts empty; an install that predates the key is seeded once with what #455 hard-coded", async () => {
+    const { recordFoldersOnLoad, LEGACY_RECORD_FOLDERS_SEED } = await import("../src/record-folders-policy.ts");
+    assert.deepEqual(recordFoldersOnLoad(null), { recordFolders: { enabled: true, folders: [], archivePattern: "" }, persist: true });
+    const seeded = recordFoldersOnLoad({ enabled: true });
+    assert.equal(seeded.persist, true);
+    assert.deepEqual(seeded.recordFolders.folders, [
       "00-09 System/03 Agents/03.04 Records",
       "00-09 System/03 Agents/03.20 Imported chats",
       "00-09 System/03 Agents/03.16 Cross-session log",
     ]);
-    assert.deepEqual(normalizeRecordFolders({ folders: [" /A/B/ ", "", 7, "C"] }).folders, ["A/B", "C"]);
-    assert.equal(normalizeRecordFolders({ enabled: false }).enabled, false);
-    assert.equal(normalizeRecordFolders({ archivePattern: "" }).archivePattern, "", "an empty pattern is kept: no archives");
+    assert.equal(seeded.recordFolders.archivePattern, LEGACY_RECORD_FOLDERS_SEED.archivePattern);
+    assert.deepEqual(recordFoldersOnLoad(null, { guardedTerritories: [] }).recordFolders.folders.length, 3, "an adopted install is an existing install");
+    const kept = recordFoldersOnLoad({ recordFolders: { enabled: false, folders: ["X"], archivePattern: "" } });
+    assert.deepEqual(kept, { recordFolders: { enabled: false, folders: ["X"], archivePattern: "" }, persist: false }, "a stored value is kept, even empty");
   });
 
-  test("archivePatternRegExp: the default matches JD archives; empty or broken matches nothing", () => {
-    const re = archivePatternRegExp(DEFAULT_RECORD_FOLDERS.archivePattern);
+  test("archivePatternRegExp: the seeded pattern matches JD archives; empty or broken matches nothing", async () => {
+    const { LEGACY_RECORD_FOLDERS_SEED } = await import("../src/record-folders-policy.ts");
+    const re = archivePatternRegExp(LEGACY_RECORD_FOLDERS_SEED.archivePattern);
     for (const yes of ["00.09 Archive", "41.09 Archive for 41 Banking", "06.37.09 Archive for plugins"]) assert.equal(re.test(yes), true, yes);
     for (const no of ["Archive", "00.09 Archived ideas", "00.08 Archive"]) assert.equal(re.test(no), false, no);
     assert.equal(archivePatternRegExp(""), null);
     assert.equal(archivePatternRegExp("("), null);
+  });
+
+  test("the seed is read only by recordFoldersOnLoad, and the seeder only by loadSettings (no folder names elsewhere in live code)", async () => {
+    const fs = await import("node:fs");
+    const SRC = new URL("../src/", import.meta.url);
+    const hits = [];
+    const walk = (dir) => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const u = new URL(e.name + (e.isDirectory() ? "/" : ""), dir);
+        if (e.isDirectory()) walk(u);
+        else if (e.name.endsWith(".ts")) {
+          const code = fs.readFileSync(u, "utf8").split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
+          if (/LEGACY_RECORD_FOLDERS_SEED|03\.04 Records|\.09 Archive/.test(code)) hits.push(u.pathname.split("/src/")[1]);
+        }
+      }
+    };
+    walk(SRC);
+    assert.deepEqual(hits.sort(), ["record-folders-policy.ts"]);
   });
 });

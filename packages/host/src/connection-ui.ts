@@ -1,4 +1,5 @@
 import { App, Modal, PluginSettingTab, Setting, Notice } from "obsidian";
+import { archivePatternRegExp } from "./kernel/record-guard.js";
 import type VaultMcpPlugin from "./main.js";
 import { buildRegisterCommand } from "./register-command.js";
 import { bridgeDestPath } from "./paths.js";
@@ -771,39 +772,47 @@ export class VaultMcpSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         })
       );
+    // Both fields save when the field is left (the "change" event: blur or Enter),
+    // never on each keystroke, so a half-typed path or pattern is never live.
     new Setting(containerEl)
       .setName("Record folders")
-      .setDesc("One vault folder path per line. Every note under it is a record.")
-      .addTextArea((t) =>
-        t.setValue(this.plugin.settings.recordFolders.folders.join("\n")).onChange(async (v) => {
-          this.plugin.settings.recordFolders.folders = v
+      .setDesc("One vault folder path per line. Every note under it is a record. Saved when you leave the field.")
+      .addTextArea((t) => {
+        t.setValue(this.plugin.settings.recordFolders.folders.join("\n"));
+        t.inputEl.addEventListener("change", async () => {
+          this.plugin.settings.recordFolders.folders = t
+            .getValue()
             .split("\n")
             .map((f) => f.trim().replace(/^\/+|\/+$/g, ""))
             .filter(Boolean);
           await this.plugin.saveSettings();
-        })
-      );
-    const patternSetting = new Setting(containerEl)
-      .setName("Archive folder pattern")
-      .setDesc(
+        });
+      });
+    const patternStatus = (v: string): string =>
+      !v.trim()
+        ? "Empty: no folder is an archive."
+        : archivePatternRegExp(v)
+          ? "In force."
+          : "This pattern does not compile, so it matches nothing: no folder is an archive until you fix it.";
+    const patternSetting = new Setting(containerEl).setName("Archive folder pattern");
+    const patternDesc = (v: string) =>
+      patternSetting.setDesc(
         "A regular expression matched against each folder NAME on a note's path; a match makes that folder an " +
-          "archive (a record folder, and an archive for the bracket rule). Empty: no folder is an archive. The default " +
-          "matches JD archives such as 00.09 Archive and 41.09 Archive for …."
+          "archive (a record folder, and an archive for the bracket rule). Saved when you leave the field. " +
+          patternStatus(v)
       );
-    patternSetting.addText((t) =>
-      t.setValue(this.plugin.settings.recordFolders.archivePattern).onChange(async (v) => {
-        if (v.trim()) {
-          try {
-            new RegExp(v);
-          } catch {
-            patternSetting.setDesc("This pattern does not compile; the last good one is kept.");
-            return; // keep the last good pattern
-          }
-        }
+    patternDesc(this.plugin.settings.recordFolders.archivePattern);
+    patternSetting.addText((t) => {
+      t.setValue(this.plugin.settings.recordFolders.archivePattern);
+      t.inputEl.addEventListener("change", async () => {
+        // Saved as written: a pattern that does not compile matches nothing (archivePatternRegExp),
+        // so a typo can never widen what counts as an archive or a record.
+        const v = t.getValue();
         this.plugin.settings.recordFolders.archivePattern = v;
         await this.plugin.saveSettings();
-      })
-    );
+        patternDesc(v);
+      });
+    });
 
     // ── observation capture ─────────────────────────────────────────────────
     //

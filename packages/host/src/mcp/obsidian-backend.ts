@@ -32,7 +32,7 @@
 
 import { assertCreateName, assertMoveName } from "./name-checks.js";
 import { moveWithLinks, type LinkCheck } from "./move-with-links.js";
-import { recordTest } from "./records.js";
+import { recordTest, type RecordRules } from "./records.js";
 import type { RecordIdentification } from "../kernel/record-guard.js";
 import { indexedLinkers, linkIndexReady, LinkIndexLoadingError } from "./link-index.js";
 import { TFile, TFolder, getAllTags, type App } from "obsidian";
@@ -102,7 +102,7 @@ export class ObsidianBackend implements VaultBackend {
      */
     private readonly onWriteNote?: (facts: { path: string; baseBytes: Uint8Array | null; proposedBytes: Uint8Array; created: boolean }) => void,
     /** The operator's record identification (#397), for moveNote's record test (records.ts). Absent ⇒ the default `record: true`. */
-    private readonly recordIdentification?: () => RecordIdentification,
+    private readonly recordIdentification?: () => RecordRules,
   ) {}
 
   /**

@@ -71,13 +71,16 @@ describe("sync-unsafe names", () => {
   test("brackets (Nelson, 2026-10-02): only in the name of a note under an EXISTING JD archive folder that no other note links to", () => {
     const ARCH = "00-09 System/00 System management/00.09 Archive";
     const real = new Set([ARCH, "40-49 Financial/41 Banking/41.09 Archive for 41 Banking"]);
-    const ctx = (linked) => ({ linked, folderExists: (p) => real.has(p) });
-    assert.equal(inJdArchive(`${ARCH}/x.md`), true);
-    assert.equal(inJdArchive("06 Repos/06.37.09 Archive for plugins/x.md"), true);
-    assert.equal(inJdArchive("Projects/Archive/x.md"), false);
-    assert.equal(inJdArchive("00.09 Archive.md"), false, "a note named like an archive is not in one");
-    assert.equal(inJdArchive("X/00.09 Archive [tmp]/n.md"), false, "a bracketed folder is never an archive");
-    assert.equal(jdArchiveFolder(`${ARCH}/Sub/x.md`), ARCH);
+    const JD = /^\d\d(?:\.\d\d)*\.09 Archive(?: |$)/; // the host passes the operator's pattern; core ships none
+    const ctx = (linked) => ({ linked, folderExists: (p) => real.has(p), isArchive: (n) => JD.test(n) });
+    const isA = (n) => JD.test(n);
+    assert.equal(inJdArchive(`${ARCH}/x.md`, isA), true);
+    assert.equal(inJdArchive("06 Repos/06.37.09 Archive for plugins/x.md", isA), true);
+    assert.equal(inJdArchive("Projects/Archive/x.md", isA), false);
+    assert.equal(inJdArchive(`${ARCH}/x.md`), false, "without a matcher no folder is an archive: core ships no folder names");
+    assert.equal(inJdArchive("00.09 Archive.md", isA), false, "a note named like an archive is not in one");
+    assert.equal(inJdArchive("X/00.09 Archive [tmp]/n.md", isA), false, "a bracketed folder is never an archive");
+    assert.equal(jdArchiveFolder(`${ARCH}/Sub/x.md`, isA), ARCH);
     // creates
     assert.doesNotThrow(() => assertSyncSafeName(`${ARCH}/[superseded] Plan.md`, ctx(false)));
     assert.throws(() => assertSyncSafeName(`${ARCH}/[superseded] Plan.md`), /never in a folder name/, "no context: refused");

@@ -17,9 +17,10 @@ const stripMd = (p: string) => p.replace(/\.md$/i, "").toLowerCase();
 
 /**
  * Which folder names are archives, for Nelson's bracket rule: the operator's
- * archive pattern (#482), set once by server.ts. Unset (a caller outside the
- * live server, e.g. a test): core's JD default. A pattern that is empty or does
- * not compile matches nothing, so brackets are then never freed.
+ * archive pattern (#482), set by server.ts; null while "Records by folder" is
+ * off. Unset (a caller outside the live server, e.g. a test): no archives, as
+ * core decides without a matcher. A pattern that is empty or does not compile
+ * matches nothing, so brackets are then never freed.
  */
 let archivePattern: (() => RegExp | null) | undefined;
 export function configureArchiveFolders(getter: (() => RegExp | null) | undefined): void {
@@ -27,10 +28,8 @@ export function configureArchiveFolders(getter: (() => RegExp | null) | undefine
 }
 function isArchive(): ArchiveMatcher | undefined {
   if (!archivePattern) return undefined;
-  return (name) => {
-    const re = archivePattern?.();
-    return !!re && re.test(name);
-  };
+  const re = archivePattern(); // read and compiled once per check, not once per folder name
+  return (name) => !!re && re.test(name);
 }
 
 function folderExists(app: App): (p: string) => boolean {
