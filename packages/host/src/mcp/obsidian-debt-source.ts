@@ -44,12 +44,20 @@ function vaultRoot(app: App): string {
  */
 export function obsidianDebtSource(app: App, territories?: () => readonly string[], conventions?: () => VaultConventions): DebtSource {
   const root = vaultRoot(app);
-  const baselinePath = join(root, baselineRelFrom(process.env));
+  // Read per call from the live setting (#493), so a changed path applies with no reload. "" ⇒ none configured.
+  const baselineRelNow = () => baselineRelFrom(process.env, conventions?.());
+  const baselinePathNow = () => {
+    const rel = baselineRelNow();
+    return rel ? join(root, rel) : "";
+  };
   const excludedRoots = excludedRootsFrom([], process.env);
   // What the last live run stepped around (#398) — read by the tools after
   // `liveFindings()` resolves, so the report and the register can name it.
   let lastSkipped: readonly SkippedTerritory[] = [];
-  const baselineText = async () => (await readOrNull(baselinePath)) ?? "";
+  const baselineText = async () => {
+    const p = baselinePathNow();
+    return p ? ((await readOrNull(p)) ?? "") : "";
+  };
 
   return {
     async liveFindings(): Promise<Finding[]> {
@@ -86,7 +94,8 @@ export function obsidianDebtSource(app: App, territories?: () => readonly string
     },
     baselineText,
     async sidecar(): Promise<DebtSidecar> {
-      return parseSidecar(await readOrNull(sidecarPathFor(baselinePath)));
+      const p = baselinePathNow();
+      return parseSidecar(p ? await readOrNull(sidecarPathFor(p)) : null);
     },
   };
 }
@@ -101,8 +110,8 @@ export function obsidianDebtSource(app: App, territories?: () => readonly string
  * never touched.
  */
 export function obsidianDebtRenderSource(app: App, territories?: () => readonly string[], conventions?: () => VaultConventions): DebtRegisterSource {
-  const baselineRel = baselineRelFrom(process.env);
-  const dir = posix.dirname(baselineRel);
+  // Per call, from the live setting (#493).
+  const baselineRel = () => baselineRelFrom(process.env, conventions?.());
   const vault = app.vault as unknown as {
     getAbstractFileByPath(path: string): unknown;
     modify(file: unknown, data: string): Promise<void>;
@@ -112,10 +121,12 @@ export function obsidianDebtRenderSource(app: App, territories?: () => readonly 
   return {
     ...obsidianDebtSource(app, territories, conventions),
     defaultRegisterDir(): string {
+      const rel = baselineRel();
+      const dir = rel ? posix.dirname(rel) : ".";
       return dir === "." ? "" : dir;
     },
     baselineNotePath(): string {
-      return baselineRel;
+      return baselineRel();
     },
     async writeNote(path: string, text: string): Promise<void> {
       const existing = vault.getAbstractFileByPath(path);

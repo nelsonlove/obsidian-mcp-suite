@@ -21,19 +21,34 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, link } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { runCli, rebaselineTargetRefusal, DEFAULT_BASELINE_REL } from "../src/conformance/cli.ts";
+import { runCli, rebaselineTargetRefusal } from "../src/conformance/cli.ts";
+import { CONVENTIONS_ENV, CONVENTIONS_ENV_LEGACY } from "../src/conformance/vault-conventions.ts";
 
-// Track the constant rather than restating it: what makes these fixtures the
-// LIVE record is that their path is the default baseline location, so a
-// hardcoded copy silently stops testing the guard the moment the default
-// moves (which it did — the baseline has been refiled twice in 2026-08).
-const REL = DEFAULT_BASELINE_REL;
+// What makes these fixtures the LIVE record is that their path is the
+// CONFIGURED baseline location. Since #493 the plugin ships no such path: it is
+// the vault conventions' `baselineRel`, which `runCli` reads from
+// VAULT_MCP_CONVENTIONS — so the suite configures it there, and hands the same
+// path to `rebaselineTargetRefusal` as its `liveRel`.
+const REL = "00-09 System/Records/Conformance baseline.md";
 const REL_DIR = path.posix.dirname(REL);
 const BODY = "# Conformance baseline\n\n```ratchet-baseline\nste_lint|editable|N/A.md|\n```\n";
 
 let root, live, outside;
 
+// Every env knob that can name the baseline or the conventions, cleared and
+// restored, so the run reads exactly what this suite configures.
+const ENV_KEYS = [CONVENTIONS_ENV, ...CONVENTIONS_ENV_LEGACY, "GOVERNOR_BASELINE_REL", "ASSENT_BASELINE_REL"];
+const savedEnv = ENV_KEYS.map((k) => [k, process.env[k]]);
+function restoreEnv() {
+  for (const [k, v] of savedEnv) if (v !== undefined) process.env[k] = v; else delete process.env[k];
+}
+function configureBaseline(rel) {
+  for (const k of ENV_KEYS) delete process.env[k];
+  if (rel !== undefined) process.env[CONVENTIONS_ENV] = JSON.stringify({ baselineRel: rel });
+}
+
 before(async () => {
+  configureBaseline(REL);
   root = await mkdtemp(path.join(tmpdir(), "id144-"));
   outside = await mkdtemp(path.join(tmpdir(), "id144-out-"));
   await mkdir(path.join(root, REL_DIR), { recursive: true });
@@ -43,6 +58,7 @@ before(async () => {
   await writeFile(live, BODY);
 });
 after(async () => {
+  restoreEnv();
   await rm(root, { recursive: true, force: true });
   await rm(outside, { recursive: true, force: true });
 });
@@ -123,12 +139,45 @@ describe("#144 — the live acceptance record cannot be rewritten via any alias"
   });
 
   test("a genuine in-root fixture is still PERMITTED — the guard is not a blanket refusal", () => {
-    assert.equal(rebaselineTargetRefusal(path.join(root, "fixture-baseline.md"), root), null);
+    assert.equal(rebaselineTargetRefusal(path.join(root, "fixture-baseline.md"), root, REL), null);
   });
 
   test("indeterminate identity refuses rather than assuming safe", () => {
     // A symlink loop cannot be resolved; refusing beats guessing.
-    const r = rebaselineTargetRefusal(path.join(root, "N", "..", "N", "loop.md"), root);
+    const r = rebaselineTargetRefusal(path.join(root, "N", "..", "N", "loop.md"), root, REL);
     assert.equal(r, null, "a resolvable in-root path is fine (control for the case below)");
+  });
+});
+
+describe("#493 — the live record is the CONFIGURED baseline, and none configured is said, not guessed", () => {
+  test("rebaselineTargetRefusal guards the liveRel it is given: the live path refuses, the same file under another liveRel does not", () => {
+    assert.match(rebaselineTargetRefusal(live, root, REL), /live acceptance record/i);
+    assert.equal(rebaselineTargetRefusal(live, root, "Elsewhere/Other baseline.md"), null, "identity is against the configured path, not a shipped one");
+  });
+
+  test("its default liveRel is the configured one (VAULT_MCP_CONVENTIONS' baselineRel)", () => {
+    assert.match(rebaselineTargetRefusal(live, root), /live acceptance record/i);
+  });
+
+  test("liveRel \"\" (none configured): no live record to protect — null, but the outside-root refusal still fires first", () => {
+    assert.equal(rebaselineTargetRefusal(live, root, ""), null);
+    assert.match(rebaselineTargetRefusal(path.join(outside, "b.md"), root, ""), /outside the content root/i);
+  });
+
+  test("runCli with no --baseline= and no configured baselineRel throws 'no conformance baseline is configured' and writes nothing", async () => {
+    const before = await readFile(live, "utf8");
+    try {
+      configureBaseline(undefined);
+      for (const argv of [[`--root=${root}`], [`--root=${root}`, "--rebaseline"], [`--root=${root}`, "--no-baseline"]]) {
+        const r = await cli(...argv);
+        assert.equal(r.threw, true, argv.join(" "));
+        assert.match(r.message, /no conformance baseline is configured/, argv.join(" "));
+      }
+      process.env[CONVENTIONS_ENV] = JSON.stringify({ baselineRel: "   " });
+      assert.match((await cli(`--root=${root}`)).message, /no conformance baseline is configured/, "a blank setting is none");
+    } finally {
+      configureBaseline(REL);
+    }
+    assert.equal(await readFile(live, "utf8"), before);
   });
 });

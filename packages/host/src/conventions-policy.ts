@@ -38,6 +38,13 @@ export function conventionsOnLoad(own: unknown, adopted?: unknown): ConventionsO
   if (!Object.prototype.hasOwnProperty.call(stored, "vaultConventions")) {
     return { conventions: resolveConventions(LEGACY_CONVENTIONS_SEED), persist: true };
   }
+  // #493: the baseline path joined the conventions after they shipped. An install
+  // whose stored conventions lack the key had the path as a constant, so it takes
+  // that path once (and the key is persisted); a stored key, even blank, is kept.
+  const sc = asObject(stored.vaultConventions);
+  if (sc && !Object.prototype.hasOwnProperty.call(sc, "baselineRel")) {
+    return { conventions: resolveConventions({ ...sc, baselineRel: LEGACY_CONVENTIONS_SEED.baselineRel }), persist: true };
+  }
   return { conventions: resolveConventions(stored.vaultConventions), persist: false };
 }
 
@@ -58,6 +65,7 @@ export const CONVENTION_FIELDS: readonly ConventionField[] = [
   { key: "registriesRoot", label: "Registries root", kind: "path", help: "Folder under which the structure check's blueprint registry lives. Feeds conformance_check. Blank = not measured." },
   { key: "systemRoot", label: "System root", kind: "path", help: "The governed system spine's root folder (the drift check's category-number scan). Feeds drift_audit. Blank = not measured." },
   { key: "ungovernedRoots", label: "Ungoverned roots", kind: "paths", help: "One folder per line the structure check never treats as governed content. Empty = everything under the root is governed." },
+  { key: "baselineRel", label: "Conformance baseline note", kind: "path", help: "The accepted-debt baseline note (vault-relative path, ending in .md), read by the conformance debt tools and the drift pane on every run. Blank = no baseline configured: the debt tools read no accepted debt and the drift pane refuses." },
 ];
 
 /** The value a settings-tab field commits for `key`, from the raw text the

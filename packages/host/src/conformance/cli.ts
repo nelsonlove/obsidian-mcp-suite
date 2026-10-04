@@ -555,7 +555,12 @@ export function coverageRefusal(
  * act anyway — which is the test the fail-closed rule actually requires
  * (measure the refused population; do not assume it is exotic).
  */
-export function rebaselineTargetRefusal(baselinePath: string, root: string): string | null {
+export function rebaselineTargetRefusal(
+  baselinePath: string,
+  root: string,
+  // The LIVE record's vault-relative path (the configured baseline); "" when none is configured.
+  liveRel: string = baselineRelFrom(process.env, conventionsFromEnv(process.env)),
+): string | null {
   // 1. Outside the content root ⇒ refuse outright, rather than "not live".
   //    This is what closes the decoupled-root bypass: if --root points
   //    elsewhere, the real acceptance record is no longer inside it.
@@ -568,7 +573,9 @@ export function rebaselineTargetRefusal(baselinePath: string, root: string): str
     );
   }
 
-  const livePath = join(resolve(root), baselineRelFrom(process.env));
+  // No baseline configured: there is no live record to protect by name or inode.
+  if (!liveRel) return null;
+  const livePath = join(resolve(root), liveRel);
 
   // 2. Same name.
   if (resolve(baselinePath) === livePath) return liveRefusal(baselinePath);
@@ -731,24 +738,20 @@ function renderReport(
 // ── thin process entry (not unit-tested; the wiring above is) ─────────────────
 
 /**
- * Vault-relative location of the accepted-debt baseline.
- *
- * A CONVENTION, not a law of the plugin: it is where this fleet's vault keeps
- * its baseline, and any other vault will keep it somewhere else. Overridable
- * without a release via `GOVERNOR_BASELINE_REL` (vault-relative) or `--baseline=`
- * (absolute), so the default is a starting point rather than a hardcoded
- * assumption about somebody's folder layout. The note sits under
- * `Archive/Build/` since the 00.89 slot's build records were archived
- * (2026-09); the bare `Build/` path named nothing, and the in-app sources
- * then read NO accepted debt rather than the record.
+ * The baseline's vault-relative path for this invocation: the `BASELINE_REL`
+ * environment override (`GOVERNOR_BASELINE_REL`, or the legacy `ASSENT_BASELINE_REL`) first,
+ * else the vault conventions' `baselineRel` setting (#493), else "" — none
+ * configured. The plugin ships no path (Nelson, 2026-10-03: "No folder names
+ * are ever in the live code"); an install that predates the key is seeded once
+ * with the path that used to be a constant here (conventions-policy.ts). The
+ * CLI also takes `--baseline=` (absolute).
  */
-export const DEFAULT_BASELINE_REL =
-  "00-09 System/00 System management/00.89 obsidian-mcp-suite/Archive/Build/Conformance baseline.md";
-
-/** The baseline's vault-relative path for this invocation. */
-export function baselineRelFrom(env: Record<string, string | undefined>): string {
+export function baselineRelFrom(
+  env: Record<string, string | undefined>,
+  conventions?: Pick<VaultConventions, "baselineRel"> | null,
+): string {
   const v = (envAliased(env, "BASELINE_REL") ?? "").trim();
-  return v || DEFAULT_BASELINE_REL;
+  return v || (conventions?.baselineRel ?? "").trim();
 }
 const FENCE = "```ratchet-baseline";
 
@@ -898,7 +901,14 @@ export async function runCli(argv: string[]): Promise<void> {
     root = discoverRoot(process.cwd());
   }
   const baselineArg = argv.find((a) => a.startsWith("--baseline="))?.slice("--baseline=".length);
-  const baselineRel = baselineRelFrom(process.env);
+  const conventions = conventionsFromEnv(process.env);
+  const baselineRel = baselineRelFrom(process.env, conventions);
+  if (!baselineArg && !baselineRel) {
+    throw new Error(
+      "no conformance baseline is configured: set baselineRel in the vault conventions " +
+        `(${CONVENTIONS_ENV}, or the plugin's Conformance settings), set GOVERNOR_BASELINE_REL, or pass --baseline=<path>`
+    );
+  }
   const baselinePath = baselineArg ? resolve(baselineArg) : join(root, baselineRel);
   // A MISSING baseline is refused, not silently treated as empty. An empty
   // baseline makes every finding read NEW and every accepted-debt key read
@@ -936,7 +946,7 @@ export async function runCli(argv: string[]): Promise<void> {
     // The vault conventions (#403): from the invocation's environment
     // (`VAULT_MCP_CONVENTIONS`; the two old spellings read once more, warned),
     // never a constant; unset means every convention dead, said loudly.
-    conventions: conventionsFromEnv(process.env),
+    conventions,
     // Debt-budget tooth (#211): warn-only unless --strict-budget.
     debtBudget,
     strictBudget,
@@ -1025,7 +1035,7 @@ export async function runCli(argv: string[]): Promise<void> {
     // accepted debt exactly as it was.
     // Identity first: whether this write lands on the live acceptance record is
     // decided by the filesystem, before any coverage reasoning (#144).
-    const targetRefusal = rebaselineTargetRefusal(baselinePath, root);
+    const targetRefusal = rebaselineTargetRefusal(baselinePath, root, baselineRel);
     if (targetRefusal) throw new Error(targetRefusal);
     const refusal = rebaselineRefusal({
       targetsLiveBaseline: false, // established above; a live target already threw
