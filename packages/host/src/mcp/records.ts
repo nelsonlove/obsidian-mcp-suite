@@ -59,11 +59,13 @@ export type RecordRules = RecordIdentification & { folders: RecordFolders };
  * ….md`) is that folder's living index, not a record. A folder note nested
  * deeper inside a record folder is a record like its siblings.
  */
-const compiled = new WeakMap<RecordFolders, RegExp | null>();
-export function inRecordFolder(path: string, cfg: RecordFolders = DEFAULT_RECORD_FOLDERS): boolean {
+export function inRecordFolder(
+  path: string,
+  cfg: RecordFolders = DEFAULT_RECORD_FOLDERS,
+  // The compiled archive pattern, when the caller has it (recordTest compiles once per move).
+  archive: RegExp | null = archivePatternRegExp(cfg.archivePattern),
+): boolean {
   if (cfg.enabled === false) return false;
-  if (!compiled.has(cfg)) compiled.set(cfg, archivePatternRegExp(cfg.archivePattern));
-  const archive = compiled.get(cfg) ?? null;
   const segs = path.split("/");
   const folders = segs.slice(0, -1);
   const base = segs[segs.length - 1].replace(/\.md$/i, "");
@@ -158,10 +160,16 @@ export function recordTest(identification?: () => RecordRules): IsRecord {
   // Read once, on first use: one move (or one batch, one renumber) is judged under
   // one set of settings, and the pattern is compiled once, not once per note.
   let rules: RecordRules | undefined;
+  let archive: RegExp | null = null;
   return (path, text) => {
-    rules ??= identification?.() ?? { ...DEFAULT_RECORD_IDENTIFICATION, folders: DEFAULT_RECORD_FOLDERS };
+    if (!rules) {
+      const got = identification?.() ?? { ...DEFAULT_RECORD_IDENTIFICATION, folders: DEFAULT_RECORD_FOLDERS };
+      // Rules without the folder half (an untyped caller) get the shipped EMPTY folder indicator: never wider.
+      rules = { ...got, folders: got.folders ?? DEFAULT_RECORD_FOLDERS };
+      archive = archivePatternRegExp(rules.folders.archivePattern);
+    }
     const id = rules;
-    if (inRecordFolder(path, id.folders)) return true;
+    if (inRecordFolder(path, id.folders, archive)) return true;
     return identifiesRecord(id, recordEvidenceFromText(text)) === true;
   };
 }

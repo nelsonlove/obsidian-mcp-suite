@@ -11,7 +11,6 @@ import { UnsafeNameError } from "@vault-mcp/core";
 import { assertMoveName } from "./name-checks.js";
 import { moveWithLinks, TextCache, type LinkCheck, type MoveWithLinksOptions } from "./move-with-links.js";
 import { recordTest, type RecordRules } from "./records.js";
-import type { RecordIdentification } from "../kernel/record-guard.js";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { type App, TFile } from "obsidian";

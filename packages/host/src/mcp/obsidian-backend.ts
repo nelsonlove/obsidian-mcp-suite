@@ -33,7 +33,6 @@
 import { assertCreateName, assertMoveName } from "./name-checks.js";
 import { moveWithLinks, type LinkCheck } from "./move-with-links.js";
 import { recordTest, type RecordRules } from "./records.js";
-import type { RecordIdentification } from "../kernel/record-guard.js";
 import { indexedLinkers, linkIndexReady, LinkIndexLoadingError } from "./link-index.js";
 import { TFile, TFolder, getAllTags, type App } from "obsidian";
 import {

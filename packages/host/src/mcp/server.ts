@@ -410,7 +410,8 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
     const f = normalizeRecordFolders(ctx.recordFolders?.());
     return f.enabled ? archivePatternRegExp(f.archivePattern) : null;
   });
-  const probe = obsidianProbe(app, () => ctx.enforceRecordImmutability?.() !== false, recordIdentification);
+  // The guard's probe reads only the note marker: no folder settings built on its hot path.
+  const probe = obsidianProbe(app, () => ctx.enforceRecordImmutability?.() !== false, () => normalizeRecordIdentification(ctx.recordIdentification?.()));
   const visible = (paths: string[]) => visiblePaths(paths, ctx.getSettings());
   // Hoisted so obsidian_write_notes can drive the same backend writeNote through
   // its own per-item guarded dispatch (see the write-notes block below).
