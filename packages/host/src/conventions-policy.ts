@@ -29,26 +29,44 @@ export interface ConventionsOnLoad {
 }
 
 /**
- * #493: the baseline path joined the conventions after they shipped. A stored
- * record that LACKS the key and belongs to an upgraded install (some other key
- * set) takes, once, the path that install was reading: the process-environment
- * override (GOVERNOR_BASELINE_REL / ASSENT_BASELINE_REL) when one is set, else
- * the path the old constant held. A record whose keys are all blank is a fresh
- * install's (#403 shipped it empty): it stays without a baseline, so no
- * operator's folder name lands in a stranger's settings. A record that HAS the
- * key keeps it, even blank. This file is the seed's one reader.
+ * #493: the baseline path joined the conventions after they shipped. Before
+ * #493 EVERY install read a baseline — the process-environment override
+ * (GOVERNOR_BASELINE_REL / ASSENT_BASELINE_REL) when one was set, else the path
+ * the old constant held — so a stored record that LACKS the key takes, once,
+ * the path that install was reading:
+ *  - the override, when one is set;
+ *  - else the old constant's path, when the record belongs to an upgraded
+ *    install (some other key set) OR that note exists in this vault (an
+ *    operator who blanked every folder still measured against it);
+ *  - else nothing: a fresh install (#403 shipped it empty) in a vault without
+ *    that note stays without a baseline, so no operator's folder name lands in
+ *    a stranger's settings.
+ * A record that HAS the key keeps it, even blank. This file is the seed's one
+ * reader. `exists` answers "is this vault-relative note on disk"; without it
+ * the all-blank case takes only the override.
  */
-export function withBaselineSeed(stored: unknown, env: Record<string, string | undefined> = process.env): VaultConventions {
+export function withBaselineSeed(
+  stored: unknown,
+  env: Record<string, string | undefined> = process.env,
+  exists?: (rel: string) => boolean,
+): VaultConventions {
   const resolved = resolveConventions(stored);
   const o = stored && typeof stored === "object" && !Array.isArray(stored) ? (stored as Record<string, unknown>) : null;
   if (!o || Object.prototype.hasOwnProperty.call(o, "baselineRel")) return resolved;
-  const upgraded = resolved.registriesRoot !== "" || resolved.systemRoot !== "" || resolved.ungovernedRoots.length > 0;
-  if (!upgraded) return resolved;
   const override = (envAliased(env, "BASELINE_REL") ?? "").trim();
-  return { ...resolved, baselineRel: override || LEGACY_CONVENTIONS_SEED.baselineRel };
+  if (override) return { ...resolved, baselineRel: override };
+  const legacy = LEGACY_CONVENTIONS_SEED.baselineRel;
+  const upgraded = resolved.registriesRoot !== "" || resolved.systemRoot !== "" || resolved.ungovernedRoots.length > 0;
+  if (upgraded || exists?.(legacy)) return { ...resolved, baselineRel: legacy };
+  return resolved;
 }
 
-export function conventionsOnLoad(own: unknown, adopted?: unknown): ConventionsOnLoad {
+export function conventionsOnLoad(
+  own: unknown,
+  adopted?: unknown,
+  env: Record<string, string | undefined> = process.env,
+  exists?: (rel: string) => boolean,
+): ConventionsOnLoad {
   const asObject = (v: unknown) => (v && typeof v === "object" ? (v as Record<string, unknown>) : null);
   // The plugin's own data.json first; failing that, the settings adopted from
   // the pre-split provider on this first load. An adopted install is an
@@ -57,7 +75,10 @@ export function conventionsOnLoad(own: unknown, adopted?: unknown): ConventionsO
   const stored = asObject(own) ?? asObject(adopted);
   if (!stored) return { conventions: resolveConventions(EMPTY_VAULT_CONVENTIONS), persist: true };
   if (!Object.prototype.hasOwnProperty.call(stored, "vaultConventions")) {
-    return { conventions: resolveConventions(LEGACY_CONVENTIONS_SEED), persist: true };
+    // The pre-#403 seed, with the baseline that install was reading: the env override wins over the old constant (#494 review).
+    const override = (envAliased(env, "BASELINE_REL") ?? "").trim();
+    const seeded = resolveConventions(LEGACY_CONVENTIONS_SEED);
+    return { conventions: override ? { ...seeded, baselineRel: override } : seeded, persist: true };
   }
   // #493: the baseline path joined the conventions after they shipped. An install
   // whose stored conventions lack the key had the path as a constant, so it takes
@@ -65,7 +86,7 @@ export function conventionsOnLoad(own: unknown, adopted?: unknown): ConventionsO
   const sc = asObject(stored.vaultConventions);
   if (sc && !Object.prototype.hasOwnProperty.call(sc, "baselineRel")) {
     // Persist either way, so the key is written and this branch runs once.
-    return { conventions: withBaselineSeed(sc), persist: true };
+    return { conventions: withBaselineSeed(sc, env, exists), persist: true };
   }
   return { conventions: resolveConventions(stored.vaultConventions), persist: false };
 }

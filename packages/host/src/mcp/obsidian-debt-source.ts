@@ -13,7 +13,7 @@ import type { DebtSource, DebtRegisterSource } from "./tools-conformance-debt.js
 import type { Finding } from "../conformance/finding.js";
 import type { SkippedTerritory } from "../conformance/snapshot.js";
 import { parseSidecar, sidecarPathFor, type DebtSidecar } from "../conformance/debt-sidecar.js";
-import { runConformance, inAppBaselineRel, inAppBaselineRefusal, excludedRootsFrom, coverageRefusal, baselinePackIds } from "../conformance/cli.js";
+import { runConformance, inAppBaselineRel, inAppBaselineRefusal, inAppBaselineFromEnv, excludedRootsFrom, coverageRefusal, baselinePackIds } from "../conformance/cli.js";
 import { parseBaseline } from "../conformance/ratchet.js";
 import { DEFAULT_VOCABULARIES } from "@vault-mcp/core";
 import { DEFAULT_SCHEMES } from "../kernel/scheme/registry.js";
@@ -38,8 +38,9 @@ function vaultRoot(app: App): string {
 /**
  * The Obsidian `DebtSource`: a live conformance run + the baseline/sidecar on
  * disk, using the SAME config resolution the CLI rail uses (default schemes /
- * vocabularies, env-driven excluded roots and baseline location, legacy packs
- * on). `liveFindings` runs the full engine once; `baselineText`/`sidecar` are
+ * vocabularies, env-driven excluded roots, legacy packs on). The baseline
+ * location is the plugin's Conformance setting, read per call, then the env
+ * override (#493); none configured or a missing note refuses. `liveFindings` runs the full engine once; `baselineText`/`sidecar` are
  * cheap reads.
  */
 export function obsidianDebtSource(app: App, territories?: () => readonly string[], conventions?: () => VaultConventions): DebtSource {
@@ -58,7 +59,7 @@ export function obsidianDebtSource(app: App, territories?: () => readonly string
   const baselineText = async () => {
     const rel = baselineRelNow();
     const text = rel ? await readOrNull(join(root, rel)) : null;
-    const refusal = inAppBaselineRefusal(rel, text !== null);
+    const refusal = inAppBaselineRefusal(rel, text !== null, inAppBaselineFromEnv(conventions?.()));
     if (refusal) throw new Error(refusal);
     return text as string;
   };
