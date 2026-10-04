@@ -235,6 +235,7 @@ export function identifiesRecord(id: RecordIdentification, note: RecordEvidence)
 // the plugin settings as well as the setting itself gets an enable/disable
 // toggle". A note lies in a record folder when a folder on its path is one of
 // `folders` (by its whole vault path) or its name matches `archivePattern`.
+// The shipped default is empty; see record-folders-policy.ts for the seed.
 // Used by the moves (records.ts), never by the write guard, which judges a
 // record by the note indicator only.
 
@@ -247,15 +248,16 @@ export interface RecordFolders {
   archivePattern: string;
 }
 
-/** The shipped default: the agent record folders, and every JD archive (`NN.09 Archive…`, dotted IDs too). */
+/**
+ * The shipped default: EMPTY (no record folders, no archive pattern). The plugin
+ * ships no folder names (Nelson, 2026-10-03: "No folder names are ever in the
+ * live code"); an install that predates the setting is seeded once with what
+ * #455 hard-coded (record-folders-policy.ts).
+ */
 export const DEFAULT_RECORD_FOLDERS: Readonly<RecordFolders> = Object.freeze({
   enabled: true,
-  folders: Object.freeze([
-    "00-09 System/03 Agents/03.04 Records",
-    "00-09 System/03 Agents/03.20 Imported chats",
-    "00-09 System/03 Agents/03.16 Cross-session log",
-  ]) as unknown as string[],
-  archivePattern: "^\\d\\d(?:\\.\\d\\d)*\\.09 Archive(?: |$)",
+  folders: Object.freeze([]) as unknown as string[],
+  archivePattern: "",
 });
 
 /**

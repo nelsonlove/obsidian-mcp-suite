@@ -404,8 +404,12 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
     ...normalizeRecordIdentification(ctx.recordIdentification?.()),
     folders: normalizeRecordFolders(ctx.recordFolders?.()),
   });
-  // Nelson's bracket rule asks which folders are archives: the same pattern.
-  configureArchiveFolders(() => archivePatternRegExp(normalizeRecordFolders(ctx.recordFolders?.()).archivePattern));
+  // Nelson's bracket rule asks the same archive pattern which folders are archives;
+  // with "Records by folder" off, no folder is an archive for it either.
+  configureArchiveFolders(() => {
+    const f = normalizeRecordFolders(ctx.recordFolders?.());
+    return f.enabled ? archivePatternRegExp(f.archivePattern) : null;
+  });
   const probe = obsidianProbe(app, () => ctx.enforceRecordImmutability?.() !== false, recordIdentification);
   const visible = (paths: string[]) => visiblePaths(paths, ctx.getSettings());
   // Hoisted so obsidian_write_notes can drive the same backend writeNote through

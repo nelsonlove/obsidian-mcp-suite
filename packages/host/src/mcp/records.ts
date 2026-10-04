@@ -14,11 +14,9 @@
 //      moments ago, its cache still stale, is judged by what it says now); OR
 //   2. it lies in a record folder, per the operator's FOLDER indicator (#482, a
 //      plugin setting: a list of folder paths, and a pattern for archive folder
-//      names; each indicator has its own on/off switch). The defaults are the
-//      agent record folders and every JD archive in any area (`NN.09 Archive…`,
-//      and the dotted form `NN.NN.09 Archive…`). This is WIDER than
-//      `dangling-links` in 00.13 Scripts, whose own fallback list names only
-//      `00.09 Archive` among the archives.
+//      names; each indicator has its own on/off switch). The plugin ships both
+//      empty; an install that predates the setting is seeded once with what
+//      #455 hard-coded (record-folders-policy.ts).
 //
 // Archiving is the moment a note becomes a record. A LIVING note moved INTO a
 // record folder is judged living for that move (a record by folder only when
@@ -46,14 +44,11 @@ import {
   type RecordIdentification,
 } from "../kernel/record-guard.js";
 
-/** The shipped default record folders (kept as an export for callers that name them; the live list is the setting). */
-export const RECORD_FOLDERS = [...DEFAULT_RECORD_FOLDERS.folders];
-
 /** Is `path` a record? `text` is the note's current text: the record identification is read from it, so a note written moments ago (its cache still stale) is judged by what it says now. */
 export type IsRecord = (path: string, text: string) => boolean;
 
 /** The note indicator and the folder indicator together, as server.ts hands them to the moves (#482). */
-export type RecordRules = RecordIdentification & { folders?: RecordFolders };
+export type RecordRules = RecordIdentification & { folders: RecordFolders };
 
 /**
  * True when `path` lies in a record folder, per the folder indicator (#482):
@@ -64,9 +59,11 @@ export type RecordRules = RecordIdentification & { folders?: RecordFolders };
  * ….md`) is that folder's living index, not a record. A folder note nested
  * deeper inside a record folder is a record like its siblings.
  */
+const compiled = new WeakMap<RecordFolders, RegExp | null>();
 export function inRecordFolder(path: string, cfg: RecordFolders = DEFAULT_RECORD_FOLDERS): boolean {
   if (cfg.enabled === false) return false;
-  const archive = archivePatternRegExp(cfg.archivePattern);
+  if (!compiled.has(cfg)) compiled.set(cfg, archivePatternRegExp(cfg.archivePattern));
+  const archive = compiled.get(cfg) ?? null;
   const segs = path.split("/");
   const folders = segs.slice(0, -1);
   const base = segs[segs.length - 1].replace(/\.md$/i, "");
@@ -158,9 +155,13 @@ export function recordEvidenceFromText(text: string): RecordEvidence {
  * current `text`, OR the record-folder fallback.
  */
 export function recordTest(identification?: () => RecordRules): IsRecord {
+  // Read once, on first use: one move (or one batch, one renumber) is judged under
+  // one set of settings, and the pattern is compiled once, not once per note.
+  let rules: RecordRules | undefined;
   return (path, text) => {
-    const id = identification?.() ?? DEFAULT_RECORD_IDENTIFICATION;
-    if (inRecordFolder(path, (id as RecordRules).folders ?? DEFAULT_RECORD_FOLDERS)) return true;
+    rules ??= identification?.() ?? { ...DEFAULT_RECORD_IDENTIFICATION, folders: DEFAULT_RECORD_FOLDERS };
+    const id = rules;
+    if (inRecordFolder(path, id.folders)) return true;
     return identifiesRecord(id, recordEvidenceFromText(text)) === true;
   };
 }
