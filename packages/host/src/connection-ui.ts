@@ -694,6 +694,19 @@ export class VaultMcpSettingTab extends PluginSettingTab {
 
     // How a note declares itself a record — the operator's convention, not the
     // plugin's (#397). Same three knobs TaskNotes gives its task identifier.
+    // Its own on/off switch (#482).
+    new Setting(containerEl)
+      .setName("Records by note marker")
+      .setDesc(
+        "A note is a record when it carries the marker below. Off: no note is a record by its marker, for the write " +
+          "check, the moves and heading renames alike. Applies immediately."
+      )
+      .addToggle((t) =>
+        t.setValue(this.plugin.settings.recordIdentification.enabled !== false).onChange(async (value) => {
+          this.plugin.settings.recordIdentification.enabled = value;
+          await this.plugin.saveSettings();
+        })
+      );
     new Setting(containerEl)
       .setName("Record identifier")
       .setDesc("How a note marks itself as a record. By a frontmatter property with a value, or by a tag. Applies immediately.")
@@ -740,6 +753,57 @@ export class VaultMcpSettingTab extends PluginSettingTab {
           })
         );
     }
+
+    // The folder indicator (#482, Nelson 2026-10-02): which folders hold records.
+    // Used by the moves (a move never rewrites a link inside a record); the write
+    // check above judges by the note marker only. The archive pattern also tells
+    // the bracket rule which folders are archives.
+    new Setting(containerEl)
+      .setName("Records by folder")
+      .setDesc(
+        "A note under one of the record folders below, or under a folder whose name matches the archive pattern, is a " +
+          "record for moves: a move leaves its links as written. A folder's own index note is not a record. Off: no " +
+          "note is a record by its folder. Applies immediately."
+      )
+      .addToggle((t) =>
+        t.setValue(this.plugin.settings.recordFolders.enabled).onChange(async (value) => {
+          this.plugin.settings.recordFolders.enabled = value;
+          await this.plugin.saveSettings();
+        })
+      );
+    new Setting(containerEl)
+      .setName("Record folders")
+      .setDesc("One vault folder path per line. Every note under it is a record.")
+      .addTextArea((t) =>
+        t.setValue(this.plugin.settings.recordFolders.folders.join("\n")).onChange(async (v) => {
+          this.plugin.settings.recordFolders.folders = v
+            .split("\n")
+            .map((f) => f.trim().replace(/^\/+|\/+$/g, ""))
+            .filter(Boolean);
+          await this.plugin.saveSettings();
+        })
+      );
+    const patternSetting = new Setting(containerEl)
+      .setName("Archive folder pattern")
+      .setDesc(
+        "A regular expression matched against each folder NAME on a note's path; a match makes that folder an " +
+          "archive (a record folder, and an archive for the bracket rule). Empty: no folder is an archive. The default " +
+          "matches JD archives such as 00.09 Archive and 41.09 Archive for …."
+      );
+    patternSetting.addText((t) =>
+      t.setValue(this.plugin.settings.recordFolders.archivePattern).onChange(async (v) => {
+        if (v.trim()) {
+          try {
+            new RegExp(v);
+          } catch {
+            patternSetting.setDesc("This pattern does not compile; the last good one is kept.");
+            return; // keep the last good pattern
+          }
+        }
+        this.plugin.settings.recordFolders.archivePattern = v;
+        await this.plugin.saveSettings();
+      })
+    );
 
     // ── observation capture ─────────────────────────────────────────────────
     //

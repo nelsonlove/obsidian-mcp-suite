@@ -38,17 +38,25 @@ export function syncUnsafeChars(relPath: string): string[] | null {
 /** A JD archive folder: `00.09 Archive`, `41.09 Archive for 41 Banking & accounts`, `06.37.09 Archive for …`; never one whose own name holds a bracket. */
 const ARCHIVE_SEGMENT = /^\d\d(?:\.\d\d)*\.09 Archive(?: [^[\]]*)?$/;
 
-/** The path of the deepest JD archive folder `relPath` lies under, or null. */
-export function jdArchiveFolder(relPath: string): string | null {
+/**
+ * Which folder NAMES are archives. The host passes its own matcher (the
+ * operator's archive pattern, #482); without one, the JD default above. A folder
+ * whose own name holds a bracket is never an archive, whatever the matcher says.
+ */
+export type ArchiveMatcher = (folderName: string) => boolean;
+const defaultArchive: ArchiveMatcher = (name) => ARCHIVE_SEGMENT.test(name);
+
+/** The path of the deepest archive folder `relPath` lies under, or null. */
+export function jdArchiveFolder(relPath: string, isArchive: ArchiveMatcher = defaultArchive): string | null {
   const segs = relPath.split("/");
   let found: string | null = null;
-  for (let i = 0; i < segs.length - 1; i++) if (ARCHIVE_SEGMENT.test(segs[i])) found = segs.slice(0, i + 1).join("/");
+  for (let i = 0; i < segs.length - 1; i++) if (!/[[\]]/.test(segs[i]) && isArchive(segs[i])) found = segs.slice(0, i + 1).join("/");
   return found;
 }
 
-/** True when a folder of `relPath` is named as a JD archive folder (whether it exists is the caller's to check). */
-export function inJdArchive(relPath: string): boolean {
-  return jdArchiveFolder(relPath) !== null;
+/** True when a folder of `relPath` is named as an archive folder (whether it exists is the caller's to check). */
+export function inJdArchive(relPath: string, isArchive: ArchiveMatcher = defaultArchive): boolean {
+  return jdArchiveFolder(relPath, isArchive) !== null;
 }
 
 /** True when any note other than `path` links to it, per a source → target → count map (Obsidian's `resolvedLinks`). */
@@ -66,6 +74,8 @@ export function hasInboundLinks(resolvedLinks: Record<string, Record<string, num
 export interface BracketContext {
   linked: boolean;
   folderExists: (folderPath: string) => boolean;
+  /** Which folder names are archives (#482: the operator's archive pattern); absent ⇒ the JD default. */
+  isArchive?: ArchiveMatcher;
 }
 
 const BRACKETS = new Set(["[", "]"]);
@@ -74,7 +84,7 @@ const BRACKET_RULE =
 
 /** True when `relPath` lies under a JD archive folder that exists now. */
 function inExistingArchive(relPath: string, ctx: BracketContext | undefined): boolean {
-  const arch = jdArchiveFolder(relPath);
+  const arch = jdArchiveFolder(relPath, ctx?.isArchive);
   return arch !== null && !!ctx && ctx.folderExists(arch);
 }
 

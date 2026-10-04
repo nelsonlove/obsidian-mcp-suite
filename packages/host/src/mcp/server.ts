@@ -31,7 +31,8 @@ import { sealUnguardedRegistration } from "./seal-registration.js";
 import { visiblePaths } from "../guard.js";
 import type { JournalActor } from "../kernel/index.js";
 import { obsidianProbe } from "../kernel/obsidian-probe.js";
-import { normalizeRecordIdentification } from "../kernel/record-guard.js";
+import { normalizeRecordIdentification, normalizeRecordFolders, archivePatternRegExp } from "../kernel/record-guard.js";
+import { configureArchiveFolders } from "./name-checks.js";
 import { ObsidianBackend } from "./obsidian-backend.js";
 import { registerWriteNotesTool, batchItemWriter, type GuardedWrite } from "./tools-write-notes.js";
 import { uuidv7, formatLocalTimestamp } from "./write-notes-compose.js";
@@ -396,7 +397,15 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   // `.record()` is obsidian_rename_heading's record skip; the moves' own record
   // test (records.ts) takes the same identification, so a move, a heading rename
   // and the kernel's guard judge a record the same way (#397).
-  const recordIdentification = () => normalizeRecordIdentification(ctx.recordIdentification?.());
+  // The note indicator and the folder indicator (#482) travel together: every
+  // move's record test reads both from this one getter (records.ts RecordRules);
+  // the guard's probe reads only the note indicator from it.
+  const recordIdentification = () => ({
+    ...normalizeRecordIdentification(ctx.recordIdentification?.()),
+    folders: normalizeRecordFolders(ctx.recordFolders?.()),
+  });
+  // Nelson's bracket rule asks which folders are archives: the same pattern.
+  configureArchiveFolders(() => archivePatternRegExp(normalizeRecordFolders(ctx.recordFolders?.()).archivePattern));
   const probe = obsidianProbe(app, () => ctx.enforceRecordImmutability?.() !== false, recordIdentification);
   const visible = (paths: string[]) => visiblePaths(paths, ctx.getSettings());
   // Hoisted so obsidian_write_notes can drive the same backend writeNote through

@@ -27,7 +27,10 @@ import { conventionsOnLoad } from "./conventions-policy.js";
 import { EMPTY_VAULT_CONVENTIONS, resolveConventions, type VaultConventions } from "./conformance/vault-conventions.js";
 import {
   DEFAULT_RECORD_IDENTIFICATION,
+  DEFAULT_RECORD_FOLDERS,
   normalizeRecordIdentification,
+  normalizeRecordFolders,
+  type RecordFolders,
   type RecordIdentification,
 } from "./kernel/record-guard.js";
 
@@ -192,8 +195,18 @@ interface VaultMcpSettings {
    * three knobs TaskNotes exposes for its task identifier: a frontmatter
    * PROPERTY (name + value) or a TAG. `record: true` was hardcoded until #397;
    * it is now this setting's default, so an existing install is unchanged.
+   * `enabled` (#482) turns this NOTE indicator off as a whole.
    */
   recordIdentification: RecordIdentification;
+  /**
+   * The FOLDER indicator (#482, Nelson 2026-10-02): a note under one of
+   * `folders` (by whole vault path), or under a folder whose NAME matches
+   * `archivePattern`, is a record for the moves (never for the write guard).
+   * `enabled` turns it off. The archive pattern also tells Nelson's bracket rule
+   * which folders are archives. Defaults: today's three agent record folders and
+   * the JD archive pattern, so an existing install is unchanged.
+   */
+  recordFolders: RecordFolders;
   /**
    * The in-Obsidian dev tool-runner ("Vault MCP: Run tool…" — src/tool-runner.ts).
    * Default ON: it grants nothing the MCP surface doesn't already grant — it
@@ -258,6 +271,7 @@ const DEFAULT_SETTINGS: VaultMcpSettings = {
   guardedTerritories: [],
   vaultConventions: resolveConventions(EMPTY_VAULT_CONVENTIONS),
   recordIdentification: { ...DEFAULT_RECORD_IDENTIFICATION },
+  recordFolders: { ...DEFAULT_RECORD_FOLDERS, folders: [...DEFAULT_RECORD_FOLDERS.folders] },
 };
 
 class DiagnosticsModal extends Modal {
@@ -337,6 +351,8 @@ export default class VaultMcpPlugin extends Plugin {
     // rather than crashing the probe or the settings tab. The rule is the
     // kernel's (`normalizeRecordIdentification`), tested there.
     this.settings.recordIdentification = normalizeRecordIdentification(this.settings.recordIdentification);
+    // The folder indicator (#482), coerced the same way; absent ⇒ today's defaults.
+    this.settings.recordFolders = normalizeRecordFolders(this.settings.recordFolders);
     // A hand-edited/corrupt data.json must not silently DISABLE a guard: any
     // value that isn't an explicit `false` reads as enforced (same
     // fail-toward-the-safe-default discipline as the cliPolicy/protected-
@@ -736,6 +752,7 @@ export default class VaultMcpPlugin extends Plugin {
       // record test and obsidian_rename_heading read them through server.ts.
       enforceRecordImmutability: () => this.settings.enforceRecordImmutability,
       recordIdentification: () => this.settings.recordIdentification,
+      recordFolders: () => this.settings.recordFolders,
       serverIdentity,
       sessions: {
         // LIFECYCLE ONLY (condition 7 — the host mints). `get` is deliberately

@@ -691,12 +691,13 @@ describe("records are never rewritten (01.44 rule 8)", () => {
     const main = fs.readFileSync(new URL("../src/main.ts", import.meta.url), "utf8");
     assert.match(main, /enforceRecordImmutability:\s*\(\)\s*=>\s*this\.settings\.enforceRecordImmutability,/);
     assert.match(main, /recordIdentification:\s*\(\)\s*=>\s*this\.settings\.recordIdentification,/);
+    assert.match(main, /recordFolders:\s*\(\)\s*=>\s*this\.settings\.recordFolders,/);
     const server = fs.readFileSync(new URL("../src/mcp/server.ts", import.meta.url), "utf8");
     assert.match(server, /normalizeRecordIdentification\(ctx\.recordIdentification\?\.\(\)\)/);
     assert.match(server, /ctx\.enforceRecordImmutability\?\.\(\)\s*!==\s*false/);
     for (const f of fs.readdirSync(new URL("../src/mcp/", import.meta.url)).filter((n) => n.endsWith(".ts"))) {
       const src = fs.readFileSync(new URL(`../src/mcp/${f}`, import.meta.url), "utf8");
-      assert.doesNotMatch(src, /getSettings\(\)\??\.(?:recordIdentification|enforceRecordImmutability)\b/, `${f} reads a withheld record setting through getSettings`);
+      assert.doesNotMatch(src, /getSettings\(\)\??\.(?:recordIdentification|enforceRecordImmutability|recordFolders)\b/, `${f} reads a withheld record setting through getSettings`);
     }
   });
 
@@ -826,5 +827,62 @@ describe("name checks at the live host's create and move sites (Nelson's bracket
     await assertMoveName(made.app, "A/Plain.md", "B/Plain v2.md");
     await assert.rejects(assertMoveName(made.app, "A/Plain.md", "B/Plain: v2.md"), (e) => e.code === "unsafe_name");
     assert.equal(reads, 0);
+  });
+});
+
+describe("the folder indicator is a setting (#482)", async () => {
+  const { inRecordFolder, recordTest } = await import("../src/mcp/records.ts");
+  const { DEFAULT_RECORD_IDENTIFICATION, DEFAULT_RECORD_FOLDERS } = await import("../src/kernel/record-guard.ts");
+  const custom = { enabled: true, folders: ["Journal/Logs"], archivePattern: "^Old " };
+
+  test("a configured folder list and archive pattern replace the defaults", () => {
+    assert.equal(inRecordFolder("Journal/Logs/2026/a.md", custom), true);
+    assert.equal(inRecordFolder("X/Old stuff/a.md", custom), true);
+    assert.equal(inRecordFolder("00-09 System/00 System management/00.09 Archive/a.md", custom), false, "the JD default no longer applies");
+    assert.equal(inRecordFolder("00-09 System/03 Agents/03.04 Records/a.md", custom), false);
+    assert.equal(inRecordFolder("Journal/Logs/Logs.md", custom), false, "the root's own index note is living");
+  });
+
+  test("the folder indicator off: no note is a record by folder; an empty pattern: no archive", () => {
+    assert.equal(inRecordFolder("00-09 System/03 Agents/03.04 Records/a.md", { ...DEFAULT_RECORD_FOLDERS, enabled: false }), false);
+    assert.equal(inRecordFolder("A/00.09 Archive/a.md", { ...DEFAULT_RECORD_FOLDERS, archivePattern: "" }), false);
+  });
+
+  test("recordTest reads both indicators from the one getter; each switch works alone", () => {
+    const keyed = "---\nrecord: true\n---\nx\n";
+    const rules = (id, folders) => () => ({ ...DEFAULT_RECORD_IDENTIFICATION, ...id, folders: { ...DEFAULT_RECORD_FOLDERS, ...folders } });
+    assert.equal(recordTest(rules({}, custom))("Journal/Logs/a.md", "x"), true);
+    assert.equal(recordTest(rules({}, { enabled: false }))("00-09 System/03 Agents/03.04 Records/a.md", "x"), false);
+    assert.equal(recordTest(rules({ enabled: false }, {}))("Live/a.md", keyed), false, "note marker off");
+    assert.equal(recordTest(rules({ enabled: false }, {}))("00-09 System/03 Agents/03.04 Records/a.md", "x"), true, "the folder rule still works");
+  });
+
+  test("a move honours a configured folder list", async () => {
+    const { app, text } = fakeApp({ "A/Old.md": "x\n", "Journal/Logs/r.md": "cited [[Old]]\n", "S/L.md": "[[Old]]\n" });
+    const r = await moveWithLinks(app, app.vault.getAbstractFileByPath("A/Old.md"), "B/New.md", {
+      isRecord: recordTest(() => ({ ...DEFAULT_RECORD_IDENTIFICATION, folders: custom })),
+    });
+    assert.equal(text.get("Journal/Logs/r.md"), "cited [[Old]]\n");
+    assert.equal(text.get("S/L.md"), "[[New]]\n");
+    assert.deepEqual(r.records_left.map((x) => x.path), ["Journal/Logs/r.md"]);
+  });
+});
+
+describe("the bracket rule takes its archives from the operator's pattern (#482)", async () => {
+  const { assertCreateName, configureArchiveFolders } = await import("../src/mcp/name-checks.ts");
+  test("a configured pattern decides which existing folder is an archive", () => {
+    const made = fakeApp({ "Old stuff/x.md": "x\n" });
+    const get = made.app.vault.getAbstractFileByPath;
+    made.app.vault.getAbstractFileByPath = (p) => get(p) ?? (p === "Old stuff" || p === "00.09 Archive" ? Object.assign(new TFolder(), { path: p }) : null);
+    made.app.metadataCache.unresolvedLinks = {};
+    try {
+      configureArchiveFolders(() => /^Old /);
+      assert.doesNotThrow(() => assertCreateName(made.app, "Old stuff/[v1] Plan.md"));
+      assert.throws(() => assertCreateName(made.app, "00.09 Archive/[v1] Plan.md"), (e) => e.code === "unsafe_name");
+      configureArchiveFolders(() => null);
+      assert.throws(() => assertCreateName(made.app, "Old stuff/[v1] Plan.md"), (e) => e.code === "unsafe_name", "an empty pattern: no archives");
+    } finally {
+      configureArchiveFolders(undefined);
+    }
   });
 });
