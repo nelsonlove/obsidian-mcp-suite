@@ -18,6 +18,7 @@ import {
   EMPTY_VAULT_CONVENTIONS,
   LEGACY_CONVENTIONS_SEED,
   resolveConventions,
+  withBaselineSeed,
   type VaultConventions,
 } from "./conformance/vault-conventions.js";
 
@@ -43,7 +44,8 @@ export function conventionsOnLoad(own: unknown, adopted?: unknown): ConventionsO
   // that path once (and the key is persisted); a stored key, even blank, is kept.
   const sc = asObject(stored.vaultConventions);
   if (sc && !Object.prototype.hasOwnProperty.call(sc, "baselineRel")) {
-    return { conventions: resolveConventions({ ...sc, baselineRel: LEGACY_CONVENTIONS_SEED.baselineRel }), persist: true };
+    // Persist either way, so the key is written and this branch runs once.
+    return { conventions: withBaselineSeed(sc), persist: true };
   }
   return { conventions: resolveConventions(stored.vaultConventions), persist: false };
 }

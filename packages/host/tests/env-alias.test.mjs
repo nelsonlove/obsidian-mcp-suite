@@ -19,6 +19,8 @@ import {
   staleAfterFrom,
   registerDirFrom,
   debtBudgetFrom,
+  inAppBaselineRel,
+  inAppBaselineRefusal,
 } from "../src/conformance/cli.ts";
 import { conventionsFromEnv, EMPTY_VAULT_CONVENTIONS } from "../src/conformance/vault-conventions.ts";
 
@@ -68,6 +70,35 @@ describe("real call sites honor the alias", () => {
     assert.equal(baselineRelFrom({}, EMPTY_VAULT_CONVENTIONS), "", "EMPTY conventions: none configured");
     assert.equal(baselineRelFrom({}, null), "");
     assert.equal(baselineRelFrom({}), "", "nothing configured anywhere: \"\", not a shipped default");
+  });
+
+  // In-app (#494 review) the order is the other way round: the plugin's own
+  // setting first, the env override only when the setting is blank.
+  test("inAppBaselineRel: the setting beats the env override; the env is read only when the setting is blank", () => {
+    const keys = ["GOVERNOR_BASELINE_REL", "ASSENT_BASELINE_REL"];
+    const saved = keys.map((k) => [k, process.env[k]]);
+    try {
+      for (const k of keys) delete process.env[k];
+      process.env.GOVERNOR_BASELINE_REL = "Env.md";
+      assert.equal(inAppBaselineRel({ baselineRel: " Set.md " }), "Set.md", "the setting wins, trimmed");
+      assert.equal(inAppBaselineRel({ baselineRel: "  " }), "Env.md", "a blank setting falls to the env");
+      assert.equal(inAppBaselineRel(null), "Env.md");
+      assert.equal(inAppBaselineRel(undefined), "Env.md");
+      delete process.env.GOVERNOR_BASELINE_REL;
+      process.env.ASSENT_BASELINE_REL = "Old.md";
+      assert.equal(inAppBaselineRel({ baselineRel: "" }), "Old.md", "the legacy env spelling too");
+      delete process.env.ASSENT_BASELINE_REL;
+      assert.equal(inAppBaselineRel({ baselineRel: "" }), "", "nothing anywhere: none configured");
+    } finally {
+      for (const [k, v] of saved) if (v !== undefined) process.env[k] = v; else delete process.env[k];
+    }
+  });
+
+  test("inAppBaselineRefusal: none configured, missing note, or null", () => {
+    assert.match(inAppBaselineRefusal("", false), /^no conformance baseline is configured/);
+    assert.match(inAppBaselineRefusal("", true), /^no conformance baseline is configured/, "no path wins over exists");
+    assert.match(inAppBaselineRefusal("R/B.md", false), /^the conformance baseline note is missing: 'R\/B\.md'/);
+    assert.equal(inAppBaselineRefusal("R/B.md", true), null);
   });
 
   test("excludedRootsFrom: both spellings", () => {

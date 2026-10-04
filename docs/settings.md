@@ -351,7 +351,7 @@ The acceptance family is a non-configurable floor. Configuration may extend it, 
 | Risk | Blank or stale paths make the legacy checks report nothing for the vault, and say so on every run rather than reading clean; a folder renamed in the vault leaves its convention dead until re-pointed |
 | Recovery | Point each field at the live folder; the report names the dead key and the checks it feeds |
 
-The standalone conformance CLI has no settings; it reads `VAULT_MCP_CONVENTIONS` (a JSON object over the same three keys), and with it unset every single-path convention is dead. `GOVERNOR_VAULT_CONVENTIONS` and `ASSENT_VAULT_CONVENTIONS` are read as legacy aliases for one release, each with a warning naming the new spelling.
+The standalone conformance CLI has no settings; it reads `VAULT_MCP_CONVENTIONS` (a JSON object over the same keys, `baselineRel` included), and with it unset every single-path convention is dead and no baseline is configured, so the CLI refuses to run unless `--baseline=<path>` or `GOVERNOR_BASELINE_REL` names one (#493). An object that lacks `baselineRel` but sets another key is an upgraded caller's, and it reads the path the old built-in constant held. `GOVERNOR_VAULT_CONVENTIONS` and `ASSENT_VAULT_CONVENTIONS` are read as legacy aliases for one release, each with a warning naming the new spelling.
 
 ## Modules
 

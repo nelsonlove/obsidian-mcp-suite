@@ -13,7 +13,7 @@ import type { DebtSource, DebtRegisterSource } from "./tools-conformance-debt.js
 import type { Finding } from "../conformance/finding.js";
 import type { SkippedTerritory } from "../conformance/snapshot.js";
 import { parseSidecar, sidecarPathFor, type DebtSidecar } from "../conformance/debt-sidecar.js";
-import { runConformance, baselineRelFrom, excludedRootsFrom, coverageRefusal, baselinePackIds } from "../conformance/cli.js";
+import { runConformance, inAppBaselineRel, inAppBaselineRefusal, excludedRootsFrom, coverageRefusal, baselinePackIds } from "../conformance/cli.js";
 import { parseBaseline } from "../conformance/ratchet.js";
 import { DEFAULT_VOCABULARIES } from "@vault-mcp/core";
 import { DEFAULT_SCHEMES } from "../kernel/scheme/registry.js";
@@ -45,7 +45,7 @@ function vaultRoot(app: App): string {
 export function obsidianDebtSource(app: App, territories?: () => readonly string[], conventions?: () => VaultConventions): DebtSource {
   const root = vaultRoot(app);
   // Read per call from the live setting (#493), so a changed path applies with no reload. "" ⇒ none configured.
-  const baselineRelNow = () => baselineRelFrom(process.env, conventions?.());
+  const baselineRelNow = () => inAppBaselineRel(conventions?.());
   const baselinePathNow = () => {
     const rel = baselineRelNow();
     return rel ? join(root, rel) : "";
@@ -54,9 +54,13 @@ export function obsidianDebtSource(app: App, territories?: () => readonly string
   // What the last live run stepped around (#398) — read by the tools after
   // `liveFindings()` resolves, so the report and the register can name it.
   let lastSkipped: readonly SkippedTerritory[] = [];
+  // Refuses, never answers empty: a blank or wrong path must not read as "no accepted debt" (#494 review).
   const baselineText = async () => {
-    const p = baselinePathNow();
-    return p ? ((await readOrNull(p)) ?? "") : "";
+    const rel = baselineRelNow();
+    const text = rel ? await readOrNull(join(root, rel)) : null;
+    const refusal = inAppBaselineRefusal(rel, text !== null);
+    if (refusal) throw new Error(refusal);
+    return text as string;
   };
 
   return {
@@ -111,7 +115,7 @@ export function obsidianDebtSource(app: App, territories?: () => readonly string
  */
 export function obsidianDebtRenderSource(app: App, territories?: () => readonly string[], conventions?: () => VaultConventions): DebtRegisterSource {
   // Per call, from the live setting (#493).
-  const baselineRel = () => baselineRelFrom(process.env, conventions?.());
+  const baselineRel = () => inAppBaselineRel(conventions?.());
   const vault = app.vault as unknown as {
     getAbstractFileByPath(path: string): unknown;
     modify(file: unknown, data: string): Promise<void>;

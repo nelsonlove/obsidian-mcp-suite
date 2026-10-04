@@ -127,6 +127,23 @@ export const CONVENTIONS_ENV_LEGACY = ["GOVERNOR_VAULT_CONVENTIONS", "ASSENT_VAU
  * loud in the report (every convention dead), never a silent default, and
  * never a throw that takes the rail down.
  */
+/**
+ * #493: the baseline path joined the conventions after they shipped. A stored
+ * record (data.json, or the CLI's VAULT_MCP_CONVENTIONS) that LACKS the key and
+ * is an upgraded install's (some other key set) takes the path the old constant
+ * held, once, so an upgrade changes nothing. A record whose keys are all blank
+ * is a fresh install's (#403 shipped it empty): it stays without a baseline, so
+ * no operator's folder name lands in a stranger's settings. A record that HAS
+ * the key keeps it, even blank.
+ */
+export function withBaselineSeed(stored: unknown): VaultConventions {
+  const resolved = resolveConventions(stored);
+  const o = stored && typeof stored === "object" && !Array.isArray(stored) ? (stored as Record<string, unknown>) : null;
+  if (!o || Object.prototype.hasOwnProperty.call(o, "baselineRel")) return resolved;
+  const upgraded = resolved.registriesRoot !== "" || resolved.systemRoot !== "" || resolved.ungovernedRoots.length > 0;
+  return upgraded ? { ...resolved, baselineRel: LEGACY_CONVENTIONS_SEED.baselineRel } : resolved;
+}
+
 export function conventionsFromEnv(
   env: Record<string, string | undefined>,
   warn: (msg: string) => void = (msg) => console.error(msg),
@@ -143,7 +160,7 @@ export function conventionsFromEnv(
   }
   if (raw === undefined || raw.trim() === "") return { ...EMPTY_VAULT_CONVENTIONS, ungovernedRoots: [] };
   try {
-    return resolveConventions(JSON.parse(raw));
+    return withBaselineSeed(JSON.parse(raw));
   } catch (e) {
     warn(`conformance: ${CONVENTIONS_ENV} is not valid JSON — every convention reads as EMPTY (dead) for this run. ${e instanceof Error ? e.message : String(e)}`);
     return { ...EMPTY_VAULT_CONVENTIONS, ungovernedRoots: [] };
