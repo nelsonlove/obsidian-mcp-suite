@@ -838,3 +838,320 @@ describe("settings adoption (pure)", () => {
     }
   });
 });
+
+// ── #487: the fast road (engine query) and the hidden-window stop ────────────
+
+describe("#487 engine selection, window_hidden, base_query_failed", () => {
+  const FAST_ROWS = [
+    { path: "Projects/a.md", values: { Name: "a", Status: "open" } },
+    { path: "Projects/b.md", values: { Name: "b", Status: null } },
+    { path: "Projects/c.md", values: { Name: "c", Status: "done" } },
+  ];
+  const LEAF_ROWS = [{ path: "Projects/leaf.md", values: { "file.name": "leaf" } }];
+
+  /** A source with the three new optional methods; counts every call. */
+  function engineSource({ available = true, hidden = false, engineImpl = null, bases = { "Views/Q.base": QUEUE_BASE } } = {}) {
+    const base = fakeSource({ bases, rows: LEAF_ROWS });
+    base.calls.engine = [];
+    base.calls.hiddenChecks = 0;
+    base.engineQueryAvailable = () => available;
+    base.windowHidden = () => {
+      base.calls.hiddenChecks++;
+      return hidden;
+    };
+    base.engineQuery = async (p, viewName, timeoutMs) => {
+      base.calls.engine.push({ p, viewName, timeoutMs });
+      if (engineImpl) return engineImpl(p, viewName, timeoutMs);
+      return { columns: ["Name", "Status"], rows: FAST_ROWS };
+    };
+    return base;
+  }
+  const q = (source, args, config = {}) => queryBaseRows(source, { config }, { path: "Views/Q.base", ...args });
+
+  test("auto + reachable engine ⇒ fast road; capture never runs; result says engine fast", async () => {
+    const s = engineSource();
+    const out = await q(s, {});
+    assert.equal(out.result.engine, "fast");
+    assert.equal(s.calls.captures.length, 0);
+    assert.equal(s.calls.engine.length, 1);
+    assert.deepEqual(out.result.columns, ["Name", "Status"]);
+    assert.equal(out.result.total, 3);
+  });
+
+  test("engine omitted behaves as auto", async () => {
+    const s = engineSource();
+    assert.equal((await q(s, { engine: undefined })).result.engine, "fast");
+    assert.equal((await q(s, { engine: "auto" })).result.engine, "fast");
+  });
+
+  test("engineQuery gets the FIRST view's name when view is absent, the named view otherwise", async () => {
+    const s = engineSource();
+    await q(s, {});
+    await q(s, { view: "Done" });
+    assert.equal(s.calls.engine[0].viewName, "Queue");
+    assert.equal(s.calls.engine[1].viewName, "Done");
+    assert.equal(s.calls.engine[0].p, "Views/Q.base");
+  });
+
+  test("engineQuery receives the configured query timeout", async () => {
+    const s = engineSource();
+    await q(s, {}, { queryTimeoutMs: 1234 });
+    assert.equal(s.calls.engine[0].timeoutMs, 1234);
+  });
+
+  test("auto + engine not reachable ⇒ leaf road, engine view", async () => {
+    const s = engineSource({ available: false });
+    const out = await q(s, {});
+    assert.equal(out.result.engine, "view");
+    assert.equal(s.calls.captures.length, 1);
+    assert.equal(s.calls.engine.length, 0);
+  });
+
+  test("auto + engineQueryAvailable true but engineQuery missing ⇒ leaf road", async () => {
+    const s = engineSource();
+    delete s.engineQuery;
+    const out = await q(s, {});
+    assert.equal(out.result.engine, "view");
+    assert.equal(s.calls.captures.length, 1);
+  });
+
+  test("engine view forces the leaf road even when the engine is reachable", async () => {
+    const s = engineSource();
+    const out = await q(s, { engine: "view" });
+    assert.equal(out.result.engine, "view");
+    assert.equal(s.calls.engine.length, 0);
+    assert.equal(s.calls.captures.length, 1);
+    assert.deepEqual(out.result.rows.map((r) => r.path), ["Projects/leaf.md"]);
+  });
+
+  test("engine fast + engine unreachable ⇒ engine_unavailable; nothing runs", async () => {
+    const s = engineSource({ available: false });
+    const out = await q(s, { engine: "fast" });
+    assert.equal(out.refusal.code, "engine_unavailable");
+    assert.equal(s.calls.captures.length, 0);
+    assert.equal(s.calls.engine.length, 0);
+  });
+
+  test("engine fast on a source with no new methods ⇒ engine_unavailable", async () => {
+    const s = fakeSource({ bases: { "Views/Q.base": QUEUE_BASE } });
+    const out = await q(s, { engine: "fast" });
+    assert.equal(out.refusal.code, "engine_unavailable");
+    assert.equal(s.calls.captures.length, 0);
+  });
+
+  test("leaf road + hidden window ⇒ window_hidden; capture NOT called (auto fallback and explicit view)", async () => {
+    const auto = engineSource({ available: false, hidden: true });
+    const out = await q(auto, {});
+    assert.equal(out.refusal.code, "window_hidden");
+    assert.equal(auto.calls.captures.length, 0);
+    const view = engineSource({ hidden: true });
+    const out2 = await q(view, { engine: "view" });
+    assert.equal(out2.refusal.code, "window_hidden");
+    assert.equal(view.calls.captures.length, 0);
+    assert.equal(view.calls.engine.length, 0);
+  });
+
+  test("allowHidden true lets the leaf road run while hidden; false still refuses", async () => {
+    const s = engineSource({ hidden: true });
+    const ok = await q(s, { engine: "view", allowHidden: true });
+    assert.equal(ok.result.engine, "view");
+    assert.equal(s.calls.captures.length, 1);
+    const no = await q(s, { engine: "view", allowHidden: false });
+    assert.equal(no.refusal.code, "window_hidden");
+    assert.equal(s.calls.captures.length, 1);
+  });
+
+  test("the fast road ignores a hidden window", async () => {
+    const s = engineSource({ hidden: true });
+    const out = await q(s, {});
+    assert.equal(out.result.engine, "fast");
+    assert.equal(s.calls.engine.length, 1);
+    const forced = await q(s, { engine: "fast" });
+    assert.equal(forced.result.engine, "fast");
+  });
+
+  test("a source with no windowHidden is treated as not hidden", async () => {
+    const s = engineSource({ available: false });
+    delete s.windowHidden;
+    assert.equal((await q(s, {})).result.engine, "view");
+  });
+
+  test("engineQuery rejecting with BaseTimeoutError ⇒ base_timeout", async () => {
+    const s = engineSource({ engineImpl: async () => { throw new BaseTimeoutError(50); } });
+    const out = await q(s, {});
+    assert.equal(out.refusal.code, "base_timeout");
+  });
+
+  test("engineQuery rejecting with another Error ⇒ base_query_failed carrying the engine's text", async () => {
+    const s = engineSource({ engineImpl: async () => { throw new Error("Unknown formula frobnicate"); } });
+    const out = await q(s, {});
+    assert.equal(out.refusal.code, "base_query_failed");
+    assert.match(out.refusal.message, /Unknown formula frobnicate/);
+    const str = engineSource({ engineImpl: async () => { throw "plain string"; } });
+    const out2 = await q(str, {});
+    assert.equal(out2.refusal.code, "base_query_failed");
+    assert.match(out2.refusal.message, /plain string/);
+  });
+
+  test("a leaf-road capture failure still rethrows (not base_query_failed)", async () => {
+    const s = engineSource({ available: false });
+    s.capture = async () => { throw new Error("leaf exploded"); };
+    await assert.rejects(q(s, {}), /leaf exploded/);
+  });
+
+  test("the fast road applies the row cap and limit, with honest total and truncated", async () => {
+    const s = engineSource();
+    const capped = await q(s, { limit: 99 }, { rowCap: 2 });
+    assert.equal(capped.result.rows.length, 2);
+    assert.equal(capped.result.total, 3);
+    assert.equal(capped.result.truncated, true);
+    const one = await q(s, { limit: 1 });
+    assert.equal(one.result.rows.length, 1);
+    assert.equal(one.result.truncated, true);
+  });
+
+  test("the fast road goes through the module-wide serializer (never two at once)", async () => {
+    let active = 0;
+    let peak = 0;
+    const s = engineSource({
+      engineImpl: async () => {
+        active++;
+        peak = Math.max(peak, active);
+        await new Promise((r) => setTimeout(r, 15));
+        active--;
+        return { columns: ["Name"], rows: [] };
+      },
+    });
+    await Promise.all([q(s, {}), q(s, {}), q(s, {})]);
+    assert.equal(peak, 1);
+    assert.equal(s.calls.engine.length, 3);
+  });
+
+  test("a mixed fast and leaf burst is serialized too", async () => {
+    let active = 0;
+    let peak = 0;
+    const enter = async () => {
+      active++;
+      peak = Math.max(peak, active);
+      await new Promise((r) => setTimeout(r, 10));
+      active--;
+    };
+    const s = engineSource({ engineImpl: async () => { await enter(); return { columns: [], rows: [] }; } });
+    s.capture = async () => { await enter(); return { columns: [], rows: [] }; };
+    await Promise.all([q(s, {}), q(s, { engine: "view" }), q(s, {})]);
+    assert.equal(peak, 1);
+  });
+
+  test("allowlist row filter still applies to fast rows", async () => {
+    const s = engineSource();
+    const out = await queryBaseRows(
+      s,
+      { config: {}, visible: (paths) => paths.filter((p) => p !== "Projects/b.md") },
+      { path: "Views/Q.base" },
+    );
+    assert.deepEqual(out.result.rows.map((r) => r.path), ["Projects/a.md", "Projects/c.md"]);
+    assert.equal(out.result.someRowsHidden, true);
+  });
+
+  test("earlier refusals still outrank engine choice (view_not_found before fast road)", async () => {
+    const s = engineSource();
+    const out = await q(s, { view: "nope", engine: "fast" });
+    assert.equal(out.refusal.code, "view_not_found");
+    assert.equal(s.calls.engine.length, 0);
+  });
+});
+
+describe("#487 the query tool: engine and allow_hidden", () => {
+  const ROWS = [{ path: "Projects/a.md", values: { Name: "a" } }];
+  function toolSource({ available = true, hidden = false } = {}) {
+    const s = fakeSource({ bases: { "Views/Q.base": QUEUE_BASE }, rows: [{ path: "Projects/leaf.md", values: { "file.name": "leaf" } }] });
+    s.calls.engine = [];
+    s.engineQueryAvailable = () => available;
+    s.windowHidden = () => hidden;
+    s.engineQuery = async (p, viewName) => {
+      s.calls.engine.push({ p, viewName });
+      return { columns: ["Name"], rows: ROWS };
+    };
+    return s;
+  }
+
+  test("default call answers by the fast road and reports engine: fast", async () => {
+    const s = toolSource();
+    const { call } = build(s);
+    const res = await call("query", { path: "Views/Q.base" });
+    assert.equal(res.isError, undefined);
+    assert.equal(res.structuredContent.engine, "fast");
+    assert.deepEqual(res.structuredContent.columns, ["Name"]);
+    assert.equal(s.calls.captures.length, 0);
+  });
+
+  test("engine: view reports engine: view and runs the leaf", async () => {
+    const s = toolSource();
+    const { call } = build(s);
+    const res = await call("query", { path: "Views/Q.base", engine: "view" });
+    assert.equal(res.structuredContent.engine, "view");
+    assert.equal(s.calls.captures.length, 1);
+  });
+
+  test("a source without the new methods (the old shape) answers engine: view as before", async () => {
+    const s = fakeSource({ bases: { "Views/Q.base": QUEUE_BASE }, rows: [] });
+    const { call } = build(s);
+    const res = await call("query", { path: "Views/Q.base" });
+    assert.equal(res.isError, undefined);
+    assert.equal(res.structuredContent.engine, "view");
+  });
+
+  test("engine: fast with the engine unreachable refuses engine_unavailable in the envelope", async () => {
+    const { call } = build(toolSource({ available: false }));
+    const res = await call("query", { path: "Views/Q.base", engine: "fast" });
+    assert.equal(res.isError, true);
+    assert.match(errText(res), /^Error \[engine_unavailable\]: /);
+  });
+
+  test("hidden window + leaf road refuses window_hidden; allow_hidden: true runs it", async () => {
+    const s = toolSource({ hidden: true });
+    const { call } = build(s);
+    const refused = await call("query", { path: "Views/Q.base", engine: "view" });
+    assert.match(errText(refused), /^Error \[window_hidden\]: /);
+    assert.equal(s.calls.captures.length, 0);
+    const ran = await call("query", { path: "Views/Q.base", engine: "view", allow_hidden: true });
+    assert.equal(ran.isError, undefined);
+    assert.equal(ran.structuredContent.engine, "view");
+    assert.equal(s.calls.captures.length, 1);
+  });
+
+  test("hidden window does not stop the default (fast) road", async () => {
+    const { call } = build(toolSource({ hidden: true }));
+    const res = await call("query", { path: "Views/Q.base" });
+    assert.equal(res.structuredContent.engine, "fast");
+  });
+
+  test("an engine failure reaches the envelope as base_query_failed; a timeout as base_timeout", async () => {
+    const s = toolSource();
+    s.engineQuery = async () => { throw new Error("engine says no"); };
+    const { call } = build(s);
+    const failed = await call("query", { path: "Views/Q.base" });
+    assert.match(errText(failed), /^Error \[base_query_failed\]: .*engine says no/);
+    s.engineQuery = async () => { throw new BaseTimeoutError(10); };
+    const timed = await call("query", { path: "Views/Q.base" });
+    assert.match(errText(timed), /^Error \[base_timeout\]: /);
+  });
+
+  test("bad engine values refuse invalid_argument (handler re-check)", async () => {
+    const { call } = build(toolSource());
+    for (const engine of ["slow", "FAST", "", 3, null, true, {}]) {
+      const res = await call("query", { path: "Views/Q.base", engine });
+      assert.equal(res.isError, true, JSON.stringify(engine));
+      assert.match(errText(res), /^Error \[invalid_argument\]: /, JSON.stringify(engine));
+    }
+  });
+
+  test("non-boolean allow_hidden refuses invalid_argument", async () => {
+    const { call } = build(toolSource());
+    for (const allow_hidden of ["true", 1, 0, null, {}]) {
+      const res = await call("query", { path: "Views/Q.base", allow_hidden });
+      assert.equal(res.isError, true, JSON.stringify(allow_hidden));
+      assert.match(errText(res), /^Error \[invalid_argument\]: /, JSON.stringify(allow_hidden));
+    }
+  });
+});
