@@ -65,7 +65,8 @@ export async function moveNote(app: App, from: string, to: string): Promise<void
   if (!(file instanceof TFile)) throw new Error(`not found: ${from}`);
   if (app.vault.getAbstractFileByPath(to)) throw new Error(`destination exists: ${to}`);
   // A move may keep a name it has, never add one Obsidian Sync refuses (sync-names.ts in core).
-  // No new bracket name from triage (it cannot vouch that nothing links the note); an archived bracket name may stay in an archive.
+  // No bracket name from triage: it cannot vouch that nothing links the note, and it has no archive pattern
+  // (no folder names ship in code, #482), so even a kept bracket name is refused here; the live host's moves can do it.
   assertSyncSafeMove(from, to, { linked: true, folderExists: (p) => app.vault.getAbstractFileByPath(p) instanceof TFolder });
   await ensureParentFolders(app, to);
   // NEVER app.vault.rename — that moves the bytes and leaves every backlink

@@ -135,7 +135,8 @@ describe("production reads these predicates — pinned at the source", () => {
     const main = src("main.ts");
     assert.match(main, /const territories = territoriesOnLoad\(own, seed\)/, "the migration must see the plugin's OWN data AND the settings adopted from the pre-split plugin");
     assert.match(main, /this\.settings\.guardedTerritories = territories\.territories/);
-    assert.match(main, /if \(territories\.persist \|\| conventions\.persist\) await this\.saveSettings\(\)/, "the key must be written when it was absent, or the seed branch runs again (the conventions key rides the same persist since #403)");
+    assert.match(main, /if \(territories\.persist \|\| conventions\.persist \|\| recordFoldersLoad\.persist\) await this\.saveSettings\(\)/, "the key must be written when it was absent, or the seed branch runs again (the conventions key rides the same persist since #403, the record folders since #482)");
+    assert.match(main, /const recordFoldersLoad = recordFoldersOnLoad\(own, seed\)/, "the record-folders seed sees the plugin's own data and the adopted settings, as territories do (#482)");
   });
 
   test("the two conformance sources FORWARD the territory thunk they are handed (#396 review: both dropped it)", () => {

@@ -24,10 +24,13 @@ import { wireSchemePanes, registerSchemeCommands } from "./scheme/wiring.js";
 import { runHostAdoption, LEGACY_PLUGIN_ID, PLUGIN_ID } from "./id-migration.js";
 import { territoriesOnLoad } from "./territory-policy.js";
 import { conventionsOnLoad } from "./conventions-policy.js";
+import { recordFoldersOnLoad } from "./record-folders-policy.js";
 import { EMPTY_VAULT_CONVENTIONS, resolveConventions, type VaultConventions } from "./conformance/vault-conventions.js";
 import {
   DEFAULT_RECORD_IDENTIFICATION,
+  DEFAULT_RECORD_FOLDERS,
   normalizeRecordIdentification,
+  type RecordFolders,
   type RecordIdentification,
 } from "./kernel/record-guard.js";
 
@@ -192,8 +195,18 @@ interface VaultMcpSettings {
    * three knobs TaskNotes exposes for its task identifier: a frontmatter
    * PROPERTY (name + value) or a TAG. `record: true` was hardcoded until #397;
    * it is now this setting's default, so an existing install is unchanged.
+   * `enabled` (#482) turns this NOTE indicator off as a whole.
    */
   recordIdentification: RecordIdentification;
+  /**
+   * The FOLDER indicator (#482, Nelson 2026-10-02): a note under one of
+   * `folders` (by whole vault path), or under a folder whose NAME matches
+   * `archivePattern`, is a record for the moves (never for the write guard).
+   * `enabled` turns it off (and with it the archives the bracket rule sees).
+   * The plugin ships it EMPTY; an install that predates the key is seeded once
+   * with what #455 hard-coded (record-folders-policy.ts).
+   */
+  recordFolders: RecordFolders;
   /**
    * The in-Obsidian dev tool-runner ("Vault MCP: Run tool…" — src/tool-runner.ts).
    * Default ON: it grants nothing the MCP surface doesn't already grant — it
@@ -258,6 +271,7 @@ const DEFAULT_SETTINGS: VaultMcpSettings = {
   guardedTerritories: [],
   vaultConventions: resolveConventions(EMPTY_VAULT_CONVENTIONS),
   recordIdentification: { ...DEFAULT_RECORD_IDENTIFICATION },
+  recordFolders: { ...DEFAULT_RECORD_FOLDERS, folders: [...DEFAULT_RECORD_FOLDERS.folders] },
 };
 
 class DiagnosticsModal extends Modal {
@@ -333,6 +347,10 @@ export default class VaultMcpPlugin extends Plugin {
     // `resolveConventions` so a hand-edited value cannot crash a run.
     const conventions = conventionsOnLoad(own, seed);
     this.settings.vaultConventions = conventions.conventions;
+    // #482 — the record folders, the same shape: no shipped folder names; an
+    // install that predates the key is seeded once with what #455 hard-coded.
+    const recordFoldersLoad = recordFoldersOnLoad(own, seed);
+    this.settings.recordFolders = recordFoldersLoad.recordFolders;
     // The record identifier: coerce a partial or malformed value to the default
     // rather than crashing the probe or the settings tab. The rule is the
     // kernel's (`normalizeRecordIdentification`), tested there.
@@ -388,7 +406,7 @@ export default class VaultMcpPlugin extends Plugin {
     setDeclaredProtectedProperties(this.settings.protectedProperties);
     // Persist NOW if the territories key was absent (seeded or fresh), so the
     // seeding branch above can never run a second time for this install.
-    if (territories.persist || conventions.persist) await this.saveSettings();
+    if (territories.persist || conventions.persist || recordFoldersLoad.persist) await this.saveSettings();
   }
   async saveSettings() {
     await this.saveData(this.settings);
@@ -736,6 +754,7 @@ export default class VaultMcpPlugin extends Plugin {
       // record test and obsidian_rename_heading read them through server.ts.
       enforceRecordImmutability: () => this.settings.enforceRecordImmutability,
       recordIdentification: () => this.settings.recordIdentification,
+      recordFolders: () => this.settings.recordFolders,
       serverIdentity,
       sessions: {
         // LIFECYCLE ONLY (condition 7 — the host mints). `get` is deliberately
