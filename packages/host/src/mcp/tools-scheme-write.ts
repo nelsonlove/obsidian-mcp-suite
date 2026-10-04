@@ -51,7 +51,6 @@ import { pickInstance, parseScopeToken } from "./tools-scheme.js";
 import { moveOne, RW } from "./tools-vault-write.js";
 import { TextCache } from "./move-with-links.js";
 import { recordTest, type RecordRules } from "./records.js";
-import type { RecordIdentification } from "../kernel/record-guard.js";
 import { planAssign, planRefile, planRenumber, type MoveStep, type OnOccupied } from "../kernel/scheme/mutate.js";
 import type { Address } from "../kernel/scheme/provider.js";
 import { excludeRoots, type SchemeInstance, type SchemeRegistry, type SchemeInstanceConfig } from "../kernel/scheme/registry.js";

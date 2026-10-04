@@ -253,7 +253,19 @@ export class VaultMcpSettingTab extends PluginSettingTab {
    * back to the first tab, resolved by `resolveActiveTab`. */
   private activeTab?: string;
 
+  /** The record-folder fields save when left; these commit them too when the tab closes (Escape can tear the
+   * panel down before the field's "change" fires, #485 review). Each commit is idempotent. */
+  private recordFieldCommits: Array<() => Promise<void>> = [];
+
+  hide() {
+    const commits = this.recordFieldCommits;
+    this.recordFieldCommits = [];
+    for (const c of commits) void c();
+    super.hide();
+  }
+
   display() {
+    this.recordFieldCommits = [];
     const { containerEl } = this;
     containerEl.empty();
     ensureSettingsStyles();
@@ -770,6 +782,7 @@ export class VaultMcpSettingTab extends PluginSettingTab {
         t.setValue(this.plugin.settings.recordFolders.enabled).onChange(async (value) => {
           this.plugin.settings.recordFolders.enabled = value;
           await this.plugin.saveSettings();
+          this.display(); // the archive pattern's status line follows the switch
         })
       );
     // Both fields save when the field is left (the "change" event: blur or Enter),
@@ -779,21 +792,27 @@ export class VaultMcpSettingTab extends PluginSettingTab {
       .setDesc("One vault folder path per line. Every note under it is a record. Saved when you leave the field.")
       .addTextArea((t) => {
         t.setValue(this.plugin.settings.recordFolders.folders.join("\n"));
-        t.inputEl.addEventListener("change", async () => {
-          this.plugin.settings.recordFolders.folders = t
+        const commit = async () => {
+          const folders = t
             .getValue()
             .split("\n")
             .map((f) => f.trim().replace(/^\/+|\/+$/g, ""))
             .filter(Boolean);
+          if (folders.join("\n") === this.plugin.settings.recordFolders.folders.join("\n")) return;
+          this.plugin.settings.recordFolders.folders = folders;
           await this.plugin.saveSettings();
-        });
+        };
+        t.inputEl.addEventListener("change", () => void commit());
+        this.recordFieldCommits.push(commit);
       });
     const patternStatus = (v: string): string =>
-      !v.trim()
-        ? "Empty: no folder is an archive."
-        : archivePatternRegExp(v)
-          ? "In force."
-          : "This pattern does not compile, so it matches nothing: no folder is an archive until you fix it.";
+      !this.plugin.settings.recordFolders.enabled
+        ? "Not in force: Records by folder is off."
+        : !v.trim()
+          ? "Empty: no folder is an archive."
+          : archivePatternRegExp(v)
+            ? "In force."
+            : "This pattern does not compile, so it matches nothing: no folder is an archive until you fix it.";
     const patternSetting = new Setting(containerEl).setName("Archive folder pattern");
     const patternDesc = (v: string) =>
       patternSetting.setDesc(
@@ -804,14 +823,17 @@ export class VaultMcpSettingTab extends PluginSettingTab {
     patternDesc(this.plugin.settings.recordFolders.archivePattern);
     patternSetting.addText((t) => {
       t.setValue(this.plugin.settings.recordFolders.archivePattern);
-      t.inputEl.addEventListener("change", async () => {
+      const commit = async () => {
         // Saved as written: a pattern that does not compile matches nothing (archivePatternRegExp),
         // so a typo can never widen what counts as an archive or a record.
         const v = t.getValue();
+        if (v === this.plugin.settings.recordFolders.archivePattern) return;
         this.plugin.settings.recordFolders.archivePattern = v;
         await this.plugin.saveSettings();
         patternDesc(v);
-      });
+      };
+      t.inputEl.addEventListener("change", () => void commit());
+      this.recordFieldCommits.push(commit);
     });
 
     // ── observation capture ─────────────────────────────────────────────────

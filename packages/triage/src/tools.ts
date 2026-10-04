@@ -542,8 +542,8 @@ export function buildTriageTools(source: TriageSource, ctx: TriageToolsCtx): Sdk
           refuse("out_of_allowlist", `computed destination '${plan.moveTo}' is outside the path allowlist`);
         }
         // Checked here, at plan time, dry run and apply alike: a refused name must stop the disposition before its
-        // frontmatter patch is written, not after (the move itself checks again). Triage never gives a note a new
-        // bracket name (it cannot vouch that nothing links the note); a kept archived bracket name may stay in an archive.
+        // frontmatter patch is written, not after (the move itself checks again). Triage never gives or keeps a
+        // bracket name: it cannot vouch that nothing links the note, and it has no archive pattern (#482).
         try {
           assertSyncSafeMove(path, plan.moveTo, { linked: true, folderExists: (p) => source.exists(p) });
         } catch (e) {

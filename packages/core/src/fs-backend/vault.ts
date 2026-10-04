@@ -833,7 +833,8 @@ class VaultImpl {
       throw new Error("'from' and 'to' resolve to the same path");
     }
     // linked: true always (this server's index cannot vouch that nothing links the note, e.g. while it builds),
-    // so it never gives a note a NEW bracket name; an archived note may keep its bracket name inside an archive.
+    // so it never gives a note a NEW bracket name. It has no archive pattern either (no folder names ship in
+    // code, #482), so a bracket name cannot be kept by a move here: the move is refused, never widened.
     assertSyncSafeMove(this.toRelative(absFrom), this.toRelative(absTo), {
       linked: true,
       folderExists: (p) => existsSync(path.join(this.root, p)),

@@ -74,7 +74,7 @@ export function hasInboundLinks(resolvedLinks: Record<string, Record<string, num
 export interface BracketContext {
   linked: boolean;
   folderExists: (folderPath: string) => boolean;
-  /** Which folder names are archives (#482: the operator's archive pattern); absent ⇒ the JD default. */
+  /** Which folder names are archives (#482: the operator's archive pattern). Absent ⇒ NO folder is an archive: a caller without the operator's settings (the filesystem server, triage) never frees brackets and never lets a bracket name stay. */
   isArchive?: ArchiveMatcher;
 }
 
@@ -82,7 +82,7 @@ const BRACKETS = new Set(["[", "]"]);
 const BRACKET_RULE =
   "[ ] are allowed only in the name of a note under an existing archive folder (one the plugin's archive pattern names) that no other note links to, never in a folder name";
 
-/** True when `relPath` lies under a JD archive folder that exists now. */
+/** True when `relPath` lies under an archive folder (per ctx.isArchive) that exists now. */
 function inExistingArchive(relPath: string, ctx: BracketContext | undefined): boolean {
   const arch = jdArchiveFolder(relPath, ctx?.isArchive);
   return arch !== null && !!ctx && ctx.folderExists(arch);
@@ -118,7 +118,7 @@ export function assertSyncSafeName(relPath: string, ctx?: BracketContext): void 
  * same folder, by its whole path), and the note's own name. Anything new (a
  * new name, a folder it was not in) must be clean. Brackets: a new name may
  * hold them only under the bracket rule (`ctx`), and a kept name that holds
- * them may only stay under an existing JD archive folder.
+ * them may only stay under an existing archive folder (per ctx.isArchive; none without one).
  */
 export function assertSyncSafeMove(from: string, to: string, ctx?: BracketContext): void {
   const fromSegs = from.split("/");

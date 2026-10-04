@@ -85,7 +85,7 @@ export interface MoveWithLinksOptions {
    * moves would otherwise read the vault 50 times inside one 30 s queue slot.
    */
   texts?: TextCache;
-  /** Which notes are records, never rewritten. Default: records.ts's test with the shipped identification `record: true`; the tools pass the operator's (#397). */
+  /** Which notes are records, never rewritten. Every live road passes the operator's settings (#397, #482). Default: only the shipped note marker `record: true`, and NO folder (the plugin ships no folder names, #482). */
   isRecord?: IsRecord;
 }
 
