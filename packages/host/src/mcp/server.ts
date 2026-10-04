@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { inRecordFolder } from "./records.js";
 import { TFile, stringifyYaml, parseYaml, type App } from "obsidian";
 import { registerFsTools, ok,
   CHARACTER_LIMIT,
@@ -430,7 +431,13 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   // argument-level check can see a set the handler discovers.
   // isRecord: obsidian_rename_heading rewrites links in notes it discovers,
   // which the kernel's record check (paths an operation NAMES) cannot see.
-  registerVaultWriteTools(server, app, { getSettings: () => ctx.getSettings(), isRecord: (p) => probe.record?.(p) === true, recordIdentification });
+  // A heading rename leaves a record's links as written, judged as a move judges it: the note marker (the
+  // guard's probe) OR the record folders (#482 round 4: it used to read the marker only).
+  const isRecordForRename = (p: string): boolean => {
+    if (probe.record?.(p) === true) return true;
+    return inRecordFolder(p, normalizeRecordFolders(ctx.recordFolders?.()));
+  };
+  registerVaultWriteTools(server, app, { getSettings: () => ctx.getSettings(), isRecord: isRecordForRename, recordIdentification });
   // ── scope-provider write surface: assign/refile/renumber address ───────────
   // Cannot go through mountModules below: that host's registerAll gate refuses
   // any tool whose readOnlyHint !== true (its own header comment), and these
