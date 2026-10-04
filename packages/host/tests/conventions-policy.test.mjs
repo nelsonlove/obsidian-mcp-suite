@@ -70,7 +70,8 @@ describe("conventionsOnLoad — seed once, fresh empty, present kept", () => {
     assert.equal(withBaselineSeed({ registriesRoot: "R" }, { ASSENT_BASELINE_REL: "Old/B.md" }).baselineRel, "Old/B.md", "the legacy spelling");
     assert.equal(withBaselineSeed({ registriesRoot: "R" }, { GOVERNOR_BASELINE_REL: "  " }).baselineRel, seed, "a blank override: the seed");
     assert.equal(withBaselineSeed({ registriesRoot: "R" }, {}).baselineRel, seed);
-    assert.equal(withBaselineSeed({}, { GOVERNOR_BASELINE_REL: "Env/B.md" }).baselineRel, "", "an all-blank record is not seeded, override or not");
+    assert.equal(withBaselineSeed({}, { GOVERNOR_BASELINE_REL: "Env/B.md" }).baselineRel, "Env/B.md", "an ALL-BLANK record lacking the key takes the override too (that install read it before #493)");
+    assert.equal(withBaselineSeed({ ungovernedRoots: [] }, { ASSENT_BASELINE_REL: "Old/B.md" }).baselineRel, "Old/B.md");
     assert.equal(withBaselineSeed({ registriesRoot: "R", baselineRel: "" }, { GOVERNOR_BASELINE_REL: "Env/B.md" }).baselineRel, "", "a present key is kept");
     // The default env is process.env.
     process.env.GOVERNOR_BASELINE_REL = "Proc/B.md";
@@ -80,6 +81,38 @@ describe("conventionsOnLoad — seed once, fresh empty, present kept", () => {
     } finally {
       delete process.env.GOVERNOR_BASELINE_REL;
     }
+  });
+
+  test("withBaselineSeed exists(): an all-blank record lacking the key takes the legacy path only when that note EXISTS in the vault; the override still wins", () => {
+    const seed = LEGACY_CONVENTIONS_SEED.baselineRel;
+    const asked = [];
+    const yes = (rel) => { asked.push(rel); return true; };
+    assert.equal(withBaselineSeed({}, {}, yes).baselineRel, seed, "the note is on disk: the operator who blanked every folder still measured against it");
+    assert.deepEqual(asked, [seed], "exists() is asked about the legacy path, nothing else");
+    assert.equal(withBaselineSeed({}, {}, () => false).baselineRel, "", "no such note: a fresh install stays without a baseline");
+    assert.equal(withBaselineSeed({}, {}).baselineRel, "", "no exists(): the all-blank case takes only the override");
+    assert.equal(withBaselineSeed({}, { GOVERNOR_BASELINE_REL: "Env/B.md" }, yes).baselineRel, "Env/B.md", "the override beats the on-disk legacy note");
+    assert.equal(withBaselineSeed({ registriesRoot: "R" }, {}, () => false).baselineRel, seed, "an upgraded record takes the legacy path whether or not it exists");
+    assert.equal(withBaselineSeed({ baselineRel: "" }, { GOVERNOR_BASELINE_REL: "Env/B.md" }, yes).baselineRel, "", "a present key is kept, even blank");
+    for (const junk of [null, "garbage", ["R"]]) assert.deepEqual(withBaselineSeed(junk, { GOVERNOR_BASELINE_REL: "Env/B.md" }, yes), EMPTY_VAULT_CONVENTIONS, `${String(junk)}: not an object, plain coercion`);
+  });
+
+  test("conventionsOnLoad passes env and exists() through to the seed", () => {
+    const seed = LEGACY_CONVENTIONS_SEED.baselineRel;
+    assert.equal(conventionsOnLoad({ vaultConventions: {} }, undefined, {}, () => true).conventions.baselineRel, seed);
+    assert.equal(conventionsOnLoad({ vaultConventions: {} }, undefined, {}, () => false).conventions.baselineRel, "");
+    assert.equal(conventionsOnLoad({ vaultConventions: {} }, undefined, { GOVERNOR_BASELINE_REL: "Env/B.md" }).conventions.baselineRel, "Env/B.md");
+    assert.equal(conventionsOnLoad({ vaultConventions: {} }, undefined, {}, () => true).persist, true);
+  });
+
+  test("the pre-#403 branch (stored has no vaultConventions key) honours the BASELINE_REL override, else the legacy seed path", () => {
+    const pre = { readOnly: false, guardedTerritories: [] };
+    assert.deepEqual(conventionsOnLoad(pre, undefined, { GOVERNOR_BASELINE_REL: " Env/B.md " }), { conventions: { ...LEGACY_CONVENTIONS_SEED, baselineRel: "Env/B.md" }, persist: true }, "the override, trimmed; the other keys are the seed");
+    assert.equal(conventionsOnLoad(pre, undefined, { ASSENT_BASELINE_REL: "Old/B.md" }).conventions.baselineRel, "Old/B.md", "the legacy spelling");
+    assert.deepEqual(conventionsOnLoad(pre, undefined, { GOVERNOR_BASELINE_REL: "  " }).conventions, LEGACY_CONVENTIONS_SEED, "a blank override: the seed");
+    assert.deepEqual(conventionsOnLoad(pre, undefined, {}).conventions, LEGACY_CONVENTIONS_SEED);
+    assert.equal(conventionsOnLoad(null, { readOnly: true }, { GOVERNOR_BASELINE_REL: "Env/B.md" }).conventions.baselineRel, "Env/B.md", "an ADOPTED install too");
+    assert.deepEqual(conventionsOnLoad(null, undefined, { GOVERNOR_BASELINE_REL: "Env/B.md" }).conventions, EMPTY_VAULT_CONVENTIONS, "a fresh install is EMPTY, override or not");
   });
 
   test("the CLI env path (VAULT_MCP_CONVENTIONS) is NOT seeded: a record lacking baselineRel reads blank (the CLI falls back to the plugin's data.json instead)", () => {
@@ -199,7 +232,8 @@ describe("who supplies the conventions — source-scan pins against 'threaded bu
     assert.ok(!/vaultConventionsFrom|GOVERNOR_VAULT_CONVENTIONS/.test(cli), "the old reader and the old knob are gone from the runner");
     assert.match(cli, /const conventions = conventionsFromEnv\(process\.env\);/, "runCli reads the conventions from the environment ONCE");
     assert.match(cli, /const baselineRel = baselineRelFrom\(process\.env, conventions\) \|\| pluginRel;/, "…and the baseline path from that same read, the plugin's data.json as the fallback (#493)");
-    assert.match(cli, /rebaselineTargetRefusal\(baselinePath, root, \[baselineRel, pluginRel\]\)/, "--rebaseline guards BOTH live paths: the invocation's and the plugin's");
+    assert.match(cli, /rebaselineTargetRefusal\(baselinePath, root, \[baselineRel, conventions\.baselineRel, pluginRel\]\)/, "--rebaseline guards EVERY live path it can see: the invocation's, the conventions' own (when the env override shadows it), and the plugin's");
+    assert.match(cli, /conventionsOnLoad\(data, undefined, env, \(r\) => existsSync\(join\(vault, r\)\)\)/, "pluginBaselineRel derives the path by the plugin's own load rule, not the raw key");
     assert.match(cli, /^\s*conventions,\s*$/m, "…and fills the runner's option with that same read");
     assert.equal((cli.match(/conventionsFromEnv\(process\.env\)/g) ?? []).length, 1, "one read, in runCli — no second");
     assert.match(cli, /const conv = opts\.conventions;/, "the runner reads the option, nothing else");
@@ -210,6 +244,9 @@ describe("who supplies the conventions — source-scan pins against 'threaded bu
     assert.match(src("scheme/wiring.ts"), /obsidianDriftSource\(app, opts\.getTerritories, opts\.getConventions\)/, "wiring passes it through");
     assert.match(src("mcp/obsidian-debt-source.ts"), /conventions: conventions\?\.\(\) \?\? EMPTY_VAULT_CONVENTIONS/, "the debt source reads the thunk per run, EMPTY without one");
     assert.match(src("mcp/obsidian-drift-source.ts"), /conventions: conventions\?\.\(\) \?\? EMPTY_VAULT_CONVENTIONS/, "the drift source reads the thunk per run, EMPTY without one");
+    for (const f of ["mcp/obsidian-debt-source.ts", "mcp/obsidian-drift-source.ts"]) {
+      assert.match(src(f), /inAppBaselineRefusal\([^;]*, inAppBaselineFromEnv\(conventions\?\.\(\)\)\)/, `${f} tells the refusal where the path came from, per call`);
+    }
   });
   test("the settings tab is wired: display() renders the Conformance tab, every field commits through commitConvention on blur and saves", () => {
     const ui = src("connection-ui.ts");
@@ -221,9 +258,9 @@ describe("who supplies the conventions — source-scan pins against 'threaded bu
     assert.match(ui, /import \{ CONVENTION_FIELDS, commitConvention \} from "\.\/conventions-policy\.js"/);
   });
 
-  test("main.ts seeds through conventionsOnLoad(own, seed) and persists when the key was absent", () => {
+  test("main.ts seeds through conventionsOnLoad(own, seed, process.env, exists) and persists when the key was absent", () => {
     const main = src("main.ts");
-    assert.match(main, /const conventions = conventionsOnLoad\(own, seed\);/);
+    assert.match(main, /const conventions = conventionsOnLoad\(own, seed, process\.env, \(rel\) => vaultBase !== "" && fs\.existsSync\(`\$\{vaultBase\}\/\$\{rel\}`\)\);/, "the env and an on-disk exists() reach the seed");
     assert.match(main, /territories\.persist \|\| conventions\.persist/);
     assert.match(main, /vaultConventions: resolveConventions\(EMPTY_VAULT_CONVENTIONS\)/, "the shipped default is EMPTY");
   });

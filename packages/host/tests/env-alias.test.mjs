@@ -21,6 +21,7 @@ import {
   debtBudgetFrom,
   inAppBaselineRel,
   inAppBaselineRefusal,
+  inAppBaselineFromEnv,
 } from "../src/conformance/cli.ts";
 import { conventionsFromEnv, EMPTY_VAULT_CONVENTIONS } from "../src/conformance/vault-conventions.ts";
 
@@ -99,6 +100,43 @@ describe("real call sites honor the alias", () => {
     assert.match(inAppBaselineRefusal("", true), /^no conformance baseline is configured/, "no path wins over exists");
     assert.match(inAppBaselineRefusal("R/B.md", false), /^the conformance baseline note is missing: 'R\/B\.md'/);
     assert.equal(inAppBaselineRefusal("R/B.md", true), null);
+    assert.equal(inAppBaselineRefusal("R/B.md", true, true), null);
+  });
+
+  test("inAppBaselineRefusal names where to fix it: none → the setting OR the env; missing → the env when fromEnv, else the setting", () => {
+    const none = inAppBaselineRefusal("", false);
+    assert.match(none, /vault-mcp's Conformance settings/);
+    assert.match(none, /GOVERNOR_BASELINE_REL in Obsidian's environment/, "the none message also names the env override");
+    const fromSetting = inAppBaselineRefusal("R/B.md", false);
+    assert.match(fromSetting, /\(vault-mcp's Conformance settings name it\)/);
+    assert.doesNotMatch(fromSetting, /GOVERNOR_BASELINE_REL/);
+    assert.equal(inAppBaselineRefusal("R/B.md", false, false), fromSetting, "fromEnv defaults to false");
+    const fromEnv = inAppBaselineRefusal("R/B.md", false, true);
+    assert.match(fromEnv, /^the conformance baseline note is missing: 'R\/B\.md'/);
+    assert.match(fromEnv, /GOVERNOR_BASELINE_REL in Obsidian's environment names it/);
+    assert.doesNotMatch(fromEnv, /Conformance settings name it/);
+  });
+
+  test("inAppBaselineFromEnv: true only when the setting is blank AND the env override is set", () => {
+    const keys = ["GOVERNOR_BASELINE_REL", "ASSENT_BASELINE_REL"];
+    const saved = keys.map((k) => [k, process.env[k]]);
+    try {
+      for (const k of keys) delete process.env[k];
+      assert.equal(inAppBaselineFromEnv({ baselineRel: "" }), false, "nothing set");
+      assert.equal(inAppBaselineFromEnv({ baselineRel: "Set.md" }), false);
+      process.env.GOVERNOR_BASELINE_REL = "Env.md";
+      assert.equal(inAppBaselineFromEnv({ baselineRel: "  " }), true, "blank setting, env set");
+      assert.equal(inAppBaselineFromEnv(null), true);
+      assert.equal(inAppBaselineFromEnv(undefined), true);
+      assert.equal(inAppBaselineFromEnv({ baselineRel: "Set.md" }), false, "the setting wins, so the path is not from the env");
+      process.env.GOVERNOR_BASELINE_REL = "   ";
+      assert.equal(inAppBaselineFromEnv({ baselineRel: "" }), false, "a blank override is no override");
+      delete process.env.GOVERNOR_BASELINE_REL;
+      process.env.ASSENT_BASELINE_REL = "Old.md";
+      assert.equal(inAppBaselineFromEnv({ baselineRel: "" }), true, "the legacy spelling");
+    } finally {
+      for (const [k, v] of saved) if (v !== undefined) process.env[k] = v; else delete process.env[k];
+    }
   });
 
   test("excludedRootsFrom: both spellings", () => {
