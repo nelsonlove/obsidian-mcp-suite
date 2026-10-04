@@ -19,7 +19,6 @@ import {
   staleAfterFrom,
   registerDirFrom,
   debtBudgetFrom,
-  DEFAULT_BASELINE_REL,
 } from "../src/conformance/cli.ts";
 import { conventionsFromEnv, EMPTY_VAULT_CONVENTIONS } from "../src/conformance/vault-conventions.ts";
 
@@ -54,26 +53,21 @@ describe("real call sites honor the alias", () => {
   test("baselineRelFrom: both spellings, GOVERNOR_ first", () => {
     assert.equal(baselineRelFrom({ GOVERNOR_BASELINE_REL: "A.md", ASSENT_BASELINE_REL: "B.md" }), "A.md");
     assert.equal(baselineRelFrom({ ASSENT_BASELINE_REL: "B.md" }), "B.md");
-    assert.equal(baselineRelFrom({}), DEFAULT_BASELINE_REL);
   });
 
-  // The line above is a tautology by construction (it compares the function's
-  // fallback to the constant it falls back to), so it cannot catch the failure
-  // this default actually has: going stale under a vault reorganization. The
-  // baseline moved twice — vault-root `Assent/` → `00.89 Assent` (2026-08-17)
-  // → `00.89 obsidian-governor` (2026-08-19) — and the default followed
-  // neither, because nothing failed when it pointed at a path that no longer
-  // existed. These assert the SHAPE of a live location, not the exact string,
-  // so a future move still only has to update one constant.
-  test("DEFAULT_BASELINE_REL names a live folder, not a retired ancestor", () => {
-    assert.doesNotMatch(DEFAULT_BASELINE_REL, /^Assent\//, "vault-root Assent/ was refiled in 2026-08");
-    assert.doesNotMatch(DEFAULT_BASELINE_REL, /00\.89 Assent/, "00.89 was renamed away from Assent");
-    assert.match(DEFAULT_BASELINE_REL, /^00-09 System\/.*\/Conformance baseline\.md$/);
-    // Shape, not literal (the comment above): the note moved under Archive/ when the
-    // slot's build records were archived (2026-09), and the bare `Build/` path then
-    // named nothing — which the generic check above could not tell from a live one.
-    assert.match(DEFAULT_BASELINE_REL, /\/Archive\//, "the build records are archived; a path outside Archive/ names nothing");
-    assert.doesNotMatch(DEFAULT_BASELINE_REL, /obsidian-mcp-suite\/Build\//, "the pre-archive Build/ path is retired");
+  // #493: the plugin ships no baseline path (Nelson, 2026-10-03: "No folder
+  // names are ever in the live code"). The order is the env override, then the
+  // vault conventions' baselineRel, then "" (none configured) — never a constant.
+  test("baselineRelFrom order (#493): env override > conventions.baselineRel > \"\"", () => {
+    const conv = { baselineRel: "  Conv/Base.md  " };
+    assert.equal(baselineRelFrom({ GOVERNOR_BASELINE_REL: "Env.md" }, conv), "Env.md", "the env override wins over the setting");
+    assert.equal(baselineRelFrom({ ASSENT_BASELINE_REL: "Old.md" }, conv), "Old.md", "the legacy spelling is an override too");
+    assert.equal(baselineRelFrom({}, conv), "Conv/Base.md", "no override: the setting, trimmed");
+    assert.equal(baselineRelFrom({ GOVERNOR_BASELINE_REL: "   " }, conv), "Conv/Base.md", "a blank override falls through to the setting");
+    assert.equal(baselineRelFrom({}, { baselineRel: "  " }), "", "a blank setting is none configured");
+    assert.equal(baselineRelFrom({}, EMPTY_VAULT_CONVENTIONS), "", "EMPTY conventions: none configured");
+    assert.equal(baselineRelFrom({}, null), "");
+    assert.equal(baselineRelFrom({}), "", "nothing configured anywhere: \"\", not a shipped default");
   });
 
   test("excludedRootsFrom: both spellings", () => {

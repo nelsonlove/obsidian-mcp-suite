@@ -31,9 +31,25 @@ describe("conventionsOnLoad — seed once, fresh empty, present kept", () => {
     assert.deepEqual(conventionsOnLoad(null, { readOnly: true }).conventions, LEGACY_CONVENTIONS_SEED);
   });
   test("an install that has the key keeps exactly what it has, coerced, even when empty", () => {
-    assert.deepEqual(conventionsOnLoad({ vaultConventions: { registriesRoot: " R " } }), { conventions: { ...EMPTY_VAULT_CONVENTIONS, registriesRoot: "R" }, persist: false });
-    assert.deepEqual(conventionsOnLoad({ vaultConventions: {} }), { conventions: EMPTY_VAULT_CONVENTIONS, persist: false });
+    assert.deepEqual(conventionsOnLoad({ vaultConventions: { registriesRoot: " R ", baselineRel: " B.md " } }), { conventions: { ...EMPTY_VAULT_CONVENTIONS, registriesRoot: "R", baselineRel: "B.md" }, persist: false });
+    assert.deepEqual(conventionsOnLoad({ vaultConventions: { baselineRel: "" } }), { conventions: EMPTY_VAULT_CONVENTIONS, persist: false });
     assert.deepEqual(conventionsOnLoad({ vaultConventions: "garbage" }), { conventions: EMPTY_VAULT_CONVENTIONS, persist: false });
+  });
+  test("#493: stored conventions that LACK baselineRel take the former constant's path ONCE (and persist); only that key is seeded", () => {
+    const r = conventionsOnLoad({ vaultConventions: { registriesRoot: " R ", systemRoot: "", ungovernedRoots: ["U"] } });
+    assert.deepEqual(r, { conventions: { registriesRoot: "R", systemRoot: "", ungovernedRoots: ["U"], baselineRel: LEGACY_CONVENTIONS_SEED.baselineRel }, persist: true }, "the other keys are kept as stored, not re-seeded");
+    assert.deepEqual(conventionsOnLoad({ vaultConventions: {} }), { conventions: { ...EMPTY_VAULT_CONVENTIONS, baselineRel: LEGACY_CONVENTIONS_SEED.baselineRel }, persist: true });
+    // Once persisted, the next load has the key and keeps it: seeded once, not every load.
+    assert.deepEqual(conventionsOnLoad({ vaultConventions: r.conventions }), { conventions: r.conventions, persist: false });
+  });
+  test("#493: a STORED blank baselineRel is kept blank — the operator cleared it; it is not re-seeded", () => {
+    assert.deepEqual(conventionsOnLoad({ vaultConventions: { registriesRoot: "R", baselineRel: "" } }), { conventions: { ...EMPTY_VAULT_CONVENTIONS, registriesRoot: "R" }, persist: false });
+    assert.deepEqual(conventionsOnLoad({ vaultConventions: { baselineRel: "   " } }).conventions.baselineRel, "");
+    assert.equal(conventionsOnLoad({ vaultConventions: { baselineRel: "   " } }).persist, false);
+  });
+  test("#493: the seed's baselineRel is the former DEFAULT_BASELINE_REL value, so an upgrade reads the same note", () => {
+    assert.equal(LEGACY_CONVENTIONS_SEED.baselineRel, "00-09 System/00 System management/00.89 obsidian-mcp-suite/Archive/Build/Conformance baseline.md");
+    assert.equal(EMPTY_VAULT_CONVENTIONS.baselineRel, "", "the plugin ships no baseline path");
   });
 });
 
@@ -68,6 +84,54 @@ describe("the settings fields — one per key of the record", () => {
   });
 });
 
+describe("#493: baselineRel is a setting, not a pack convention", () => {
+  test("deadConventionPaths never names baselineRel — blank or set, the file present or absent", () => {
+    const dirs = [LEGACY_CONVENTIONS_SEED.registriesRoot, LEGACY_CONVENTIONS_SEED.systemRoot, ...LEGACY_CONVENTIONS_SEED.ungovernedRoots];
+    const rel = LEGACY_CONVENTIONS_SEED.baselineRel;
+    const cases = [
+      ["blank, nothing walked", { ...EMPTY_VAULT_CONVENTIONS, baselineRel: "" }, { dirs: [], files: [] }],
+      ["blank, seed folders live", { ...LEGACY_CONVENTIONS_SEED, baselineRel: "" }, { dirs, files: [] }],
+      ["set, file present", LEGACY_CONVENTIONS_SEED, { dirs, files: [rel] }],
+      ["set, file absent", LEGACY_CONVENTIONS_SEED, { dirs, files: [] }],
+      ["set, a FOLDER at the path", LEGACY_CONVENTIONS_SEED, { dirs: [...dirs, rel], files: [] }],
+    ];
+    for (const [name, conv, walk] of cases) {
+      assert.ok(!deadConventionPaths(conv, walk).some((d) => d.key === "baselineRel"), name);
+    }
+    assert.deepEqual(deadConventionPaths(LEGACY_CONVENTIONS_SEED, { dirs, files: [rel] }), [], "seed folders live: nothing dead at all");
+    assert.deepEqual(deadConventionPaths({ ...EMPTY_VAULT_CONVENTIONS, baselineRel: "" }, { dirs: [], files: [] }).map((d) => d.key), ["registriesRoot", "systemRoot"], "the blank SCALAR keys are still dead");
+  });
+
+  test("no file under src names 'Conformance baseline.md' in code, except LEGACY_CONVENTIONS_SEED in vault-conventions.ts (comments excluded)", () => {
+    const srcRoot = path.join(HERE, "..", "src");
+    // Strip comments: block comments, then whole-line `//` comments and `*` continuation lines, then trailing `// …` after code.
+    const code = (text) =>
+      text
+        .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ""))
+        .split("\n")
+        .map((l) => (/^\s*(\/\/|\*)/.test(l) ? "" : l.replace(/\s\/\/\s.*$/, "")))
+        .join("\n");
+    const hits = [];
+    const walk = (dir) => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) walk(p);
+        else if (e.isFile() && /\.(ts|mjs|js)$/.test(p)) {
+          code(fs.readFileSync(p, "utf8")).split("\n").forEach((l, i) => {
+            if (l.includes("Conformance baseline.md")) hits.push(`${path.relative(srcRoot, p)}:${i + 1}`);
+          });
+        }
+      }
+    };
+    walk(srcRoot);
+    assert.equal(hits.length, 1, `exactly one code line names the note: ${hits.join(", ")}`);
+    assert.match(hits[0], /^conformance\/vault-conventions\.ts:\d+$/);
+    const vc = src("conformance/vault-conventions.ts");
+    const seedBlock = vc.slice(vc.indexOf("export const LEGACY_CONVENTIONS_SEED"), vc.indexOf("};", vc.indexOf("export const LEGACY_CONVENTIONS_SEED")));
+    assert.match(seedBlock, /baselineRel: "[^"]*Conformance baseline\.md"/, "the one hit is the seed's baselineRel");
+  });
+});
+
 describe("who supplies the conventions — source-scan pins against 'threaded but never read'", () => {
   test("LEGACY_CONVENTIONS_SEED has exactly ONE reader in the host beside its definition: conventions-policy.ts", () => {
     const readers = [];
@@ -84,7 +148,10 @@ describe("who supplies the conventions — source-scan pins against 'threaded bu
   test("runConformance reads NO environment for conventions; runCli supplies them from VAULT_MCP_CONVENTIONS", () => {
     const cli = src("conformance/cli.ts");
     assert.ok(!/vaultConventionsFrom|GOVERNOR_VAULT_CONVENTIONS/.test(cli), "the old reader and the old knob are gone from the runner");
-    assert.match(cli, /conventions: conventionsFromEnv\(process\.env\)/, "runCli fills the option from the environment");
+    assert.match(cli, /const conventions = conventionsFromEnv\(process\.env\);/, "runCli reads the conventions from the environment ONCE");
+    assert.match(cli, /const baselineRel = baselineRelFrom\(process\.env, conventions\);/, "…and the baseline path from that same read (#493)");
+    assert.match(cli, /^\s*conventions,\s*$/m, "…and fills the runner's option with that same read");
+    assert.equal((cli.match(/conventionsFromEnv\(process\.env\)/g) ?? []).length, 2, "one read in runCli, one as rebaselineTargetRefusal's default liveRel — no third");
     assert.match(cli, /const conv = opts\.conventions;/, "the runner reads the option, nothing else");
   });
   test("the in-app sources are handed a per-call conventions thunk from the live settings", () => {

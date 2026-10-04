@@ -77,11 +77,15 @@ export interface DriftPaneSource {
 
 export function obsidianDriftSource(app: App, territories?: () => readonly string[], conventions?: () => VaultConventions): DriftPaneSource {
   const root = vaultRoot(app);
-  const baselinePath = join(root, baselineRelFrom(process.env));
+
   const excludedRoots = excludedRootsFrom([], process.env);
 
   return {
     async scan(): Promise<DriftGroup[]> {
+      // Per call, from the live setting (#493). None configured reads as missing: the pane says so.
+      const rel = baselineRelFrom(process.env, conventions?.());
+      if (!rel) throw new Error("no conformance baseline is configured: set the baseline note in vault-mcp's Conformance settings (vault conventions, baselineRel)");
+      const baselinePath = join(root, rel);
       const missing = baselineMissingRefusal(baselinePath, existsSync(baselinePath), false);
       if (missing) throw new Error(missing);
       const baselineText = await readFile(baselinePath, "utf8");

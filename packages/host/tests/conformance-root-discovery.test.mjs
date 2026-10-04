@@ -85,6 +85,20 @@ describe("rootDiscoveryRefusal — the pure gate", () => {
 
 // ── end-to-end through the real CLI ─────────────────────────────────────
 
+// Since #493 the CLI refuses when no baseline path is configured, before any
+// root reasoning. These tests pin the discovery GATE (they pass --no-baseline),
+// so a vault-relative baseline path is configured for the whole file through
+// the env override, then restored.
+const BASELINE_KEYS = ["GOVERNOR_BASELINE_REL", "ASSENT_BASELINE_REL"];
+const savedBaselineEnv = BASELINE_KEYS.map((k) => [k, process.env[k]]);
+before(() => {
+  delete process.env.ASSENT_BASELINE_REL;
+  process.env.GOVERNOR_BASELINE_REL = "Records/baseline.md";
+});
+after(() => {
+  for (const [k, v] of savedBaselineEnv) if (v !== undefined) process.env[k] = v; else delete process.env[k];
+});
+
 describe("runCli — no explicit root and no opt-in refuses (real process.env / cwd)", () => {
   let savedContent, savedAllow, savedCwd;
 
