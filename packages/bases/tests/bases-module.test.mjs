@@ -56,6 +56,7 @@ import {
   captureWithCleanup,
   makeSerializer,
   BaseTimeoutError,
+  parseCsv,
 } from "../src/kernel/index.ts";
 import { buildBasesTools, emptyBasesSource, queryBaseRows } from "../src/tools.ts";
 import {
@@ -859,9 +860,9 @@ describe("#487 engine selection, window_hidden, base_query_failed", () => {
       base.calls.hiddenChecks++;
       return hidden;
     };
-    base.engineQuery = async (p, viewName, timeoutMs) => {
-      base.calls.engine.push({ p, viewName, timeoutMs });
-      if (engineImpl) return engineImpl(p, viewName, timeoutMs);
+    base.engineQuery = async (p, viewName, columns, timeoutMs) => {
+      base.calls.engine.push({ p, viewName, columns, timeoutMs });
+      if (engineImpl) return engineImpl(p, viewName, columns, timeoutMs);
       return { columns: ["Name", "Status"], rows: FAST_ROWS };
     };
     return base;
@@ -884,13 +885,26 @@ describe("#487 engine selection, window_hidden, base_query_failed", () => {
     assert.equal((await q(s, { engine: "auto" })).result.engine, "fast");
   });
 
-  test("engineQuery gets the FIRST view's name when view is absent, the named view otherwise", async () => {
+  test("engineQuery gets viewName \"\" when view is absent, the named view's name otherwise", async () => {
     const s = engineSource();
     await q(s, {});
     await q(s, { view: "Done" });
-    assert.equal(s.calls.engine[0].viewName, "Queue");
+    await q(s, { view: "Queue" });
+    assert.equal(s.calls.engine[0].viewName, "");
     assert.equal(s.calls.engine[1].viewName, "Done");
+    assert.equal(s.calls.engine[2].viewName, "Queue");
     assert.equal(s.calls.engine[0].p, "Views/Q.base");
+  });
+
+  test("engineQuery gets the selected view's order normalized (null when no order), same as the leaf capture", async () => {
+    const s = engineSource();
+    await q(s, {});
+    await q(s, { view: "Done" });
+    await q(s, { engine: "view" });
+    const want = ["file.name", "note.acceptance-status", "note.author"];
+    assert.deepEqual(s.calls.engine[0].columns, want);
+    assert.equal(s.calls.engine[1].columns, null);
+    assert.deepEqual(s.calls.captures[0].columns, want);
   });
 
   test("engineQuery receives the configured query timeout", async () => {
@@ -1068,7 +1082,7 @@ describe("#487 the query tool: engine and allow_hidden", () => {
     s.calls.engine = [];
     s.engineQueryAvailable = () => available;
     s.windowHidden = () => hidden;
-    s.engineQuery = async (p, viewName) => {
+    s.engineQuery = async (p, viewName, columns, timeoutMs) => {
       s.calls.engine.push({ p, viewName });
       return { columns: ["Name"], rows: ROWS };
     };
@@ -1153,5 +1167,39 @@ describe("#487 the query tool: engine and allow_hidden", () => {
       assert.equal(res.isError, true, JSON.stringify(allow_hidden));
       assert.match(errText(res), /^Error \[invalid_argument\]: /, JSON.stringify(allow_hidden));
     }
+  });
+});
+
+describe("#495 parseCsv", () => {
+  test("empty text is no rows", () => assert.deepEqual(parseCsv(""), []));
+  test("plain rows", () => assert.deepEqual(parseCsv("a,b\n1,2\n3,4"), [["a", "b"], ["1", "2"], ["3", "4"]]));
+  test("a single header row with no body", () => assert.deepEqual(parseCsv("path,Name"), [["path", "Name"]]));
+  test("quoted commas stay in one cell", () => assert.deepEqual(parseCsv('a,"x, y",c'), [["a", "x, y", "c"]]));
+  test("doubled quotes unescape", () => assert.deepEqual(parseCsv('"say ""hi""",b'), [['say "hi"', "b"]]));
+  test("an embedded newline in a quoted cell does not split the row", () =>
+    assert.deepEqual(parseCsv('a,"line1\nline2"\nx,y'), [["a", "line1\nline2"], ["x", "y"]]));
+  test("empty cells, including a trailing one", () => {
+    assert.deepEqual(parseCsv("a,,c\n,,\nx,"), [["a", "", "c"], ["", "", ""], ["x", ""]]);
+  });
+  test("CR outside quotes is ignored; CR inside quotes is kept", () => {
+    assert.deepEqual(parseCsv("a,b\r\n1,2"), [["a", "b"], ["1", "2"]]);
+    assert.deepEqual(parseCsv('"a\rb",c'), [["a\rb", "c"]]);
+  });
+});
+
+describe("#495 BaseTimeoutError", () => {
+  test("default form names the ms, the slow view scan and engine fast", () => {
+    const e = new BaseTimeoutError(1500);
+    assert.equal(e.code, "base_timeout");
+    assert.equal(e.name, "BaseTimeoutError");
+    assert.match(e.message, /1500ms/);
+    assert.match(e.message, /view evaluator/);
+    assert.match(e.message, /engine "fast"/);
+  });
+  test("a reason replaces the default cause text", () => {
+    const e = new BaseTimeoutError(750, "the metadata cache never finished");
+    assert.match(e.message, /750ms/);
+    assert.match(e.message, /the metadata cache never finished/);
+    assert.ok(!/view evaluator/.test(e.message));
   });
 });

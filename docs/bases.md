@@ -3,8 +3,7 @@
 > **Deep reference for the shipped implementation.** Canonical concepts and the target design live in the [documentation corpus](README.md); what is shipped versus target is owned by [status-and-compatibility.md](status-and-compatibility.md). Since the S7 read-tier extraction (`suite-split-design.md` §6) this reference documents the standalone **`vaultmcp-bases`** plugin, not a module of the host plugin (`vault-mcp`).
 
 The `vaultmcp-bases` plugin (#243, shipped in PR #248 as a module; extracted at S7) gives agents the *evaluated* rows of
-an Obsidian **Bases** `.base` file — the same filtered, formula-computed, sorted result set
-the human sees in a Bases view — without re-implementing any of the Bases
+an Obsidian **Bases** `.base` file — a filtered, formula-computed, sorted result set. The `view` evaluator returns the same result set the human sees in a Bases view; the default `fast` evaluator is Obsidian's own `base:query` handler and differs (string values, Markdown only, `groupBy` and the search box ignored, `this` null; see "Two evaluators" below). It does this without re-implementing any of the Bases
 expression language. Two tools, declared read-only; there is no write
 path and nothing here mutates the vault or the base file.
 
@@ -47,7 +46,7 @@ backslash is refused outright, because every check downstream splits on `/` alon
 
 ## Two evaluators (#487)
 
-The query has two evaluators. **`fast`** calls Obsidian's own `base:query` handler, which the Bases core plugin registers on `app.cli.handlers` (not in `obsidian.d.ts`, so every hop is feature-checked). It reads the `.base`, builds the filter and runs one synchronous pass over the Markdown notes' metadata: no view, no DOM, no timers, so a hidden window does not slow it. On the live vault (22,765 notes) it answers in about 0.4 s. Its differences from the rendered view: the columns are the view's column **display names**, not property ids; every value is a string or null; it reads only Markdown notes; it ignores `groupBy` and the search box; `this` evaluates as null; a sort on a property that is not a column is dropped. It waits for the metadata cache to finish resolving first, within the timeout. **`view`** is the detached-leaf capture below: full view fidelity, but its scan runs on the main thread in batches the engine paces by the window, and on a vault-wide base it blocked Obsidian for 12 to 18 minutes (#487); a timer cannot stop it once it runs. So the view evaluator refuses `window_hidden` while the Obsidian window is hidden (`document.hidden`), unless the caller passes `allow_hidden: true`. The default, `auto`, uses `fast` when the handler is registered and `view` otherwise; `fast` asked for and not reachable refuses `engine_unavailable`; an error the handler raises refuses `base_query_failed` with its text.
+The query has two evaluators. **`fast`** calls Obsidian's own `base:query` handler, which the Bases core plugin registers on `app.cli.handlers` (not in `obsidian.d.ts`, so every hop is feature-checked). It reads the `.base`, builds the filter and runs one synchronous pass over the Markdown notes' metadata: no view, no DOM, no timers, so a hidden window does not slow it. On the live vault (22,765 notes) it answers in about 0.4 s. It reads the handler's CSV output (every column by position) and its `paths` output (the notes, in the same order): two passes, because the JSON output keys each row by column display name and so loses a column whose name repeats or is `path`. The columns are the view's property ids when the view declares its column order, as the `view` evaluator gives them, else the display names, made unique by position. Its differences from the rendered view: every value is a string or null (an empty value is null); it reads only Markdown notes; it ignores `groupBy` and the search box; `this` evaluates as null; a sort on a property that is not a column is dropped. It waits for the metadata cache to finish resolving first, within the timeout. **`view`** is the detached-leaf capture below: full view fidelity, but its scan runs on the main thread in batches the engine paces by the window, and on a vault-wide base it blocked Obsidian for 12 to 18 minutes (#487); a timer cannot stop it once it runs. So the view evaluator refuses `window_hidden` while the Obsidian window is hidden (`document.hidden`), unless the caller passes `allow_hidden: true`. The default, `auto`, uses `fast` when the handler is registered and `view` otherwise; `fast` asked for and not reachable refuses `engine_unavailable`; an error the handler raises refuses `base_query_failed` with its text.
 
 ## The detached-leaf capture, and why
 
@@ -89,10 +88,8 @@ leaf and removing the host div, and a `cancelled` flag stops the poll loop after
   **belt deadline** (timeout + 5s grace) settles the serializer task even if a
   non-conforming source's capture promise hangs, so the module-wide chain always moves on.
 - **Time-boxed**: the plugin's `queryTimeoutMs` setting, default **30000 ms** (valid range
-  1000–120000). The deadline is generous on purpose — Electron throttles the engine's
-  batched scan while the window is hidden (measured on a 1.9k-note vault: ~5.7 s
-  foreground-ish vs ~64 s hidden) — and expiry refuses with the typed, **retryable**
-  `base_timeout`; nothing is mutated.
+  1000–120000), bounds both evaluators, and expiry refuses with the typed, **retryable**
+  `base_timeout`; nothing is mutated. For `fast` the deadline is a real bound: the metadata pass is short and a hidden window does not slow it. For `view` the timeout only frees the serializer chain and detaches the leaf; it cannot stop the scan once it runs, because the scan blocks Obsidian's main thread (12–18 minutes measured on a vault-wide base, and ~5.7 s foreground-ish vs ~64 s hidden on a 1.9k-note vault). For `view` the real protection is the `window_hidden` gate: it refuses while `document.hidden` unless `allow_hidden: true`.
 - **Row-capped**: the plugin's `rowCap` setting, default **500** (valid range 1–10000); the
   tool's `limit` argument clamps to it. Truncation reports `truncated: true` plus the
   pre-cap `total`.
