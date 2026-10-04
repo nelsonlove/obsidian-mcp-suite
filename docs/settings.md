@@ -298,6 +298,46 @@ The acceptance family is a non-configurable floor. Configuration may extend it, 
 | Risk | Changing the identifier stops protecting notes marked the old way until they are re-marked; a blank field falls back to the default rather than protecting nothing |
 | Recovery | Restore the previous identifier; notes are never rewritten by this setting |
 
+### Records by note marker
+
+| Field | Value |
+|---|---|
+| Default | On |
+| Effect | The note marker's own switch (#482). Off: no note is a record by its marker, for the write check, the moves and heading renames alike |
+| Takes effect | Live, per call |
+| Risk | Off removes the marker's protection everywhere at once; the folder rule (below), if on, still protects notes for moves and heading renames |
+| Recovery | Turn it back on |
+
+### Records by folder
+
+| Field | Value |
+|---|---|
+| Default | On |
+| Effect | The folder rule's own switch (#482). On: a note under a record folder, or under a folder whose name matches the archive pattern, is a record for moves and heading renames (they leave its links as written); a record folder's own index note is not a record. The write check judges by the note marker only. Off: no note is a record by its folder, and no folder is an archive for the bracket rule either |
+| Takes effect | Live, per call |
+| Risk | Off lets a move or heading rename rewrite links inside notes that are records only by their folder |
+| Recovery | Turn it back on |
+
+### Record folders
+
+| Field | Value |
+|---|---|
+| Default | **Empty — the plugin ships no folder names** (Nelson, 2026-10-03). An install that predates the setting is seeded once with the folders #455 hard-coded (03.04 Records, 03.16 Cross-session log, 03.20 Imported chats), then the key is persisted so the seeding never repeats |
+| Effect | One vault folder path per line; every note under it is a record (see Records by folder). Saved when the field is left, or when the settings tab closes |
+| Takes effect | Live, per call |
+| Risk | A fresh install protects no folder until filled in |
+| Recovery | Add the folders back; nothing is rewritten by this setting |
+
+### Archive folder pattern
+
+| Field | Value |
+|---|---|
+| Default | **Empty**. An install that predates the setting is seeded once with the JD archive pattern `^\d\d(?:\.\d\d)*\.09 Archive(?: \|$)` (`00.09 Archive`, `41.09 Archive for …`, dotted IDs) |
+| Effect | A regular expression matched against each folder NAME on a note's path; a match makes that folder an archive: a record folder for moves and heading renames, and an archive for the bracket rule (Nelson, 2026-10-02: "Brackets should only be permissible on archived notes that no other note links to"). Saved as written when the field is left or the tab closes; the field's line says whether it is in force |
+| Takes effect | Live, per call |
+| Risk | A pattern that does not compile matches nothing (it never widens); empty means no folder is an archive. The filesystem server and the triage plugin have no settings and never give or keep a bracket name |
+| Recovery | Re-enter the pattern |
+
 ## Conformance
 
 ### Vault conventions
