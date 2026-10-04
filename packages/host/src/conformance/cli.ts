@@ -12,7 +12,7 @@
 // opts out (the rationale is on `RunOpts.legacyPacks` below, issue #116).
 
 import { readFile, writeFile } from "node:fs/promises";
-import { existsSync, realpathSync, lstatSync, readlinkSync, statSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, lstatSync, readlinkSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 // The vocabulary kernel lives in @vault-mcp/core since the read-tier satellite
 // extraction (suite split, S7) — this rail is one of its two consumers, the
@@ -24,6 +24,7 @@ import { envAliased } from "../env-alias.js";
 import { intendedRealPath, sameFile, isInside } from "./path-identity.js";
 import { runEngine, ENGINE_ID } from "./engine.js";
 import { vocabPack, schemePack, structurePack, portPack, stePack, driftPack } from "./packs/index.js";
+import { conventionsOnLoad } from "../conventions-policy.js";
 import { conventionsFromEnv, deadConventionPaths, CONVENTION_PACKS, CONVENTIONS_ENV, type DeadConvention, type VaultConventions } from "./vault-conventions.js";
 import { parseBaseline, renderBaseline, ratchet, type RatchetResult } from "./ratchet.js";
 import { parseKey, findingKey, type Finding } from "./finding.js";
@@ -555,7 +556,13 @@ export function coverageRefusal(
  * act anyway — which is the test the fail-closed rule actually requires
  * (measure the refused population; do not assume it is exotic).
  */
-export function rebaselineTargetRefusal(baselinePath: string, root: string): string | null {
+export function rebaselineTargetRefusal(
+  baselinePath: string,
+  root: string,
+  // The LIVE records' vault-relative paths: what this invocation configures AND what the plugin's own
+  // settings in this vault name (#494 review: the two can differ). Empty when none is known.
+  liveRels: readonly string[],
+): string | null {
   // 1. Outside the content root ⇒ refuse outright, rather than "not live".
   //    This is what closes the decoupled-root bypass: if --root points
   //    elsewhere, the real acceptance record is no longer inside it.
@@ -568,7 +575,26 @@ export function rebaselineTargetRefusal(baselinePath: string, root: string): str
     );
   }
 
-  const livePath = join(resolve(root), baselineRelFrom(process.env));
+  // No live record known: nothing can be shown NOT to be it. Refuse, rather than let
+  // --baseline= rewrite it unchecked (#144).
+  const lives = [...new Set(liveRels.map((r) => r.trim()).filter(Boolean))];
+  if (lives.length === 0) {
+    return (
+      `refusing to --rebaseline ${baselinePath}: no live conformance baseline is configured, so this target ` +
+      `cannot be checked against it. Set the baseline note in the vault-mcp plugin's Conformance settings for this vault, ` +
+      `baselineRel in ${CONVENTIONS_ENV}, or GOVERNOR_BASELINE_REL.`
+    );
+  }
+  for (const liveRel of lives) {
+    const r = liveTargetRefusal(baselinePath, root, liveRel);
+    if (r) return r;
+  }
+  return null;
+}
+
+/** Checks 2–4 against ONE live record. */
+function liveTargetRefusal(baselinePath: string, root: string, liveRel: string): string | null {
+  const livePath = join(resolve(root), liveRel);
 
   // 2. Same name.
   if (resolve(baselinePath) === livePath) return liveRefusal(baselinePath);
@@ -731,24 +757,73 @@ function renderReport(
 // ── thin process entry (not unit-tested; the wiring above is) ─────────────────
 
 /**
- * Vault-relative location of the accepted-debt baseline.
- *
- * A CONVENTION, not a law of the plugin: it is where this fleet's vault keeps
- * its baseline, and any other vault will keep it somewhere else. Overridable
- * without a release via `GOVERNOR_BASELINE_REL` (vault-relative) or `--baseline=`
- * (absolute), so the default is a starting point rather than a hardcoded
- * assumption about somebody's folder layout. The note sits under
- * `Archive/Build/` since the 00.89 slot's build records were archived
- * (2026-09); the bare `Build/` path named nothing, and the in-app sources
- * then read NO accepted debt rather than the record.
+ * The baseline path the vault-mcp PLUGIN in this vault reads (#493), or "" when
+ * there is no such plugin settings file or it names none. Derived by the
+ * plugin's OWN load-time rule (`conventionsOnLoad`), not the raw key, so a
+ * data.json that predates the key yields the path the plugin will seed, not ""
+ * (#494 review). The CLI cannot see the plugin's live settings any other way,
+ * and it needs them twice: as its own path when its environment names none, and
+ * as a live record --rebaseline must never rewrite. Read-only; never throws.
  */
-export const DEFAULT_BASELINE_REL =
-  "00-09 System/00 System management/00.89 obsidian-mcp-suite/Archive/Build/Conformance baseline.md";
+export function pluginBaselineRel(root: string, env: Record<string, string | undefined> = process.env): string {
+  try {
+    const vault = resolve(root);
+    const data = JSON.parse(readFileSync(join(vault, ".obsidian", "plugins", "vault-mcp", "data.json"), "utf8"));
+    const rel = conventionsOnLoad(data, undefined, env, (r) => existsSync(join(vault, r))).conventions.baselineRel;
+    return typeof rel === "string" ? rel.trim() : "";
+  } catch {
+    return "";
+  }
+}
 
-/** The baseline's vault-relative path for this invocation. */
-export function baselineRelFrom(env: Record<string, string | undefined>): string {
+/**
+ * The baseline path the IN-APP sources read (#493): the plugin's own setting
+ * first, so an edit in Settings always takes effect; the process-environment
+ * override only when the setting is blank. ("" ⇒ none configured.)
+ */
+export function inAppBaselineRel(conventions?: Pick<VaultConventions, "baselineRel"> | null): string {
+  return (conventions?.baselineRel ?? "").trim() || baselineRelFrom(process.env);
+}
+
+/** True when the in-app path comes from the process environment: the plugin's setting is blank and the override is set. */
+export function inAppBaselineFromEnv(conventions?: Pick<VaultConventions, "baselineRel"> | null): boolean {
+  return (conventions?.baselineRel ?? "").trim() === "" && baselineRelFrom(process.env) !== "";
+}
+
+/**
+ * The in-app refusal when no baseline is configured, or the configured note is
+ * missing. `fromEnv` says the path came from GOVERNOR_BASELINE_REL (the setting
+ * is blank), so the message names the place the operator must fix.
+ */
+export function inAppBaselineRefusal(rel: string, exists: boolean, fromEnv = false): string | null {
+  if (!rel) {
+    return "no conformance baseline is configured: set the baseline note in vault-mcp's Conformance settings (vault conventions, baselineRel), or set GOVERNOR_BASELINE_REL in Obsidian's environment";
+  }
+  if (!exists) {
+    const where = fromEnv
+      ? "GOVERNOR_BASELINE_REL in Obsidian's environment names it, because the Conformance setting is blank"
+      : "vault-mcp's Conformance settings name it";
+    return `the conformance baseline note is missing: '${rel}' (${where}) — refusing to report every finding as NEW against an empty baseline`;
+  }
+  return null;
+}
+
+/**
+ * The baseline's vault-relative path for this invocation: the `BASELINE_REL`
+ * environment override (`GOVERNOR_BASELINE_REL`, or the legacy `ASSENT_BASELINE_REL`) first,
+ * else the vault conventions' `baselineRel` setting (#493), else "" — none
+ * configured. The plugin ships no path (Nelson, 2026-10-03: "No folder names
+ * are ever in the live code"); an install that predates the key is seeded once
+ * by `withBaselineSeed` (conventions-policy.ts). The CLI also takes
+ * `--baseline=` (absolute), and falls back to `pluginBaselineRel` when this
+ * returns "". In-app the order is the other way round: `inAppBaselineRel`.
+ */
+export function baselineRelFrom(
+  env: Record<string, string | undefined>,
+  conventions?: Pick<VaultConventions, "baselineRel"> | null,
+): string {
   const v = (envAliased(env, "BASELINE_REL") ?? "").trim();
-  return v || DEFAULT_BASELINE_REL;
+  return v || (conventions?.baselineRel ?? "").trim();
 }
 const FENCE = "```ratchet-baseline";
 
@@ -898,7 +973,17 @@ export async function runCli(argv: string[]): Promise<void> {
     root = discoverRoot(process.cwd());
   }
   const baselineArg = argv.find((a) => a.startsWith("--baseline="))?.slice("--baseline=".length);
-  const baselineRel = baselineRelFrom(process.env);
+  const conventions = conventionsFromEnv(process.env);
+  // The plugin's own setting in this vault (#494 review): the CLI's path when its environment names none,
+  // and always a live record --rebaseline must not rewrite.
+  const pluginRel = pluginBaselineRel(root);
+  const baselineRel = baselineRelFrom(process.env, conventions) || pluginRel;
+  if (!baselineArg && !baselineRel) {
+    throw new Error(
+      `no conformance baseline is configured: set baselineRel in ${CONVENTIONS_ENV} or in the vault-mcp plugin's ` +
+        "Conformance settings for this vault, set GOVERNOR_BASELINE_REL, or pass --baseline=<path>"
+    );
+  }
   const baselinePath = baselineArg ? resolve(baselineArg) : join(root, baselineRel);
   // A MISSING baseline is refused, not silently treated as empty. An empty
   // baseline makes every finding read NEW and every accepted-debt key read
@@ -936,7 +1021,7 @@ export async function runCli(argv: string[]): Promise<void> {
     // The vault conventions (#403): from the invocation's environment
     // (`VAULT_MCP_CONVENTIONS`; the two old spellings read once more, warned),
     // never a constant; unset means every convention dead, said loudly.
-    conventions: conventionsFromEnv(process.env),
+    conventions,
     // Debt-budget tooth (#211): warn-only unless --strict-budget.
     debtBudget,
     strictBudget,
@@ -1025,7 +1110,15 @@ export async function runCli(argv: string[]): Promise<void> {
     // accepted debt exactly as it was.
     // Identity first: whether this write lands on the live acceptance record is
     // decided by the filesystem, before any coverage reasoning (#144).
-    const targetRefusal = rebaselineTargetRefusal(baselinePath, root);
+    // Every live record this invocation can see: its own path, the conventions' own path when the env override
+    // shadows it, and the plugin's setting in this vault, with and without this shell's override (#494 review).
+    // The plugin seeds from Obsidian's environment, not this shell's, so the path it fills with no override is protected too.
+    const targetRefusal = rebaselineTargetRefusal(baselinePath, root, [
+      baselineRel,
+      conventions.baselineRel,
+      pluginRel,
+      pluginBaselineRel(root, {}),
+    ]);
     if (targetRefusal) throw new Error(targetRefusal);
     const refusal = rebaselineRefusal({
       targetsLiveBaseline: false, // established above; a live target already threw
