@@ -38,12 +38,16 @@ published `vaultmcp_bases_base_query`. Sessions and prompts calling the old name
 | Tool | What it does |
 | --- | --- |
 | `vaultmcp_bases_list` | Enumerate the visible `.base` files, each with its declared views (name, type, column count). Reads each base's YAML; evaluates nothing. Broken files are listed with a marker (`error: "parse_error"` for bad YAML, `"invalid_shape"` for YAML that isn't a Bases mapping) rather than dropped. |
-| `vaultmcp_bases_query` | `{path, view?, limit?}` → the selected view's evaluated rows: `{view, view_type, columns, rows: [{path, properties}], total, truncated}`. `view` defaults to the file's first declared view; values are stringified via the engine's own `Value.toString()`, with the engine's `NullValue` folded to a real JSON `null` so "absent" and the literal text `"null"` stay distinguishable. |
+| `vaultmcp_bases_query` | `{path, view?, limit?, engine?, allow_hidden?}` → the selected view's evaluated rows: `{view, view_type, engine, columns, rows: [{path, properties}], total, truncated}`. `engine` picks the evaluator (see "Two evaluators" below); the result's `engine` says which one answered. `view` defaults to the file's first declared view; values are stringified via the engine's own `Value.toString()`, with the engine's `NullValue` folded to a real JSON `null` so "absent" and the literal text `"null"` stay distinguishable. |
 
 Typed refusals from the query tool (and from the shared seam, below): `bases_unavailable`,
 `not_a_base`, `invalid_path`, `out_of_allowlist`, `not_found`, `base_parse_error`,
-`view_not_found`, `base_timeout`. (`invalid_path` is new at S7: a `path` containing a
+`view_not_found`, `base_timeout`, and since #487 `window_hidden`, `engine_unavailable` and `base_query_failed`. (`invalid_path` is new at S7: a `path` containing a
 backslash is refused outright, because every check downstream splits on `/` alone.)
+
+## Two evaluators (#487)
+
+The query has two evaluators. **`fast`** calls Obsidian's own `base:query` handler, which the Bases core plugin registers on `app.cli.handlers` (not in `obsidian.d.ts`, so every hop is feature-checked). It reads the `.base`, builds the filter and runs one synchronous pass over the Markdown notes' metadata: no view, no DOM, no timers, so a hidden window does not slow it. On the live vault (22,765 notes) it answers in about 0.4 s. Its differences from the rendered view: the columns are the view's column **display names**, not property ids; every value is a string or null; it reads only Markdown notes; it ignores `groupBy` and the search box; `this` evaluates as null; a sort on a property that is not a column is dropped. It waits for the metadata cache to finish resolving first, within the timeout. **`view`** is the detached-leaf capture below: full view fidelity, but its scan runs on the main thread in batches the engine paces by the window, and on a vault-wide base it blocked Obsidian for 12 to 18 minutes (#487); a timer cannot stop it once it runs. So the view evaluator refuses `window_hidden` while the Obsidian window is hidden (`document.hidden`), unless the caller passes `allow_hidden: true`. The default, `auto`, uses `fast` when the handler is registered and `view` otherwise; `fast` asked for and not reachable refuses `engine_unavailable`; an error the handler raises refuses `base_query_failed` with its text.
 
 ## The detached-leaf capture, and why
 
@@ -80,7 +84,7 @@ leaf and removing the host div, and a `cancelled` flag stops the poll loop after
 
 ## Timeouts, serialization, caps
 
-- **Serialized: one capture at a time**, across the whole plugin process. The serializer is
+- **Serialized: one capture at a time** (either evaluator), across the whole plugin process. The serializer is
   module-scoped (not per-connection) because the hidden leaf is a global resource. A
   **belt deadline** (timeout + 5s grace) settles the serializer task even if a
   non-conforming source's capture promise hangs, so the module-wide chain always moves on.

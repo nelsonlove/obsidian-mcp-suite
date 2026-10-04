@@ -4,11 +4,17 @@
 //
 //   list                   — enumerate `.base` files + each file's declared
 //                            views (no arguments)
-//   query {path,view,limit} — the SELECTED view's evaluated rows, harvested
-//                            from Obsidian's own Bases engine via a hidden
-//                            background leaf
+//   query {path,view,limit,engine,allow_hidden}
+//                          — the SELECTED view's evaluated rows: by default
+//                            from Obsidian's own `base:query` evaluator (#487),
+//                            else harvested from a hidden background leaf
 //
 // ── Why a capture, and what it buys ─────────────────────────────────────────
+//
+// (#487: this is now the `view` evaluator. The default reaches Obsidian's own
+// `base:query` handler instead — see `queryBaseRows` and obsidian-source.ts —
+// because this capture's scan blocked Obsidian's main thread for 12–18 minutes
+// on a vault-wide base and no timer can stop it once it runs.)
 //
 // Obsidian's public Bases API (1.10+) evaluates a `.base` query ONLY into a
 // rendered view: `BasesQueryResult` rows flow to a `BasesView` the engine
@@ -197,6 +203,22 @@ export interface BasesSource {
    * settles. `viewName` undefined ⇒ the file's first declared view.
    */
   capture(path: string, viewName: string | undefined, columns: string[] | null, timeoutMs: number): Promise<CaptureResult>;
+  /**
+   * #487: whether Obsidian's own `base:query` evaluator is reachable (the Bases
+   * core plugin's CLI handler). Optional: absent ⇒ not reachable.
+   */
+  engineQueryAvailable?(): boolean;
+  /**
+   * #487: evaluate the view through Obsidian's own `base:query` handler — a
+   * metadata scan with no view, no DOM and no timers, about 0.4 s on a
+   * 22,765-note vault where the hidden leaf took 12–18 minutes. Columns are the
+   * engine's column DISPLAY names; every value is a string or null. Throws
+   * BaseTimeoutError when the metadata cache does not finish within timeoutMs,
+   * and an Error carrying the engine's own message when it refuses.
+   */
+  engineQuery?(path: string, viewName: string, timeoutMs: number): Promise<CaptureResult>;
+  /** #487: whether the Obsidian window is hidden (`document.hidden`). Optional: absent ⇒ not hidden. */
+  windowHidden?(): boolean;
 }
 
 /** Inert source — a stand-in for tests and for a plugin instance with no vault
@@ -293,9 +315,15 @@ export type BaseRowsRefusal = {
     | "not_found"
     | "base_parse_error"
     | "view_not_found"
-    | "base_timeout";
+    | "base_timeout"
+    | "window_hidden"
+    | "engine_unavailable"
+    | "base_query_failed";
   message: string;
 };
+
+/** #487: which evaluator answered. `fast` = Obsidian's own `base:query`; `view` = the hidden leaf. */
+export type BaseEngine = "fast" | "view";
 
 export interface BaseRowsResult {
   view: string;
@@ -305,12 +333,13 @@ export interface BaseRowsResult {
   total: number;
   truncated: boolean;
   someRowsHidden: boolean;
+  engine: BaseEngine;
 }
 
 export async function queryBaseRows(
   source: BasesSource,
   ctx: { config: Record<string, unknown>; visible?: (paths: string[]) => string[] },
-  args: { path: string; view?: string; limit?: number },
+  args: { path: string; view?: string; limit?: number; engine?: "auto" | BaseEngine; allowHidden?: boolean },
 ): Promise<{ refusal: BaseRowsRefusal } | { result: BaseRowsResult }> {
   const refuseWith = (code: BaseRowsRefusal["code"], message: string) => ({ refusal: { code, message } });
   // The feature gate, callable-level: buildBasesTools checks this before
@@ -324,6 +353,7 @@ export async function queryBaseRows(
   }
   const cfg = basesConfigOf(ctx.config);
   const { path, view, limit } = args;
+  const engine = args.engine ?? "auto";
   // BACKSLASH IS REFUSED OUTRIGHT, BEFORE EVERY OTHER PATH CHECK (2026-09-05,
   // the satellite-review rule the triage extraction adopted at plan.ts's
   // `targetProblem`). Every check downstream — this function's `.base` suffix
@@ -362,16 +392,42 @@ export async function queryBaseRows(
     );
   }
   const columns = selected.order ? selected.order.map(normalizePropertyId) : null;
+  // #487: the fast road first. Obsidian's own `base:query` evaluator scans the
+  // metadata cache with no view and no DOM; the hidden leaf below evaluates
+  // through a mounted view whose scan blocked the main thread for 12–18
+  // minutes on the live vault. The leaf is used only when the fast road is not
+  // there (`auto`) or when the caller asks for it (`view`, full view fidelity).
+  const fastReachable = source.engineQueryAvailable?.() === true && typeof source.engineQuery === "function";
+  if (engine === "fast" && !fastReachable) {
+    return refuseWith(
+      "engine_unavailable",
+      "Obsidian's own base:query evaluator is not reachable (is the Bases core plugin enabled?) — ask for engine \"view\" or \"auto\" instead",
+    );
+  }
+  const useFast = engine !== "view" && fastReachable;
+  // #487: the view road's scan is throttled hard while the window is hidden and
+  // cannot be stopped once it runs, so it does not start then unless the caller
+  // asks for it. The fast road does not depend on the window.
+  if (!useFast && !args.allowHidden && source.windowHidden?.() === true) {
+    return refuseWith(
+      "window_hidden",
+      "the Obsidian window is hidden, and the hidden-view evaluation blocks Obsidian for minutes while it is — " +
+        "retry with the window in front, or pass allow_hidden: true to run it anyway",
+    );
+  }
   let captured: CaptureResult;
   try {
     captured = await captureSerializer(() =>
       withBeltDeadline(
-        source.capture(path, view === undefined ? undefined : selected.name, columns, cfg.queryTimeoutMs),
+        useFast
+          ? source.engineQuery!(path, selected.name, cfg.queryTimeoutMs)
+          : source.capture(path, view === undefined ? undefined : selected.name, columns, cfg.queryTimeoutMs),
         cfg.queryTimeoutMs,
       ),
     );
   } catch (e) {
     if (e instanceof BaseTimeoutError) return refuseWith("base_timeout", e.message);
+    if (useFast) return refuseWith("base_query_failed", `Obsidian's base:query refused: ${e instanceof Error ? e.message : String(e)}`);
     throw e;
   }
   const cap = Math.min(limit ?? cfg.rowCap, cfg.rowCap);
@@ -385,6 +441,7 @@ export async function queryBaseRows(
       total: bounded.total,
       truncated: bounded.truncated,
       someRowsHidden: bounded.someRowsHidden,
+      engine: useFast ? "fast" : "view",
     },
   };
 }
@@ -397,6 +454,13 @@ export async function queryBaseRows(
  * JSON Schema, and a bare `{}` property degrades to `z.unknown()`. Checking
  * here means the bound holds however the spec reached the host.
  */
+/** #487: the `engine` argument, re-checked here for the same reason as `requireText`. */
+function optionalEngine(value: unknown): "auto" | BaseEngine | undefined {
+  if (value === undefined) return undefined;
+  if (value === "auto" || value === "fast" || value === "view") return value;
+  refuse("invalid_argument", "'engine' must be one of auto, fast, view");
+}
+
 function requireText(value: unknown, argument: string): string {
   if (typeof value !== "string" || value.trim().length === 0) {
     refuse("invalid_argument", `'${argument}' must be a non-empty string`);
@@ -468,14 +532,16 @@ export function buildBasesTools(source: BasesSource, ctx: BasesToolsCtx): SdkToo
     {
       name: "query",
       description:
-        "Open the named `.base` file in a hidden background leaf, let Obsidian's own Bases engine evaluate it " +
-        "(base + view filters, formulas, sort, the view's own limit — full engine fidelity), and return the rows: " +
-        "each row's note path plus the view's declared columns' values (stringified). `view` selects among the " +
-        "base's declared views (default: the first); `limit` caps rows (clamped to this plugin's row cap, " +
-        `currently ${cfgAtBuild.rowCap}). Read-only — nothing is written, and the leaf is detached whatever ` +
-        "happens. Queries are serialized (one capture at a time) and time-boxed: a scan that outlives the " +
-        `configured query timeout (currently ${cfgAtBuild.queryTimeoutMs}ms) refuses with \`base_timeout\` ` +
-        "(retryable; the engine's scan is heavily throttled while the Obsidian window is hidden). `path` is a " +
+        "Evaluate a view of the named `.base` file and return its rows: each row's note path plus the view's " +
+        "columns' values (stringified). `view` selects among the base's declared views (default: the first); " +
+        `\`limit\` caps rows (clamped to this plugin's row cap, currently ${cfgAtBuild.rowCap}). Read-only. ` +
+        "Two evaluators (`engine`): `fast` is Obsidian's own `base:query` (a metadata scan, under a second on a " +
+        "large vault; columns are the view's column DISPLAY names; it reads only Markdown notes, ignores groupBy, " +
+        "and evaluates `this` as null); `view` opens the base in a hidden background leaf for full view fidelity " +
+        "(columns are property ids), which can block Obsidian for minutes on a vault-wide base and so refuses " +
+        "`window_hidden` while the Obsidian window is hidden unless `allow_hidden` is true. The default, `auto`, " +
+        "uses `fast` when it is reachable and `view` otherwise; the result's `engine` says which answered. Queries " +
+        `are serialized and time-boxed (currently ${cfgAtBuild.queryTimeoutMs}ms, \`base_timeout\`). \`path\` is a ` +
         "recognized path argument, so under a Governor path allowlist this tool is scoped rather than blocked: a " +
         "hidden `.base` refuses `out_of_allowlist`. Note that RESULT ROWS are not allowlist-filtered in this " +
         "configuration — the host scopes the base you name, not the notes the engine returns.",
@@ -483,6 +549,14 @@ export function buildBasesTools(source: BasesSource, ctx: BasesToolsCtx): SdkToo
         path: z.string().min(1).describe('Vault-relative path of the `.base` file, e.g. "Views/Tasks.base".'),
         view: z.string().min(1).optional().describe("Declared view name to evaluate (default: the file's first view)."),
         limit: z.number().int().min(1).optional().describe("Maximum rows to return (clamped to the plugin's row cap)."),
+        engine: z
+          .enum(["auto", "fast", "view"])
+          .optional()
+          .describe("Evaluator: auto (default: fast when reachable, else view), fast (Obsidian's base:query), view (hidden leaf, full fidelity)."),
+        allow_hidden: z
+          .boolean()
+          .optional()
+          .describe("Let the view evaluator run while the Obsidian window is hidden (it can block Obsidian for minutes)."),
       },
       ...RO,
       handler: async (args: Record<string, unknown>) => {
@@ -491,13 +565,22 @@ export function buildBasesTools(source: BasesSource, ctx: BasesToolsCtx): SdkToo
         const path = requireText(args.path, "path");
         const view = args.view === undefined ? undefined : requireText(args.view, "view");
         const limit = optionalPositiveInt(args.limit, "limit");
-        const outcome = await queryBaseRows(source, { config: ctx.config(), visible: ctx.visible }, { path, view, limit });
+        const engine = optionalEngine(args.engine);
+        if (args.allow_hidden !== undefined && typeof args.allow_hidden !== "boolean") {
+          refuse("invalid_argument", "'allow_hidden' must be a boolean");
+        }
+        const outcome = await queryBaseRows(
+          source,
+          { config: ctx.config(), visible: ctx.visible },
+          { path, view, limit, engine, allowHidden: args.allow_hidden === true },
+        );
         if ("refusal" in outcome) refuse(outcome.refusal.code, outcome.refusal.message);
         const r = outcome.result;
         return {
           path,
           view: r.view,
           view_type: r.viewType,
+          engine: r.engine,
           columns: r.columns,
           rows: r.rows.map((row) => ({ path: row.path, properties: row.values })),
           total: r.total,
