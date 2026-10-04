@@ -3,10 +3,13 @@
 // keys exposed via settings for the user"). Two pure pieces, headless-tested:
 //
 //  1. `conventionsOnLoad` — the ONE reader of `LEGACY_CONVENTIONS_SEED`. The
-//     plugin ships the three keys EMPTY (every scalar convention dead, the legacy
-//     packs registered and not measured until the operator points them). An
-//     install whose data.json predates the setting is seeded ONCE with what it
-//     used to measure, so an upgrade changes nothing for it; a fresh install
+//     plugin ships the four keys EMPTY (every scalar convention dead, the legacy
+//     packs registered and not measured until the operator points them; no
+//     baseline note). An install whose data.json predates the setting is seeded
+//     ONCE with what it used to measure, so an upgrade changes nothing for it
+//     (the baseline: the GOVERNOR_BASELINE_REL override when set, else the old
+//     constant's path; see `withBaselineSeed` for a record that lacks only the
+//     baseline key); a fresh install
 //     starts empty; an install that has the key keeps exactly what it has. The
 //     key is then always persisted, so the branch cannot run twice — the same
 //     shape as `territoriesOnLoad` (#397), for the same reason.
@@ -80,9 +83,9 @@ export function conventionsOnLoad(
     const seeded = resolveConventions(LEGACY_CONVENTIONS_SEED);
     return { conventions: override ? { ...seeded, baselineRel: override } : seeded, persist: true };
   }
-  // #493: the baseline path joined the conventions after they shipped. An install
-  // whose stored conventions lack the key had the path as a constant, so it takes
-  // that path once (and the key is persisted); a stored key, even blank, is kept.
+  // #493: stored conventions that lack the baseline key take, once, the path that
+  // install was reading (the rule is `withBaselineSeed`'s, above); the key is then
+  // persisted. A stored key, even blank, is kept.
   const sc = asObject(stored.vaultConventions);
   if (sc && !Object.prototype.hasOwnProperty.call(sc, "baselineRel")) {
     // Persist either way, so the key is written and this branch runs once.

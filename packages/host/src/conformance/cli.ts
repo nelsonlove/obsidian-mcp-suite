@@ -814,8 +814,9 @@ export function inAppBaselineRefusal(rel: string, exists: boolean, fromEnv = fal
  * else the vault conventions' `baselineRel` setting (#493), else "" — none
  * configured. The plugin ships no path (Nelson, 2026-10-03: "No folder names
  * are ever in the live code"); an install that predates the key is seeded once
- * with the path that used to be a constant here (conventions-policy.ts). The
- * CLI also takes `--baseline=` (absolute).
+ * by `withBaselineSeed` (conventions-policy.ts). The CLI also takes
+ * `--baseline=` (absolute), and falls back to `pluginBaselineRel` when this
+ * returns "". In-app the order is the other way round: `inAppBaselineRel`.
  */
 export function baselineRelFrom(
   env: Record<string, string | undefined>,
@@ -1110,8 +1111,14 @@ export async function runCli(argv: string[]): Promise<void> {
     // Identity first: whether this write lands on the live acceptance record is
     // decided by the filesystem, before any coverage reasoning (#144).
     // Every live record this invocation can see: its own path, the conventions' own path when the env override
-    // shadows it, and the plugin's setting in this vault (#494 review).
-    const targetRefusal = rebaselineTargetRefusal(baselinePath, root, [baselineRel, conventions.baselineRel, pluginRel]);
+    // shadows it, and the plugin's setting in this vault, with and without this shell's override (#494 review).
+    // The plugin seeds from Obsidian's environment, not this shell's, so the path it fills with no override is protected too.
+    const targetRefusal = rebaselineTargetRefusal(baselinePath, root, [
+      baselineRel,
+      conventions.baselineRel,
+      pluginRel,
+      pluginBaselineRel(root, {}),
+    ]);
     if (targetRefusal) throw new Error(targetRefusal);
     const refusal = rebaselineRefusal({
       targetsLiveBaseline: false, // established above; a live target already threw

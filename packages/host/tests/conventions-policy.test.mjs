@@ -232,7 +232,7 @@ describe("who supplies the conventions — source-scan pins against 'threaded bu
     assert.ok(!/vaultConventionsFrom|GOVERNOR_VAULT_CONVENTIONS/.test(cli), "the old reader and the old knob are gone from the runner");
     assert.match(cli, /const conventions = conventionsFromEnv\(process\.env\);/, "runCli reads the conventions from the environment ONCE");
     assert.match(cli, /const baselineRel = baselineRelFrom\(process\.env, conventions\) \|\| pluginRel;/, "…and the baseline path from that same read, the plugin's data.json as the fallback (#493)");
-    assert.match(cli, /rebaselineTargetRefusal\(baselinePath, root, \[baselineRel, conventions\.baselineRel, pluginRel\]\)/, "--rebaseline guards EVERY live path it can see: the invocation's, the conventions' own (when the env override shadows it), and the plugin's");
+    assert.match(cli, /rebaselineTargetRefusal\(baselinePath, root, \[\s*baselineRel,\s*conventions\.baselineRel,\s*pluginRel,\s*pluginBaselineRel\(root, \{\}\),?\s*\]\)/, "--rebaseline guards EVERY live path it can see: the invocation's, the conventions' own (when the env override shadows it), and the plugin's, with and without this shell's override");
     assert.match(cli, /conventionsOnLoad\(data, undefined, env, \(r\) => existsSync\(join\(vault, r\)\)\)/, "pluginBaselineRel derives the path by the plugin's own load rule, not the raw key");
     assert.match(cli, /^\s*conventions,\s*$/m, "…and fills the runner's option with that same read");
     assert.equal((cli.match(/conventionsFromEnv\(process\.env\)/g) ?? []).length, 1, "one read, in runCli — no second");
