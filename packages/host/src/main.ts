@@ -345,7 +345,9 @@ export default class VaultMcpPlugin extends Plugin {
     // #403 — vault conventions, the same shape: no shipped default, seeded
     // once for an install that predates the key, coerced through
     // `resolveConventions` so a hand-edited value cannot crash a run.
-    const conventions = conventionsOnLoad(own, seed);
+    // #493: `exists` lets an all-blank record that predates the baseline key keep the note it was reading.
+    const vaultBase = this.app.vault.adapter instanceof FileSystemAdapter ? this.app.vault.adapter.getBasePath() : "";
+    const conventions = conventionsOnLoad(own, seed, process.env, (rel) => vaultBase !== "" && fs.existsSync(`${vaultBase}/${rel}`));
     this.settings.vaultConventions = conventions.conventions;
     // #482 — the record folders, the same shape: no shipped folder names; an
     // install that predates the key is seeded once with what #455 hard-coded.
