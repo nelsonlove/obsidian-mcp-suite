@@ -123,4 +123,17 @@ describe("obsidianDriftSource — #493: the baseline path is the live setting", 
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  test("a missing note whose path came from GOVERNOR_BASELINE_REL (the setting blank) says so; one from the setting names the setting", async () => {
+    const root = await withBaseline("x", "Elsewhere/b.md");
+    try {
+      await withoutEnvOverride(async () => {
+        process.env.GOVERNOR_BASELINE_REL = "Env/Missing baseline.md";
+        await assert.rejects(() => obsidianDriftSource(app(root), () => [], () => withRel(SEED, "")).scan(), (e) => /the conformance baseline note is missing: 'Env\/Missing baseline\.md' \(GOVERNOR_BASELINE_REL in Obsidian's environment names it/.test(e.message), "fromEnv: the env is named");
+        await assert.rejects(() => obsidianDriftSource(app(root), () => [], () => withRel(SEED)).scan(), (e) => /\(vault-mcp's Conformance settings name it\)/.test(e.message), "from the setting: the setting is named, even with the env set");
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });

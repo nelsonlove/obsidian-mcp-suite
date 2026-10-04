@@ -22,7 +22,7 @@ import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, link } from "node:fs/
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { runCli, rebaselineTargetRefusal, pluginBaselineRel } from "../src/conformance/cli.ts";
-import { CONVENTIONS_ENV, CONVENTIONS_ENV_LEGACY } from "../src/conformance/vault-conventions.ts";
+import { CONVENTIONS_ENV, CONVENTIONS_ENV_LEGACY, LEGACY_CONVENTIONS_SEED } from "../src/conformance/vault-conventions.ts";
 
 // What makes these fixtures the LIVE record is that their path is the
 // CONFIGURED baseline location. Since #493 the plugin ships no such path: it is
@@ -169,6 +169,8 @@ describe("#493 — the live record is the CONFIGURED baseline, and none configur
         assert.ok(r, `${target} ${JSON.stringify(lives)}`);
         assert.match(r, /refusing to --rebaseline/);
         assert.match(r, /no live conformance baseline is configured/);
+        // It names every place a live baseline can be set: the plugin's setting, the CLI's conventions, the env override.
+        assert.match(r, /Set the baseline note in the vault-mcp plugin's Conformance settings for this vault, baselineRel in VAULT_MCP_CONVENTIONS, or GOVERNOR_BASELINE_REL\./);
       }
       assert.match(rebaselineTargetRefusal(path.join(outside, "b.md"), root, lives), /outside the content root/i);
     }
@@ -207,14 +209,16 @@ describe("#493 — the CLI also knows the PLUGIN's baseline setting (<root>/.obs
     return r;
   }
 
-  test("pluginBaselineRel reads vaultConventions.baselineRel, trimmed; \"\" on any problem", async () => {
+  test("pluginBaselineRel derives the path by the plugin's own load rule (conventionsOnLoad); \"\" when there is no data.json or it names none", async () => {
+    const LEGACY = LEGACY_CONVENTIONS_SEED.baselineRel;
     const cases = [
       [{ vaultConventions: { baselineRel: `  ${PREL}  ` } }, PREL],
       [undefined, ""], // no data.json
       ["{not json", ""],
-      [{ readOnly: false }, ""], // no vaultConventions
-      [{ vaultConventions: {} }, ""], // no key
-      [{ vaultConventions: { baselineRel: "   " } }, ""],
+      [{ readOnly: false }, LEGACY], // pre-#403 data.json (no vaultConventions): the plugin will seed the legacy path
+      [{ vaultConventions: { registriesRoot: "R" } }, LEGACY], // upgraded record lacking the key: seeded
+      [{ vaultConventions: {} }, ""], // all-blank, lacking the key, and the legacy note is not in this vault
+      [{ vaultConventions: { baselineRel: "   " } }, ""], // a stored blank is kept
       [{ vaultConventions: { baselineRel: 7 } }, ""],
       [{ vaultConventions: null }, ""],
       ["null", ""],
@@ -222,10 +226,38 @@ describe("#493 — the CLI also knows the PLUGIN's baseline setting (<root>/.obs
     for (const [data, want] of cases) {
       const r = await vaultWithPlugin(data);
       try {
-        assert.equal(pluginBaselineRel(r), want, JSON.stringify(data));
+        assert.equal(pluginBaselineRel(r, {}), want, JSON.stringify(data));
       } finally {
         await rm(r, { recursive: true, force: true });
       }
+    }
+  });
+
+  test("pluginBaselineRel honours the env override where the plugin's seed would, and the legacy note on disk for an all-blank record", async () => {
+    const LEGACY = LEGACY_CONVENTIONS_SEED.baselineRel;
+    const env = { GOVERNOR_BASELINE_REL: "Env/B.md" };
+    for (const [data, want] of [
+      [{ readOnly: false }, "Env/B.md"], // pre-#403: the override beats the legacy seed
+      [{ vaultConventions: { registriesRoot: "R" } }, "Env/B.md"],
+      [{ vaultConventions: {} }, "Env/B.md"],
+      [{ vaultConventions: { baselineRel: PREL } }, PREL], // a stored key wins: the plugin reads its setting
+      [undefined, ""], // no data.json: no plugin path at all
+    ]) {
+      const r = await vaultWithPlugin(data);
+      try {
+        assert.equal(pluginBaselineRel(r, env), want, JSON.stringify(data));
+      } finally {
+        await rm(r, { recursive: true, force: true });
+      }
+    }
+    // All-blank record lacking the key, and the legacy note EXISTS in this vault: the plugin keeps reading it.
+    const r = await vaultWithPlugin({ vaultConventions: {} });
+    try {
+      await mkdir(path.join(r, path.dirname(LEGACY)), { recursive: true });
+      await writeFile(path.join(r, LEGACY), BODY);
+      assert.equal(pluginBaselineRel(r, {}), LEGACY);
+    } finally {
+      await rm(r, { recursive: true, force: true });
     }
   });
 
@@ -261,6 +293,26 @@ describe("#493 — the CLI also knows the PLUGIN's baseline setting (<root>/.obs
     } finally {
       configureBaseline(REL);
       await rm(r, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("#494 review — --rebaseline protects the conventions' own path when GOVERNOR_BASELINE_REL shadows it", () => {
+  test("VAULT_MCP_CONVENTIONS names REL, GOVERNOR_BASELINE_REL names another path: --rebaseline onto REL is refused, and REL stays byte-identical", async () => {
+    const SHADOW = "Shadow/Conformance baseline.md";
+    try {
+      configureBaseline(REL);
+      process.env.GOVERNOR_BASELINE_REL = SHADOW;
+      await mkdir(path.join(root, "Shadow"), { recursive: true });
+      await writeFile(path.join(root, SHADOW), BODY);
+      const before = await readFile(live, "utf8");
+      const r = await cli(`--root=${root}`, `--baseline=${live}`, "--rebaseline");
+      assert.equal(r.threw, true, "the conventions' path is a live record even when the env override shadows it");
+      assert.match(r.message, /live acceptance record/i);
+      assert.equal(await readFile(live, "utf8"), before);
+    } finally {
+      configureBaseline(REL);
+      await rm(path.join(root, "Shadow"), { recursive: true, force: true });
     }
   });
 });
