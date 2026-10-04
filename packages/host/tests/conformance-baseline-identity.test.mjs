@@ -316,3 +316,32 @@ describe("#494 review — --rebaseline protects the conventions' own path when G
     }
   });
 });
+
+describe("#494 review — --rebaseline protects the path the plugin fills from OBSIDIAN's environment, not this shell's", () => {
+  test("a pre-#403 data.json, an override only in the CLI's shell: --rebaseline onto the legacy path is refused, byte-identical", async () => {
+    // No vaultConventions in data.json: the plugin will seed on its next load.
+    const r = await mkdtemp(path.join(tmpdir(), "id494-shell-env-"));
+    await mkdir(path.join(r, "N"), { recursive: true });
+    await writeFile(path.join(r, "N", "A.md"), "prose; here\n");
+    await mkdir(path.join(r, ".obsidian", "plugins", "vault-mcp"), { recursive: true });
+    await writeFile(path.join(r, ".obsidian", "plugins", "vault-mcp", "data.json"), JSON.stringify({ readOnly: false }));
+    const LEGACY = LEGACY_CONVENTIONS_SEED.baselineRel;
+    try {
+      const target = path.join(r, LEGACY);
+      await mkdir(path.dirname(target), { recursive: true });
+      await writeFile(target, BODY);
+      await mkdir(path.join(r, REL_DIR), { recursive: true });
+      await writeFile(path.join(r, REL), BODY);
+      configureBaseline(REL);
+      process.env.GOVERNOR_BASELINE_REL = REL; // the shell's override; Obsidian has none, so the plugin fills LEGACY
+      const before = await readFile(target, "utf8");
+      const res = await cli(`--root=${r}`, `--baseline=${target}`, "--rebaseline");
+      assert.equal(res.threw, true, "the path the plugin will fill is a live record");
+      assert.match(res.message, /live acceptance record/i);
+      assert.equal(await readFile(target, "utf8"), before, "byte-identical");
+    } finally {
+      configureBaseline(REL);
+      await rm(r, { recursive: true, force: true });
+    }
+  });
+});
