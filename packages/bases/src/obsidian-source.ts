@@ -13,6 +13,11 @@
 //
 // ── The capture mechanism, and why it looks like this (live findings) ───────
 //
+// NOTE (#487): the leaf mechanism described here, including the Timing
+// paragraph, is the `view` evaluator only. The `fast` evaluator uses no leaf
+// and is not slowed by a hidden window; it is described at its own comment
+// (`baseQueryHandler` / `engineQuery` below).
+//
 // The public Bases API (obsidian.d.ts ≥1.10: BasesEntry, BasesQueryResult,
 // BasesView, registerBasesView) pushes evaluated rows ONLY into a rendered
 // view. Three findings from live investigation (Obsidian 1.13, the real
@@ -64,6 +69,7 @@ import { NullValue, Plugin, TFile, WorkspaceLeaf, parseYaml, type App } from "ob
 import {
   BaseTimeoutError,
   captureWithCleanup,
+  parseCsv,
   normalizePropertyId,
   type CapturedRow,
 } from "./kernel/index.js";
@@ -127,7 +133,7 @@ function metadataResolved(app: App, timeoutMs: number): Promise<void> {
     let ref: unknown;
     const timer = setTimeout(() => {
       if (ref !== undefined) mc.offref?.(ref);
-      reject(new BaseTimeoutError(timeoutMs));
+      reject(new BaseTimeoutError(timeoutMs, "Obsidian's metadata cache had not finished indexing the vault, which the fast evaluator reads; retry shortly"));
     }, timeoutMs);
     ref = mc.on!("resolved", () => {
       clearTimeout(timer);
@@ -141,40 +147,47 @@ export function obsidianBasesSource(app: App): BasesSource {
   return {
     engineQueryAvailable: () => baseQueryHandler(app) !== null,
 
-    engineQuery: async (path, viewName, timeoutMs) => {
+    engineQuery: async (path, viewName, columns, timeoutMs) => {
       const entry = baseQueryHandler(app);
       if (!entry) throw new Error("base:query is not registered (the Bases core plugin is off)");
       await metadataResolved(app, timeoutMs);
-      let out: unknown;
-      try {
-        out = await entry.handler({ path, view: viewName, format: "json" });
-      } catch (e) {
-        // The handler refuses with a thrown STRING, not an Error.
-        throw new Error(typeof e === "string" ? e : e instanceof Error ? e.message : String(e));
-      }
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(String(out));
-      } catch {
-        throw new Error(`base:query returned text that is not JSON: ${String(out).slice(0, 200)}`);
-      }
-      if (!Array.isArray(parsed)) throw new Error("base:query returned JSON that is not an array of rows");
-      const columns: string[] = [];
-      for (const row of parsed) {
-        if (row && typeof row === "object") {
-          for (const k of Object.keys(row)) if (k !== "path" && !columns.includes(k)) columns.push(k);
+      const call = async (format: string): Promise<string> => {
+        try {
+          return String(await entry.handler({ path, view: viewName, format }));
+        } catch (e) {
+          // The handler refuses with a thrown STRING, not an Error.
+          throw new Error(typeof e === "string" ? e : e instanceof Error ? e.message : String(e));
         }
+      };
+      // Two passes, not the JSON one (#495 review): the JSON format keys each row
+      // by column DISPLAY name, so two columns with one name collapse, a column
+      // named "path" overwrites the note path, integer-like names reorder, and an
+      // empty result loses its columns. The CSV keeps every column by POSITION
+      // (header = display names), and `paths` gives the notes in the same order.
+      const table = parseCsv(await call("csv"));
+      const pathsText = await call("paths");
+      if (table.length === 0) throw new Error(`base:query returned no table: ${pathsText.slice(0, 200)}`);
+      const [header, ...body] = table;
+      const notePaths = body.length === 0 ? [] : pathsText.split("\n");
+      if (notePaths.length !== body.length) {
+        throw new Error(`the vault changed between the two passes (${body.length} rows, ${notePaths.length} paths); retry`);
       }
-      const rows: CapturedRow[] = parsed.map((row) => {
-        const r = (row && typeof row === "object" ? row : {}) as Record<string, unknown>;
+      // Property ids when the view declares its order (the same names the view
+      // evaluator returns); else the display names, made unique by position.
+      const cols =
+        columns && columns.length === header.length
+          ? columns
+          : header.map((h, i) => (header.indexOf(h) === i && h !== "" ? h : `${h || "column"} (${i + 1})`));
+      const rows: CapturedRow[] = body.map((cells, r) => {
         const values: Record<string, string | null> = {};
-        for (const col of columns) {
-          const v = r[col];
-          values[col] = v === null || v === undefined ? null : String(v);
-        }
-        return { path: typeof r.path === "string" ? r.path : "", values };
+        cols.forEach((c, i) => {
+          const v = cells[i];
+          // The handler writes an absent value as "" — the JSON format maps it to null too.
+          values[c] = v === undefined || v === "" ? null : v;
+        });
+        return { path: notePaths[r], values };
       });
-      return { columns, rows };
+      return { columns: cols, rows };
     },
 
     windowHidden: () => typeof document !== "undefined" && document.hidden === true,

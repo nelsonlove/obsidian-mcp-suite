@@ -11,6 +11,9 @@
 //
 // ── Why a capture, and what it buys ─────────────────────────────────────────
 //
+// (This section describes the `view` evaluator; the full engine fidelity it
+// claims holds only for `view`. The `fast` evaluator differs: string values,
+// Markdown notes only, no groupBy or search box, `this` null.)
 // (#487: this is now the `view` evaluator. The default reaches Obsidian's own
 // `base:query` handler instead — see `queryBaseRows` and obsidian-source.ts —
 // because this capture's scan blocked Obsidian's main thread for 12–18 minutes
@@ -75,8 +78,10 @@
 //     per connection build, so an Obsidian upgrade without a plugin reload
 //     leaves the tools absent until a reload.
 //   - Bounded: one capture at a time, a hard per-query timeout with a TYPED
-//     refusal (`base_timeout`) so the bridge can never wedge behind a stuck
-//     scan, and a row cap (`limit` clamps to the configured rowCap) with
+//     refusal (`base_timeout`) that releases the serializer chain (it does not
+//     free Obsidian's main thread from a running view scan; the `window_hidden`
+//     gate and the fast road are that protection), and a row cap (`limit`
+//     clamps to the configured rowCap) with
 //     `truncated`.
 //
 // ── Allowlist posture as a satellite — be exact, do not round off ───────────
@@ -211,12 +216,13 @@ export interface BasesSource {
   /**
    * #487: evaluate the view through Obsidian's own `base:query` handler — a
    * metadata scan with no view, no DOM and no timers, about 0.4 s on a
-   * 22,765-note vault where the hidden leaf took 12–18 minutes. Columns are the
-   * engine's column DISPLAY names; every value is a string or null. Throws
+   * 22,765-note vault where the hidden leaf took 12–18 minutes. Columns are
+   * `columns` (the view's property ids) when given and the same count as the
+   * engine's, else its display names; every value is a string or null. Throws
    * BaseTimeoutError when the metadata cache does not finish within timeoutMs,
    * and an Error carrying the engine's own message when it refuses.
    */
-  engineQuery?(path: string, viewName: string, timeoutMs: number): Promise<CaptureResult>;
+  engineQuery?(path: string, viewName: string, columns: string[] | null, timeoutMs: number): Promise<CaptureResult>;
   /** #487: whether the Obsidian window is hidden (`document.hidden`). Optional: absent ⇒ not hidden. */
   windowHidden?(): boolean;
 }
@@ -246,15 +252,16 @@ export interface BasesToolsCtx {
   visible?: (paths: string[]) => string[];
 }
 
-// ONE capture at a time across the whole plugin process: the serializer is
-// MODULE-scoped, not per-build, because the hidden leaf is a global resource
-// and main.ts rebuilds the specs on every settings write (and the host holds a
+// ONE capture at a time across the whole plugin process (both evaluators, so
+// engineQuery also runs through it): the serializer is MODULE-scoped, not
+// per-build, because the view evaluator's hidden leaf (and the main thread) is
+// a global resource and main.ts rebuilds the specs on every settings write (and the host holds a
 // spec snapshot per connection). A per-build serializer would serialize
 // nothing. Pinned by test.
 const captureSerializer = makeSerializer();
 
-// Belt over the source's own deadline: `BasesSource.capture` MUST settle
-// within timeoutMs, but that contract is the adapter's to honor — and a
+// Belt over the source's own deadline (it wraps engineQuery too):
+// `BasesSource.capture` MUST settle within timeoutMs, but that contract is the adapter's to honor — and a
 // future non-conforming source would otherwise wedge the plugin-wide chain
 // permanently, for every connection (independent-review finding). The race
 // settles the SERIALIZER TASK at deadline + grace even if the capture
@@ -420,7 +427,7 @@ export async function queryBaseRows(
     captured = await captureSerializer(() =>
       withBeltDeadline(
         useFast
-          ? source.engineQuery!(path, selected.name, cfg.queryTimeoutMs)
+          ? source.engineQuery!(path, view === undefined ? "" : selected.name, columns, cfg.queryTimeoutMs)
           : source.capture(path, view === undefined ? undefined : selected.name, columns, cfg.queryTimeoutMs),
         cfg.queryTimeoutMs,
       ),
@@ -536,7 +543,7 @@ export function buildBasesTools(source: BasesSource, ctx: BasesToolsCtx): SdkToo
         "columns' values (stringified). `view` selects among the base's declared views (default: the first); " +
         `\`limit\` caps rows (clamped to this plugin's row cap, currently ${cfgAtBuild.rowCap}). Read-only. ` +
         "Two evaluators (`engine`): `fast` is Obsidian's own `base:query` (a metadata scan, under a second on a " +
-        "large vault; columns are the view's column DISPLAY names; it reads only Markdown notes, ignores groupBy, " +
+        "large vault; values are strings; it reads only Markdown notes, ignores groupBy, " +
         "and evaluates `this` as null); `view` opens the base in a hidden background leaf for full view fidelity " +
         "(columns are property ids), which can block Obsidian for minutes on a vault-wide base and so refuses " +
         "`window_hidden` while the Obsidian window is hidden unless `allow_hidden` is true. The default, `auto`, " +

@@ -188,8 +188,13 @@ export function boundRows(
 
 export class BaseTimeoutError extends Error {
   code = "base_timeout" as const;
-  constructor(ms: number) {
-    super(`base query did not produce data within ${ms}ms — the Bases engine's scan is throttled hard when the Obsidian window is hidden; retry, or raise the plugin's queryTimeoutMs setting`);
+  /** `reason` names the cause when the caller knows it (#487: the fast evaluator's metadata wait); without it the message names the view evaluator's slow scan, the usual cause. */
+  constructor(ms: number, reason?: string) {
+    super(
+      `base query did not produce data within ${ms}ms — ` +
+        (reason ??
+          "the view evaluator's scan is slow on a vault-wide base, and throttled hard while the Obsidian window is hidden; retry, use engine \"fast\", or raise the plugin's queryTimeoutMs setting"),
+    );
     this.name = "BaseTimeoutError";
   }
 }
@@ -246,4 +251,37 @@ export function makeSerializer(): <T>(task: () => Promise<T>) => Promise<T> {
     );
     return next;
   };
+}
+
+// #495 review: the fast evaluator reads Obsidian's base:query CSV output; parsed here, obsidian-free, so it is tested headless.
+/** RFC 4180 CSV as Obsidian's table writer emits it: a cell holding a quote, comma, CR or LF is quoted, quotes doubled; rows end in "\n". */
+export function parseCsv(text: string): string[][] {
+  if (text === "") return [];
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          cell += '"';
+          i++;
+        } else quoted = false;
+      } else cell += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ",") {
+      row.push(cell);
+      cell = "";
+    } else if (ch === "\n") {
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+    } else if (ch !== "\r") cell += ch;
+  }
+  row.push(cell);
+  rows.push(row);
+  return rows;
 }
