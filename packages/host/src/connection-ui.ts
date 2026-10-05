@@ -224,7 +224,7 @@ export class ConnectionSetupModal extends Modal {
   constructor(app: App, private onAck?: () => void) { super(app); }
   onOpen() {
     const { contentEl, titleEl } = this;
-    titleEl.setText("Connect Governor to Claude Code (manual fallback)");
+    titleEl.setText("Connect Vault MCP to Claude Code (manual fallback)");
     contentEl.createEl("p", {
       text: "Couldn't auto-register (claude CLI not found or multiple vaults). Run this once in a terminal:",
     });
@@ -844,7 +844,7 @@ export class VaultMcpSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Record what agents were shown")
       .setDesc(
-        "Off by default. When on, Governor keeps the exact text it returns from a note read, so you can later see what an agent was actually shown rather than what it says it saw. " +
+        "Off by default. When on, Vault MCP keeps the exact text it returns from a note read, so you can later see what an agent was actually shown rather than what it says it saw. " +
           "The text is stored outside your vault, at ~/.claude/vault-mcp/observations/, and is never synced. " +
           "Only tools with a reviewed contract are recorded — today that is reading a note. Nothing is deleted automatically yet, so recording stops at the size limit below."
       )
@@ -868,7 +868,7 @@ export class VaultMcpSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Recording size limit (MB)")
       .setDesc(
-        "How much recorded text to keep before Governor stops adding more. It stops and says so rather than filling the disk. Deleting old recordings is not automatic yet."
+        "How much recorded text to keep before Vault MCP stops adding more. It stops and says so rather than filling the disk. Deleting old recordings is not automatic yet."
       )
       .addText((t) =>
         t

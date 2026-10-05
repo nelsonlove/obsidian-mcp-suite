@@ -62,7 +62,7 @@ async function execute(
 class ToolPickerModal extends FuzzySuggestModal<RunnerToolSummary> {
   constructor(app: App, private readonly registry: CapturedRegistry) {
     super(app);
-    this.setPlaceholder("Run a Governor tool…");
+    this.setPlaceholder("Run a Vault MCP tool…");
   }
 
   getItems(): RunnerToolSummary[] {
