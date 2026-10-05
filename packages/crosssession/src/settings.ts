@@ -4,7 +4,7 @@
 // ── Why adoption exists ──────────────────────────────────────────────────────
 //
 // Before this extraction the cross-session channel surface was a capability
-// MODULE inside the Governor host, and its configuration lived in the host's
+// MODULE inside the Vault MCP host, and its configuration lived in the host's
 // data.json at `modules.crosssession.config` — the channel fileClass, the
 // per-message fileClass, and the delta cap. A user who upgrades gets a
 // brand-new plugin with a brand-new, EMPTY data.json. For crosssession an empty

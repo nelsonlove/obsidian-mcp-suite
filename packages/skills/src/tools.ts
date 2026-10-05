@@ -1,5 +1,5 @@
 // tools.ts — the vaultmcp-skills satellite's tool surface. Six tools, published to
-// the Governor host through `vault-mcp-api` (see main.ts):
+// the Vault MCP host through `vault-mcp-api` (see main.ts):
 //
 //   vaultmcp_skills_validate — collect + transform, report errors/warnings/counts (read-only)
 //   vaultmcp_skills_tree     — the agent/skill hierarchy (read-only)

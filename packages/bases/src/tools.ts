@@ -1,5 +1,5 @@
 // tools.ts — the vaultmcp-bases satellite's tool surface (#243): evaluated Base
-// result sets for agents. TWO tools, published to the Governor host through
+// result sets for agents. TWO tools, published to the Vault MCP host through
 // `vault-mcp-api` (see main.ts):
 //
 //   list                   — enumerate `.base` files + each file's declared
@@ -507,7 +507,7 @@ export function buildBasesTools(source: BasesSource, ctx: BasesToolsCtx): SdkToo
         "Enumerate every `.base` file in the vault with its declared views (name, type, column count). Reads each " +
         "base's YAML; evaluates nothing — use the query tool for a view's result rows. Broken files are listed with " +
         "a marker (`error: \"parse_error\"` for bad YAML, `\"invalid_shape\"` for YAML that is not a Bases mapping) " +
-        "rather than dropped. Read-only in intent; the Governor host registers it as mutating unless this plugin is " +
+        "rather than dropped. Read-only in intent; the Vault MCP host registers it as mutating unless this plugin is " +
         "trusted, and BLOCKS IT OUTRIGHT while a path allowlist is active — it takes no arguments at all, so there " +
         "is nothing for the host to scope by.",
       inputSchema: {},
@@ -549,7 +549,7 @@ export function buildBasesTools(source: BasesSource, ctx: BasesToolsCtx): SdkToo
         "`window_hidden` while the Obsidian window is hidden unless `allow_hidden` is true. The default, `auto`, " +
         "uses `fast` when it is reachable and `view` otherwise; the result's `engine` says which answered. Queries " +
         `are serialized and time-boxed (currently ${cfgAtBuild.queryTimeoutMs}ms, \`base_timeout\`). \`path\` is a ` +
-        "recognized path argument, so under a Governor path allowlist this tool is scoped rather than blocked: a " +
+        "recognized path argument, so under a Vault MCP path allowlist this tool is scoped rather than blocked: a " +
         "hidden `.base` refuses `out_of_allowlist`. Note that RESULT ROWS are not allowlist-filtered in this " +
         "configuration — the host scopes the base you name, not the notes the engine returns.",
       inputSchema: {

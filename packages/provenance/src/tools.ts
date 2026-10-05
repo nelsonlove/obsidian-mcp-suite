@@ -1,6 +1,6 @@
 // tools.ts — the vaultmcp-provenance satellite's tool surface: derived-content
 // provenance, ported from the standalone `obsidian-provenance` Python CLI,
-// folded into the Governor host as a capability module, and now published back
+// folded into the Vault MCP host as a capability module, and now published back
 // to that host through `vault-mcp-api` as THREE tools (see main.ts):
 //
 //   check     — general derived-content freshness of a note (declared read-only)
@@ -344,7 +344,7 @@ export function buildProvenanceTools(source: ProvenanceBackend, ctx: ProvenanceT
         "or moved source), and — when the note stamps the optional `derived-source-count:` witness — a source set " +
         "that has SHRUNK since generation (`sourcesRemoved`). Without that witness, deletions inside a GLOB entry " +
         "cannot be seen, and the result says so (`globDeletionsUndetectable: true`). Read-only in intent; the " +
-        "Governor host registers it as mutating unless this plugin is trusted, and blocks it outright while a path " +
+        "Vault MCP host registers it as mutating unless this plugin is trusted, and blocks it outright while a path " +
         "allowlist is active — the note argument is deliberately named `note` (not `path`, not `note_path`), which " +
         "the host does not recognize as a path key, so the whole surface fails closed rather than answering with " +
         "paths it cannot scope. The answer enumerates every path this note's `derived-from` globs resolve to, and " +
@@ -393,7 +393,7 @@ export function buildProvenanceTools(source: ProvenanceBackend, ctx: ProvenanceT
         "(.obsidian/community-plugins.json), and the plugin notes in the configured notes directory. Reports counts " +
         "plus which installed plugins have no note (unnoted) and which notes' versions have drifted from the " +
         "installed manifest (stale). Reads the WHOLE configured notes directory — a partial audit is a misleading " +
-        "one — and takes no arguments, so while a Governor path allowlist is active the host blocks it outright " +
+        "one — and takes no arguments, so while a Vault MCP path allowlist is active the host blocks it outright " +
         "rather than returning a whole-vault answer. Read-only in intent.",
       inputSchema: {},
       ...RO,
@@ -428,7 +428,7 @@ export function buildProvenanceTools(source: ProvenanceBackend, ctx: ProvenanceT
         "persists it to the configured audit note. The write routes through the accept-forbidden guard and the " +
         "host's guard-patched registrar (read-only mode, queue, journal, if_rev) — it stamps DERIVATION metadata " +
         "only and can never write an acceptance field. It also refuses outright to regenerate over a note this " +
-        "generator did not produce. Mutating; blocked outright while a Governor path allowlist is active (its only " +
+        "generator did not produce. Mutating; blocked outright while a Vault MCP path allowlist is active (its only " +
         "argument is a boolean, so the call cannot be scoped).",
       inputSchema: {
         write: z

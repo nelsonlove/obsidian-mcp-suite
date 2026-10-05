@@ -1,6 +1,6 @@
 // settings-tab.ts — the plugin's own settings tab.
 //
-// While the fileclass surface was a capability module inside the Governor host,
+// While the fileclass surface was a capability module inside the Vault MCP host,
 // its one config field was rendered by the host's generic, manifest-driven
 // config tab. A satellite has no such host, so it renders its own. The FIELD
 // definitions (key, label, help text) live in settings.ts as pure data, so they
@@ -67,7 +67,10 @@ export class FileclassSettingTab extends PluginSettingTab {
 
     // ── the three silences ────────────────────────────────────────────────
     const plugins = (this.app as unknown as { plugins?: { plugins?: Record<string, unknown> } }).plugins?.plugins;
-    const hostLoaded = !!plugins?.["governor"];
+    // The host is the Vault MCP plugin (id `vault-mcp`; `governor` was its id from
+    // 0.12.0 to the suite split, and is now the separate acceptance plugin's id).
+    // Only the host exposes the plugin-to-plugin `api` object.
+    const hostLoaded = ["vault-mcp", "governor"].some((id) => !!(plugins?.[id] as { api?: unknown } | undefined)?.api);
     const fileclassLoaded = !!plugins?.[FILECLASS_PLUGIN_ID];
     const configured = typeof config.binaryPath === "string" && config.binaryPath.trim() !== "";
     const binary = configured ? String(config.binaryPath).trim() : findFileclassBinary();
@@ -76,8 +79,9 @@ export class FileclassSettingTab extends PluginSettingTab {
 
     if (!hostLoaded) {
       say(
-        "Governor is NOT installed. This plugin's entire surface is the eight MCP tools it publishes to the Governor " +
-          "host, so nothing here does anything until Governor is installed and enabled.",
+        "The Vault MCP host is NOT installed. This plugin's entire surface is the eight MCP tools it publishes to that host, " +
+          "so nothing here does anything until Vault MCP (plugin id `vault-mcp`) is installed and enabled. " +
+          "(Governor, the acceptance plugin, is a separate, optional plugin and is not the host — installing it alone does not make these tools reachable.)",
       );
     } else if (!fileclassLoaded) {
       say(
@@ -91,13 +95,13 @@ export class FileclassSettingTab extends PluginSettingTab {
       );
     } else {
       say(
-        `Governor is installed and the fileclass CLI was found at ${binary}: the vaultmcp_fileclass_list, _schema, ` +
+        `The Vault MCP host is installed and the fileclass CLI was found at ${binary}: the vaultmcp_fileclass_list, _schema, ` +
           "_explain, _query, _get, _validate, _set and _set_where MCP tools are published to it.",
       );
     }
 
     say(
-      "Under an active Governor path allowlist SEVEN of the eight tools are refused outright and one is scoped. " +
+      "Under an active Vault MCP path allowlist SEVEN of the eight tools are refused outright and one is scoped. " +
         "Five (list, schema, query, validate, set_where) name no note at all, and the two READ tools that do " +
         "(explain, get) name it `note`, which the host does not recognize as a path key — deliberate, because the " +
         "fileclass CLI runs its engine over the whole vault and resolves inheritance from definitions a scoped " +
