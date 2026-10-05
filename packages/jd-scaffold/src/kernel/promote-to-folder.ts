@@ -1,7 +1,7 @@
 // Ported from obsidian-jd-dashboard's src/commands/promote-to-folder.ts, split
 // into PLAN (pure, here) and APPLY (src/tools.ts). The original operated on
 // Obsidian's "currently active file"; the tool takes an explicit note path
-// argument instead — matching every other Governor write tool, none of which
+// argument instead — matching every other Vault MCP write tool, none of which
 // depend on editor focus state. (The ARGUMENT is spelled `note_path` on the
 // wire since the extraction; this planner's own field stays `path` because it
 // is not an argument name — see CLAUDE.md's allowlist-posture bullet.)

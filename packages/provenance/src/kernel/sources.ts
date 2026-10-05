@@ -30,7 +30,7 @@ export async function resolveSource(source: ProvenanceSource, entry: string): Pr
 }
 
 /** The resolution of a whole `derived-from` list — what `checkFreshness` needs
- *  in order to speak about DELETED sources, and what a Governor generator needs
+ *  in order to speak about DELETED sources, and what a suite generator needs
  *  in order to stamp the source-count witness over the same set. */
 export interface ResolvedEntries {
   /** Every resolved file, in entry order. Duplicates are KEPT when two entries

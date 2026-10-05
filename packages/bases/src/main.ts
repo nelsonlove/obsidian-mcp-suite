@@ -1,7 +1,7 @@
 // VAULT BASES — evaluated Base result sets for agents, as their own Obsidian
 // plugin.
 //
-// Published to the Governor host through vault-mcp-api as two MCP tools:
+// Published to the Vault MCP host through vault-mcp-api as two MCP tools:
 //
 //   vaultmcp_bases_list  — enumerate `.base` files + their declared views
 //                       (read-only in intent; the host distrusts that claim,
@@ -41,7 +41,7 @@
 //
 // THIS PLUGIN NEEDS THE HOST, like the triage and cross-session satellites and
 // unlike skills. It has no pane, no palette command and no ribbon: its entire
-// surface is the two published tools. With Governor absent it loads, keeps and
+// surface is the two published tools. With the host absent it loads, keeps and
 // validates its settings, and does nothing — `publishTools` waits on the host's
 // ready event and registers the moment a host appears. The settings tab says so
 // plainly.
@@ -219,6 +219,6 @@ export default class VaultBasesPlugin extends Plugin {
     if (!adopted) return;
     this.settings = adopted;
     await this.saveData(this.settings);
-    console.info("[vaultmcp-bases] adopted the Governor host's modules.bases.config (one shot; the host's copy is untouched)");
+    console.info("[vaultmcp-bases] adopted the Vault MCP host's modules.bases.config (one shot; the host's copy is untouched)");
   }
 }

@@ -1,5 +1,5 @@
 // tools.ts — the vaultmcp-triage satellite's tool surface. TWO tools, published to
-// the Governor host through `vault-mcp-api` (see main.ts):
+// the Vault MCP host through `vault-mcp-api` (see main.ts):
 //
 //   queue   — the agent's view of a triage queue (declared read-only). Default:
 //             the inbox-marker queue (notes under a configured inbox folder,
