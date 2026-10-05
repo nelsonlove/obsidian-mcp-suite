@@ -35,7 +35,7 @@ export class JdScaffoldSettingTab extends PluginSettingTab {
     //     which is now the governance PROVIDER's id;
     //   • a plugin counts as the host only if it exposes the plugin-to-plugin
     //     `api` object. This line used to test bare presence of `"governor"`
-    //     alone, so on a post-split vault it reported "The Vault MCP host is installed"
+    //     alone, so on a post-split vault it reported "Governor is installed"
     //     whenever the PROVIDER was enabled — with or without a host to publish
     //     these seven tools to.
     //
