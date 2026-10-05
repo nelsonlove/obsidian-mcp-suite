@@ -70,7 +70,7 @@ export function buildMcpActionRegistry(external: ExternalToolSnapshot[] = []): {
     registry.register(
       compatibilityAction({
         surface: tool.name,
-        postcondition: `Third-party capability published by '${tool.owner}'. Governor cannot state its postcondition.`,
+        postcondition: `Third-party capability published by '${tool.owner}'. Vault MCP cannot state its postcondition.`,
         owner: `external:${tool.owner}`,
         distribution: "private",
         readOnly: tool.readOnly,

@@ -64,7 +64,7 @@ export function obsidianCrosssessionSource(app: {
  * cross-session entries this session already attested. The fallback exists only
  * for a host that reports no dir.
  *
- * The fallback id is THIS plugin's (`vaultmcp-crosssession`), not the Governor
+ * The fallback id is THIS plugin's (`vaultmcp-crosssession`), not the Vault MCP
  * host's. Before the S6 extraction this store lived in the HOST's plugin dir
  * and the fallback used the host's `PLUGIN_ID`; the host's copy is now adopted
  * once by main.ts and thereafter untouched.

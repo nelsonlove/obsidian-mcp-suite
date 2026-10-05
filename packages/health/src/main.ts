@@ -1,6 +1,6 @@
 // VAULT HEALTH — the vaultmcp-health scanner as its own Obsidian plugin.
 //
-// Published to the Governor host through vault-mcp-api as two MCP tools:
+// Published to the Vault MCP host through vault-mcp-api as two MCP tools:
 //
 //   vaultmcp_health_scan — the full tiered health scan → structured findings
 //                       (read-only in intent; the host distrusts that claim,
@@ -37,7 +37,7 @@
 //
 // THIS PLUGIN NEEDS THE HOST, like the triage and crosssession satellites. It has
 // no pane, no palette command and no ribbon: its entire surface is the two
-// published tools. With Governor absent it loads, keeps its settings, adopts
+// published tools. With the host absent it loads, keeps its settings, adopts
 // nothing, and does nothing — `publishTools` waits on the host's ready event and
 // registers the moment a host appears. The settings tab says so plainly.
 //
@@ -210,6 +210,6 @@ export default class VaultHealthPlugin extends Plugin {
       return;
     }
     this.settings = adopted;
-    console.info("[vaultmcp-health] adopted the Governor host's modules.health.config (one shot; the host's copy is untouched)");
+    console.info("[vaultmcp-health] adopted the Vault MCP host's modules.health.config (one shot; the host's copy is untouched)");
   }
 }

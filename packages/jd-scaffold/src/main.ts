@@ -1,7 +1,7 @@
 // VAULT JD SCAFFOLD — Johnny Decimal category scaffolding as its own Obsidian
 // plugin.
 //
-// Published to the Governor host through vault-mcp-api as seven MCP tools, all
+// Published to the Vault MCP host through vault-mcp-api as seven MCP tools, all
 // mutating:
 //
 //   vaultmcp_jd_scaffold_standard_zeros          — the fixed 10-note zeros set
@@ -39,7 +39,7 @@
 //
 // THIS PLUGIN NEEDS THE HOST, like the triage, cross-session and bases
 // satellites. It has no pane, no palette command and no ribbon: its entire
-// surface is the seven published tools. With Governor absent it loads and does
+// surface is the seven published tools. With the host absent it loads and does
 // nothing — `publishTools` waits on the host's ready event and registers if a
 // host appears. The settings tab says so plainly.
 //

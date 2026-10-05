@@ -163,7 +163,7 @@ export interface BoundedRows {
  * filter (paths in → visible subset out); absent ⇒ nothing filtered.
  *
  * IN THE SHIPPED SATELLITE CONFIGURATION `visible` IS NEVER SUPPLIED — a
- * satellite cannot reach the Governor host's guard settings, and the host's own
+ * satellite cannot reach the Vault MCP host's guard settings, and the host's own
  * gate checks the `path` ARGUMENT rather than the discovered row paths. So the
  * row filter is dormant and this function's filtering branch runs only in tests
  * and under a future apiVersion-2 that can carry the caller's scope to a

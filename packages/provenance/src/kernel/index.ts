@@ -1,5 +1,5 @@
 // src/kernel — the pure provenance core, folded in from the standalone
-// `obsidian-provenance` Python CLI and carried through two homes: the Governor
+// `obsidian-provenance` Python CLI and carried through two homes: the Vault MCP
 // host's `provenance` capability module, and now the `vaultmcp-provenance`
 // satellite plugin. The code moved verbatim; only who mounts it changed.
 //

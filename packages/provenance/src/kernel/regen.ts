@@ -41,7 +41,7 @@ export function auditPath(notesDir: string = DEFAULT_NOTES_DIR): string {
  * source — returns the text; PERSISTING it (and the accept-guard that gates the
  * persist) is the tool layer's job.
  *
- * The audit is Governor's own derived note, so it stamps the
+ * The audit is the suite's own derived note, so it stamps the
  * `derived-source-count` witness over its own `derived-from` set — resolved with
  * the same `resolveEntries` the freshness check uses, so a later
  * `vaultmcp_provenance_check` can see a source DELETED out of the globbed set (the one
