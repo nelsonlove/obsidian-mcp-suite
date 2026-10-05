@@ -440,7 +440,7 @@ export default class VaultMcpPlugin extends Plugin {
       }
       await claudeRegister(bin, bridgeDestPath(), this.app.vault.getName());
       new Notice(
-        "Vault MCP: connected to Claude Code (server name 'governor'). Restart any open Claude Code session to use it.",
+        "Vault MCP: connected to Claude Code (server name 'vault-mcp'). Restart any open Claude Code session to use it.",
       );
       this.ensureConnectPlugin(bin, force);
     } catch (e) {

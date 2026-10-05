@@ -230,7 +230,7 @@ const NAV: McpSurfaceRow[] = [
   { tool: "obsidian_list_bookmarks", readOnly: true, module: "core", distribution: "public-default", postcondition: "List bookmarks whose targets are visible under the current scope.", gate: "runtime: core Bookmarks plugin enabled" },
   { tool: "obsidian_plugin_info", readOnly: true, module: "core", distribution: "public-default", postcondition: "Report a community plugin's running, on-disk and cached versions." },
   // Plugin lifecycle changes what code runs in the vault. Private, not public.
-  { tool: "obsidian_plugin_toggle", readOnly: false, module: "core", distribution: "private", postcondition: "Enable or disable a community plugin; refuses on Governor itself.", protection: "not-a-write" },
+  { tool: "obsidian_plugin_toggle", readOnly: false, module: "core", distribution: "private", postcondition: "Enable or disable a community plugin; refuses on the Vault MCP host itself.", protection: "not-a-write" },
   { tool: "obsidian_plugin_reload", readOnly: false, module: "core", distribution: "private", postcondition: "Disable and re-enable a plugin so a rebuilt bundle is picked up.", protection: "not-a-write" },
 ];
 
@@ -265,7 +265,7 @@ const CLI: McpSurfaceRow[] = [
   // shape as obsidian_cli and obsidian_base_create beside them — a plugin id
   // is not a path, so the operation cannot be bounded by one.
   { tool: "obsidian_plugin_install", readOnly: false, module: "core", distribution: "private", refusesUnderScope: true, postcondition: "Install a community plugin by id.", gate: "the CLI binary resolves + settings.allowDangerousCli === true", protection: "not-a-write" },
-  { tool: "obsidian_plugin_uninstall", readOnly: false, module: "core", distribution: "private", refusesUnderScope: true, postcondition: "Uninstall a community plugin by id; refuses on Governor itself.", gate: "the CLI binary resolves + settings.allowDangerousCli === true", protection: "not-a-write" },
+  { tool: "obsidian_plugin_uninstall", readOnly: false, module: "core", distribution: "private", refusesUnderScope: true, postcondition: "Uninstall a community plugin by id; refuses on the Vault MCP host itself.", gate: "the CLI binary resolves + settings.allowDangerousCli === true", protection: "not-a-write" },
 ];
 
 // ── CSS snippets — the considered `.obsidian` exception ──────────────────────
@@ -429,7 +429,7 @@ export const EXTERNAL_PUBLISHER_ROW: McpSurfaceRow = {
   refusesUnderScope: true,
   postcondition:
     "Project another plugin's published actions as client capabilities, treating every read-only claim as mutating unless its publisher is explicitly trusted.",
-  gate: "a third-party plugin calls app.plugins.plugins['governor'].api.registerTools",
+  gate: "a third-party plugin calls app.plugins.plugins['vault-mcp'].api.registerTools",
   protection: "external",
 };
 
