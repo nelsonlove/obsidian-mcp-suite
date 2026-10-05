@@ -4,7 +4,7 @@
 // ── Why adoption exists ──────────────────────────────────────────────────────
 //
 // Before this extraction the provenance surface was a capability MODULE inside
-// the Governor host, and its configuration lived in the host's data.json at
+// the Vault MCP host, and its configuration lived in the host's data.json at
 // `modules.provenance.config` — the plugin-notes root, the notes layout, and the
 // audit note's path. A user who upgrades gets a brand-new plugin with a
 // brand-new, EMPTY data.json. For provenance an empty config is not merely

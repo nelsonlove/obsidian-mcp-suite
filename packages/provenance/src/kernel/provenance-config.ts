@@ -4,7 +4,7 @@
 // headless-testable.
 //
 // The record it coerces is `settings.config` in THIS plugin's own data.json
-// (see ../settings.ts). The same three keys lived at the Governor host's
+// (see ../settings.ts). The same three keys lived at the Vault MCP host's
 // `modules.provenance.config` while provenance was a capability module there,
 // and the satellite adopts them from that location ONCE on first load — same
 // key names, same meanings, so adoption is a straight copy.
@@ -244,7 +244,7 @@ export function provenanceConfigOf(config: Record<string, unknown>): ProvenanceC
     typeof rawAudit === "string" && rawAudit.trim() !== "" && !rawAudit.trim().endsWith("/") ? rawAudit.trim() : null;
   const fallback = notesSource === "flat" ? flatAuditPath(notesDir) : DEFAULT_AUDIT_NOTE;
   // Only a lowercase `.md` counts as "already a note path". `.markdown` and
-  // `.MD` are real markdown to a human and invisible to every other Governor
+  // `.MD` are real markdown to a human and invisible to every other suite
   // write path (all of which require lowercase `.md`), so an audit parked there
   // is a file nothing else in this plugin will read or move — a quieter version
   // of the "Obsidian will not treat it as a note" problem this rule exists for.
@@ -289,7 +289,7 @@ export function validateProvenanceConfig(config: Record<string, unknown>): strin
       problems.push("auditNote is a NOTE path, not a folder — give the full path including the .md filename");
     } else if (!audit.trim().endsWith(".md")) {
       problems.push(
-        `auditNote will be written as "${audit.trim()}.md" — only a lowercase .md path is one the rest of Governor reads`,
+        `auditNote will be written as "${audit.trim()}.md" — only a lowercase .md path is one the rest of the suite reads`,
       );
     }
   }

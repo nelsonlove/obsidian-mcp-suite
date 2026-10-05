@@ -1,6 +1,6 @@
 // VAULT FILECLASS — the typed-frontmatter CLI proxy as its own Obsidian plugin.
 //
-// Published to the Governor host through vault-mcp-api as eight MCP tools:
+// Published to the Vault MCP host through vault-mcp-api as eight MCP tools:
 //
 //   vaultmcp_fileclass_list      — every fileClass
 //   vaultmcp_fileclass_schema    — a fileClass's options + resolved fields
@@ -44,8 +44,8 @@
 //     `trustedReadOnlyPlugins`.
 //
 // THIS PLUGIN NEEDS THE HOST, and it needs two more things besides — which is
-// one more silence than any other satellite has. With Governor absent it loads,
-// keeps its settings, adopts nothing, and does nothing. With Governor present
+// one more silence than any other satellite has. With the host absent it loads,
+// keeps its settings, adopts nothing, and does nothing. With the host present
 // but the Fileclass plugin unloaded, or the `fileclass` CLI binary not found, it
 // publishes NOTHING: absent, not broken, which is the gate the module always
 // had. The settings tab names whichever of the three states you are in.
@@ -223,7 +223,7 @@ export default class VaultFileclassPlugin extends Plugin {
     }
     this.settings = adopted;
     console.info(
-      "[vaultmcp-fileclass] adopted the Governor host's fileclass module config (one shot; the host's copy is untouched)",
+      "[vaultmcp-fileclass] adopted the Vault MCP host's fileclass module config (one shot; the host's copy is untouched)",
     );
   }
 }

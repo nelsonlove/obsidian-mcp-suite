@@ -1,12 +1,12 @@
 // The skills GUI wiring — the in-Obsidian HUMAN surface: the Preview pane, the six commands,
 // the ribbon icon, and the (opt-in) export-on-save trigger. Written for the standalone
-// vault-skills plugin, folded into the Governor host (#82 residuals), and extracted back into
+// vault-skills plugin, folded into the Vault MCP host (#82 residuals), and extracted back into
 // this satellite at the suite split's S4. `wireSkills(plugin, deps)` is called ONCE from
 // main.ts's onload — UNCONDITIONALLY now, because this plugin being installed and enabled IS
 // the toggle. There is no host module flag to consult any more.
 //
 // THIS HALF WORKS WITH NO HOST INSTALLED. The pane, the commands, the ribbon and export-on-save
-// are pure Obsidian + the compiler core; nothing here touches vault-mcp-api. If Governor is
+// are pure Obsidian + the compiler core; nothing here touches vault-mcp-api. If the host is
 // absent, all of this still runs and only the six MCP tools go unpublished — which is the
 // standalone-operation promise in the README, expressed in code rather than in prose.
 //

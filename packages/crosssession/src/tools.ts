@@ -1,6 +1,6 @@
 // tools.ts — the vaultmcp-crosssession satellite's tool surface (#232): the
 // fleet's coordination-log conventions given a real agent surface. FOUR tools,
-// published to the Governor host through `vault-mcp-api` (see main.ts):
+// published to the Vault MCP host through `vault-mcp-api` (see main.ts):
 //
 //   channels — discovery by fileclass + `audience:` frontmatter (declared
 //              read-only; never by path)
@@ -334,7 +334,7 @@ export function buildCrosssessionTools(source: CrosssessionSource, ctx: Crossses
         `("${cfgAtBuild.channelFileclass}" by default) plus an \`audience:\` frontmatter value — by frontmatter ` +
         "only, never by path. Returns uid, path, audience, linked projects, entry count, newest stamp, and every " +
         "recorded read receipt (which handles are current, which are behind). With `handle`, adds that handle's " +
-        "own read position and unread count per channel. Read-only in intent; the Governor host registers it as " +
+        "own read position and unread count per channel. Read-only in intent; the Vault MCP host registers it as " +
         "mutating unless this plugin is trusted, and blocks it outright while a path allowlist is active (it " +
         "carries no path argument to scope by).",
       inputSchema: {
@@ -395,7 +395,7 @@ export function buildCrosssessionTools(source: CrosssessionSource, ctx: Crossses
         "Your own entries are omitted (they are exempt from staleness). Capped per channel (`more: true` + " +
         "`next_stamp` when truncated — attest through the last served stamp, then call again). `channel` accepts a " +
         "channel uid, its folder-note path, or its folder; omit it to read every visible channel. Read-only in " +
-        "intent; blocked outright while a Governor path allowlist is active (no path argument to scope by).",
+        "intent; blocked outright while a Vault MCP path allowlist is active (no path argument to scope by).",
       inputSchema: {
         handle: z.string().min(1).describe("Your session handle (self-declared, cooperative)."),
         channel: z
@@ -515,7 +515,7 @@ export function buildCrosssessionTools(source: CrosssessionSource, ctx: Crossses
         "append-only log file. REFUSES `stale_read` — before anything is written — while the channel holds " +
         "entries your receipt does not cover (your own entries exempt): posting asserts you are current; run the " +
         "delta tool then the attest tool first. On success, auto-attests your handle through the new entry. An " +
-        "ordinary guarded mutating tool: the Governor host's read-only mode, write queue, journal and kernel " +
+        "ordinary guarded mutating tool: the Vault MCP host's read-only mode, write queue, journal and kernel " +
         "arguments all apply, and an active path allowlist blocks it outright (the channel reference is not a " +
         "path argument). It appends body text at end-of-file only — it does not touch frontmatter.",
       inputSchema: {

@@ -1,7 +1,7 @@
 // VAULT CROSS-SESSION — the fleet's coordination channels as their own Obsidian
 // plugin.
 //
-// Published to the Governor host through vault-mcp-api as four MCP tools:
+// Published to the Vault MCP host through vault-mcp-api as four MCP tools:
 //
 //   vaultmcp_crosssession_channels — discover channels by fileClass + `audience:`
 //                                 frontmatter (read-only in intent; the host
@@ -35,7 +35,7 @@
 //
 // THIS PLUGIN NEEDS THE HOST, like the triage satellite and unlike skills. It
 // has no pane, no palette command and no ribbon: its entire surface is the four
-// published tools. With Governor absent it loads, keeps its settings, adopts
+// published tools. With the host absent it loads, keeps its settings, adopts
 // nothing, and does nothing — `publishTools` waits on the host's ready event
 // and registers if one appears. The settings tab says so plainly.
 //
@@ -183,7 +183,7 @@ export default class VaultCrosssessionPlugin extends Plugin {
     if (!adopted) return;
     this.settings = adopted;
     await this.saveData(this.settings);
-    console.info("[vaultmcp-crosssession] adopted the Governor host's modules.crosssession.config (one shot; the host's copy is untouched)");
+    console.info("[vaultmcp-crosssession] adopted the Vault MCP host's modules.crosssession.config (one shot; the host's copy is untouched)");
   }
 
   /**
@@ -238,7 +238,7 @@ export default class VaultCrosssessionPlugin extends Plugin {
     this.settings = { ...this.settings, adoptedReceiptsFromHost: true };
     await this.saveData(this.settings);
     if (adopted > 0) {
-      console.info(`[vaultmcp-crosssession] adopted ${adopted} read receipt(s) from the Governor host (one shot; the host's copy is untouched)`);
+      console.info(`[vaultmcp-crosssession] adopted ${adopted} read receipt(s) from the Vault MCP host (one shot; the host's copy is untouched)`);
     }
   }
 }
