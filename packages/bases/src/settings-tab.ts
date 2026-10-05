@@ -1,6 +1,6 @@
 // settings-tab.ts — the plugin's own settings tab.
 //
-// While the Bases surface was a capability module inside the Governor host, its
+// While the Bases surface was a capability module inside the Vault MCP host, its
 // configuration was rendered by the host's generic, manifest-driven config tab.
 // A satellite has no such host, so it renders its own. The FIELDS themselves
 // (keys, labels, help text) live in settings.ts as pure data, so they stay
@@ -87,14 +87,20 @@ export class BasesSettingTab extends PluginSettingTab {
     // satellites: this plugin's whole surface is the two published tools —
     // there is no pane, no command, no ribbon. Say so rather than leaving a
     // user to wonder why nothing happens.
-    const hostLoaded = !!(this.app as unknown as {
-      plugins?: { plugins?: Record<string, unknown> };
-    }).plugins?.plugins?.["governor"];
+    // The host is the Vault MCP plugin (id `vault-mcp`; `governor` was its id
+    // from 0.12.0 to the suite split, and is now the separate acceptance
+    // plugin's id). Only the host exposes the plugin-to-plugin `api` object, so
+    // a plugin counts as the host only if it has one — the same lookup
+    // jd-scaffold's settings tab uses.
+    const loadedPlugins = (this.app as unknown as {
+      plugins?: { plugins?: Record<string, { api?: unknown } | undefined> };
+    }).plugins?.plugins;
+    const hostLoaded = ["vault-mcp", "governor"].some((id) => !!loadedPlugins?.[id]?.api);
     containerEl.createEl("p", {
       cls: "setting-item-description",
       text: hostLoaded
-        ? "Governor is installed: the vaultmcp_bases_list and vaultmcp_bases_query MCP tools are published to it. Under an active Governor path allowlist, vaultmcp_bases_list is refused outright — it takes no arguments, so there is nothing to scope by — while vaultmcp_bases_query is scoped by its `path` argument (a hidden `.base` refuses out_of_allowlist). Result ROWS are not filtered: the host scopes the base you name, not the notes the engine returns. Both tools declare read-only, which Governor distrusts unless `vaultmcp-bases` is listed in its trustedReadOnlyPlugins setting; untrusted, read-only mode blocks both."
-        : "Governor is NOT installed. This plugin's entire surface is the two MCP tools it publishes to the Governor host, so nothing here does anything until Governor is installed and enabled.",
+        ? "The Vault MCP host is installed: the vaultmcp_bases_list and vaultmcp_bases_query MCP tools are published to it. Under an active Vault MCP path allowlist, vaultmcp_bases_list is refused outright — it takes no arguments, so there is nothing to scope by — while vaultmcp_bases_query is scoped by its `path` argument (a hidden `.base` refuses out_of_allowlist). Result ROWS are not filtered: the host scopes the base you name, not the notes the engine returns. Both tools declare read-only, which the Vault MCP host distrusts unless `vaultmcp-bases` is listed in its trustedReadOnlyPlugins setting; untrusted, read-only mode blocks both."
+        : "The Vault MCP host is NOT installed. This plugin's entire surface is the two MCP tools it publishes to that host, so nothing here does anything until Vault MCP (plugin id `vault-mcp`) is installed and enabled. (Governor, the acceptance plugin, is a separate, optional plugin and is not the host — installing it alone does not make these tools reachable.)",
     });
   }
 }

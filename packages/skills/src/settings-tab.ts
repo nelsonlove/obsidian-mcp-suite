@@ -1,6 +1,6 @@
 // settings-tab.ts — the plugin's own settings tab.
 //
-// While the compiler was a capability module inside the Governor host, its
+// While the compiler was a capability module inside the Vault MCP host, its
 // configuration was rendered by the host's generic, manifest-driven config tab.
 // A satellite has no such host, so it renders its own — which is what the
 // standalone vault-skills plugin did before the fold. The FIELDS themselves
@@ -119,14 +119,20 @@ export class SkillsSettingTab extends PluginSettingTab {
 
     // The host is optional (see main.ts). Say so here rather than leaving a
     // user to wonder why the tools are missing from an agent session.
-    const hostLoaded = !!(this.app as unknown as {
-      plugins?: { plugins?: Record<string, unknown> };
-    }).plugins?.plugins?.["governor"];
+    // The host is the Vault MCP plugin (id `vault-mcp`; `governor` was its id
+    // from 0.12.0 to the suite split, and is now the separate acceptance
+    // plugin's id). Only the host exposes the plugin-to-plugin `api` object, so
+    // a plugin counts as the host only if it has one — the same lookup
+    // jd-scaffold's settings tab uses.
+    const loadedPlugins = (this.app as unknown as {
+      plugins?: { plugins?: Record<string, { api?: unknown } | undefined> };
+    }).plugins?.plugins;
+    const hostLoaded = ["vault-mcp", "governor"].some((id) => !!loadedPlugins?.[id]?.api);
     containerEl.createEl("p", {
       cls: "setting-item-description",
       text: hostLoaded
-        ? "Governor is installed: the six vaultmcp_skills_* MCP tools are published to it. Note that under an active Governor path allowlist all of them except vaultmcp_skills_mark are refused — they carry no path argument to scope."
-        : "Governor is not installed. The pane, commands, and export all still work; only the six vaultmcp_skills_* MCP tools are unpublished.",
+        ? "The Vault MCP host is installed: the six vaultmcp_skills_* MCP tools are published to it. Note that under an active Vault MCP path allowlist all of them except vaultmcp_skills_mark are refused — they carry no path argument to scope."
+        : "The Vault MCP host is not installed. The pane, commands, and export all still work; only the six vaultmcp_skills_* MCP tools are unpublished.",
     });
   }
 }
