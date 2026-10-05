@@ -169,7 +169,7 @@ export function guardCall(opts: {
 }): { code: string; message: string } | null {
   const { isMutating, args, settings } = opts;
   if (settings.readOnly && isMutating) {
-    return { code: "read_only", message: "governor is in read-only mode; mutating tools are blocked. Turn it off in the plugin settings." };
+    return { code: "read_only", message: "vault-mcp is in read-only mode; mutating tools are blocked. Turn it off in the plugin settings." };
   }
   if (settings.allowlist.length) {
     // One path at a time through core's `isVisible` — which normalizes first
@@ -180,7 +180,7 @@ export function guardCall(opts: {
     // keeps them from ever disagreeing.
     for (const raw of collectPaths(args)) {
       if (!isVisible(raw, settings)) {
-        return { code: "out_of_allowlist", message: `path '${raw}' is outside the governor allowlist` };
+        return { code: "out_of_allowlist", message: `path '${raw}' is outside the vault-mcp allowlist` };
       }
     }
   }

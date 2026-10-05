@@ -100,7 +100,7 @@ describe("resolveScope: the allowlist half", () => {
     assert.equal(refusal.code, "out_of_allowlist");
     assert.equal(
       refusal.message,
-      "path 'Archive/Secrets' is outside the governor allowlist — narrow the scope, or omit it. Nothing was reported.",
+      "path 'Archive/Secrets' is outside the vault-mcp allowlist — narrow the scope, or omit it. Nothing was reported.",
     );
   });
 
