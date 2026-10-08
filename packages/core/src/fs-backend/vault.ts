@@ -474,9 +474,12 @@ class VaultImpl {
   }
 
   async readNote(relPath: string): Promise<string> {
-    const abs = this.resolveInVault(relPath);
-    const content = await fs.readFile(abs, "utf8");
-    return truncateForRead(content, CHARACTER_LIMIT);
+    return truncateForRead(await this.readNoteWhole(relPath), CHARACTER_LIMIT);
+  }
+
+  /** The whole note, never cut (#443); the cut read is this, cut. */
+  async readNoteWhole(relPath: string): Promise<string> {
+    return fs.readFile(this.resolveInVault(relPath), "utf8");
   }
 
   async writeNote(
@@ -714,7 +717,10 @@ class VaultImpl {
     relPath: string,
     anchor: PatchAnchor,
     op: PatchOp,
-    content: string
+    content: string,
+    /** `rangeRuleStandsAside`: the transport proved a whole read of this note
+     *  at its current rev (#443), so a replace past the limit is allowed. */
+    opts: { rangeRuleStandsAside?: boolean } = {},
   ): Promise<{ found: boolean; anchor: PatchAnchor; op: PatchOp; previous?: string }> {
     // A cut read handed back as the fragment is refused first (#441).
     assertNotTruncatedRead(relPath, content);
@@ -749,7 +755,7 @@ class VaultImpl {
 
     // A replace whose section runs past the read limit on a long note would
     // replace text no cut read showed (#441).
-    if (op === "replace") {
+    if (op === "replace" && !opts.rangeRuleStandsAside) {
       // Measured at the section's last non-blank line, as the Obsidian
       // backend's heading offsets measure it: trailing blank lines carry
       // nothing a cut read could have hidden.
@@ -1068,9 +1074,14 @@ export async function patchNote(
   relPath: string,
   anchor: PatchAnchor,
   op: PatchOp,
-  content: string
+  content: string,
+  opts: { rangeRuleStandsAside?: boolean } = {},
 ): Promise<{ found: boolean; anchor: PatchAnchor; op: PatchOp; previous?: string }> {
-  return _impl.patchNote(relPath, anchor, op, content);
+  return _impl.patchNote(relPath, anchor, op, content, opts);
+}
+
+export async function readNoteWhole(relPath: string): Promise<string> {
+  return _impl.readNoteWhole(relPath);
 }
 
 export async function deleteNote(
