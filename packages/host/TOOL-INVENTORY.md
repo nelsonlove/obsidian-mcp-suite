@@ -335,7 +335,7 @@ duck-typed DOM-free `ImportContext`, optional AppleScript source disposition
 mutation-free `disposition_dry_run`. Registered like the integration tools
 (loaded instance, not `enabledPlugins`), re-resolved per call, and
 **version-gated**: any installed importer version outside the known-good set
-(currently 2.6.2) refuses `importer_version_unsupported` — the tool rides
+(currently 2.6.2 and the fork 3.1.9-nl.3) refuses `importer_version_unsupported` — the tool rides
 undocumented importer internals with no stability contract. Mutating
 (`readOnlyHint: false`; `destructiveHint: true` per the
 destructive-but-recoverable convention — the "delete" disposition sends
