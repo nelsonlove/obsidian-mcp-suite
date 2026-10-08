@@ -1,5 +1,5 @@
 // tools.ts — the vaultmcp-triage satellite's tool surface. TWO tools, published to
-// the Governor host through `vault-mcp-api` (see main.ts):
+// the Vault MCP host through `vault-mcp-api` (see main.ts):
 //
 //   queue   — the agent's view of a triage queue (declared read-only). Default:
 //             the inbox-marker queue (notes under a configured inbox folder,
@@ -131,6 +131,7 @@
 // TriageSource and every handler is headless-testable. The live adapter is
 // `obsidianTriageSource(app)` in obsidian-source.ts.
 
+import { assertSyncSafeMove } from "@vault-mcp/core";
 import { z } from "zod";
 import type { SdkToolSpec } from "vault-mcp-api";
 import { acceptForbiddenReason, type GuardSettings } from "@vault-mcp/core";
@@ -539,6 +540,14 @@ export function buildTriageTools(source: TriageSource, ctx: TriageToolsCtx): Sdk
       if (plan.moveTo !== null) {
         if (vis([plan.moveTo]).length === 0) {
           refuse("out_of_allowlist", `computed destination '${plan.moveTo}' is outside the path allowlist`);
+        }
+        // Checked here, at plan time, dry run and apply alike: a refused name must stop the disposition before its
+        // frontmatter patch is written, not after (the move itself checks again). Triage never gives or keeps a
+        // bracket name: it cannot vouch that nothing links the note, and it has no archive pattern (#482).
+        try {
+          assertSyncSafeMove(path, plan.moveTo, { linked: true, folderExists: (p) => source.exists(p) });
+        } catch (e) {
+          refuse("unsafe_name", (e as Error).message);
         }
         if (source.exists(plan.moveTo)) {
           refuse(

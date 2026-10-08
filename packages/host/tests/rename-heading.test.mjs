@@ -251,3 +251,24 @@ describe("obsidian_rename_heading", () => {
     assert.match(d("obsidian_write_note"), /to rename a heading, use `obsidian_rename_heading`/);
   });
 });
+
+describe("obsidian_rename_heading honours the record folders too (#482, PR #485 round 4)", () => {
+  test("a note that is a record only by its folder keeps its heading link as written", async () => {
+    const { inRecordFolder } = await import("../src/mcp/records.ts");
+    const folders = { enabled: true, folders: ["Recs"], archivePattern: "" };
+    const { app, store } = fakeVault({ ...FILES, "Recs/log.md": "cited [[A#Old heading]]\n" });
+    // What server.ts hands the tool: the marker (here: none) OR the record folders.
+    const isRecord = (p) => inRecordFolder(p, folders);
+    await tool(app, { isRecord })({ path: "A.md", heading: "Old heading", new_heading: "New name" });
+    assert.equal(store["Recs/log.md"], "cited [[A#Old heading]]\n", "the folder record is left as written");
+    assert.match(store["B.md"], /\[\[A#New name\|alias\]\]/, "a living note is still rewritten");
+  });
+
+  test("server.ts gives rename_heading the marker OR the record folders, read live", async () => {
+    const fs = await import("node:fs");
+    const server = fs.readFileSync(new URL("../src/mcp/server.ts", import.meta.url), "utf8");
+    assert.match(server, /probe\.record\?\.\(p\) === true\) return true;\s*return inRecordFolder\(p, normalizeRecordFolders\(ctx\.recordFolders\?\.\(\)\)\);/);
+    assert.match(server, /isRecord: isRecordForRename/);
+  });
+});
+

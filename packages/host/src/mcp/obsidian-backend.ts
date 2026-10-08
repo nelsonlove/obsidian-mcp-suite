@@ -30,7 +30,10 @@
  * are unchanged down to the object.
  */
 
+import { assertCreateName, assertMoveName } from "./name-checks.js";
 import { moveWithLinks, type LinkCheck } from "./move-with-links.js";
+import { recordTest, type RecordRules } from "./records.js";
+import { indexedLinkers, linkIndexReady, LinkIndexLoadingError } from "./link-index.js";
 import { TFile, TFolder, getAllTags, type App } from "obsidian";
 import {
   CHARACTER_LIMIT,
@@ -42,7 +45,6 @@ import {
   parseGuardFrontmatter,
   unverifiableProtectedPropertyIn, unverifiableBeforeReason,
 } from "@vault-mcp/core";
-import { backlinkKeys } from "./helpers.js";
 import { AcceptForbiddenError, acceptTransitionReason } from "./write-notes-compose.js";
 import type {
   VaultBackend,
@@ -98,6 +100,8 @@ export class ObsidianBackend implements VaultBackend {
      * is logged and never fails the write, the same rule capture follows.
      */
     private readonly onWriteNote?: (facts: { path: string; baseBytes: Uint8Array | null; proposedBytes: Uint8Array; created: boolean }) => void,
+    /** The operator's record identification (#397), for moveNote's record test (records.ts). Absent ⇒ the default `record: true`. */
+    private readonly recordIdentification?: () => RecordRules,
   ) {}
 
   /**
@@ -394,16 +398,17 @@ export class ObsidianBackend implements VaultBackend {
 
   async getBacklinks(notePath: string): Promise<string[]> {
     const file = this.app.vault.getAbstractFileByPath(notePath);
-    if (!file) throw new Error(`not found: ${notePath}`);
-    // getBacklinksForFile is not in the public obsidian types — cast required.
-    // .data can be a Map (most Obsidian builds) or a plain object (some older
-    // builds) — backlinkKeys handles both shapes defensively.
-    const bl = (this.app.metadataCache as any).getBacklinksForFile(file);
+    if (!(file instanceof TFile)) throw new Error(`not found: ${notePath}`);
+    // From Obsidian's own link index, never `getBacklinksForFile` (see
+    // link-index.ts, #451). Refused, not answered short, while the index is
+    // still loading after a start.
+    if (!linkIndexReady(this.app)) throw new LinkIndexLoadingError();
+    const linkers = indexedLinkers(this.app, file.path).map((l) => l.src);
     // The ARGUMENT is guarded; the ANSWER is a list of other notes' paths, and
     // "who links to this" is exactly how a visible note names hidden ones. A
     // linker you cannot read is not disclosed — the same fail-closed choice
     // `obsidian_check_links` makes about whose notes it reports from.
-    return this.visible(backlinkKeys(bl?.data));
+    return this.visible(linkers);
   }
 
   async getOutlinks(notePath: string): Promise<OutlinkEntry[]> {
@@ -583,6 +588,8 @@ export class ObsidianBackend implements VaultBackend {
       this.reportWrite(relPath, baseText, content, false);
       return { path: relPath, created: false };
     }
+    // A new note may not take a name Obsidian Sync refuses; an existing one stays writable in place.
+    assertCreateName(this.app, relPath);
     await ensureParentFolders(this.app, relPath);
     await this.app.vault.create(relPath, content);
     this.reportWrite(relPath, null, content, true);
@@ -627,6 +634,7 @@ export class ObsidianBackend implements VaultBackend {
     // Creating the note: the appended content IS the whole note, so its own
     // leading fence would become real frontmatter — guard it like a write.
     await this.guardWrittenContent(relPath, content);
+    assertCreateName(this.app, relPath);
     await ensureParentFolders(this.app, relPath);
     await this.app.vault.create(relPath, content);
     return { path: relPath, created: true };
@@ -646,6 +654,8 @@ export class ObsidianBackend implements VaultBackend {
     if (!fromRel.endsWith(".md")) throw new Error("source must end in .md");
     if (!toRel.endsWith(".md")) throw new Error("destination must end in .md");
     if (fromRel === toRel) throw new Error("from and to are the same path");
+    // Before anything is trashed or any folder is made: a refused name moves nothing.
+    await assertMoveName(this.app, fromRel, toRel, options.overwrite);
 
     const file = this.app.vault.getAbstractFileByPath(fromRel);
     if (!(file instanceof TFile)) throw new Error(`not found: ${fromRel}`);
@@ -671,6 +681,7 @@ export class ObsidianBackend implements VaultBackend {
       check = await moveWithLinks(this.app, file, toRel, {
         updateBacklinks: options.update_backlinks,
         visible: (p) => this.visible([p]).length === 1,
+        isRecord: recordTest(this.recordIdentification),
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

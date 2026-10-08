@@ -119,7 +119,7 @@ export class ReceiptStore implements ReceiptStoreLike {
 
   /**
    * Read a receipt file at an ARBITRARY directory — the adoption read (main.ts
-   * points it at the Governor host's plugin dir). Separate from `load()` so the
+   * points it at the Vault MCP host's plugin dir). Separate from `load()` so the
    * store's own file path stays the one thing `load` knows about, and so the
    * host's copy is unmistakably READ-ONLY here: there is no write counterpart
    * that takes a directory.

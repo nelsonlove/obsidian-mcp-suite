@@ -4,7 +4,7 @@
 // reuses the exact same in-process `runConformance` call the ALREADY-SHIPPED
 // `obsidian_conformance_debt` MCP tool makes (see obsidian-debt-source.ts,
 // this file's sibling and closest precedent) — same root resolution, same
-// baseline-path/excluded-roots env resolution, same DEFAULT_VOCABULARIES/
+// baseline path (the plugin setting, then the env, #493) and excluded-roots env resolution, same DEFAULT_VOCABULARIES/
 // DEFAULT_SCHEMES/legacyPacks:true config. The only difference is what
 // happens to the result: obsidian-debt-source.ts discards the ratchet and
 // keeps raw findings (debt reporting doesn't care about new-vs-carried);
@@ -15,19 +15,18 @@
 // That difference is exactly why this file MUST run the pre-flight refusals
 // `cli.ts`'s `runCli` runs before calling `runConformance` — `runConformance`
 // itself has no such guard, it trusts whatever `baselineText`/`excludedRoots`
-// it's handed (obsidian-debt-source.ts runs only the post-run coverage
-// refusal, #294, because it discards the ratchet — see below):
+// it's handed (obsidian-debt-source.ts runs the same baseline refusal and the
+// post-run coverage refusal, #294, but not the excluded-roots one, because it
+// discards the ratchet — see below):
 //
-//   - `baselineMissingRefusal`: a MISSING baseline must never silently read
-//     as empty. An empty baseline makes EVERY live finding read NEW — a
+//   - `inAppBaselineRefusal` (the in-app form of the CLI's
+//     `baselineMissingRefusal`): a MISSING or unconfigured baseline must never
+//     silently read as empty. An empty baseline makes EVERY live finding read NEW — a
 //     report that looks like catastrophic regression but is really a
-//     missing/misconfigured file. obsidian-debt-source.ts gets away with
-//     `readOrNull(...) ?? ""` because it discards the ratchet entirely
-//     (`liveFindings()` never reads `res.ratchet`); this file keeps the
-//     ratchet, so the same pattern here would flood the pane with false
+//     missing/misconfigured file; here it would flood the pane with false
 //     "new drift" for the vault's ENTIRE accepted-debt backlog on every
-//     first-run/misconfigured/sync-glitch case. Reusing the CLI's own
-//     exported refusal rather than duplicating its wording.
+//     first-run/misconfigured/sync-glitch case. obsidian-debt-source.ts
+//     runs the same refusal (#494), so both views give one message.
 //   - `excludedRootRefusal`: the inverse hazard — an `excludedRoots` value
 //     that would strand baseline keys under a root this run no longer looks
 //     at makes those keys read CLEARED (falsely "resolved!"), for the same
@@ -43,9 +42,10 @@ import { join } from "node:path";
 import type { App } from "obsidian";
 import {
   runConformance,
-  baselineRelFrom,
+  inAppBaselineRel,
+  inAppBaselineRefusal,
+  inAppBaselineFromEnv,
   excludedRootsFrom,
-  baselineMissingRefusal,
   excludedRootRefusal,
   coverageRefusal,
   baselinePackIds,
@@ -77,13 +77,17 @@ export interface DriftPaneSource {
 
 export function obsidianDriftSource(app: App, territories?: () => readonly string[], conventions?: () => VaultConventions): DriftPaneSource {
   const root = vaultRoot(app);
-  const baselinePath = join(root, baselineRelFrom(process.env));
+
   const excludedRoots = excludedRootsFrom([], process.env);
 
   return {
     async scan(): Promise<DriftGroup[]> {
-      const missing = baselineMissingRefusal(baselinePath, existsSync(baselinePath), false);
-      if (missing) throw new Error(missing);
+      // Per call, from the live setting (#493). None configured reads as missing: the pane says so.
+      const rel = inAppBaselineRel(conventions?.());
+      // One in-app message for none configured and for a missing note, as the debt tools give.
+      const baselinePath = rel ? join(root, rel) : "";
+      const refusal = inAppBaselineRefusal(rel, rel !== "" && existsSync(baselinePath), inAppBaselineFromEnv(conventions?.()));
+      if (refusal) throw new Error(refusal);
       const baselineText = await readFile(baselinePath, "utf8");
 
       const strand = excludedRootRefusal(parseBaseline(baselineText), excludedRoots);

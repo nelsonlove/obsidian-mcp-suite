@@ -110,7 +110,7 @@ export function resolveScope(
     return {
       refusal: {
         code: "out_of_allowlist",
-        message: `path '${prefix}' is outside the governor allowlist — narrow the scope, or omit it. Nothing was reported.`,
+        message: `path '${prefix}' is outside the vault-mcp allowlist — narrow the scope, or omit it. Nothing was reported.`,
       },
     };
   }

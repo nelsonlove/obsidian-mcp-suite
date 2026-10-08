@@ -231,7 +231,7 @@ export interface SdkToolSpec {
   description: string;
   /** A zod raw shape ({ path: z.string() }) or a plain JSON Schema object. */
   inputSchema?: Record<string, z.ZodTypeAny> | JsonSchemaObject;
-  /** Omitted or false ⇒ the tool counts as MUTATING (blocked by Governor's read-only mode). */
+  /** Omitted or false ⇒ the tool counts as MUTATING (blocked by the host's read-only mode). */
   readOnly?: boolean;
   /** Set true if the tool can destroy user data (delete/overwrite); advisory hint surfaced to MCP clients. */
   destructive?: boolean;
@@ -318,7 +318,7 @@ function toExternalSpec(t: SdkToolSpec): ExternalToolSpec {
 }
 
 /**
- * Publish MCP tools through Governor. Call from your plugin's onload() and
+ * Publish MCP tools through the Vault MCP host. Call from your plugin's onload() and
  * hand the returned disposer to this.register(). Handles load order (registers
  * now or on the host's ready event), re-registration when the host reloads,
  * cleanup. Works against a host on either side of the 0.12.0 `vault-mcp` →

@@ -164,7 +164,7 @@ Enable the review center, refresh it, and reconnect if needed. Only `published: 
 
 ## A Base query is slow or unavailable
 
-Base evaluation depends on a supported Obsidian Bases API and on the `vaultmcp-bases` plugin, which since the S7 satellite extraction is a separate plugin rather than a module of this one — install and enable it alongside the Vault MCP host plugin, and call its tools as `vaultmcp_bases_list` / `vaultmcp_bases_query`. Hidden or background Obsidian windows may evaluate large views more slowly.
+Base evaluation depends on a supported Obsidian Bases API and on the `vaultmcp-bases` plugin, which since the S7 satellite extraction is a separate plugin rather than a module of this one — install and enable it alongside the Vault MCP host plugin, and call its tools as `vaultmcp_bases_list` / `vaultmcp_bases_query`. By default the query uses Obsidian's own `base:query` evaluator (`engine: "fast"`), which is quick and does not depend on the window. The `view` evaluator (a hidden Bases view, full fidelity) is slow on a vault-wide base and refuses `window_hidden` while the Obsidian window is hidden, unless the call passes `allow_hidden: true`; `engine_unavailable` means the Bases core plugin is off. See [bases.md](bases.md), "Two evaluators".
 
 - Confirm the Base opens normally in Obsidian.
 - Confirm the requested view exists.

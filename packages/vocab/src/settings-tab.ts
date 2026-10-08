@@ -1,6 +1,6 @@
 // settings-tab.ts — the plugin's own settings tab.
 //
-// While the vocabulary surface was a capability module inside the Governor
+// While the vocabulary surface was a capability module inside the Vault MCP
 // host, its configuration was NOT rendered by the host's generic,
 // manifest-driven config tab (which only knows scalars): it was a BESPOKE
 // per-instance form in the host's connection-ui.ts, because the setting is a
@@ -167,42 +167,49 @@ export class VocabSettingTab extends PluginSettingTab {
   }
 
   /** The host status line, and the two things a user cannot guess: the
-   *  allowlist posture is PER TOOL rather than uniform, and Governor's
+   *  allowlist posture is PER TOOL rather than uniform, and the host's
    *  conformance report checks vocabulary against the built-in defaults rather
-   *  than the list edited here (a Governor behaviour, not this plugin's). */
+   *  than the list edited here (a host behaviour, not this plugin's). */
   private renderStatus(containerEl: HTMLElement): void {
     // The host is REQUIRED, as it is for the triage and crosssession
     // satellites: this plugin's whole surface is the four published tools —
     // there is no pane, no command, no ribbon.
-    const hostLoaded = !!(this.app as unknown as {
-      plugins?: { plugins?: Record<string, unknown> };
-    }).plugins?.plugins?.["governor"];
+    // The host is the Vault MCP plugin (id `vault-mcp`; `governor` was its id
+    // from 0.12.0 to the suite split, and is now the separate acceptance
+    // plugin's id). Only the host exposes the plugin-to-plugin `api` object, so
+    // a plugin counts as the host only if it has one — the same lookup
+    // jd-scaffold's settings tab uses.
+    const loadedPlugins = (this.app as unknown as {
+      plugins?: { plugins?: Record<string, { api?: unknown } | undefined> };
+    }).plugins?.plugins;
+    const hostLoaded = ["vault-mcp", "governor"].some((id) => !!loadedPlugins?.[id]?.api);
 
     containerEl.createEl("p", {
       cls: "setting-item-description",
       text: hostLoaded
-        ? "Governor is installed: the vaultmcp_vocab_vocabularies, _resolve_term, _validate_terms and _list_vocabulary " +
-          "MCP tools are published to it. Under an active Governor path allowlist the posture is PER TOOL, not " +
+        ? "The Vault MCP host is installed: the vaultmcp_vocab_vocabularies, _resolve_term, _validate_terms and _list_vocabulary " +
+          "MCP tools are published to it. Under an active Vault MCP path allowlist the posture is PER TOOL, not " +
           "uniform: _validate_terms stays available and is scoped on its `path` argument; _resolve_term is scoped " +
           "when called with `path` and blocked when called with `token`; _vocabularies and _list_vocabulary are " +
           "blocked outright, because neither carries a path argument the host can scope by."
-        : "Governor is NOT installed. This plugin's entire surface is the four MCP tools it publishes to the " +
-          "Governor host, so nothing here does anything until Governor is installed and enabled.",
+        : "The Vault MCP host is NOT installed. This plugin's entire surface is the four MCP tools it publishes to that host, " +
+          "so nothing here does anything until Vault MCP (plugin id `vault-mcp`) is installed and enabled. " +
+          "(Governor, the acceptance plugin, is a separate, optional plugin and is not the host — installing it alone does not make these tools reachable.)",
     });
 
     containerEl.createEl("p", {
       cls: "setting-item-description",
       text:
-        "This list moved here from Governor. On first load this plugin copied Governor's `vocabularies` setting once " +
-        "and has owned it ever since — Governor no longer reads that setting, and its editor for it is gone. " +
-        "Governor still stores the old value on purpose, as the thing this plugin adopted from, so nothing is lost " +
+        "This list moved here from the Vault MCP host (then named Governor). On first load this plugin copied the host's `vocabularies` setting once " +
+        "and has owned it ever since — the host no longer reads that setting, and its editor for it is gone. " +
+        "The host still stores the old value on purpose, as the thing this plugin adopted from, so nothing is lost " +
         "if you reinstall. Edit the list here.",
     });
 
     containerEl.createEl("p", {
       cls: "setting-item-description",
       text:
-        "One caveat that is Governor's, not this plugin's: Governor's conformance report checks vocabulary using the " +
+        "One caveat that is the host's, not this plugin's: the Vault MCP host's conformance report checks vocabulary using the " +
         "BUILT-IN defaults, not the list configured here (it has always worked that way). So in a vault with a " +
         "customised vocabulary, the conformance report and these tools can disagree about which tags, properties or " +
         "types are registered.",

@@ -2,7 +2,7 @@
 // frontmatter given an agent surface, by PROXYING the standalone `fileclass`
 // CLI (github.com/mdelobelle/fileclass-cli, the terminal for the Fileclass
 // Obsidian plugin — a typed-frontmatter / fileClass engine). EIGHT tools,
-// published to the Governor host through `vault-mcp-api` (see main.ts):
+// published to the Vault MCP host through `vault-mcp-api` (see main.ts):
 //
 //   READ (declared readOnly — a claim the host distrusts, see below)
 //     list      — every fileClass                          (`fileclasses`)
@@ -559,7 +559,7 @@ export function buildFileclassTools(ctx: FileclassToolsCtx): SdkToolSpec[] {
   /** Appended to every description: the two things an agent gets wrong first. */
   const COMMON =
     " Read `succeeded` in the result, not the call's error flag: a failed CLI run returns its full report with " +
-    "`succeeded: false`. Blocked outright while the Governor host has a path allowlist configured (no argument here " +
+    "`succeeded: false`. Blocked outright while the Vault MCP host has a path allowlist configured (no argument here " +
     "is a host path key, so the call cannot be scoped).";
 
   return [
@@ -599,7 +599,7 @@ export function buildFileclassTools(ctx: FileclassToolsCtx): SdkToolSpec[] {
       name: "explain",
       description:
         "Explain a note: its fileClasses, ancestry, and resolved field values. Proxies the Fileclass CLI " +
-        "`explain <path> --json`. Under an active Governor path allowlist this call is refused outright: the note " +
+        "`explain <path> --json`. Under an active Vault MCP path allowlist this call is refused outright: the note " +
         "argument is named `note` rather than `path` or `note_path`, so the host recognizes no path key and blocks " +
         "it. That is deliberate — the CLI resolves inheritance from fileClass definitions the session cannot see, so " +
         "a per-path-scoped answer would still name notes outside the allowlist." +
@@ -649,7 +649,7 @@ export function buildFileclassTools(ctx: FileclassToolsCtx): SdkToolSpec[] {
       name: "get",
       description:
         "Get one field's value on a note. Proxies the Fileclass CLI `get <path> <field> --json`. Under an active " +
-        "Governor path allowlist this call is refused outright — the note argument is named `note`, which the host " +
+        "Vault MCP path allowlist this call is refused outright — the note argument is named `note`, which the host " +
         "does not recognize as a path key, because the engine resolves the value against fileClass definitions the " +
         "session cannot see." +
         COMMON,

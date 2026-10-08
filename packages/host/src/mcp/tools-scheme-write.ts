@@ -41,6 +41,7 @@
 // even under `dry_run: true`, so a preview never claims a plan this session
 // could not actually carry out.
 
+import { assertMoveName } from "./name-checks.js";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { App } from "obsidian";
@@ -48,6 +49,8 @@ import { ok, fail, codedError } from "./helpers.js";
 import { visiblePaths, isVisible, type GuardSettings } from "../guard.js";
 import { pickInstance, parseScopeToken } from "./tools-scheme.js";
 import { moveOne, RW } from "./tools-vault-write.js";
+import { TextCache } from "./move-with-links.js";
+import { recordTest, type RecordRules } from "./records.js";
 import { planAssign, planRefile, planRenumber, type MoveStep, type OnOccupied } from "../kernel/scheme/mutate.js";
 import type { Address } from "../kernel/scheme/provider.js";
 import { excludeRoots, type SchemeInstance, type SchemeRegistry, type SchemeInstanceConfig } from "../kernel/scheme/registry.js";
@@ -58,6 +61,8 @@ export interface SchemeWriteToolsCtx {
   /** Vault markdown paths; wired in server.ts from app.vault.getMarkdownFiles(). */
   notes: () => string[];
   getSettings?: () => GuardSettings & { schemes?: SchemeInstanceConfig[] };
+  /** The operator's record identification (#397), for the moves' record test (records.ts). Absent ⇒ the default `record: true`. */
+  recordIdentification?: () => RecordRules;
 }
 
 // Intentionally-duplicated one-liner: `@vault-mcp/core`'s `fail()` does this
@@ -76,7 +81,7 @@ function moveErrorMessage(e: unknown): string {
 export function registerSchemeWriteTools(server: McpServer, app: App, ctx: SchemeWriteToolsCtx): void {
   const visible = (paths: string[]): string[] => visiblePaths(paths, ctx.getSettings?.());
   const outOfAllowlist = (path: string) =>
-    codedError("out_of_allowlist", `path '${path}' is outside the governor allowlist`);
+    codedError("out_of_allowlist", `path '${path}' is outside the vault-mcp allowlist`);
   // A computed destination (not a call argument) failing visibility — see the
   // header comment above. Distinguished from `outOfAllowlist` in wording only
   // (same code: a caller branching on `out_of_allowlist` should not have to
@@ -155,10 +160,12 @@ export function registerSchemeWriteTools(server: McpServer, app: App, ctx: Schem
         const hidden = firstHidden([result.step.to]);
         if (hidden) return computedOutOfAllowlist(hidden);
 
+        // The name is checked before a dry run answers, so a preview never promises a move the real run refuses.
+        await assertMoveName(app, result.step.from, result.step.to);
         if (dry_run) return ok({ dry_run: true, address: result.address, moves: [result.step] });
 
         try {
-          await moveOne(app, result.step.from, result.step.to, false);
+          await moveOne(app, result.step.from, result.step.to, false, { isRecord: recordTest(ctx.recordIdentification) });
         } catch (e) {
           return fail(e);
         }
@@ -261,10 +268,11 @@ export function registerSchemeWriteTools(server: McpServer, app: App, ctx: Schem
         const hidden = firstHidden([step.to]);
         if (hidden) return computedOutOfAllowlist(hidden);
 
+        await assertMoveName(app, step.from, step.to);
         if (dry_run) return ok({ dry_run: true, address: result.address, moves: [step] });
 
         try {
-          await moveOne(app, step.from, step.to, false);
+          await moveOne(app, step.from, step.to, false, { isRecord: recordTest(ctx.recordIdentification) });
         } catch (e) {
           return fail(e);
         }
@@ -363,12 +371,19 @@ export function registerSchemeWriteTools(server: McpServer, app: App, ctx: Schem
         const hidden = firstHidden(computedPaths);
         if (hidden) return computedOutOfAllowlist(hidden);
 
+        // One read of the vault's text for the whole renumber, the name checks included, as obsidian_move_notes does (see TextCache).
+        const texts = new TextCache(app);
+        // Every step's name is checked before ANY step runs (and before a dry run answers): a refusal on step 2 must
+        // not come after step 1 has already moved the occupant away.
+        for (const st of result.steps) await assertMoveName(app, st.from, st.to, false, texts);
         if (dry_run) return ok({ dry_run: true, address, moves: result.steps, displaced: result.displaced });
 
         const completed: MoveStep[] = [];
+        // One record test for the whole renumber.
+        const isRecord = recordTest(ctx.recordIdentification);
         for (const step of result.steps) {
           try {
-            await moveOne(app, step.from, step.to, false);
+            await moveOne(app, step.from, step.to, false, { texts, isRecord });
             completed.push(step);
           } catch (e) {
             if (completed.length === 0) return fail(e);

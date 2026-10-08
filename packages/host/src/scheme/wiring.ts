@@ -184,7 +184,7 @@ export function wireSchemePanes(plugin: Plugin, opts: WireSchemePanesOpts): Comp
 export function registerSchemeCommands(plugin: Plugin, isEnabled: () => boolean): void {
   const app = plugin.app;
   const guarded = (viewType: string, label: string) => async (): Promise<void> => {
-    if (!isEnabled()) { new Notice(`Governor: the scheme module is disabled — enable it in settings to open ${label}.`); return; }
+    if (!isEnabled()) { new Notice(`Vault MCP: the scheme module is disabled — enable it in settings to open ${label}.`); return; }
     await activateView(app, viewType);
   };
   plugin.addCommand({ id: "scheme-inbox-open", name: "Scheme: open JD inboxes", callback: () => void guarded(INBOX_VIEW_TYPE, "JD inboxes")() });

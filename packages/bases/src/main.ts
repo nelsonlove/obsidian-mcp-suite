@@ -1,13 +1,15 @@
 // VAULT BASES — evaluated Base result sets for agents, as their own Obsidian
 // plugin.
 //
-// Published to the Governor host through vault-mcp-api as two MCP tools:
+// Published to the Vault MCP host through vault-mcp-api as two MCP tools:
 //
 //   vaultmcp_bases_list  — enumerate `.base` files + their declared views
 //                       (read-only in intent; the host distrusts that claim,
 //                       see below)
 //   vaultmcp_bases_query — one declared view's rows, evaluated by Obsidian's own
-//                       Bases engine in a hidden background leaf
+//                       Bases engine: by its base:query handler (`fast`, the
+//                       default when reachable) or in a hidden background leaf
+//                       (`view`, full fidelity); see docs/bases.md "Two evaluators"
 //
 // SATELLITE OF THE SUITE (suite-split design §6/§7, the "Bases | public
 // optional | satellite" row). Extracted out of the host at S7, following the
@@ -39,7 +41,7 @@
 //
 // THIS PLUGIN NEEDS THE HOST, like the triage and cross-session satellites and
 // unlike skills. It has no pane, no palette command and no ribbon: its entire
-// surface is the two published tools. With Governor absent it loads, keeps and
+// surface is the two published tools. With the host absent it loads, keeps and
 // validates its settings, and does nothing — `publishTools` waits on the host's
 // ready event and registers the moment a host appears. The settings tab says so
 // plainly.
@@ -109,7 +111,8 @@ export default class VaultBasesPlugin extends Plugin {
 
   /** The live vault + engine adapter, built once: it closes over `app`, which
    *  does not change for the life of the instance, and it holds no state
-   *  between calls (each capture constructs and detaches its own leaf). */
+   *  between calls (each view-evaluator capture constructs and detaches its own
+   *  leaf; the fast road builds none). */
   private source!: BasesSource;
 
   async onload(): Promise<void> {
@@ -216,6 +219,6 @@ export default class VaultBasesPlugin extends Plugin {
     if (!adopted) return;
     this.settings = adopted;
     await this.saveData(this.settings);
-    console.info("[vaultmcp-bases] adopted the Governor host's modules.bases.config (one shot; the host's copy is untouched)");
+    console.info("[vaultmcp-bases] adopted the Vault MCP host's modules.bases.config (one shot; the host's copy is untouched)");
   }
 }

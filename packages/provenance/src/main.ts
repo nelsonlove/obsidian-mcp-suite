@@ -1,6 +1,6 @@
 // VAULT PROVENANCE — derived-content provenance as its own Obsidian plugin.
 //
-// Published to the Governor host through vault-mcp-api as three MCP tools:
+// Published to the Vault MCP host through vault-mcp-api as three MCP tools:
 //
 //   vaultmcp_provenance_check     — is a derived note FRESH or STALE against its
 //                                own `derived-from:` sources (read-only in
@@ -35,7 +35,7 @@
 //
 // THIS PLUGIN NEEDS THE HOST, like the triage, cross-session and bases
 // satellites and unlike skills. It has no pane, no palette command and no
-// ribbon: its entire surface is the three published tools. With Governor absent
+// ribbon: its entire surface is the three published tools. With the host absent
 // it loads, keeps and validates its settings, adopts nothing, and does nothing —
 // `publishTools` waits on the host's ready event and registers if one appears.
 // The settings tab says so plainly.
@@ -208,7 +208,7 @@ export default class VaultProvenancePlugin extends Plugin {
       return;
     }
     if (outcome.adopted) {
-      console.info("[vaultmcp-provenance] adopted the Governor host's modules.provenance.config (one shot; the host's copy is untouched)");
+      console.info("[vaultmcp-provenance] adopted the Vault MCP host's modules.provenance.config (one shot; the host's copy is untouched)");
     }
   }
 }

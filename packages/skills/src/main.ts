@@ -5,7 +5,7 @@
 //
 //   1. the HUMAN surface — a Preview pane, six palette commands, a ribbon icon,
 //      and an opt-in export-on-save trigger (wiring.ts);
-//   2. the AGENT surface — six MCP tools published to the Governor host through
+//   2. the AGENT surface — six MCP tools published to the Vault MCP host through
 //      vault-mcp-api (tools.ts), on the wire as `vaultmcp_skills_validate` …
 //      `vaultmcp_skills_mark` — spelled `vault_skills_*` from the S4
 //      extraction until #394 moved the plugin id into the `vaultmcp-`
@@ -149,6 +149,6 @@ export default class VaultSkillsPlugin extends Plugin {
     if (!adopted) return;
     this.settings = adopted;
     await this.saveData(this.settings);
-    console.info("[vaultmcp-skills] adopted the Governor host's modules.skills.config (one shot; the host's copy is untouched)");
+    console.info("[vaultmcp-skills] adopted the Vault MCP host's modules.skills.config (one shot; the host's copy is untouched)");
   }
 }

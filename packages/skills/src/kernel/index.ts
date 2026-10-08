@@ -1,7 +1,7 @@
 // src/kernel — the pure skills-export core of the vaultmcp-skills satellite.
 //
 // Lineage: written for the standalone obsidian-vault-skills plugin, folded into
-// the Governor host as `src/kernel/skills/` (#82, cycle 2), and extracted back
+// the Vault MCP host as `src/kernel/skills/` (#82, cycle 2), and extracted back
 // out to its own plugin at the suite split's S4. The code is the same code; the
 // three homes differ only in who mounts it.
 //

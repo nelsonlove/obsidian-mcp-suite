@@ -1,5 +1,5 @@
 // tools.ts — the vaultmcp-jd-scaffold satellite's tool surface: Johnny Decimal
-// scaffolding, ported from obsidian-jd-dashboard and published to the Governor
+// scaffolding, ported from obsidian-jd-dashboard and published to the Vault MCP
 // host through `vault-mcp-api` (see main.ts). SEVEN tools, every one MUTATING,
 // every one a thin PLAN-then-APPLY shell over the pure planners in
 // `src/kernel/`:
@@ -395,7 +395,7 @@ export function buildJdScaffoldTools(source: JdScaffoldSource, ctx: JdScaffoldTo
         "Creates the fixed 10-note standard-zeros set (JDex, Inbox, Task & project management, Templates, Links, " +
         "Conventions & policies, Knowledge base, Dashboard, Someday, Archive) inside a category folder. An " +
         "already-existing target is SKIPPED, never overwritten. `dry_run: true` reports the plan without writing. " +
-        "Mutating: the Governor host's read-only mode, write queue, journal and kernel arguments all apply, and an " +
+        "Mutating: the Vault MCP host's read-only mode, write queue, journal and kernel arguments all apply, and an " +
         "active path allowlist blocks it outright (no argument here is a path key the host can scope by).",
       inputSchema: {
         folder_path: z.string().min(1).describe('Vault path of the category folder (e.g. "10-19 Personal/06 Digital tools").'),
@@ -452,7 +452,7 @@ export function buildJdScaffoldTools(source: JdScaffoldSource, ctx: JdScaffoldTo
         "Walks every depth-2 `XX <name>` category folder and creates a minimal `XX.00` JDex index for any that " +
         "lack one (in any of `XX.00 Title.md`, `XX.00.md`, `XX.00+SUF Title.md` form). Vault-wide, no target " +
         "argument. `dry_run: true` reports the plan without writing. Mutating, and blocked outright while a " +
-        "Governor path allowlist is active (it carries no path argument to scope by).",
+        "Vault MCP path allowlist is active (it carries no path argument to scope by).",
       inputSchema: {
         dry_run: z.boolean().describe("If true, report the plan without writing anything."),
       },
@@ -651,7 +651,7 @@ export function buildJdScaffoldTools(source: JdScaffoldSource, ctx: JdScaffoldTo
         "Creates a single standard-zero note (e.g. the `06.01 Inbox` slot) from a template classified " +
         '`jd-id: "{{category}}.NN"` in `templates_folder`. Refuses if the slot already exists or no matching ' +
         "template is found. `dry_run: true` reports the plan without writing. Mutating, and blocked outright " +
-        "while a Governor path allowlist is active (neither `folder_path` nor `templates_folder` is a path key " +
+        "while a Vault MCP path allowlist is active (neither `folder_path` nor `templates_folder` is a path key " +
         "the host can scope by).",
       inputSchema: {
         folder_path: z.string().min(1).describe('Vault path of the category folder (e.g. "10-19 Personal/06 Digital tools").'),
@@ -693,12 +693,12 @@ export function buildJdScaffoldTools(source: JdScaffoldSource, ctx: JdScaffoldTo
       description:
         'Creates an `XX.YY Title` note from a template classified `jd-id: "{{category}}.{{id}}"` in ' +
         "`templates_folder`. `dry_run: true` reports the plan without writing. Mutating, and blocked outright " +
-        "while a Governor path allowlist is active.",
+        "while a Vault MCP path allowlist is active.",
       inputSchema: {
         folder_path: z.string().min(1).describe("Vault path of the category folder."),
         prefix: z.string().min(1).describe('The category\'s two-digit prefix (e.g. "06").'),
         id: z.string().min(1).describe('Two-digit id for the new note (e.g. "13").'),
-        title: z.string().min(1).describe("Title for the new note — sanitized before use (no path separators, leading dot, or Windows-forbidden characters)."),
+        title: z.string().min(1).describe("Title for the new note — refused if empty, if it starts with a dot or holds \"..\", or if it holds a path separator, a control character, a character Obsidian Sync refuses (\\ : * ? \" < > |) or one that breaks links (# ^ [ ])."),
         templates_folder: z.string().min(1).describe("Vault path of the folder containing template notes."),
         dry_run: z.boolean().describe("If true, report the plan without writing anything."),
       },
@@ -716,7 +716,7 @@ export function buildJdScaffoldTools(source: JdScaffoldSource, ctx: JdScaffoldTo
 
         if (!/^\d{2}$/.test(id)) refuse("invalid_id", `"${id}" must be exactly two digits.`);
         const sanitized = sanitizeTitle(rawTitle);
-        if (!sanitized) refuse("invalid_title", `"${rawTitle}" is empty, leading-dot, or contains invalid characters (/, \\, .., :, etc.).`);
+        if (!sanitized) refuse("invalid_title", `"${rawTitle}" is empty, leading-dot, or holds a refused character: a path separator, \"..\", a control character, one Obsidian Sync refuses (\\ : * ? \" < > |) or one that breaks links (# ^ [ ]).`);
 
         const destPath = destPathForGenericId(folderPath, prefix, id, sanitized);
         if (!isVisible(destPath, settings)) refuse("out_of_allowlist", `the computed destination is outside the active path allowlist.`);
@@ -736,7 +736,7 @@ export function buildJdScaffoldTools(source: JdScaffoldSource, ctx: JdScaffoldTo
       name: "new_stem",
       description:
         'Creates an `XX.00+CODE Name` note from a template classified `jd-id: "XX.00+CODE"` in `templates_folder`. ' +
-        "`dry_run: true` reports the plan without writing. Mutating, and blocked outright while a Governor path " +
+        "`dry_run: true` reports the plan without writing. Mutating, and blocked outright while a Vault MCP path " +
         "allowlist is active.",
       inputSchema: {
         folder_path: z.string().min(1).describe("Vault path of the category folder."),
@@ -770,7 +770,7 @@ export function buildJdScaffoldTools(source: JdScaffoldSource, ctx: JdScaffoldTo
         if (!/^[A-Za-z][\w-]*$/.test(stemCode)) refuse("invalid_stem_code", `"${stemCode}" isn't a valid stem code (expected a leading letter, then word characters/hyphens only).`);
 
         const sanitized = sanitizeTitle(rawName);
-        if (!sanitized) refuse("invalid_title", `"${rawName}" is empty, leading-dot, or contains invalid characters (/, \\, .., :, etc.).`);
+        if (!sanitized) refuse("invalid_title", `"${rawName}" is empty, leading-dot, or holds a refused character: a path separator, \"..\", a control character, one Obsidian Sync refuses (\\ : * ? \" < > |) or one that breaks links (# ^ [ ]).`);
 
         const destPath = destPathForStem(folderPath, prefix, stemCode, sanitized);
         if (!isVisible(destPath, settings)) refuse("out_of_allowlist", `the computed destination is outside the active path allowlist.`);

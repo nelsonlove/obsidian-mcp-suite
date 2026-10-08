@@ -34,6 +34,7 @@ const ready = DIR && fs.existsSync(path.join(DIR, "export.json"));
 
 installObsidianStub();
 const { moveWithLinks } = await import("../src/mcp/move-with-links.ts");
+const { recordTest } = await import("../src/mcp/records.ts");
 
 // ── an independent link model (deliberately NOT link-rewrite.ts) ──────────────
 const LINK = /!?\[\[(?:[^\[\]\n]|\[[^\[\]\n]*\])*?\]\]|!?\[(?:[^\[\]\n]|\[[^\[\]\n]*\])*\]\((?:<[^>\n]*>|(?:[^()\s]|\([^()\s]*\))*)(?:\s+"[^"\n]*")?\)/g;
@@ -280,7 +281,23 @@ describe("moving real notes on a copy, under a write stream: no damage", { skip:
         fs.writeFileSync(path.join(d, `${ti}.json`), JSON.stringify(detail, null, 1));
       }
       assert.equal(check.ok, true, `damage check: ${JSON.stringify({ ...check, files_rewritten: check.files_rewritten.length })}`);
+      // Records (01.44 rule 8) are never rewritten: byte-identical, and every one that reached the note is listed.
+      const isRecordAt = recordTest();
+      // The moved note stays a record only if it is one at both ends (moved out of record folders, it is living and healed).
+      const isRecord = (p0) => (p0 === target ? isRecordAt(p0, snapshot.get(p0)) && isRecordAt(to, snapshot.get(p0)) : isRecordAt(p0, snapshot.get(p0)));
+      const leftPaths = new Set(check.records_left.map((x) => x.path));
       for (const [p0, snapText] of snapshot) {
+        if (!isRecord(p0)) continue;
+        const p = p0 === target ? to : p0;
+        const oldText = p0 === mid ? midLine + snapText : snapText;
+        assert.equal(text.get(p), oldText, `${p}: a record was rewritten`);
+        // Listed, unless its links still reach the note, or the list was capped.
+        if (p0 !== target && (pre.get(p0) ?? 0) > 0 && check.records_left_total === check.records_left.length && !leftPaths.has(p))
+          assert.equal(reach(p, text.get(p), to), pre.get(p0), `${p}: a record whose links no longer reach the note is missing from records_left`);
+        summary.recordsLeft = (summary.recordsLeft ?? 0) + (p0 !== target && (pre.get(p0) ?? 0) > 0 ? 1 : 0);
+      }
+      for (const [p0, snapText] of snapshot) {
+        if (isRecord(p0)) continue;
         const p = p0 === target ? to : p0;
         const newText = text.get(p);
         const oldText = p0 === mid ? midLine + snapText : snapText; // the mid-move write is expected
@@ -331,6 +348,6 @@ describe("moving real notes on a copy, under a write stream: no damage", { skip:
 
   test("summary", () => {
     const ms = summary.ms.sort((a, b) => a - b);
-    console.log(`[damage] ${summary.moves} moves, ${summary.links} links rewritten, ${summary.streamNotes} stale notes in the stream; move time median ${ms[Math.floor(ms.length / 2)] ?? 0} ms, max ${ms.at(-1) ?? 0} ms`);
+    console.log(`[damage] ${summary.moves} moves, ${summary.links} links rewritten, ${summary.streamNotes} stale notes in the stream, ${summary.recordsLeft ?? 0} records left as written; move time median ${ms[Math.floor(ms.length / 2)] ?? 0} ms, max ${ms.at(-1) ?? 0} ms`);
   });
 });

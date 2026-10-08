@@ -148,9 +148,10 @@ export const BASES_FIELDS: BasesField[] = [
     label: "Query timeout (ms)",
     type: "number",
     help:
-      "Hard deadline for one vaultmcp_bases_query evaluation. The Bases engine's scan is heavily throttled while the " +
-      "Obsidian window is hidden, so slow answers are normal in the background — expiry refuses with a typed, " +
-      `retryable base_timeout. Blank ⇒ the default (${DEFAULT_BASES_CONFIG.queryTimeoutMs}).`,
+      "Hard deadline for one vaultmcp_bases_query evaluation, for both evaluators — expiry refuses with a typed, " +
+      "retryable base_timeout. The view evaluator is the slow one (its scan is throttled while the window is hidden, " +
+      "and it blocks Obsidian while it runs), so it refuses while the window is hidden unless allow_hidden is set. " +
+      `Blank ⇒ the default (${DEFAULT_BASES_CONFIG.queryTimeoutMs}).`,
   },
   {
     key: "rowCap",
