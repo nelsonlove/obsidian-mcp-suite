@@ -1,9 +1,10 @@
-// obsidian_import_apple_notes (#252) — drive the STOCK community
-// obsidian-importer plugin's Apple Notes importer headlessly, so the vault can
-// run the catalog build (no fork) and agents get a first-class MCP tool
-// instead of a fire-and-forget palette command.
+// obsidian_import_apple_notes (#252) — drive the obsidian-importer plugin's
+// Apple Notes importer headlessly (the catalog build 2.6.2, or Nelson's fork
+// 3.1.9-nl.3), so agents get a first-class MCP tool instead of a
+// fire-and-forget palette command.
 //
-// How it works (the issue's design sketch, verified against importer 2.6.2):
+// How it works (the issue's design sketch, verified against importer 2.6.2,
+// and against the fork 3.1.9-nl.3 on 2026-10-01 — see KNOWN_GOOD_IMPORTER_VERSIONS):
 // upstream 2.x replaced the import modal with an `ImporterHost` whose step
 // elements are NULLABLE — `draw()`/`addSetting()` no-op against a null
 // element — and made folder selection an explicit `selectedFolders: number[]`
@@ -16,10 +17,13 @@
 // NO STABILITY CONTRACT: everything this rides — `plugin.importers`, the
 // host-with-null-elements construction, `selectedFolders`, `ready`,
 // `dataPath`/`readableDataFolder` — is importer INTERNAL, verified against
-// 2.6.2 only. Hence the version gate: any installed importer version outside
+// 2.6.2 and against fork commit e904b8d (3.1.9-nl.3). Hence the version
+// gate: any installed importer version outside
 // KNOWN_GOOD_IMPORTER_VERSIONS refuses loudly (`importer_version_unsupported`)
 // rather than breaking silently. Extend the list only after re-verifying each
 // touchpoint against the new version.
+// The gate trusts the version string: a later fork build that changes a
+// touchpoint without bumping `-nl.N` would pass it.
 //
 // Headless trap (found live, must not regress): the importer only initializes
 // its private `dataPath` inside `addAccessSetting()`, which early-returns when
@@ -87,8 +91,32 @@ export const IMPORTER_PLUGIN_ID = "obsidian-importer";
  * undocumented plugin internals, so even a patch release is unproven until
  * someone re-checks `plugin.importers`, the null-element host construction,
  * `selectedFolders`, `ready`, and `dataPath`/`readableDataFolder`.
+ *
+ * `3.1.9-nl.3` is Nelson's fork (nelsonlove/obsidian-importer, branch
+ * nl-main-3.1.9, commit e904b8d), checked 2026-10-01 touchpoint by touchpoint:
+ * the same `importers['apple-notes'].importer` class, the same null-element
+ * `ImporterHost` shape its own headless road builds (`sourceEl`/`outputEl`/
+ * `optionsEl` null, `plugin`, `importerId`, `abortController`), `addSetting`
+ * and `draw` no-ops against a null step element, `ready`, `notAvailable`,
+ * `outputLocation`, `selectedFolders`, the private `dataPath` and
+ * `readableDataFolder()`, and an `import(ctx)` that calls exactly the context
+ * methods `HeadlessImportContext` has. One difference: it has no
+ * `filePrefixFormat`; a file-name TEMPLATE (`noteTitleTemplate`, loaded from
+ * the saved importer settings, default `{{title}}`) replaced the date prefix.
+ * See TITLE_TEMPLATE_IMPORTER_VERSIONS.
  */
-export const KNOWN_GOOD_IMPORTER_VERSIONS = ["2.6.2"];
+export const KNOWN_GOOD_IMPORTER_VERSIONS = ["2.6.2", "3.1.9-nl.3"];
+
+/**
+ * The known-good versions that name files by `noteTitleTemplate`, not by
+ * `filePrefixFormat`. Chosen by the version the gate checked, never by probing
+ * for a member. On these, the template the user saved in the importer dialog is
+ * kept unless the caller passes `file_prefix_format`; then the tool sets the
+ * template the fork itself derives from a stored prefix. The fork never puts a
+ * date on attachment names (2.6.2 did), so a vault moving from 2.6.2 to the
+ * fork gets unprefixed attachment copies on the next re-import.
+ */
+export const TITLE_TEMPLATE_IMPORTER_VERSIONS = ["3.1.9-nl.3"];
 
 export function importerVersionSupported(version: string | undefined): version is string {
   return typeof version === "string" && KNOWN_GOOD_IMPORTER_VERSIONS.includes(version);
@@ -117,7 +145,18 @@ export interface AppleNotesImporterLike {
   ready: Promise<void>;
   notAvailable: boolean;
   outputLocation: string;
-  filePrefixFormat: string;
+  /** 2.6.2 only; the fork has no such member. */
+  filePrefixFormat?: string;
+  /** Both versions: how an earlier import of the same note is handled ('create-copy' | 'skip' | 'update'), loaded from the saved settings. */
+  duplicateHandling?: string;
+  /** Both versions: record the source note's ID in frontmatter, so the next run can match it. Loaded from the saved settings. */
+  saveSourceId?: boolean;
+  /** Both versions: index earlier imports by recorded source ID; the modal and the fork's headless road call it before `import`. */
+  indexImportedNotes?: () => void;
+  /** Both versions: standardize links and formatting of every written note; the modal and the fork's headless road call it after `import`. */
+  finalizeMarkdownOutput?: (ctx: HeadlessImportContext) => Promise<void>;
+  /** 3.1.9-nl.3 (the fork): the file-name template that replaced `filePrefixFormat`; absent on 2.6.2. */
+  noteTitleTemplate?: string;
   selectedFolders: number[];
   /** TS-private on the real class; runtime-accessible, and null/undefined when constructed headlessly. */
   dataPath?: string | null;
@@ -487,7 +526,12 @@ export function registerImportTools(server: McpServer, app: App, ctx: ImportTool
         file_prefix_format: z
           .string()
           .optional()
-          .describe('moment.js date-prefix format for imported filenames (e.g. "YYYY-MM-DD"); "" = no prefix. Default "YYYY-MM-DD".'),
+          .describe(
+            'moment.js date-prefix format for imported note file names (e.g. "YYYY-MM-DD"); "" = no prefix. ' +
+              'On 2.6.2: default "YYYY-MM-DD", and attachments get the prefix too. On the fork (3.1.9-nl.3): when given, ' +
+              'it replaces the saved file-name template with "{{ctime | date:<format>}} {{title}}" ("" = "{{title}}"); ' +
+              "when omitted, the template saved in the importer dialog is kept. The result reports the template used."
+          ),
         source_disposition: z
           .enum(["none", "move", "delete"])
           .default("none")
@@ -601,7 +645,22 @@ export function registerImportTools(server: McpServer, app: App, ctx: ImportTool
         }
 
         importer.outputLocation = outputFolder;
-        importer.filePrefixFormat = filePrefixFormat;
+        // File naming: see TITLE_TEMPLATE_IMPORTER_VERSIONS.
+        const titleTemplateVersion = TITLE_TEMPLATE_IMPORTER_VERSIONS.includes(version);
+        if (titleTemplateVersion) {
+          if (file_prefix_format !== undefined) {
+            importer.noteTitleTemplate =
+              file_prefix_format === "" ? "{{title}}" : `{{ctime | date:${JSON.stringify(file_prefix_format)}}} {{title}}`;
+          }
+        } else {
+          importer.filePrefixFormat = filePrefixFormat;
+        }
+        // Pinned, whatever the importer dialog last saved (as the fork's own
+        // Reading List headless road does): a saved "Create copy" would add a
+        // file for every note on every run, a saved "Skip" could never update
+        // one, and without the source ID the next run cannot match a note.
+        importer.duplicateHandling = "update";
+        importer.saveSourceId = true;
 
         // ── folder selection (ZFOLDERTYPE-based, never localized names) ─────
         const dbPath = join(importer.dataPath, NOTE_DB);
@@ -620,7 +679,9 @@ export function registerImportTools(server: McpServer, app: App, ctx: ImportTool
         const base = {
           importer_version: version,
           output_folder: outputFolder,
-          file_prefix_format: filePrefixFormat,
+          ...(titleTemplateVersion
+            ? { file_prefix_format: file_prefix_format ?? null, note_title_template: importer.noteTitleTemplate ?? null }
+            : { file_prefix_format: filePrefixFormat }),
           folders_selected: selected.length,
           folders: selected.map(({ id, name, notes }) => ({ id, name, notes })),
           excluded,
@@ -639,7 +700,16 @@ export function registerImportTools(server: McpServer, app: App, ctx: ImportTool
         // disposition never removes an un-imported note.
         const startedAt = now();
         const importCtx = new HeadlessImportContext();
-        await importer.import(importCtx);
+        // The two steps the importer's own flows (the modal, and the fork's
+        // headless road) run around `import`: the index lets a note renamed
+        // since the last run be found by its recorded ID, not only by path;
+        // finalize standardizes the links and formatting of what was written.
+        importer.indexImportedNotes?.();
+        try {
+          await importer.import(importCtx);
+        } finally {
+          await importer.finalizeMarkdownOutput?.(importCtx);
+        }
 
         // ── source disposition — after a CLEAN import only ──────────────────
         // Stricter than the reference branch (which gated on !cancelled
