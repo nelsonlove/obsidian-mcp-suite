@@ -175,6 +175,13 @@ export interface VaultBackend {
    */
   readNote(relPath: string): Promise<string>;
 
+  /**
+   * Read a note WHOLE, never cut (#443): the road `obsidian_read_note` takes
+   * with `full: true`. Optional; a backend without it cannot serve a full
+   * read, and the tool says so.
+   */
+  readNoteWhole?(relPath: string): Promise<string>;
+
   // ── Read: search ───────────────────────────────────────────────────────────
 
   /**
@@ -256,6 +263,8 @@ export interface VaultBackend {
     anchor: PatchAnchor,
     op: PatchOp,
     content: string,
+    /** #443: the transport proved a whole read of this note at its current rev, so a replace past the read limit is allowed. */
+    opts?: { rangeRuleStandsAside?: boolean },
   ): Promise<{ found: boolean; anchor: PatchAnchor; op: PatchOp; previous?: string }>;
 
   // ── Write: full note ops ───────────────────────────────────────────────────

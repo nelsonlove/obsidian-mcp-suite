@@ -35,25 +35,35 @@
  *     read tools cut at the limit, so a whole-note write of such a note is a
  *     write of a cut read wherever its text came from (a few reads —
  *     obsidian_read_note_parsed, obsidian_get_active_note — do return it
- *     whole, and are bound by the same policy until #443 gives a whole read
- *     its own road). A `content` + `overwrite: true` call on such a note is
- *     refused at each transport's interception, before the queue, from the
- *     note's length on disk. A long note is edited by anchor; a whole
- *     rewrite of it waits for #443. A caller that reaches a backend directly
- *     is not bound by that rule (it is not over MCP) — but by the next one.
+ *     whole, and are bound by the same policy; the road through it is
+ *     `full: true` on obsidian_read_note, below). A `content` +
+ *     `overwrite: true` call on such a note is refused by each transport at
+ *     dequeue, from the note's length on disk, where the proof of a whole
+ *     read (next) is read against the note as the write meets it; so that
+ *     refusal is journaled. A long note is edited by anchor, or read whole
+ *     first: `obsidian_read_note` with `full: true` returns it whole with
+ *     its rev, the host remembers that whole read (`whole-reads.ts`; one
+ *     memory per connection, told under a token of mtime and size, only
+ *     with a kernel), and this rule stands aside for a call whose if_rev is
+ *     that rev, the note's current rev, and whose token is the remembered
+ *     one (#443). The FS server serves the whole read but keeps no memory
+ *     until #446. A caller that reaches a backend directly is not bound by
+ *     that rule (it is not over MCP) — but by the next one.
  *   - `assertPatchRangeRead`, the same mechanism through the anchored road:
  *     a `replace` whose section runs past the read limit (the top heading of
  *     a long note runs to its end) replaces text no cut read showed. So
  *     `patchNote` on both backends refuses a replace whose range reaches
  *     past the limit on a note longer than it. This one needs the computed
  *     range, so it runs at the write (journaled); append and prepend delete
- *     nothing and are not bound.
+ *     nothing and are not bound, and it stands aside the same way for a
+ *     proven whole read (#443).
  *
  * The read tools report a cut read as `truncated: true` (`isCutRead`). They
  * still return its `rev`: the rev is not what lost the tail, the content was,
  * and an anchored edit of a long note (`obsidian_patch_note`,
  * `obsidian_manage_frontmatter`) needs it.
  */
+import { WRITE_WINDOW_MS } from "./whole-reads.js";
 
 /** The trailer's one spelling. Every other form here — the trailer a read
  *  appends, the whole-line match, the end-of-read match — is built from it. */
@@ -109,8 +119,11 @@ export function carriesTruncationTrailer(text: string): boolean {
   return TRUNCATION_TRAILER_RE.test(text);
 }
 
+/** The write window, as the texts say it, from the one constant. */
+const WINDOW_TEXT = `${WRITE_WINDOW_MS / 60_000} minutes`;
+
 const WAY_OUT =
-  "Edit the note by anchor instead (obsidian_patch_note on a section that ends before the limit, obsidian_append_note, obsidian_manage_frontmatter; the read's rev is good for those). A whole rewrite of a note longer than the read limit waits for a read that returns it whole (#443).";
+  `Edit the note by anchor instead (obsidian_patch_note on a section that ends before the limit, obsidian_append_note, obsidian_manage_frontmatter; the read's rev is good for those). For a whole rewrite on the plugin, read the note whole first — obsidian_read_note with full: true — then write it within ${WINDOW_TEXT} on the same connection, with that read's rev and a NEW idempotency_key (a refused call's key answers with the refusal). The FS server has no such road until #446: edit by anchor there.`;
 
 /** Typed refusal — rendered as `Error [truncated_read]`. Built by the two
  *  guards below; `new TruncatedReadError(path)` is the trailer refusal. */
@@ -137,18 +150,25 @@ export function assertNotTruncatedRead(path: string, text: string): void {
  *  carries `content` with `overwrite: true` for a note whose length on disk
  *  (`noteLength`, in characters; undefined when the note does not exist)
  *  exceeds the read limit is refused: such a note is never overwritten whole
- *  over MCP (the module doc says why). Run BEFORE the queue, like
- *  `cutReadError`. */
+ *  over MCP (the module doc says why). Run by each transport at DEQUEUE,
+ *  where the proof of a whole read is read against the note as the write
+ *  meets it; a refusal there is journaled. */
 export async function wholeNoteOverwriteRefusal(
   args: Record<string, unknown> | undefined,
   noteLength: (path: string) => Promise<number | undefined>,
   limit: number,
+  /** True when the transport served this note whole at the rev the call is
+   *  conditioned on, and the note is still at that rev (#443). */
+  provenWhole?: (path: string) => Promise<boolean>,
 ): Promise<TruncatedReadError | null> {
   if (!args || typeof args.content !== "string" || args.overwrite !== true || typeof args.path !== "string") return null;
   // A create-only item of obsidian_write_notes is dispatched with
   // `overwrite: true` and `create_only: true` (the item carried no if_rev):
   // if the note exists, that is the protection refusal's case, not this one.
   if (args.create_only === true) return null;
+  // The proof first: a stat and a map lookup, against a length probe that
+  // reads the whole note above the limit in bytes.
+  if (provenWhole && (await provenWhole(args.path))) return null;
   const onDisk = await noteLength(args.path);
   if (onDisk === undefined || onDisk <= limit) return null;
   return new TruncatedReadError(
@@ -175,17 +195,6 @@ export function assertPatchRangeRead(path: string, noteLength: number, rangeEnd:
  *  a larger file is read for its character count. */
 export async function noteLengthFrom(size: number, read: () => Promise<string>, limit: number): Promise<number> {
   return size <= limit ? size : (await read()).length;
-}
-
-/** The pre-queue pair, in order, for a transport's interception: the cut
- *  read handed back as `content`, then the whole-note overwrite of a long
- *  note. One implementation for both transports. */
-export async function preQueueTruncationRefusal(
-  args: Record<string, unknown> | undefined,
-  noteLength: ((path: string) => Promise<number | undefined>) | undefined,
-  limit: number,
-): Promise<TruncatedReadError | null> {
-  return cutReadError(args) ?? (noteLength ? wholeNoteOverwriteRefusal(args, noteLength, limit) : null);
 }
 
 /** The interception-point check, for a transport's mutate step: the call's

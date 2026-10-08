@@ -75,6 +75,10 @@ export class FilesystemBackend implements VaultBackend {
     return this.vault.readNote(relPath);
   }
 
+  async readNoteWhole(relPath: string): Promise<string> {
+    return this.vault.readNoteWhole(relPath);
+  }
+
   // ── Read: search ───────────────────────────────────────────────────────────
 
   async searchNotes(query: string, limit: number, mode: SearchMode): Promise<SearchHit[]> {
@@ -142,8 +146,9 @@ export class FilesystemBackend implements VaultBackend {
     anchor: PatchAnchor,
     op: PatchOp,
     content: string,
+    opts: { rangeRuleStandsAside?: boolean } = {},
   ): Promise<{ found: boolean; anchor: PatchAnchor; op: PatchOp; previous?: string }> {
-    return this.vault.patchNote(relPath, anchor, op, content);
+    return this.vault.patchNote(relPath, anchor, op, content, opts);
   }
 
   // ── Write: full note ops ───────────────────────────────────────────────────
