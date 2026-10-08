@@ -1,6 +1,6 @@
 // settings-tab.ts — the plugin's own settings tab.
 //
-// While the provenance surface was a capability module inside the Governor host,
+// While the provenance surface was a capability module inside the Vault MCP host,
 // its configuration was rendered by the host's generic, manifest-driven config
 // tab. A satellite has no such host, so it renders its own. The FIELDS
 // themselves (keys, labels, help text) live in settings.ts as pure data, so they
@@ -72,19 +72,26 @@ export class ProvenanceSettingTab extends PluginSettingTab {
     // to wonder why nothing happens. And say the allowlist posture truthfully:
     // it is FAIL-CLOSED on the whole surface, deliberately, which is a real
     // change in availability for anyone running an allowlist.
-    const hostLoaded = !!(this.app as unknown as {
-      plugins?: { plugins?: Record<string, unknown> };
-    }).plugins?.plugins?.["governor"];
+    // The host is the Vault MCP plugin (id `vault-mcp`; `governor` was its id
+    // from 0.12.0 to the suite split, and is now the separate acceptance
+    // plugin's id). Only the host exposes the plugin-to-plugin `api` object, so
+    // a plugin counts as the host only if it has one — the same lookup
+    // jd-scaffold's settings tab uses.
+    const loadedPlugins = (this.app as unknown as {
+      plugins?: { plugins?: Record<string, { api?: unknown } | undefined> };
+    }).plugins?.plugins;
+    const hostLoaded = ["vault-mcp", "governor"].some((id) => !!loadedPlugins?.[id]?.api);
     containerEl.createEl("p", {
       cls: "setting-item-description",
       text: hostLoaded
-        ? "Governor is installed: the vaultmcp_provenance_check, _reconcile and _regen MCP tools are published to it. " +
-          "Note that under an active Governor path allowlist ALL THREE are refused outright — none of them carries " +
+        ? "The Vault MCP host is installed: the vaultmcp_provenance_check, _reconcile and _regen MCP tools are published to it. " +
+          "Note that under an active Vault MCP path allowlist ALL THREE are refused outright — none of them carries " +
           "an argument the host recognizes as a path, so none can be scoped. That is deliberate: the freshness " +
           "answer names every file a note derives from, and the audit reads the whole notes root, so a scoped " +
           "answer would be a misleading one. With no allowlist configured nothing changes."
-        : "Governor is NOT installed. This plugin's entire surface is the three MCP tools it publishes to the " +
-          "Governor host, so nothing here does anything until Governor is installed and enabled.",
+        : "The Vault MCP host is NOT installed. This plugin's entire surface is the three MCP tools it publishes to that host, " +
+          "so nothing here does anything until Vault MCP (plugin id `vault-mcp`) is installed and enabled. " +
+          "(Governor, the acceptance plugin, is a separate, optional plugin and is not the host — installing it alone does not make these tools reachable.)",
     });
   }
 }

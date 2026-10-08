@@ -1,7 +1,7 @@
 // VAULT VOCABULARY — the controlled vocabulary's read surface as its own
 // Obsidian plugin.
 //
-// Published to the Governor host through vault-mcp-api as four MCP tools:
+// Published to the Vault MCP host through vault-mcp-api as four MCP tools:
 //
 //   vaultmcp_vocab_vocabularies    — enumerate the configured vocabulary sources
 //   vaultmcp_vocab_resolve_term    — token → entry; path → that note's own terms
@@ -38,7 +38,7 @@
 //
 // THIS PLUGIN NEEDS THE HOST, like the triage and crosssession satellites and
 // unlike skills. It has no pane, no palette command and no ribbon: its entire
-// surface is the four published tools. With Governor absent it loads, keeps and
+// surface is the four published tools. With the host absent it loads, keeps and
 // validates its settings, and does nothing — `publishTools` waits on the host's
 // ready event and registers the moment a host appears.
 //
@@ -214,7 +214,7 @@ export default class VaultVocabPlugin extends Plugin {
     // burnt latch with nothing on disk.
     await this.saveData(this.settings);
     console.info(
-      `[vaultmcp-vocab] adopted ${this.settings.vocabularies.length} vocabulary row(s) from the Governor host's ` +
+      `[vaultmcp-vocab] adopted ${this.settings.vocabularies.length} vocabulary row(s) from the Vault MCP host's ` +
         "top-level `vocabularies` setting (one shot; the host's copy is untouched and is no longer read by the host)",
     );
   }

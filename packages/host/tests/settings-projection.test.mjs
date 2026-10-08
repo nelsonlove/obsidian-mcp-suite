@@ -45,9 +45,10 @@ const WITHHELD = {
   enabled: "Decides whether the socket exists at all; a live connection has already answered it.",
   protectedProperties: "Consumed by the frontmatter guard inside the plugin, which the server calls rather than reimplements.",
   vocabularies: "Reaches the server by its own accessor, ctx.getVocabularies() — forwarded, just not through this literal.",
-  enforceRecordImmutability: "Read live per call by the record-immutability guard, deliberately not snapshotted per connection.",
+  enforceRecordImmutability: "Read live per call through its own thunk: obsidianProbe's second argument for the kernel's guard, and ctx.enforceRecordImmutability for the per-connection probe in server.ts. Deliberately not snapshotted per connection.",
   devToolRunner: "Gates an in-Obsidian command surface. No MCP connection can reach it.",
-  recordIdentification: "Read live per call by the record probe through its own thunk (obsidianProbe's third argument), the same way enforceRecordImmutability is — deliberately not snapshotted per connection, so an operator's edit takes effect on the next write without a reconnect.",
+  recordIdentification: "Read live per call through its own thunk (obsidianProbe's third argument for the kernel's guard; ctx.recordIdentification for server.ts's probe, the moves and obsidian_rename_heading), the same way enforceRecordImmutability is — deliberately not snapshotted per connection, so an operator's edit takes effect on the next write without a reconnect.",
+  recordFolders: "The folder indicator (#482), read live per call through its own thunk (ctx.recordFolders, composed with recordIdentification in server.ts for the moves, and the archive pattern for the bracket rule), like recordIdentification: not snapshotted per connection, so an operator's edit takes effect on the next move.",
 };
 
 /** The `field: type;` declarations inside `interface VaultMcpSettings`. */

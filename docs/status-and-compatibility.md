@@ -113,7 +113,7 @@ This suite deliberately describes a future coherent product. The existing reposi
 
 **Historical claim:** An older hazard states that Bases are opaque to MCP and unsuitable when agents must read evaluated rows.
 
-**Implementation evidence:** The current repository documents `vaultmcp_bases_query` (spelled `base_query` while it was one of this plugin's modules, up to the S7 satellite extraction), which asks Obsidian's Bases engine to evaluate a view and returns its rows. (Scope: the host scopes the `.base` path the call names; since the extraction the satellite's own row filter is dormant, because the publishing contract carries no caller scope, so the rows themselves are not filtered.)
+**Implementation evidence:** The current repository documents `vaultmcp_bases_query` (spelled `base_query` while it was one of this plugin's modules, up to the S7 satellite extraction), which asks Obsidian's Bases engine to evaluate a view and returns its rows: by default through Obsidian's own `base:query` evaluator, or through a hidden Bases view for full fidelity (#487). (Scope: the host scopes the `.base` path the call names; since the extraction the satellite's own row filter is dormant, because the publishing contract carries no caller scope, so the rows themselves are not filtered.)
 
 **Resolution:** A Base remains a presentation, not automatic authority. Evaluated rows are agent-readable only when the supported Bases API and the `vaultmcp-bases` satellite plugin are available. The old opacity statement remains historical evidence, not current implementation truth.
 

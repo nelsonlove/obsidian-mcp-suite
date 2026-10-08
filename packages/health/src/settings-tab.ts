@@ -1,6 +1,6 @@
 // settings-tab.ts — the plugin's own settings tab.
 //
-// While the health scan was a capability module inside the Governor host, its
+// While the health scan was a capability module inside the Vault MCP host, its
 // configuration was rendered by the host's generic, manifest-driven config tab. A
 // satellite has no such host, so it renders its own. The FIELDS themselves (key,
 // label, help text) live in settings.ts as pure data, so they stay
@@ -72,14 +72,20 @@ export class HealthSettingTab extends PluginSettingTab {
     // this plugin's whole surface is the two published tools — there is no pane,
     // no command, no ribbon. Say so rather than leaving a user to wonder why
     // nothing happens.
-    const hostLoaded = !!(this.app as unknown as {
-      plugins?: { plugins?: Record<string, unknown> };
-    }).plugins?.plugins?.["governor"];
+    // The host is the Vault MCP plugin (id `vault-mcp`; `governor` was its id
+    // from 0.12.0 to the suite split, and is now the separate acceptance
+    // plugin's id). Only the host exposes the plugin-to-plugin `api` object, so
+    // a plugin counts as the host only if it has one — the same lookup
+    // jd-scaffold's settings tab uses.
+    const loadedPlugins = (this.app as unknown as {
+      plugins?: { plugins?: Record<string, { api?: unknown } | undefined> };
+    }).plugins?.plugins;
+    const hostLoaded = ["vault-mcp", "governor"].some((id) => !!loadedPlugins?.[id]?.api);
     containerEl.createEl("p", {
       cls: "setting-item-description",
       text: hostLoaded
-        ? "Governor is installed: the vaultmcp_health_scan and vaultmcp_health_lint MCP tools are published to it (they were obsidian_health and obsidian_lint while this shipped inside Governor). Note that under an active Governor path allowlist BOTH are refused — neither carries a path argument to scope by, and the scan reads the whole vault by design."
-        : "Governor is NOT installed. This plugin's entire surface is the two MCP tools it publishes to the Governor host, so nothing here does anything until Governor is installed and enabled.",
+        ? "The Vault MCP host is installed: the vaultmcp_health_scan and vaultmcp_health_lint MCP tools are published to it (they were obsidian_health and obsidian_lint while this shipped inside the host, then named Governor). Note that under an active Vault MCP path allowlist BOTH are refused — neither carries a path argument to scope by, and the scan reads the whole vault by design."
+        : "The Vault MCP host is NOT installed. This plugin's entire surface is the two MCP tools it publishes to that host, so nothing here does anything until Vault MCP (plugin id `vault-mcp`) is installed and enabled. (Governor, the acceptance plugin, is a separate, optional plugin and is not the host — installing it alone does not make these tools reachable.)",
     });
   }
 }

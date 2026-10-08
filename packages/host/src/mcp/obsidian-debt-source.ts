@@ -13,7 +13,7 @@ import type { DebtSource, DebtRegisterSource } from "./tools-conformance-debt.js
 import type { Finding } from "../conformance/finding.js";
 import type { SkippedTerritory } from "../conformance/snapshot.js";
 import { parseSidecar, sidecarPathFor, type DebtSidecar } from "../conformance/debt-sidecar.js";
-import { runConformance, baselineRelFrom, excludedRootsFrom, coverageRefusal, baselinePackIds } from "../conformance/cli.js";
+import { runConformance, inAppBaselineRel, inAppBaselineRefusal, inAppBaselineFromEnv, excludedRootsFrom, coverageRefusal, baselinePackIds } from "../conformance/cli.js";
 import { parseBaseline } from "../conformance/ratchet.js";
 import { DEFAULT_VOCABULARIES } from "@vault-mcp/core";
 import { DEFAULT_SCHEMES } from "../kernel/scheme/registry.js";
@@ -38,18 +38,31 @@ function vaultRoot(app: App): string {
 /**
  * The Obsidian `DebtSource`: a live conformance run + the baseline/sidecar on
  * disk, using the SAME config resolution the CLI rail uses (default schemes /
- * vocabularies, env-driven excluded roots and baseline location, legacy packs
- * on). `liveFindings` runs the full engine once; `baselineText`/`sidecar` are
+ * vocabularies, env-driven excluded roots, legacy packs on). The baseline
+ * location is the plugin's Conformance setting, read per call, then the env
+ * override (#493); none configured or a missing note refuses. `liveFindings` runs the full engine once; `baselineText`/`sidecar` are
  * cheap reads.
  */
 export function obsidianDebtSource(app: App, territories?: () => readonly string[], conventions?: () => VaultConventions): DebtSource {
   const root = vaultRoot(app);
-  const baselinePath = join(root, baselineRelFrom(process.env));
+  // Read per call from the live setting (#493), so a changed path applies with no reload. "" ⇒ none configured.
+  const baselineRelNow = () => inAppBaselineRel(conventions?.());
+  const baselinePathNow = () => {
+    const rel = baselineRelNow();
+    return rel ? join(root, rel) : "";
+  };
   const excludedRoots = excludedRootsFrom([], process.env);
   // What the last live run stepped around (#398) — read by the tools after
   // `liveFindings()` resolves, so the report and the register can name it.
   let lastSkipped: readonly SkippedTerritory[] = [];
-  const baselineText = async () => (await readOrNull(baselinePath)) ?? "";
+  // Refuses, never answers empty: a blank or wrong path must not read as "no accepted debt" (#494 review).
+  const baselineText = async () => {
+    const rel = baselineRelNow();
+    const text = rel ? await readOrNull(join(root, rel)) : null;
+    const refusal = inAppBaselineRefusal(rel, text !== null, inAppBaselineFromEnv(conventions?.()));
+    if (refusal) throw new Error(refusal);
+    return text as string;
+  };
 
   return {
     async liveFindings(): Promise<Finding[]> {
@@ -86,7 +99,8 @@ export function obsidianDebtSource(app: App, territories?: () => readonly string
     },
     baselineText,
     async sidecar(): Promise<DebtSidecar> {
-      return parseSidecar(await readOrNull(sidecarPathFor(baselinePath)));
+      const p = baselinePathNow();
+      return parseSidecar(p ? await readOrNull(sidecarPathFor(p)) : null);
     },
   };
 }
@@ -101,8 +115,8 @@ export function obsidianDebtSource(app: App, territories?: () => readonly string
  * never touched.
  */
 export function obsidianDebtRenderSource(app: App, territories?: () => readonly string[], conventions?: () => VaultConventions): DebtRegisterSource {
-  const baselineRel = baselineRelFrom(process.env);
-  const dir = posix.dirname(baselineRel);
+  // Per call, from the live setting (#493).
+  const baselineRel = () => inAppBaselineRel(conventions?.());
   const vault = app.vault as unknown as {
     getAbstractFileByPath(path: string): unknown;
     modify(file: unknown, data: string): Promise<void>;
@@ -112,10 +126,12 @@ export function obsidianDebtRenderSource(app: App, territories?: () => readonly 
   return {
     ...obsidianDebtSource(app, territories, conventions),
     defaultRegisterDir(): string {
+      const rel = baselineRel();
+      const dir = rel ? posix.dirname(rel) : ".";
       return dir === "." ? "" : dir;
     },
     baselineNotePath(): string {
-      return baselineRel;
+      return baselineRel();
     },
     async writeNote(path: string, text: string): Promise<void> {
       const existing = vault.getAbstractFileByPath(path);

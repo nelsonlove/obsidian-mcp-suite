@@ -1,5 +1,5 @@
 // tools.ts — the vaultmcp-vocab satellite's tool surface: the controlled
-// vocabulary's READ surface, four tools published to the Governor host through
+// vocabulary's READ surface, four tools published to the Vault MCP host through
 // `vault-mcp-api` (see main.ts):
 //
 //   vocabularies    — enumerate the configured vocabulary sources
@@ -419,7 +419,7 @@ export function buildVocabTools(source: VocabSource, ctx: VocabToolsCtx): SdkToo
         "Enumerate the configured controlled-vocabulary sources: id, provider, root, capabilities, per-kind entry " +
         "counts and a few example tokens. The discoverability entry point for the vocabulary tools — call this first " +
         "to learn what kinds (tag / property / type / term) this vault's vocabulary actually serves. Read-only in " +
-        "intent; the Governor host registers it as mutating unless this plugin is trusted, and blocks it outright " +
+        "intent; the Vault MCP host registers it as mutating unless this plugin is trusted, and blocks it outright " +
         "while a path allowlist is active (it takes no arguments, so there is no path to scope by).",
       inputSchema: {},
       ...RO,
@@ -449,7 +449,7 @@ export function buildVocabTools(source: VocabSource, ctx: VocabToolsCtx): SdkToo
         "definition, aliases, hierarchy, deprecation. Give `path` to report a note's own vocabulary (its tags, " +
         "properties and types), each resolved. Give `token` with `parse: true` to validate only. A token with more " +
         "than one sense refuses to pick, naming every candidate — like uid resolution. Note the per-call asymmetry " +
-        "under a Governor path allowlist: called with `path` this tool is SCOPED by the host (a hidden note refuses " +
+        "under a Vault MCP path allowlist: called with `path` this tool is SCOPED by the host (a hidden note refuses " +
         "`out_of_allowlist`), but called with `token` it carries no path argument and the host blocks it outright.",
       inputSchema: {
         token: z.string().min(1).optional().describe("A vocabulary token: a tag, property key, type name, or term."),
@@ -563,7 +563,7 @@ export function buildVocabTools(source: VocabSource, ctx: VocabToolsCtx): SdkToo
         "tags (exact-match under the default scope-tags model; namespace-permissive under the legacy blueprint " +
         "grammar), tags outside the note's scope-chain whitelist, unregistered whitelist entries on a scope note, " +
         "undefined properties, unknown or retired types, ambiguous senses. Report-only — findings are returned, " +
-        "never fixed, and nothing is written. `path` is a recognized Governor path argument, so under an active path " +
+        "never fixed, and nothing is written. `path` is a recognized Vault MCP path argument, so under an active path " +
         "allowlist this tool stays available and the host scopes the note you may name.",
       inputSchema: {
         path: z.string().min(1).describe("Vault-relative note path to validate."),
@@ -586,7 +586,7 @@ export function buildVocabTools(source: VocabSource, ctx: VocabToolsCtx): SdkToo
       description:
         "Enumerate the registered vocabulary of one kind (tag / property / type / term), sorted, each entry naming " +
         "the vocabulary that declares it. `scope` confines the listing to entries declared under a path prefix; " +
-        "`vocabulary` narrows to one configured source. Read-only in intent; blocked outright while a Governor path " +
+        "`vocabulary` narrows to one configured source. Read-only in intent; blocked outright while a Vault MCP path " +
         "allowlist is active — `scope` is a path PREFIX, not a recognized path argument, so the call cannot be scoped.",
       inputSchema: {
         kind: KindSchema.describe("Which vocabulary kind to list."),

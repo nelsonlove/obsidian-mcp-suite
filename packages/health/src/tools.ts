@@ -1,5 +1,5 @@
 // tools.ts — the vaultmcp-health satellite's tool surface. TWO tools, published to
-// the Governor host through `vault-mcp-api` (see main.ts):
+// the Vault MCP host through `vault-mcp-api` (see main.ts):
 //
 //   scan — the full tiered health scan → structured findings
 //   lint — the same scan, with findings restricted to one folder or note
@@ -246,7 +246,7 @@ export function buildHealthTools(source: HealthSource, ctx: HealthToolsCtx): Sdk
         "Reads Obsidian's live resolver (metadataCache) and note bodies on disk — nothing is written; the fixing is a " +
         "separate skill. Runs over the WHOLE vault, never a subset: a partial health report would misreport orphans " +
         "(an attachment referenced from outside the subset reads as orphaned) and lose duplicate-group members. It " +
-        "takes no arguments, so the Governor host blocks it outright while a path allowlist is active.",
+        "takes no arguments, so the Vault MCP host blocks it outright while a path allowlist is active.",
       inputSchema: {},
       ...RO,
       handler: async () => {
@@ -267,7 +267,7 @@ export function buildHealthTools(source: HealthSource, ctx: HealthToolsCtx): Sdk
         "TAGS are omitted from a scoped lint (tags are vault-wide and cannot be attributed to a folder — use the scan " +
         "tool for those). A malformed scope (absolute, `..`-escaping, whitespace-padded, or containing a backslash) is " +
         "REFUSED rather than repaired. `scope` is not a path argument the host can scope by, so this tool too is " +
-        "blocked outright while a Governor path allowlist is active.",
+        "blocked outright while a Vault MCP path allowlist is active.",
       inputSchema: {
         scope: z
           .string()

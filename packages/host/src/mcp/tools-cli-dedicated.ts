@@ -76,7 +76,7 @@ export const DEDICATED_CLI_COMMANDS = {
 // gated set, whichever surface names it.
 function dangerRefusal(command: string) {
   return fail(
-    `CLI command '${command}' is dangerous (code execution / app control) and is blocked. Enable "Allow dangerous CLI commands" in the Governor settings to permit it.`
+    `CLI command '${command}' is dangerous (code execution / app control) and is blocked. Enable "Allow dangerous CLI commands" in the Vault MCP settings to permit it.`
   );
 }
 
@@ -288,7 +288,7 @@ export function registerCliDedicatedTools(
         "Uninstall a community plugin by id (pinned CLI `plugin:uninstall` subcommand; the vault is pinned). " +
         "DANGEROUS and destructive: removes the plugin's code and settings from the vault — the human-only \"Allow " +
         "dangerous CLI commands\" setting must be on, exactly as for the raw proxy's plugin:uninstall. Refuses to " +
-        "uninstall the governor plugin itself, or a registered governance provider (that would sever every connected " +
+        "uninstall the Vault MCP host itself (id `vault-mcp`, or its earlier id `governor`), or a registered governance provider (that would sever every connected " +
         "session, or remove the review perimeter). Refuses while a path allowlist is " +
         "active (a plugin uninstall cannot be path-scoped).",
       inputSchema: {

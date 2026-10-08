@@ -55,6 +55,7 @@ export {
 } from "./truncation.js";
 export { WholeReads, WRITE_WINDOW_MS, wholeReadToken } from "./whole-reads.js";
 export type { RevToken } from "./whole-reads.js";
+export { SYNC_UNSAFE_CHARS, UnsafeNameError, syncUnsafeChars, assertSyncSafeName, assertSyncSafeMove, inJdArchive, jdArchiveFolder, hasInboundLinks, type BracketContext, type ArchiveMatcher } from "./sync-names.js";
 export {
   SHARED_ANNOTATIONS,
   FS_TOOLS,

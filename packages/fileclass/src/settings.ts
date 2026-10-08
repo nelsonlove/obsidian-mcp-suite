@@ -4,7 +4,7 @@
 // ── Why adoption exists ─────────────────────────────────────────────────────
 //
 // Before this extraction the fileclass surface was a capability MODULE inside
-// the Governor host, and its configuration lived in the host's data.json at
+// the Vault MCP host, and its configuration lived in the host's data.json at
 // `modules.fileclass.config` — one key, `binaryPath`, an explicit override for
 // the `fileclass` CLI binary. A user who upgrades gets a brand-new plugin with a
 // brand-new, EMPTY data.json. An empty `binaryPath` is not a safety hole (blank

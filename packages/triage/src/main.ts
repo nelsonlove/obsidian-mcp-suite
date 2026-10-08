@@ -1,7 +1,7 @@
 // VAULT TRIAGE — inbox triage as its own Obsidian plugin.
 //
 // The disposition substrate's second instance (#221, phase-3 shape per #241),
-// published to the Governor host through vault-mcp-api as two MCP tools:
+// published to the Vault MCP host through vault-mcp-api as two MCP tools:
 //
 //   vaultmcp_triage_queue    — the agent's view of a triage queue (read-only in
 //                           intent; the host distrusts that claim, see below);
@@ -34,7 +34,7 @@
 //
 // THIS PLUGIN NEEDS THE HOST, which is the opposite of the skills satellite.
 // Triage has no pane, no palette command and no ribbon: its entire surface is
-// the two published tools. With Governor absent it loads, keeps its settings,
+// the two published tools. With the host absent it loads, keeps its settings,
 // adopts nothing, and does nothing — `publishTools` waits on the host's ready
 // event and registers if one appears. The settings tab says so plainly.
 //
@@ -187,6 +187,6 @@ export default class VaultTriagePlugin extends Plugin {
     if (!adopted) return;
     this.settings = adopted;
     await this.saveData(this.settings);
-    console.info("[vaultmcp-triage] adopted the Governor host's modules.triage.config (one shot; the host's copy is untouched)");
+    console.info("[vaultmcp-triage] adopted the Vault MCP host's modules.triage.config (one shot; the host's copy is untouched)");
   }
 }
