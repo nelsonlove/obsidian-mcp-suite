@@ -291,7 +291,7 @@ describe("obsidian_write_notes — idempotency dedupe", () => {
 });
 
 describe("obsidian_write_notes — stamp end-to-end", () => {
-  test("stamp mints uid + created/modified + default proposed and orders the block", async () => {
+  test("stamp mints uid + created/modified + default status draft and orders the block (#433)", async () => {
     const { call, vault, records } = harness();
     const res = await call({
       notes: [{ path: "Stamp/S.md", frontmatter: { name: "S" }, body: "hi" }],
@@ -303,8 +303,9 @@ describe("obsidian_write_notes — stamp end-to-end", () => {
     assert.equal(body.written[0].stamped, true);
 
     const content = vault.get("Stamp/S.md").content;
-    // canonical order: name, uid, created, modified, acceptance-status
-    assert.match(content, /^---\nname: "S"\nuid: "uid-42"\ncreated: "TS\(42\)"\nmodified: "TS\(42\)"\nacceptance-status: "proposed"\n---\nhi$/);
+    // canonical order: name, uid, created, modified, then the rest (status)
+    assert.match(content, /^---\nname: "S"\nuid: "uid-42"\ncreated: "TS\(42\)"\nmodified: "TS\(42\)"\nstatus: "draft"\n---\nhi$/);
+    assert.doesNotMatch(content, /acceptance-status/, "the retired key is never invented");
 
     await tick();
     const recs = records();
