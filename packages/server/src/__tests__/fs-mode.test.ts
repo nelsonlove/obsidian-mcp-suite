@@ -392,6 +392,42 @@ describe("obsidian_write_note — accept-forbidden guard reaches the real fs-fai
     }
   });
 
+  test("a write to a path outside the vault is refused through the real MCP tool, not folded into the vault (#444)", async () => {
+    const { client, teardown } = await makeClientFromFsServer();
+    const text = (r: Awaited<ReturnType<typeof client.callTool>>) => (r.content as Array<{ type: string; text: string }>)[0].text;
+    // A name unique to this run: `..` of the temp vault is the shared temp
+    // root, so a stale file from another run must not fail this one, and on
+    // a regression the stray file is removed below.
+    const name = `outside-444-${process.pid}-${Date.now()}.md`;
+    const outside = path.join(tmpVault, "..", name);
+    try {
+      const res = await client.callTool({ name: "obsidian_write_note", arguments: { path: `../${name}`, content: "x", overwrite: true } });
+      assert.ok(res.isError, `the escaping path must be refused, not written as <vault>/${name}`);
+      assert.match(text(res), /^Error \[invalid_path\]: Path escapes the vault root/);
+      await assert.rejects(readFile(path.join(tmpVault, name), "utf8"), "nothing landed inside the vault under the folded name");
+      await assert.rejects(readFile(outside, "utf8"), "nothing landed outside it either");
+      // Refused before the kernel: no journal record for the attempt.
+      const files = await readdir(tmpJournalDir);
+      const lines = (await Promise.all(files.map((f) => readFile(path.join(tmpJournalDir, f), "utf8")))).join("\n");
+      assert.equal(lines.includes(name), false, "an argument refusal is not journaled");
+      // The same refusal on a move's destination (the `target.paths` branch) and on the read tools.
+      await client.callTool({ name: "obsidian_write_note", arguments: { path: "fs-mode-444/Inside.md", content: "x", overwrite: false } });
+      const moved = await client.callTool({ name: "obsidian_move_note", arguments: { from: "fs-mode-444/Inside.md", to: `../${name}` } });
+      assert.ok(moved.isError);
+      assert.match(text(moved), /^Error \[invalid_path\]/);
+      assert.ok(!(await readFile(path.join(tmpVault, "fs-mode-444/Inside.md"), "utf8")).includes("nothing"), "the source note is still where it was");
+      await assert.rejects(readFile(outside, "utf8"), "the move landed nothing outside");
+      const read = await client.callTool({ name: "obsidian_read_note", arguments: { path: `../${name}` } });
+      assert.ok(read.isError);
+      assert.match(text(read), /^Error \[invalid_path\]/);
+      const batch = JSON.parse(text(await client.callTool({ name: "obsidian_read_notes", arguments: { paths: [`../${name}`] } }))) as { errors: Array<{ error: string }> };
+      assert.match(batch.errors[0].error, /escapes the vault root/);
+    } finally {
+      await rm(outside, { force: true });
+      await teardown();
+    }
+  });
+
   test("a write carrying an accepted-family value behind a leading BOM is REFUSED (recognition parity)", async () => {
     const { client, teardown } = await makeClientFromFsServer();
     try {

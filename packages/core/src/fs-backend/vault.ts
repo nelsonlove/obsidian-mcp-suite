@@ -32,6 +32,25 @@ import { assertNotTruncatedRead, assertPatchRangeRead, truncateForRead } from ".
  * per-instance vault roots without touching the module-level singleton.
  */
 
+/** A vault-relative path the vault refuses to resolve — rendered as
+ *  `Error [invalid_path]`, the code every sibling package uses for the same
+ *  mistakes (#444). */
+export class InvalidPathError extends Error {
+  readonly code = "invalid_path";
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidPathError";
+  }
+}
+
+/** The one containment check: `abs` is `root` or lies under it. Both sides
+ *  must be resolved paths; a doubled or trailing separator on either defeats
+ *  the textual test (#444). */
+function isWithin(root: string, abs: string): boolean {
+  const rootWithSep = root.endsWith(path.sep) ? root : root + path.sep;
+  return abs === root || abs.startsWith(rootWithSep);
+}
+
 // Folders we never traverse or expose.
 const IGNORED_DIRS = new Set([".obsidian", ".trash", ".git", "node_modules"]);
 
@@ -323,7 +342,12 @@ export function decodeHtmlEntities(s: string): string {
 class VaultImpl {
   private realRootCache: string | null = null;
 
-  constructor(readonly root: string) {}
+  readonly root: string;
+  /** The root is normalised once (`path.resolve`), because `isWithin` is a
+   *  textual check against resolved children (#444). */
+  constructor(root: string) {
+    this.root = path.resolve(root);
+  }
 
   private realVaultRoot(): string {
     if (this.realRootCache) return this.realRootCache;
@@ -356,10 +380,8 @@ class VaultImpl {
         }
         throw e;
       }
-      const root = this.realVaultRoot();
-      const rootWithSep = root.endsWith(path.sep) ? root : root + path.sep;
-      if (real !== root && !real.startsWith(rootWithSep)) {
-        throw new Error(`Path escapes the vault root via symlink: '${relPath}'`);
+      if (!isWithin(this.realVaultRoot(), real)) {
+        throw new InvalidPathError(`Path escapes the vault root via symlink: '${relPath}'`);
       }
       return;
     }
@@ -371,15 +393,31 @@ class VaultImpl {
    * it, or hits an ignored folder.
    */
   resolveInVault(relPath: string): string {
-    const normalized = path.normalize(relPath).replace(/^(\.\.(\/|\\|$))+/, "");
-    const abs = path.resolve(this.root, normalized);
-    const rootWithSep = this.root.endsWith(path.sep) ? this.root : this.root + path.sep;
-    if (abs !== this.root && !abs.startsWith(rootWithSep)) {
-      throw new Error(`Path escapes the vault root: '${relPath}'`);
+    // A backslash is refused outright, on every platform, as every sibling
+    // package does: a vault path uses '/', an Obsidian name may not contain
+    // '\\', and everything downstream (the journal, the index, the ignored
+    // folder check) splits on '/' alone — so a platform where '\\' is the
+    // separator would give the same note two spellings. The removed regex
+    // used to fold `..\\x.md` into the vault.
+    if (relPath.includes("\\")) {
+      throw new InvalidPathError(`Path contains a backslash; vault paths use '/': '${relPath}'`);
+    }
+    // A vault path is relative: an absolute one, even inside the vault,
+    // would give the note a second spelling in the journal and the index
+    // (docs/developer-guide.md: reject absolute paths).
+    if (path.isAbsolute(relPath)) {
+      throw new InvalidPathError(`Path is absolute; vault paths are relative to the vault root: '${relPath}'`);
+    }
+    // A path that climbs out of the vault is REFUSED by the check below, not
+    // folded back in: `../outside.md` used to be written silently as
+    // `outside.md` inside the vault and reported as created (#444).
+    const abs = path.resolve(this.root, relPath);
+    if (!isWithin(this.root, abs)) {
+      throw new InvalidPathError(`Path escapes the vault root: '${relPath}'`);
     }
     const segments = path.relative(this.root, abs).split(path.sep);
     if (segments.some((s) => IGNORED_DIRS.has(s))) {
-      throw new Error(`Path touches an ignored folder: '${relPath}'`);
+      throw new InvalidPathError(`Path touches an ignored folder: '${relPath}'`);
     }
     this.assertNoSymlinkEscape(abs, relPath);
     return abs;

@@ -143,7 +143,10 @@ export function getFsWriteKernel(): FsWriteKernel {
     processKernel = new FsWriteKernel({
       journalDir: defaultJournalDir(vaultName),
       identity: { vault: vaultName, version: SERVER_VERSION },
-      resolvePath: (relPath) => path.join(vaultRoot(), relPath),
+      // Through the vault's resolver: an escaping path is never stat'ed for
+      // the journal's revBefore (its throw is swallowed by the kernel's
+      // revOf, which then records no rev) (#444).
+      resolvePath: (relPath) => resolveInVault(relPath),
     });
   }
   return processKernel;
@@ -251,6 +254,12 @@ export function makeBackend(
     fn: () => Promise<T>,
   ): Promise<T> => {
     requireWrites();
+    // A malformed or escaping path is refused before the queue, typed
+    // (`invalid_path`) by the vault's own resolver, unjournaled like every
+    // argument refusal (#444): the kernel never queues or records an attempt
+    // the vault would refuse. The paths are the op's own `target`, the same
+    // set the journal records, so no key list has to be kept by hand.
+    for (const p of target.paths ?? (target.path ? [target.path] : [])) resolveInVault(p);
     // A cut read handed back as `content` is refused before the queue, as the
     // host's guard does (#441): unjournaled, like every argument refusal.
     const cut = cutReadError(args);

@@ -739,7 +739,10 @@ export class IndexStore {
   private _mutationQueue: Promise<unknown> = Promise.resolve();
 
   constructor(vaultRoot: string) {
-    this._vaultRoot = vaultRoot;
+    // Resolved once, here, like VaultImpl's: a doubled or trailing separator
+    // in one root and not the other is the class of bug a textual path
+    // comparison then has (#444).
+    this._vaultRoot = path.resolve(vaultRoot);
   }
 
   private _enqueueMutation<T>(work: () => Promise<T> | T): Promise<T> {

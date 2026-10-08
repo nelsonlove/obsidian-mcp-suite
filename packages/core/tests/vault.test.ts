@@ -38,10 +38,34 @@ describe("resolveInVault — lexical guards", () => {
     assert.ok(abs.endsWith(path.join("Projects", "Plan.md")));
   });
 
-  test("strips leading ../ rather than escaping", () => {
-    const abs = vault.resolveInVault("../../etc/passwd");
-    // Must stay inside the vault root, not resolve to the real /etc/passwd.
-    assert.ok(abs.startsWith(tmpRoot + path.sep));
+  test("refuses a path that climbs out of the vault, rather than folding it back in (#444)", () => {
+    // Used to be stripped to `etc/passwd` inside the vault and written there
+    // silently; a caller that asked for a path outside the vault is told so.
+    assert.throws(() => vault.resolveInVault("../../etc/passwd"), /escapes the vault root/);
+    assert.throws(() => vault.resolveInVault("../outside.md"), /escapes the vault root/);
+    assert.throws(() => vault.resolveInVault("sub/../../outside.md"), /escapes the vault root/);
+    assert.throws(() => vault.resolveInVault("/etc/passwd"), /absolute/);
+    assert.throws(() => vault.resolveInVault(path.join(tmpRoot, "Plan.md")), /absolute/, "an absolute path inside the vault is refused too: a note has one spelling");
+    // Climbing inside the vault is fine.
+    assert.ok(vault.resolveInVault("sub/../Plan.md").endsWith(path.join(tmpRoot, "Plan.md")));
+  });
+
+  test("a root with a doubled or trailing separator is normalised once, so every path resolves and the root itself is clean (#444)", () => {
+    const doubled = vault.createVaultAt(tmpRoot + path.sep + path.sep);
+    assert.equal(doubled.root, path.resolve(tmpRoot), "the root is the one spelling");
+    assert.ok(doubled.resolveInVault("Projects/Plan.md").endsWith(path.join("Projects", "Plan.md")));
+    const trailing = vault.createVaultAt(tmpRoot + path.sep);
+    assert.equal(trailing.root, path.resolve(tmpRoot));
+    assert.ok(trailing.resolveInVault("Plan.md").endsWith(path.join(tmpRoot, "Plan.md")));
+    assert.throws(() => trailing.resolveInVault("../outside.md"), /escapes the vault root/);
+  });
+
+  test("a backslash in a path is refused outright, on every platform, typed invalid_path", () => {
+    assert.throws(() => vault.resolveInVault("..\\outside.md"), (e) => e.code === "invalid_path" && /backslash/.test(e.message));
+    assert.throws(() => vault.resolveInVault("Projects\\Plan.md"), /backslash/);
+    assert.throws(() => vault.resolveInVault("../outside.md"), (e) => e.code === "invalid_path");
+    assert.throws(() => vault.resolveInVault("/etc/passwd"), (e) => e.code === "invalid_path");
+    assert.throws(() => vault.resolveInVault(".git/config"), (e) => e.code === "invalid_path");
   });
 
   test("refuses ignored folders", () => {
