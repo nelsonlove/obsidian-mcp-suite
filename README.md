@@ -158,7 +158,7 @@ The refusal comes before the write queue, so a refused call is not in the journa
 | satellite tools (`vaultmcp_*`) | not enforced yet: the SDK cannot declare protection until apiVersion 3 | The known gap: every satellite is off today. |
 <!-- protection-table:end -->
 
-**Three temporary exemptions.** `obsidian_repoint_link`, `obsidian_snippet_write` and `obsidian_conformance_debt_render` are ruled `if_rev` tools, but the host cannot check an `if_rev` for them honestly yet: it checks the revision of the first path a call names, and these name no path, or only the note links point at. Nelson ruled on 2026-09-29 that they are exempt until [#427](https://github.com/nelsonlove/obsidian-mcp-suite/issues/427) gives the host a revision it can check, a snippet revision and one per note found in a scan. Then they go back to requiring `if_rev`.
+**Three temporary exemptions.** `obsidian_repoint_link`, `obsidian_snippet_write` and `obsidian_conformance_debt_render` are ruled `if_rev` tools, but the host cannot check an `if_rev` for them honestly yet: it checks the revision of the first path a call names, and these name no path, or only the note links point at. Nelson ruled on 2026-09-29 that they are exempt until [#427](https://github.com/nelsonlove/vault-mcp/issues/427) gives the host a revision it can check, a snippet revision and one per note found in a scan. Then they go back to requiring `if_rev`.
 
 **The satellite gap.** Tools published by the satellite plugins (`vaultmcp_*`) are not checked. The `vault-mcp-api` SDK has no way to declare a tool's protection until apiVersion 3. Every satellite is off today.
 
@@ -170,7 +170,7 @@ Updating a live install while agents are writing has its own rules (a versioned 
 
 Neither plugin is yet in Obsidian's Community Plugins directory (the submission is target state — see [Status and compatibility](docs/status-and-compatibility.md)). Governor ships as two plugins: install the host, and optionally install the governance provider on top of it.
 
-1. **Build** (or grab a [release](https://github.com/nelsonlove/obsidian-mcp-suite/releases) — BRAT-installable):
+1. **Build** (or grab a [release](https://github.com/nelsonlove/vault-mcp/releases) — BRAT-installable):
    ```bash
    npm install && npm run build      # builds both packages/host and packages/governor
    ```
