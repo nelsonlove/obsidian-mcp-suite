@@ -16,7 +16,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nelsonlove/obsidian-mcp-suite.git",
+    "url": "git+https://github.com/nelsonlove/vault-mcp.git",
     "directory": "packages/vault-mcp-api"
   },
   "license": "MIT",
