@@ -64,6 +64,9 @@ export {
 } from "./tool-registry.js";
 export type { Capability, ToolDef, ToolAnnotations } from "./tool-registry.js";
 export { registerFsTools } from "./register-fs-tools.js";
+export { strictInput, isObjectSchema, inputShapeOf, inputObjectOf, extendInput } from "./strict-input.js";
+export type { InputShape, InputSchema } from "./strict-input.js";
+export { renderNoteWithFrontmatter, opensWithFrontmatter, jsonFlowYaml } from "./note-frontmatter.js";
 export type { RegisterFsToolsOpts, IndexStatusSnapshot } from "./register-fs-tools.js";
 export type {
   VaultBackend,

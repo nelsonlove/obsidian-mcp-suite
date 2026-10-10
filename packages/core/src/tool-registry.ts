@@ -22,6 +22,12 @@ export interface ToolDef {
   inputSchema: Record<string, z.ZodTypeAny>;
   annotations: ToolAnnotations;
   capability: Capability;
+  /**
+   * Refuse an argument the schema does not name (#500). registerFsTools
+   * registers such a tool with `strictInput(inputSchema)`; without it the SDK
+   * strips an unknown argument and the call runs as if it were never sent.
+   */
+  strictArgs?: boolean;
 }
 
 // ── Annotation presets — match plugin's existing annotation values ─────────────
@@ -351,14 +357,22 @@ export const FS_TOOLS: ToolDef[] = [
     description:
       "Create a note, or overwrite an existing one when overwrite=true. Path must end in .md. Parent folders are created as needed. A NEW note's path may not hold a character Obsidian Sync refuses (\\ : * ? \" < > |) or one that breaks links (# ^ [ ]): refused with `unsafe_name`; On the live Obsidian server, [ ] are allowed only in the name of a note under an existing archive folder (one the plugin's archive pattern names) that no other note links to, never in a folder name (the filesystem server never allows them); an existing note with such a name is still written in place. " +
       "An overwrite that changes a heading's text breaks every [[Note#Heading]] link to it: to rename a heading, use `obsidian_rename_heading` (on the live Obsidian server), which rewrites those links. " +
+      "Pass frontmatter either inside `content` or as the `frontmatter` object, never both. An argument this tool does not name is refused, never ignored. " +
       "Never write back a cut read (a note over the read limit comes back with a `[truncated: …]` line and `truncated: true`): content carrying that line, or any whole-note overwrite of a note longer than the limit (never done whole over MCP), is refused with Error [truncated_read]; edit such a note by anchor.",
     inputSchema: {
       path: z.string().min(1).describe("Vault-relative path ending in .md."),
-      content: z.string().describe("Full markdown content to write."),
+      content: z.string().describe("Full markdown content to write. With `frontmatter`, the body below it."),
+      frontmatter: z
+        .record(z.unknown())
+        .optional()
+        .describe(
+          "Frontmatter key/values. When given, the note is written as `---` + this YAML + `---` + `content`, as obsidian_write_notes writes an item; `content` must then not open with its own `---` fence (refused). Omit it to write `content` exactly as given."
+        ),
       overwrite: z.boolean().default(false).describe("Replace an existing note. Default false (refuses if it exists)."),
     },
     annotations: DESTRUCTIVE,
     capability: "fs-expressible",
+    strictArgs: true,
   },
 
   {

@@ -313,6 +313,81 @@ describe("registerFsTools", () => {
     }
   });
 
+  // #500: a caller passed `frontmatter` before write_note had it; the SDK
+  // stripped it and `content` became the whole note, frontmatter lost.
+  test("obsidian_write_note composes `frontmatter` above `content` (#500)", async () => {
+    const backend = new FakeVaultBackend();
+    const { client, teardown } = await makeClientServer(backend);
+    try {
+      const r = await client.callTool({
+        name: "obsidian_write_note",
+        arguments: {
+          path: "Fm/Note.md",
+          frontmatter: { title: "A note", tags: ["a", "b"], count: 2, flag: true, odd: "yes: no" },
+          content: "# Body\n",
+        },
+      });
+      assert.ok(!r.isError, `write failed: ${JSON.stringify(r.content)}`);
+      assert.equal(
+        await backend.readNote("Fm/Note.md"),
+        '---\ntitle: A note\ntags: ["a","b"]\ncount: 2\nflag: true\nodd: "yes: no"\n---\n# Body\n',
+      );
+    } finally {
+      await teardown();
+    }
+  });
+
+  test("obsidian_write_note refuses an argument it does not name, and writes nothing (#500)", async () => {
+    const backend = new FakeVaultBackend();
+    const { client, teardown } = await makeClientServer(backend);
+    try {
+      const r = await client.callTool({
+        name: "obsidian_write_note",
+        arguments: { path: "Fm/Typo.md", content: "# Body\n", front_matter: { title: "lost" } },
+      });
+      assert.equal(r.isError, true, `expected a refusal, got ${JSON.stringify(r.content)}`);
+      assert.match(JSON.stringify(r.content), /front_matter/);
+      await assert.rejects(backend.readNote("Fm/Typo.md"), /not found/);
+    } finally {
+      await teardown();
+    }
+  });
+
+  test("obsidian_write_note refuses `frontmatter` with a `content` that has its own fence (#500)", async () => {
+    const backend = new FakeVaultBackend();
+    const { client, teardown } = await makeClientServer(backend);
+    try {
+      const r = await client.callTool({
+        name: "obsidian_write_note",
+        arguments: { path: "Fm/Two.md", frontmatter: { title: "x" }, content: "---\ntitle: y\n---\nbody" },
+      });
+      assert.equal(r.isError, true);
+      assert.match(JSON.stringify(r.content), /own frontmatter fence/);
+      await assert.rejects(backend.readNote("Fm/Two.md"), /not found/);
+    } finally {
+      await teardown();
+    }
+  });
+
+  test("obsidian_write_note without `frontmatter` writes `content` exactly, and its schema forbids extra keys (#500)", async () => {
+    const backend = new FakeVaultBackend();
+    const { client, teardown } = await makeClientServer(backend);
+    try {
+      const r = await client.callTool({
+        name: "obsidian_write_note",
+        arguments: { path: "Fm/Plain.md", content: "---\ntitle: kept\n---\nbody" },
+      });
+      assert.ok(!r.isError);
+      assert.equal(await backend.readNote("Fm/Plain.md"), "---\ntitle: kept\n---\nbody");
+      const { tools } = await client.listTools();
+      const wn = tools.find((t) => t.name === "obsidian_write_note")!;
+      assert.equal((wn.inputSchema as { additionalProperties?: unknown }).additionalProperties, false);
+      assert.ok("frontmatter" in ((wn.inputSchema as { properties: object }).properties));
+    } finally {
+      await teardown();
+    }
+  });
+
   test("obsidian_force_reindex returns timing fields and calls backend.forceReindex()", async () => {
     const backend = new FakeVaultBackend();
     let count = 0;

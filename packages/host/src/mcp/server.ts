@@ -433,6 +433,8 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   }, recordIdentification);
   registerFsTools(server, backend, {
     decodeHtml: false,
+    // obsidian_write_note's `frontmatter` (#500) is serialized as obsidian_write_notes serializes an item's.
+    stringifyYaml,
     rev: (p) => probe.rev(p),
     // The token a whole read is remembered under: the mtime (the rev the
     // caller will condition on) and the size (a coarse-mtime volume keeps

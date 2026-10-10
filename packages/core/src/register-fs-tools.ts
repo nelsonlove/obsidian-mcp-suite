@@ -14,6 +14,8 @@ import { FS_TOOLS } from "./tool-registry.js";
 import { ok, fail } from "./responses.js";
 import { CHARACTER_LIMIT, decodeHtmlEntities } from "./fs-backend/vault.js";
 import { isCutRead } from "./truncation.js";
+import { strictInput } from "./strict-input.js";
+import { renderNoteWithFrontmatter, opensWithFrontmatter, jsonFlowYaml } from "./note-frontmatter.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -69,6 +71,12 @@ export interface RegisterFsToolsOpts {
    * exactly as before.
    */
   rev?: (path: string) => number | string | undefined;
+  /**
+   * Serialize a frontmatter object to YAML, for `obsidian_write_note`'s
+   * `frontmatter` argument (#500): `obsidian.stringifyYaml` on the live host,
+   * the same serializer `obsidian_write_notes` uses. Absent ⇒ `jsonFlowYaml`.
+   */
+  stringifyYaml?: (obj: Record<string, unknown>) => string;
 }
 
 /**
@@ -90,18 +98,18 @@ type ToolRegistrar = { registerTool(name: string, meta: any, handler: (args: any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function registerFsTools(server: any, backend: VaultBackend, opts: RegisterFsToolsOpts = {}): void {
   const reg = server as ToolRegistrar;
-  const { decodeHtml = false, includeIndexStatus, rev, onWholeRead, wholeToken, onCutRead } = opts;
+  const { decodeHtml = false, includeIndexStatus, rev, onWholeRead, wholeToken, onCutRead, stringifyYaml = jsonFlowYaml } = opts;
 
   const dec = (s: string): string => (decodeHtml ? decodeHtmlEntities(s) : s);
 
   for (const tool of FS_TOOLS) {
-    const handler = makeHandler(tool.name, backend, dec, includeIndexStatus, rev, onWholeRead, wholeToken, onCutRead);
+    const handler = makeHandler(tool.name, backend, dec, includeIndexStatus, rev, onWholeRead, wholeToken, onCutRead, stringifyYaml);
     reg.registerTool(
       tool.name,
       {
         title: tool.title,
         description: tool.description,
-        inputSchema: tool.inputSchema,
+        inputSchema: tool.strictArgs ? strictInput(tool.inputSchema) : tool.inputSchema,
         annotations: tool.annotations,
       },
       handler,
@@ -120,6 +128,7 @@ function makeHandler(
   onWholeRead?: (path: string, token: string) => void,
   wholeToken?: (path: string) => { token: string; rev?: number } | undefined,
   onCutRead?: (path: string) => void,
+  stringifyYaml: (obj: Record<string, unknown>) => string = jsonFlowYaml,
 ) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const status = (extra: Record<string, unknown> = {}): Record<string, unknown> =>
@@ -434,9 +443,19 @@ function makeHandler(
 
     // ── obsidian_write_note ────────────────────────────────────────────────
     case "obsidian_write_note":
-      return async ({ path: p, content, overwrite }: { path: string; content: string; overwrite: boolean }) => {
+      return async ({ path: p, content, overwrite, frontmatter }: { path: string; content: string; overwrite: boolean; frontmatter?: Record<string, unknown> }) => {
         try {
-          return ok(await backend.writeNote(dec(p), content, overwrite));
+          // #500: `frontmatter` is composed with `content` as its body, as
+          // obsidian_write_notes composes an item. A body that opens with its
+          // own fence would give the note two, so that is refused.
+          if (frontmatter !== undefined && Object.keys(frontmatter).length > 0 && opensWithFrontmatter(content)) {
+            throw new Error(
+              "`content` opens with its own frontmatter fence and `frontmatter` was also given; nothing was written. " +
+                "Pass the frontmatter one way: inside `content`, or as `frontmatter` with `content` as the body.",
+            );
+          }
+          const text = frontmatter === undefined ? content : renderNoteWithFrontmatter(frontmatter, content, stringifyYaml);
+          return ok(await backend.writeNote(dec(p), text, overwrite));
         } catch (e) {
           return fail(e);
         }
