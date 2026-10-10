@@ -309,9 +309,9 @@ const SCHEME: McpSurfaceRow[] = [
   // header cites as the reason the optimistic default is wrong. (Their result
   // envelopes report `filesChanged: 1`, counting only the moved note — a
   // separate under-count, noted here rather than fixed in this PR.)
-  { tool: "obsidian_assign_address", readOnly: false, module: "scheme", distribution: "public-optional", paths: ["path"], postcondition: "Move a note to the next free address in a scope; never overwrites, because it always targets a free slot.", protection: "key" },
-  { tool: "obsidian_refile_address", readOnly: false, module: "scheme", distribution: "public-optional", paths: ["path"], postcondition: "Move a note to the folder its own address expects, or report it already correct.", protection: "key" },
-  { tool: "obsidian_renumber_address", readOnly: false, module: "scheme", distribution: "public-optional", paths: ["path"], postcondition: "Move a note to a specific address, optionally displacing the occupant first.", protection: "key" },
+  { tool: "obsidian_assign_address", readOnly: false, module: "scheme", distribution: "public-optional", paths: ["path"], gate: "schemeModuleEnabled(ctx.getSettings())", postcondition: "Move a note to the next free address in a scope; never overwrites, because it always targets a free slot.", protection: "key" },
+  { tool: "obsidian_refile_address", readOnly: false, module: "scheme", distribution: "public-optional", paths: ["path"], gate: "schemeModuleEnabled(ctx.getSettings())", postcondition: "Move a note to the folder its own address expects, or report it already correct.", protection: "key" },
+  { tool: "obsidian_renumber_address", readOnly: false, module: "scheme", distribution: "public-optional", paths: ["path"], gate: "schemeModuleEnabled(ctx.getSettings())", postcondition: "Move a note to a specific address, optionally displacing the occupant first.", protection: "key" },
 ];
 
 // The four `obsidian_vocab*` rows, the two `base_*` rows and the two health
