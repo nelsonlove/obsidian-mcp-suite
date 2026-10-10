@@ -215,3 +215,11 @@ test("`note` is NOT a recognized path key — the read half of the round-2 postu
   // silently become path oracles again.
   assert.deepEqual(collectPaths({ note: "Records/x.md" }), []);
 });
+
+// #500: obsidian_write_note's `frontmatter` is note data, never path arguments.
+test("a frontmatter object's from/to/path values are not paths", () => {
+  const args = { path: "Notes/a.md", frontmatter: { from: "Alice", to: "Bob", path: "uid:abc", paths: ["x"] }, content: "" };
+  assert.deepEqual(collectPaths(args), ["Notes/a.md"]);
+  const r = guardCall({ isMutating: true, args, settings: { readOnly: false, allowlist: ["Notes"] } });
+  assert.equal(r, null, "an in-allowlist write is not refused for its frontmatter values");
+});
