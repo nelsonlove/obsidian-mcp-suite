@@ -129,8 +129,9 @@ describe("conventionsOnLoad — seed once, fresh empty, present kept", () => {
     assert.deepEqual(conventionsOnLoad({ vaultConventions: { baselineRel: "   " } }).conventions.baselineRel, "");
     assert.equal(conventionsOnLoad({ vaultConventions: { baselineRel: "   " } }).persist, false);
   });
-  test("#493: the seed's baselineRel is the former DEFAULT_BASELINE_REL value, so an upgrade reads the same note", () => {
-    assert.equal(LEGACY_CONVENTIONS_SEED.baselineRel, "00-09 System/00 System management/00.89 obsidian-mcp-suite/Archive/Build/Conformance baseline.md");
+  test("#493: the seed's baselineRel is the former DEFAULT_BASELINE_REL note, under its folder's current name (#505), so an upgrade reads the same note", () => {
+    assert.equal(LEGACY_CONVENTIONS_SEED.baselineRel, "00-09 System/00 System management/00.89 vault-mcp/Archive/Build/Conformance baseline.md");
+    assert.ok(LEGACY_CONVENTIONS_SEED.baselineRel.startsWith(LEGACY_CONVENTIONS_SEED.ungovernedRoots[0] + "/"), "the baseline sits in the seed's own ungoverned root");
     assert.equal(EMPTY_VAULT_CONVENTIONS.baselineRel, "", "the plugin ships no baseline path");
   });
 });
