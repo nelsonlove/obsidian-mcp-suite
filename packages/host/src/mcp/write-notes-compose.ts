@@ -51,6 +51,7 @@ import {
   frontmatterOf,
   stripLeadingBom,
   LEADING_FRONTMATTER_RE,
+  renderNoteWithFrontmatter,
 } from "@vault-mcp/core";
 export { AcceptForbiddenError, acceptTransitionReason, acceptForbiddenReason, frontmatterOf, stripLeadingBom, LEADING_FRONTMATTER_RE };
 
@@ -246,13 +247,5 @@ export function composeNote(args: ComposeArgs): ComposeResult {
 }
 
 /** `---\n<yaml>---\n<body>`, or just the body when there is no frontmatter. */
-function renderNote(
-  fm: Record<string, unknown>,
-  body: string,
-  stringifyYaml: (obj: Record<string, unknown>) => string
-): string {
-  if (Object.keys(fm).length === 0) return body;
-  let yaml = stringifyYaml(fm);
-  if (!yaml.endsWith("\n")) yaml += "\n";
-  return `---\n${yaml}---\n${body}`;
-}
+// One definition in core, shared with obsidian_write_note's `frontmatter` (#500).
+const renderNote = renderNoteWithFrontmatter;

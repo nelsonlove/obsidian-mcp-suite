@@ -10,20 +10,20 @@
 // external) into a CapturedRegistry with the guard wrapper already applied, so
 // read-only mode and the path allowlist bind exactly as they do on the full
 // surface — the guard sees the TARGET tool's annotations and args, not the
-// meta-tool's. Args are validated against the captured zod shape before the
+// meta-tool's. Args are validated against the captured zod schema before the
 // handler runs, matching the SDK's own validation on the full surface.
 
-import { z, type ZodRawShape } from "zod";
+import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { SHARED_ANNOTATIONS } from "@vault-mcp/core";
+import { SHARED_ANNOTATIONS, inputObjectOf, type InputSchema } from "@vault-mcp/core";
 import { ok, fail } from "./helpers.js";
 
 export interface CapturedTool {
   def: {
     title?: string;
     description?: string;
-    inputSchema?: ZodRawShape;
+    inputSchema?: InputSchema;
     annotations?: { readOnlyHint?: boolean; [k: string]: unknown };
   };
   /** The guard-wrapped handler — invoking it enforces read-only/allowlist.
@@ -94,7 +94,7 @@ export function describeTool(registry: CapturedRegistry, name: string) {
   return {
     ...summarize(name, t),
     annotations: t.def.annotations ?? {},
-    input_schema: zodToJsonSchema(z.object(t.def.inputSchema ?? {})),
+    input_schema: zodToJsonSchema(inputObjectOf(t.def.inputSchema)),
   };
 }
 
@@ -115,7 +115,7 @@ export async function callCapturedTool(
 ): Promise<any> {
   const t = registry.get(name);
   if (!t) return fail(new Error(`unknown tool '${name}' — use obsidian_search_tools to list available tools`));
-  const parsed = z.object(t.def.inputSchema ?? {}).safeParse(args ?? {});
+  const parsed = inputObjectOf(t.def.inputSchema).safeParse(args ?? {});
   if (!parsed.success) {
     const issues = parsed.error.issues
       .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)

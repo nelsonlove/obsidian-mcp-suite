@@ -38,6 +38,13 @@ export type { GuardSettings };
 const PATH_KEYS = ["path", "from", "to", "target_path", "template_path", "subdir", "file_path", "output_folder", "note_path"];
 // Keys whose ARRAY values carry paths (refs = obsidian_resolve's batch input).
 const ARRAY_PATH_KEYS = ["paths", "refs"];
+// Keys whose value is NOTE DATA, never walked (#500): `obsidian_write_note`'s
+// `frontmatter` is the caller's own key/values, so a `from`, `to` or `path`
+// inside it is a property of the note, not a vault path. Walking it would
+// refuse a legitimate write under an allowlist, rewrite a `uid:` value the
+// caller meant as text, and name a wrong target to the record guard, the lock
+// consult and the journal. Its paths are none: the note is the call's `path`.
+const DATA_KEYS = ["frontmatter"];
 // Defensive depth cap: MCP args arrive as parsed JSON, so nesting is bounded in
 // practice and a cycle is impossible.
 const MAX_DEPTH = 8;
@@ -78,6 +85,10 @@ export function mapPaths(
     let changed = false;
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (DATA_KEYS.includes(k)) {
+        out[k] = v;
+        continue;
+      }
       const isPathKey = PATH_KEYS.includes(k) || ARRAY_PATH_KEYS.includes(k);
       let mapped: unknown;
       if (isPathKey && typeof v === "string" && v) {
