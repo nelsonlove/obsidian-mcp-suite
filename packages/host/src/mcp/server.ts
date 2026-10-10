@@ -26,7 +26,7 @@ import { registerLinkTools, obsidianLinkSource } from "./tools-links.js";
 import { registerConformanceDebtTools, registerConformanceDebtRenderTool } from "./tools-conformance-debt.js";
 import { obsidianDebtRenderSource } from "./obsidian-debt-source.js";
 import { resolveConventions } from "../conformance/vault-conventions.js";
-import { mountModules } from "./modules-mount.js";
+import { mountModules, schemeModuleEnabled } from "./modules-mount.js";
 import { registerCodeModeTools, makeCaptureRegister, type CapturedRegistry } from "./tools-code-mode.js";
 import { makeGuarded, resolveGuardedPath, withKernelArgs } from "./guarded.js";
 import { reportCompletedWrite } from "./seam.js";
@@ -477,12 +477,16 @@ export function buildMcpServer(app: App, ctx: ServerCtx, opts: BuildOpts = {}): 
   // rather than building a third `makeRegistry(...)` closure identical to the
   // one guardedOpts already constructed above — same per-call freshness (a
   // scheme config edit lands live, no reconnect needed), one expression.
-  registerSchemeWriteTools(server, app, {
-    registry: guardedOpts.schemes,
-    notes: guardedOpts.schemeNotes,
-    getSettings: () => ctx.getSettings(),
-    recordIdentification,
-  });
+  // The scheme module's toggle gates these three too (01.28 rule 7, pick A of
+  // 2026-10-09): read once per connection, as mountModules reads it below.
+  if (schemeModuleEnabled(ctx.getSettings())) {
+    registerSchemeWriteTools(server, app, {
+      registry: guardedOpts.schemes,
+      notes: guardedOpts.schemeNotes,
+      getSettings: () => ctx.getSettings(),
+      recordIdentification,
+    });
+  }
   // Folded in from obsidian-jd-survey (2026-08-19). Hand-registered here, the
   // same shape registerSchemeWriteTools above uses: modules-mount.ts's
   // registerAll gate refuses a non-readOnlyHint tool unless its module opts

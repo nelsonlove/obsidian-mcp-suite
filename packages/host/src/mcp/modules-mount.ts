@@ -140,7 +140,7 @@ function validateSchemeManifestConfig(config: Record<string, unknown>): string[]
 const SCHEME_MANIFEST: ModuleManifest = {
   summary:
     "Scope resolution and address allocation over the configured scheme (Johnny Decimal today): resolve, allocate, " +
-    "validate a filename, and check placement. `jd:` addressing in path arguments is kernel-level and stays " +
+    "validate a filename, and check placement; assigning, refiling and renumbering an address are switched off with it. `jd:` addressing in path arguments is kernel-level and stays " +
     "available even when this module is disabled.",
   config: {
     fields: SCHEME_CONFIG_FIELDS,
@@ -507,10 +507,27 @@ export function mountHost(deps: MountDeps): ModuleHostCtx {
  * pair, on the top-level `vocabularies` setting, until it left for the
  * `vaultmcp-vocab` satellite at S7. A NEW module should do the opposite: read
  * `host`/`config` and use `host.visible`, per the adapters doc. */
+/** The scheme module's default `enabled` (the settings tab's toggle overrides it). */
+const SCHEME_ENABLED_BY_DEFAULT = true;
+
+/**
+ * Whether the scheme module is on: `modules.scheme.enabled`, else the
+ * module's default. Read once per connection, as the mount reads it, so a
+ * toggle lands on the next connect. The three scheme WRITE tools
+ * (`obsidian_assign_address`, `obsidian_refile_address`,
+ * `obsidian_renumber_address`) are registered by hand in server.ts, not
+ * through this mount, and server.ts gates them on this same answer, so the
+ * toggle turns off all of the module's tools (01.28 rule 7; Nelson's pick A,
+ * 2026-10-09). `jd:` addressing is kernel-level and stays on either way.
+ */
+export function schemeModuleEnabled(settings: { modules?: ModuleSettings }): boolean {
+  return settings.modules?.scheme?.enabled ?? SCHEME_ENABLED_BY_DEFAULT;
+}
+
 export function builtinModules(deps: MountDeps): VaultModule[] {
   return [
     moduleFromRegistrar(
-      { id: "scheme", capabilities: ["addressing", "allocation"], enabled: true, manifest: SCHEME_MANIFEST, configBinding: schemeBinding },
+      { id: "scheme", capabilities: ["addressing", "allocation"], enabled: SCHEME_ENABLED_BY_DEFAULT, manifest: SCHEME_MANIFEST, configBinding: schemeBinding },
       registerSchemeTools,
       () => ({
         registry: () => makeRegistry(deps.getSettings().schemes ?? DEFAULT_SCHEMES),
