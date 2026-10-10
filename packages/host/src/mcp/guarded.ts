@@ -133,10 +133,12 @@ function reportedEffects(args: Record<string, unknown>, result: unknown): Journa
 // consumed generically (stripped from args here, passed to Kernel.runMutation).
 //
 // The declaration is not optional decoration: the MCP SDK validates a call's
-// arguments against the tool's zod shape and z.object STRIPS unknown keys, so
-// an undeclared `if_rev` would be silently discarded before the handler — and
-// this wrapper — ever saw it. Code Mode's obsidian_call_tool parses against the
-// same captured shape, so declaring once covers both surfaces.
+// arguments against the tool's zod schema. A raw shape becomes z.object, which
+// STRIPS unknown keys, so an undeclared `if_rev` would be silently discarded
+// before the handler — and this wrapper — ever saw it; a strict schema
+// (`strictInput`, #500) would REFUSE it instead. Code Mode's obsidian_call_tool
+// parses against the same captured schema, so declaring once covers both
+// surfaces.
 
 const IF_REV = z
   .number()
@@ -188,7 +190,9 @@ export const KERNEL_ARG_KEYS = ["if_rev", "idempotency_key", "intent"] as const;
  * declaration (nothing here may quietly redefine a tool's contract).
  * Given the tool's NAME, each argument's description opens with the
  * requirement its inventory row states (01.33 rule 6f), so the schema says
- * what the guard will enforce.
+ * what the guard will enforce. The schema keeps its form: a raw shape stays a
+ * shape, a strict object (`strictInput`, #500) stays a strict object, so a
+ * reader of `inputSchema` goes through core's `inputShapeOf` / `inputObjectOf`.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function withKernelArgs(def: any, name?: string): any {

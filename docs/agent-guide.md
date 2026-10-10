@@ -136,6 +136,8 @@ A useful preview includes collisions, partial-scope behavior, dependencies, revi
 
 ### Renaming a heading
 
+`obsidian_write_note` takes frontmatter either inside `content` or as a `frontmatter` object, with `content` then the body below it (as an `obsidian_write_notes` item takes it); both at once is refused. An argument it does not name is refused with a validation error and nothing is written, never ignored (#500).
+
 Rename a heading with `obsidian_rename_heading`, never by editing its text. A link can point at a heading (`[[Note#Heading]]`, `![[Note#Heading]]`, `[[#Heading]]`), and a heading renamed by `obsidian_patch_note`, `obsidian_write_note` or any other text edit leaves every such link pointing at nothing, with no error anywhere. `obsidian_rename_heading` renames the heading and rewrites the links in one operation, and reports under `skipped` what it did not rewrite (links in record notes, frontmatter links, notes that changed mid-run or could not be written, link forms it does not recognize). It requires `if_rev`, the note's revision as you read it (see Required protection below). Run it with `dry_run: true` first to see which notes it will touch.
 
 ### Required protection

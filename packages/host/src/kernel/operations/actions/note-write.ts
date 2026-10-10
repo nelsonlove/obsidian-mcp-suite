@@ -51,6 +51,6 @@ export const NOTE_WRITE_V1: ActionDefinition = {
   // Every mutation is journaled by the kernel; the operation record is
   // durable for exactly that reason.
   retention: { operation: "durable-for-mutation" },
-  inputs: ["path", "content", "overwrite"],
+  inputs: ["path", "content", "frontmatter", "overwrite"],
   native: true,
 };

@@ -10,7 +10,7 @@
 // external) into a CapturedRegistry with the guard wrapper already applied, so
 // read-only mode and the path allowlist bind exactly as they do on the full
 // surface — the guard sees the TARGET tool's annotations and args, not the
-// meta-tool's. Args are validated against the captured zod shape before the
+// meta-tool's. Args are validated against the captured zod schema before the
 // handler runs, matching the SDK's own validation on the full surface.
 
 import { z } from "zod";

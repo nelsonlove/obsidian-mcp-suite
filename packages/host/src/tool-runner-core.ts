@@ -72,7 +72,8 @@ function unwrapSchema(schema: z.ZodTypeAny): { inner: z.ZodTypeAny; description?
 }
 
 /**
- * Derive the args-form fields from a captured tool's zod shape. The kernel
+ * Derive the args-form fields from a captured tool's zod input schema (a raw
+ * shape or an object schema, read through `inputShapeOf`). The kernel
  * arguments (`if_rev` / `idempotency_key` / `intent`) are EXCLUDED: they are
  * declared on every mutating tool's schema by withKernelArgs for agents, and
  * the guard wrapper peels them before any handler — a human clicking a form
