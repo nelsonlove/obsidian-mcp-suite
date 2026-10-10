@@ -43,7 +43,7 @@ import {
   type SchemeRegistry,
 } from "../kernel/scheme/registry.js";
 import { OperationRefusedError, type OperationExecutor } from "../kernel/operations/executor.js";
-import { CHARACTER_LIMIT, cutReadError, wholeNoteOverwriteRefusal, wholeReadToken, type WholeReads } from "@vault-mcp/core";
+import { extendInput, inputShapeOf, CHARACTER_LIMIT, cutReadError, wholeNoteOverwriteRefusal, wholeReadToken, type WholeReads } from "@vault-mcp/core";
 
 /** Guard/queue-level failure envelope: matches the `Error [code]: message` shape guardCall already emits. */
 function codedError(code: string, message: string) {
@@ -193,15 +193,17 @@ export const KERNEL_ARG_KEYS = ["if_rev", "idempotency_key", "intent"] as const;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function withKernelArgs(def: any, name?: string): any {
   if (def?.annotations?.readOnlyHint !== false) return def;
-  const inputSchema = { ...(def.inputSchema ?? {}) };
+  // Either form (#500): a strict object schema stays strict once extended.
+  const shape = inputShapeOf(def.inputSchema);
+  const extra: Record<string, z.ZodTypeAny> = {};
   const noted = (schema: z.ZodTypeAny, which: "if_rev" | "idempotency_key") => {
     const note = name ? requirementNote(name, which) : null;
     return note ? schema.describe(`${note} ${schema.description ?? ""}`) : schema;
   };
-  if (!("if_rev" in inputSchema)) inputSchema.if_rev = noted(IF_REV, "if_rev");
-  if (!("idempotency_key" in inputSchema)) inputSchema.idempotency_key = noted(IDEMPOTENCY_KEY, "idempotency_key");
-  if (!("intent" in inputSchema)) inputSchema.intent = INTENT;
-  return { ...def, inputSchema };
+  if (!("if_rev" in shape)) extra.if_rev = noted(IF_REV, "if_rev");
+  if (!("idempotency_key" in shape)) extra.idempotency_key = noted(IDEMPOTENCY_KEY, "idempotency_key");
+  if (!("intent" in shape)) extra.intent = INTENT;
+  return { ...def, inputSchema: extendInput(def.inputSchema, extra) };
 }
 
 /** Split a call's arguments into the kernel's and the tool's. */

@@ -1363,6 +1363,14 @@ describe("kernel arguments (if_rev / idempotency_key)", () => {
     assert.equal(custom.inputSchema.if_rev, own);
   });
 
+  test("a strict schema stays strict once the kernel arguments are added (#500)", async () => {
+    const { strictInput } = await import("@vault-mcp/core");
+    const def = withKernelArgs({ annotations: { readOnlyHint: false }, inputSchema: strictInput({ path: z.string() }) });
+    const parsed = def.inputSchema.parse({ path: "A.md", if_rev: 7, idempotency_key: "k", intent: "why" });
+    assert.equal(parsed.if_rev, 7, "the kernel arguments are declared");
+    assert.throws(() => def.inputSchema.parse({ path: "A.md", frontmatter: {} }), /Unrecognized key/, "an unknown argument is refused, not stripped");
+  });
+
   test("declaration is what makes the arguments reachable at all", () => {
     // The SDK validates against the tool's zod shape, and z.object strips
     // unknown keys — so an UNdeclared if_rev never reaches the wrapper.

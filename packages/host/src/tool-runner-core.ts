@@ -12,13 +12,14 @@
 // addressing, accept-forbidden in the write primitives, kernel queue/journal)
 // binds identically. No raw handler is ever reachable from here.
 
-import { z, type ZodRawShape } from "zod";
+import { z } from "zod";
 import {
   searchRegistry,
   callCapturedTool,
   type CapturedRegistry,
 } from "./mcp/tools-code-mode.js";
 import { KERNEL_ARG_KEYS } from "./mcp/guarded.js";
+import { inputShapeOf, type InputSchema } from "@vault-mcp/core";
 
 /** One row in the runner's tool picker — same summary shape the code-mode
  * search meta-tool reports (name, title, one-line description, mutating). */
@@ -77,9 +78,9 @@ function unwrapSchema(schema: z.ZodTypeAny): { inner: z.ZodTypeAny; description?
  * the guard wrapper peels them before any handler — a human clicking a form
  * has no use for them, and rendering them would only invite confusion.
  */
-export function formFieldsOf(inputSchema: ZodRawShape | undefined): RunnerField[] {
+export function formFieldsOf(inputSchema: InputSchema | undefined): RunnerField[] {
   const fields: RunnerField[] = [];
-  for (const [name, schema] of Object.entries(inputSchema ?? {})) {
+  for (const [name, schema] of Object.entries(inputShapeOf(inputSchema))) {
     if ((KERNEL_ARG_KEYS as readonly string[]).includes(name)) continue;
     const optional = schema.isOptional();
     const { inner, description } = unwrapSchema(schema);
