@@ -1,6 +1,6 @@
 # vault-mcp-connect
 
-A small Claude Code plugin that makes the [vault-mcp](https://github.com/nelsonlove/obsidian-mcp-suite)
+A small Claude Code plugin that makes the [vault-mcp](https://github.com/nelsonlove/vault-mcp)
 Obsidian bridge more transparent about its connection state.
 
 The `vault-mcp` MCP server lives inside Obsidian and is reachable only while
@@ -26,9 +26,11 @@ Both share `hooks/scripts/vault-mcp-health.mjs` (Node only — no extra deps).
 ## Install
 
 ```
-/plugin marketplace add nelsonlove/obsidian-mcp-suite
+/plugin marketplace add nelsonlove/vault-mcp
 /plugin install vault-mcp-connect@obsidian-mcp-suite
 ```
+
+The marketplace keeps its old name, `obsidian-mcp-suite`, from before the repository was renamed `vault-mcp` (2026-10-08), so the install line names it.
 
 ## Configuration
 

@@ -2,7 +2,7 @@
 
 Status: normative implementation handoff for the settled target design  
 Decision date: 2026-08-20  
-Repository: `nelsonlove/obsidian-mcp-suite` (named `obsidian-governor` when this guide was written)
+Repository: `nelsonlove/vault-mcp` (named `obsidian-governor` when this guide was written, then `obsidian-mcp-suite` until 2026-10-08)
 
 > [!important] Gate 1 is COMPLETE (2026-08-22, released as 0.17.0)
 > Work packages WP0–WP8 — the action registry, executor, observation/effect substrate, canonical subjects, history store, sessions, proposals, verification, individual and cohort admission, and the legacy import + cutover — are MERGED, shipped, and live (the authority cutover ran 2026-08-23). Do not re-implement them; [Status and compatibility](status-and-compatibility.md#current-release-state) owns what is shipped. This guide remains the normative process and work-package spec for Gates 2+ (WP9 onward), and its §8–§15 disciplines (canonical subjects, the admission door, test families) bind all future work.
