@@ -108,7 +108,10 @@ Registered directly in `server.ts`, immediately after `registerVaultWriteTools`
 any tool whose `readOnlyHint !== true`, and these three mutate by design).
 Plans via the pure `kernel/scheme/mutate.ts` core, applies via
 `tools-vault-write.ts`'s `moveOne`. Allowlist-filtered like `tools-scheme.ts`'s
-read tools; `dry_run` never mutates.
+read tools; `dry_run` never mutates. Registered only while the scheme module is
+on (`schemeModuleEnabled`, `modules.scheme.enabled`, read once per connection
+like the mount), so the module toggle turns these three off with the read tools
+(01.28 rule 7, #502).
 
 | Tool name | Description |
 |---|---|
@@ -435,7 +438,7 @@ this historical snapshot.
 | `packages/host/src/mcp/server.ts` | `registerFsTools` | 17 fs-expressible |
 | `packages/host/src/mcp/tools-core.ts` | `registerCoreTools` | 2 always-live |
 | `packages/host/src/mcp/tools-vault-write.ts` | `registerVaultWriteTools` | 2 always-live |
-| `packages/host/src/mcp/tools-scheme-write.ts` | `registerSchemeWriteTools` | 3 always-live |
+| `packages/host/src/mcp/tools-scheme-write.ts` | `registerSchemeWriteTools` | 3, while the scheme module is on |
 | `packages/host/src/mcp/tools-survey.ts` | `registerSurveyTools` | 2 always-live |
 | `packages/host/src/mcp/tools-complementary.ts` | `registerComplementaryTools` | 9 always-live |
 | `packages/host/src/mcp/tools-nav.ts` | `registerNavTools` | 11 always-live |

@@ -71,7 +71,7 @@ PLAN-then-APPLY shell over a pure planning core (`kernel/scheme/mutate.ts`'s
 `planAssign`/`planRefile`/`planRenumber`): nothing in the tool layer recomputes "what should move
 where", it only decides whether to preview (`dry_run: true`, **mandatory — no default** — on all
 three) or execute via `moveOne` (`tools-vault-write.ts`'s move primitive, reused rather than
-re-implemented, so these inherit the same link healing as `obsidian_move_notes`: `moveWithLinks`, a file-level rename plus vault-mcp's own backlink rewrite and damage check).
+re-implemented, so these inherit the same link healing as `obsidian_move_notes`: `moveWithLinks`, a file-level rename plus vault-mcp's own backlink rewrite and damage check). The three are registered only while the scheme module is on: the module toggle (`modules.scheme.enabled`) turns them off with the read tools, on the next connect (#502).
 
 | Tool | Input | Behavior |
 | --- | --- | --- |

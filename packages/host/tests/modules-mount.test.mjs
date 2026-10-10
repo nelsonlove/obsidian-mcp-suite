@@ -507,8 +507,9 @@ describe("scheme toggle gates the scheme write tools", () => {
     const src = readFileSync(new URL("../src/mcp/server.ts", import.meta.url), "utf8");
     const at = src.indexOf("registerSchemeWriteTools(server");
     assert.ok(at > 0, "the registration call was not found — update this pin");
-    const before = src.slice(src.lastIndexOf("\n  if (", at), at);
-    assert.match(before, /if \(schemeModuleEnabled\(ctx\.getSettings\(\)\)\) \{\s*$/, "registerSchemeWriteTools must sit directly inside the scheme toggle check");
+    const gate = src.lastIndexOf("if (schemeModuleEnabled(ctx.getSettings())) {", at);
+    assert.ok(gate > 0, "registerSchemeWriteTools must sit inside the scheme toggle check");
+    assert.doesNotMatch(src.slice(gate, at), /\n\s*\}/, "no block closes between the check and the registration");
     assert.equal(src.split("registerSchemeWriteTools(").length - 1, 1, "exactly one registration of the write tools");
   });
 
