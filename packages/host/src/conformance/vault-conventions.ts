@@ -105,11 +105,13 @@ export const LEGACY_CONVENTIONS_SEED: VaultConventions = {
   // `Assent` to `obsidian-governor` (2026-08-19). One prefix now covers both
   // it and the `Vault archaeology` corpus, which moved inside it — the old
   // bare `"Vault archaeology"` root no longer resolves anywhere in the vault.
-  // Renamed again to `obsidian-mcp-suite` with the repo (2026-09-22); the
-  // path is a fact about the vault, corrected as one.
-  ungovernedRoots: ["00-09 System/00 System management/00.89 obsidian-mcp-suite"],
-  // Where the baseline lived while its path was a constant in cli.ts (#493).
-  baselineRel: "00-09 System/00 System management/00.89 obsidian-mcp-suite/Archive/Build/Conformance baseline.md",
+  // Renamed again to `obsidian-mcp-suite` with the repo (2026-09-22), and to
+  // `vault-mcp` with it again (2026-10-08, #505); the path is a fact about the
+  // vault, corrected as one.
+  ungovernedRoots: ["00-09 System/00 System management/00.89 vault-mcp"],
+  // Where the baseline lived while its path was a constant in cli.ts (#493),
+  // under the folder's current name (#505).
+  baselineRel: "00-09 System/00 System management/00.89 vault-mcp/Archive/Build/Conformance baseline.md",
 };
 
 /** The CLI's environment knob for the conventions, and its two legacy spellings. */
